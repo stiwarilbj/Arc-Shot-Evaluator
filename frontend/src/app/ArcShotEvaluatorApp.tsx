@@ -296,6 +296,7 @@ export function ArcShotEvaluatorApp() {
           <Summary label="Attempts" value={String(session.summary.attempts)} />
           <Summary label="Makes" value={String(session.summary.makes)} tone="make" />
           <Summary label="FG%" value={session.summary.fg_pct === null ? "—" : `${session.summary.fg_pct.toFixed(0)}%`} />
+          <Summary label="Predicted FT%" value={session.summary.predicted_ft_pct == null ? "—" : `${session.summary.predicted_ft_pct.toFixed(0)}%`} />
           <Summary label="Best streak" value={String(session.summary.best_streak)} />
           <Summary label="Confidence" value={`${session.summary.average_confidence.toFixed(0)}%`} />
         </section>

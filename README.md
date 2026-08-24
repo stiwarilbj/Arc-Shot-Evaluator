@@ -32,6 +32,8 @@ The website uses React, TypeScript, and regular CSS. A local FastAPI server hand
 
 ARC connects detections across frames, keeps track of the rim when the camera moves, and uses the regulation 18-inch rim as a size reference. That lets it estimate release speed, height, arc, and joint angles from a normal single-camera clip. Portrait video, blur, camera movement, and different resolutions are supported. Clear side views still give the best numbers, of course.
 
+The overview also has a predicted FT% built from the visible release profile, body angles, follow-through proxy, shot result, and how much those numbers repeat across the session. It is meant as a useful practice estimate, not a guarantee.
+
 ## The local Coach Notes
 
 This part is basically a tiny RAG system without an online chatbot. ARC keeps a small local guide with paraphrased shooting ideas from Jr. NBA, USA Basketball, FIBA's WABC coaching workbook, and open biomechanics studies. A pure Python BM25-style search matches the shot's reliable measurements and footage quality to the right passages, then chooses three short human-written notes.

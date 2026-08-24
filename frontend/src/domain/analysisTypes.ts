@@ -57,6 +57,12 @@ export interface ShotAnalysis {
     net_slowdown_ratio?: number | null;
     net_drag_confirmed?: boolean;
     mechanics_quality?: number | null;
+    follow_through_quality?: number | null;
+    trajectory_quality?: number | null;
+    shot_quality?: number | null;
+    miss_proximity?: number | null;
+    predicted_ft_pct?: number | null;
+    session_consistency_score?: number | null;
   };
   coaching?: ShotCoaching;
 }
@@ -79,6 +85,7 @@ export interface AnalysisSession {
     misses: number;
     review: number;
     fg_pct: number | null;
+    predicted_ft_pct?: number | null;
     best_streak: number;
     average_confidence: number;
   };

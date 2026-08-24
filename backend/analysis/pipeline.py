@@ -702,6 +702,22 @@ def _angle_quality(
     return clamp(0.45 + 0.55 * (poor_max - value) / max(1.0, poor_max - ideal_max), 0.25, 1.0)
 
 
+def _soft_range_quality(
+    value: float,
+    *,
+    good_min: float,
+    good_max: float,
+    poor_min: float,
+    poor_max: float,
+) -> float:
+    """Score a measured release value without treating one target as universal."""
+    if good_min <= value <= good_max:
+        return 1.0
+    if value < good_min:
+        return clamp(0.22 + 0.78 * (value - poor_min) / max(1.0, good_min - poor_min), 0.12, 1.0)
+    return clamp(0.22 + 0.78 * (poor_max - value) / max(1.0, poor_max - good_max), 0.12, 1.0)
+
+
 def estimate_mechanics_quality(form: dict[str, float | None]) -> float | None:
     """Estimate how repeatable the visible release shape looks from the pose."""
     rules = {
@@ -729,12 +745,112 @@ def estimate_mechanics_quality(form: dict[str, float | None]) -> float | None:
     return round(weighted_score / weight_total, 3)
 
 
+def estimate_follow_through_quality(form: dict[str, float | None]) -> float | None:
+    """Use the visible elbow finish and shoulder line as a follow-through proxy."""
+    elbow = form.get("elbow")
+    shoulder = form.get("shoulder")
+    scores: list[tuple[float, float]] = []
+    if elbow is not None:
+        scores.append(
+            (
+                _angle_quality(
+                    float(elbow), ideal_min=155.0, ideal_max=180.0, poor_min=85.0, poor_max=205.0
+                ),
+                0.7,
+            )
+        )
+    if shoulder is not None:
+        scores.append(
+            (
+                _angle_quality(
+                    float(shoulder), ideal_min=85.0, ideal_max=150.0, poor_min=40.0, poor_max=195.0
+                ),
+                0.3,
+            )
+        )
+    if not scores:
+        return None
+    total_weight = sum(weight for _, weight in scores)
+    return round(sum(score * weight for score, weight in scores) / total_weight, 3)
+
+
+def estimate_trajectory_quality(
+    release_speed_ms: float | None,
+    release_height_m: float | None,
+    entry_angle_deg: float | None,
+    arc_peak_m: float | None,
+) -> float | None:
+    """Score the release profile using broad single-camera ranges."""
+    measured: list[tuple[float, float]] = []
+    rules = (
+        (release_speed_ms, 4.5, 9.5, 1.8, 15.0, 0.28),
+        (release_height_m, 1.55, 2.95, 1.2, 3.35, 0.20),
+        (entry_angle_deg, 38.0, 67.0, 25.0, 82.0, 0.24),
+        (arc_peak_m, 2.85, 5.0, 2.5, 6.5, 0.28),
+    )
+    for value, good_min, good_max, poor_min, poor_max, weight in rules:
+        if value is not None:
+            measured.append(
+                (
+                    _soft_range_quality(
+                        float(value),
+                        good_min=good_min,
+                        good_max=good_max,
+                        poor_min=poor_min,
+                        poor_max=poor_max,
+                    ),
+                    weight,
+                )
+            )
+    if not measured:
+        return None
+    total_weight = sum(weight for _, weight in measured)
+    return round(sum(score * weight for score, weight in measured) / total_weight, 3)
+
+
+def combine_shot_quality(
+    mechanics_quality: float | None,
+    follow_through_quality: float | None,
+    trajectory_quality: float | None,
+) -> float:
+    """Combine the available form and release evidence into a soft shot score."""
+    components: list[tuple[float, float]] = []
+    if mechanics_quality is not None:
+        components.append((mechanics_quality, 0.48))
+    if follow_through_quality is not None:
+        components.append((follow_through_quality, 0.20))
+    if trajectory_quality is not None:
+        components.append((trajectory_quality, 0.32))
+    if not components:
+        return 0.5
+    total_weight = sum(weight for _, weight in components)
+    return round(sum(score * weight for score, weight in components) / total_weight, 3)
+
+
+def estimate_shot_quality(
+    form: dict[str, float | None],
+    release_speed_ms: float | None,
+    release_height_m: float | None,
+    entry_angle_deg: float | None,
+    arc_peak_m: float | None,
+) -> float:
+    """Return a bounded mechanics-and-trajectory score for FT projection."""
+    return combine_shot_quality(
+        estimate_mechanics_quality(form),
+        estimate_follow_through_quality(form),
+        estimate_trajectory_quality(release_speed_ms, release_height_m, entry_angle_deg, arc_peak_m),
+    )
+
+
 def adjust_shot_confidence(
     base_confidence: float,
     outcome: str,
     mechanics_quality: float | None,
     *,
     outcome_supported: bool = False,
+    trajectory_quality: float | None = None,
+    follow_through_quality: float | None = None,
+    miss_proximity: float | None = None,
 ) -> float:
     """Blend tracking confidence with soft outcome and mechanics signals.
 
@@ -742,22 +858,53 @@ def adjust_shot_confidence(
     with noticeably rough mechanics are intentionally less certain, even when
     the ball crossed the hoop, so the number does not read like a skill grade.
     """
-    confidence = float(base_confidence)
+    starting_confidence = float(base_confidence)
+    confidence = starting_confidence
     if mechanics_quality is not None:
-        if mechanics_quality < 0.76:
-            confidence *= 0.88
-            if outcome == "make":
-                confidence = min(confidence, 0.72)
-        elif mechanics_quality < 0.88:
-            confidence *= 0.94
-            if outcome == "make":
-                confidence = min(confidence, 0.78)
-        elif mechanics_quality >= 0.92:
+        if mechanics_quality < 0.55:
+            confidence = min(confidence * 0.56, 0.42)
+        elif mechanics_quality < 0.72:
+            confidence = min(confidence * 0.72, 0.56)
+        elif mechanics_quality < 0.86:
+            confidence = min(confidence * 0.84, 0.67)
+        elif mechanics_quality < 0.94:
+            confidence = min(confidence * 0.94, 0.80)
+        else:
             confidence = min(0.97, confidence * 1.02)
-            if outcome == "make" and outcome_supported:
-                confidence = max(confidence, 0.84)
+    if follow_through_quality is not None:
+        if follow_through_quality < 0.55:
+            confidence = min(confidence * 0.72, 0.48)
+        elif follow_through_quality < 0.72:
+            confidence = min(confidence * 0.88, 0.66)
+    if trajectory_quality is not None:
+        if trajectory_quality < 0.40:
+            confidence = min(confidence * 0.58, 0.40)
+        elif trajectory_quality < 0.62:
+            confidence = min(confidence * 0.78, 0.58)
+        elif trajectory_quality < 0.82:
+            confidence *= 0.94
+        else:
+            confidence = min(0.97, confidence * 1.015)
     if outcome == "miss":
-        confidence = min(confidence * 0.88, 0.73)
+        if miss_proximity is None:
+            confidence = min(confidence * 0.88, 0.73)
+        elif (
+            miss_proximity >= 0.68
+            and (mechanics_quality is None or mechanics_quality >= 0.84)
+            and (trajectory_quality is None or trajectory_quality >= 0.68)
+        ):
+            # A close miss with a clean release is still a strong, useful call.
+            confidence = min(0.91, max(confidence, starting_confidence * 0.90))
+        elif miss_proximity <= 0.25 or (trajectory_quality is not None and trajectory_quality < 0.35):
+            confidence = min(confidence * 0.56, 0.46)
+        else:
+            confidence = min(confidence * 0.76, 0.64)
+    if outcome == "make" and mechanics_quality is not None and mechanics_quality < 0.62:
+        confidence = min(confidence, 0.42)
+    if outcome == "make" and outcome_supported and mechanics_quality is not None and mechanics_quality >= 0.92:
+        confidence = max(confidence, 0.84)
+    if outcome == "make" and outcome_supported and trajectory_quality is not None and trajectory_quality >= 0.82:
+        confidence = max(confidence, 0.84)
     return round(clamp(confidence, 0.18, 0.97), 3)
 
 
@@ -975,6 +1122,14 @@ def _measure_shot(
             geometric_miss = True
             flags.append("ball descended outside the rim centerline")
 
+    miss_proximity = None
+    if crossing_offset is not None:
+        miss_proximity = clamp(1.0 - crossing_offset / 2.45, 0.0, 1.0)
+    elif median_rim_width > 0:
+        miss_proximity = clamp(
+            1.0 - nearest_rim_distance / max(1.0, median_rim_width * 2.45), 0.0, 1.0
+        )
+
     release_rim = rims[release_point.frame] if release_point.frame < len(rims) else None
     release_speed: float | None = None
     release_height: float | None = None
@@ -1023,6 +1178,13 @@ def _measure_shot(
     if arc_peak is not None and not 2.5 <= arc_peak <= 6.5:
         arc_peak = None
 
+    trajectory_quality = estimate_trajectory_quality(
+        release_speed,
+        release_height,
+        entry_angle,
+        arc_peak,
+    )
+
     observed_ratio = len(observed) / max(1, len(dense))
     rim_confidence = float(np.median([rim.confidence for rim in applicable_rims]))
     pose_confidence = release_pose.confidence if release_pose else 0.0
@@ -1043,8 +1205,20 @@ def _measure_shot(
         if release_pose is not None and pose_confidence >= 0.60
         else None
     )
+    follow_through_quality = (
+        estimate_follow_through_quality(form)
+        if release_pose is not None and pose_confidence >= 0.60
+        else None
+    )
+    shot_quality = combine_shot_quality(
+        mechanics_quality,
+        follow_through_quality,
+        trajectory_quality,
+    )
     if mechanics_quality is not None and mechanics_quality < 0.88:
         flags.append("release mechanics lowered confidence; treat the form estimate as a cue")
+    if trajectory_quality is not None and trajectory_quality < 0.42:
+        flags.append("release profile was far outside the broad single-camera range")
     outcome_supported = bool(
         outcome == "make"
         and crossing is not None
@@ -1055,6 +1229,9 @@ def _measure_shot(
         outcome,
         mechanics_quality,
         outcome_supported=outcome_supported,
+        trajectory_quality=trajectory_quality,
+        follow_through_quality=follow_through_quality,
+        miss_proximity=miss_proximity,
     )
 
     return ShotAnalysis(
@@ -1080,6 +1257,10 @@ def _measure_shot(
             "crossing_offset_rim": round(crossing_offset, 3) if crossing_offset is not None else None,
             "rim_centered": bool(crossing_offset is not None and crossing_offset <= 0.08),
             "mechanics_quality": mechanics_quality,
+            "follow_through_quality": follow_through_quality,
+            "trajectory_quality": trajectory_quality,
+            "shot_quality": shot_quality,
+            "miss_proximity": round(miss_proximity, 3) if miss_proximity is not None else None,
             "outcome_basis": outcome_basis,
             **net_evidence,
         },
@@ -1126,6 +1307,80 @@ def find_shots(
     return selected[:24]
 
 
+def session_consistency_score(shots: list[ShotAnalysis]) -> float:
+    """Estimate repeatability from the measurements that are actually present."""
+    if len(shots) < 2:
+        return 0.65
+    tolerances = {
+        "release_speed_ms": 0.45,
+        "release_height_m": 0.12,
+        "entry_angle_deg": 4.0,
+        "arc_peak_m": 0.30,
+        "elbow": 8.0,
+        "knee": 10.0,
+        "shoulder": 10.0,
+        "hip": 10.0,
+    }
+    scores: list[float] = []
+    for metric, tolerance in tolerances.items():
+        values: list[float] = []
+        for shot in shots:
+            value = getattr(shot, metric, None) if metric.endswith(("_ms", "_m", "_deg")) else shot.form.get(metric)
+            if value is not None:
+                values.append(float(value))
+        if len(values) < 2:
+            continue
+        median = float(np.median(values))
+        spread = float(np.median(np.abs(np.asarray(values) - median)))
+        scores.append(clamp(1.0 - spread / max(1e-6, tolerance), 0.0, 1.0))
+    return round(float(np.mean(scores)) if scores else 0.60, 3)
+
+
+def predict_ft_percentage(shots: list[ShotAnalysis]) -> float | None:
+    """Project a free-throw percentage from visible mechanics and repetition.
+
+    This is a practice estimate, not a promise of future makes. A good-looking
+    close miss can score higher than a lucky make with a rough release, while
+    more repeated variation lowers the session projection.
+    """
+    if not shots:
+        return None
+    consistency = session_consistency_score(shots)
+    decided = [shot for shot in shots if shot.outcome in {"make", "miss"}]
+    makes = sum(shot.outcome == "make" for shot in decided)
+    outcome_prior = (makes + 2.5 * 0.72) / max(2.5, len(decided) + 2.5)
+    predictions: list[float] = []
+    for shot in shots:
+        quality_value = shot.evidence.get("shot_quality")
+        quality = (
+            float(quality_value)
+            if quality_value is not None
+            else estimate_shot_quality(
+                shot.form,
+                shot.release_speed_ms,
+                shot.release_height_m,
+                shot.entry_angle_deg,
+                shot.arc_peak_m,
+            )
+        )
+        prediction = 0.08 + 0.66 * clamp(quality, 0.0, 1.0) + 0.16 * consistency + 0.10 * outcome_prior
+        miss_proximity = shot.evidence.get("miss_proximity")
+        if (
+            shot.outcome == "miss"
+            and miss_proximity is not None
+            and float(miss_proximity) >= 0.68
+            and quality >= 0.78
+        ):
+            prediction += 0.02
+        if shot.outcome == "review":
+            prediction -= 0.04
+        projected = round(clamp(prediction, 0.05, 0.95) * 100, 1)
+        shot.evidence["predicted_ft_pct"] = projected
+        shot.evidence["session_consistency_score"] = consistency
+        predictions.append(projected)
+    return round(float(np.mean(predictions)), 1)
+
+
 def summarize_session(shots: list[ShotAnalysis]) -> dict:
     decided = [shot for shot in shots if shot.outcome in {"make", "miss"}]
     makes = sum(shot.outcome == "make" for shot in decided)
@@ -1142,6 +1397,7 @@ def summarize_session(shots: list[ShotAnalysis]) -> dict:
         "misses": sum(shot.outcome == "miss" for shot in shots),
         "review": sum(shot.outcome == "review" for shot in shots),
         "fg_pct": round(makes / len(decided) * 100, 1) if decided else None,
+        "predicted_ft_pct": predict_ft_percentage(shots),
         "best_streak": best,
         "average_confidence": round(float(np.mean([shot.confidence for shot in shots])) * 100, 1) if shots else 0.0,
     }

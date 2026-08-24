@@ -122,6 +122,7 @@ export function ShotDataPanel({ session, shot, tab }: ShotDataPanelProps) {
             <Metric label="Release speed" result={value(shot.release_speed_ms, " m/s", 1)} />
             <Metric label="Release height" result={value(shot.release_height_m, " m", 2)} />
             <Metric label="Arc peak" result={value(shot.arc_peak_m, " m", 2)} />
+            <Metric label="Predicted FT%" result={value(shot.evidence.predicted_ft_pct ?? null, "%", 0)} />
           </section>
           <section className="rail-panel form-panel">
             <h3>Form at release</h3>
