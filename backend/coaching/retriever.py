@@ -244,6 +244,9 @@ def generate_coaching(shots: list[ShotAnalysis], quality: dict[str, Any]) -> dic
         elif trajectory and shot.entry_angle_deg is not None and shot.outcome == "make":
             value = format_angle(shot.entry_angle_deg)
             text = select_stable_phrase(entry_note.positive, shot.id, "positive-entry").format(value=value)
+            if shot.release_height_m is not None:
+                height = f"{shot.release_height_m:.2f} m"
+                text = f"{text.rstrip('.')} Release height was {height}; repeat that same takeoff."
             tips.append(
                 build_coaching_tip(
                     "positive-entry",
@@ -298,6 +301,16 @@ def generate_coaching(shots: list[ShotAnalysis], quality: dict[str, Any]) -> dic
                     {"metric": "entry_angle_deg", "label": "Entry angle", "value": value},
                 )
             )
+        elif trajectory and (shot.release_speed_ms is not None or shot.release_height_m is not None):
+            speed = f"{shot.release_speed_ms:.1f} m/s" if shot.release_speed_ms is not None else "a repeatable speed"
+            height = f" from {shot.release_height_m:.2f} m" if shot.release_height_m is not None else ""
+            text = f"Your release was {speed}{height}. Repeat five easy reps and keep that lift the same."
+            evidence = None
+            if shot.release_speed_ms is not None:
+                evidence = {"metric": "release_speed_ms", "label": "Release speed", "value": speed}
+            elif shot.release_height_m is not None:
+                evidence = {"metric": "release_height_m", "label": "Release height", "value": f"{shot.release_height_m:.2f} m"}
+            tips.append(build_coaching_tip("action-release-profile", "action", text, consistency_note, evidence))
         else:
             text = select_stable_phrase(rhythm_note.action, shot.id, "action-rhythm")
             tips.append(build_coaching_tip("action-rhythm", "action", text, rhythm_note, None))
@@ -347,7 +360,7 @@ def generate_coaching(shots: list[ShotAnalysis], quality: dict[str, Any]) -> dic
         source_ids = list(dict.fromkeys(source_id for tip in tips for source_id in tip["source_ids"]))
         sources = [build_source_reference(source_id) for source_id in source_ids]
         coaching[shot.id] = {
-            "intro": "Here’s what stood out on this shot.",
+            "intro": f"Here’s what stood out on Shot {shot.id}.",
             "limited": limited,
             "matched_source_count": len(sources),
             "tips": tips,

@@ -99,6 +99,19 @@ def test_missing_measurements_still_produce_safe_advice() -> None:
     assert coaching["tips"][1]["tone"] == "action"
 
 
+def test_personalized_release_cue_uses_the_shot_measurements() -> None:
+    coaching = generate_coaching(
+        [_shot(1, entry=None, speed=6.4, height=2.15, elbow=None)],
+        GOOD_QUALITY,
+    )[1]
+
+    action = coaching["tips"][1]
+    assert "6.4 m/s" in action["text"]
+    assert "2.15 m" in action["text"]
+    assert action["evidence"]["metric"] == "release_speed_ms"
+    assert "Shot 1" in coaching["intro"]
+
+
 def test_session_advice_names_the_least_consistent_measurement() -> None:
     shots = [
         _shot(1, entry=46.0, speed=7.0, height=2.30, elbow=130.0),
