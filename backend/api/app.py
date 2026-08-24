@@ -51,6 +51,7 @@ jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 job_cancel_events: dict[str, threading.Event] = {}
 job_futures: dict[str, Future] = {}
+job_session_dirs: dict[str, Path] = {}
 try:
     ANALYSIS_WORKERS = max(1, min(4, int(os.environ.get("ARC_WORKERS", "2"))))
 except ValueError:
@@ -96,16 +97,18 @@ def run_analysis_job(job_id: str, source: Path, session_dir: Path, display_name:
             update_analysis_job(job_id, status="cancelled", stage="Analysis stopped", error=None, result=None)
         else:
             update_analysis_job(job_id, status="error", stage="Analysis failed", error=str(error))
-def register_job(job_id: str, value: dict) -> None:
+def register_job(job_id: str, value: dict, session_dir: Path) -> None:
     with jobs_lock:
         jobs[job_id] = value
         job_cancel_events[job_id] = threading.Event()
+        job_session_dirs[job_id] = session_dir
         if len(jobs) > 100:
             finished = [key for key, item in jobs.items() if item["status"] in {"done", "error", "cancelled"}]
             for old_id in finished[: len(jobs) - 100]:
                 jobs.pop(old_id, None)
                 job_cancel_events.pop(old_id, None)
                 job_futures.pop(old_id, None)
+                job_session_dirs.pop(old_id, None)
 
 
 def submit_analysis_job(job_id: str, source: Path, session_dir: Path, display_name: str) -> None:
@@ -128,7 +131,7 @@ def queue_analysis_job(source: Path, display_name: str) -> str:
         "error": None,
         "result": None,
     }
-    register_job(job_id, value)
+    register_job(job_id, value, session_dir)
     submit_analysis_job(job_id, source, session_dir, display_name)
     return job_id
 
@@ -230,7 +233,7 @@ async def create_uploaded_video_job(file: UploadFile) -> dict:
         "error": None,
         "result": None,
     }
-    register_job(job_id, value)
+    register_job(job_id, value, session_dir)
     submit_analysis_job(job_id, source, session_dir, display_name)
     return {"job_id": job_id}
 
@@ -275,6 +278,7 @@ def cancel_analysis_job(job_id: str) -> dict:
             event.set()
         future = job_futures.get(job_id)
         if future and future.cancel():
+            shutil.rmtree(job_session_dirs.get(job_id), ignore_errors=True)
             value.update(status="cancelled", stage="Analysis stopped", error=None, result=None, updated_at=time.time())
         else:
             value.update(stage="Stopping analysis", updated_at=time.time())
