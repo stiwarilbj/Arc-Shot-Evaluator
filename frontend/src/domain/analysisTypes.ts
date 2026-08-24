@@ -56,6 +56,7 @@ export interface ShotAnalysis {
     reappearance_frame?: number | null;
     net_slowdown_ratio?: number | null;
     net_drag_confirmed?: boolean;
+    mechanics_quality?: number | null;
   };
   coaching?: ShotCoaching;
 }
