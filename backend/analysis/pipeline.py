@@ -681,6 +681,82 @@ def _form_metrics_window(
     return output
 
 
+def _angle_quality(
+    value: float,
+    *,
+    ideal_min: float,
+    ideal_max: float,
+    poor_min: float,
+    poor_max: float,
+) -> float:
+    """Turn a release angle into a soft mechanics-quality signal.
+
+    This is deliberately a gentle heuristic, not a claim that one camera can
+    grade a player's whole form. It is only used to temper confidence when a
+    reliable pose has a clearly unusual release shape.
+    """
+    if ideal_min <= value <= ideal_max:
+        return 1.0
+    if value < ideal_min:
+        return clamp(0.45 + 0.55 * (value - poor_min) / max(1.0, ideal_min - poor_min), 0.25, 1.0)
+    return clamp(0.45 + 0.55 * (poor_max - value) / max(1.0, poor_max - ideal_max), 0.25, 1.0)
+
+
+def estimate_mechanics_quality(form: dict[str, float | None]) -> float | None:
+    """Estimate how repeatable the visible release shape looks from the pose."""
+    rules = {
+        "elbow": (155.0, 180.0, 110.0, 205.0, 0.45),
+        "knee": (135.0, 175.0, 95.0, 205.0, 0.20),
+        "shoulder": (85.0, 150.0, 45.0, 195.0, 0.15),
+        "hip": (140.0, 180.0, 105.0, 205.0, 0.20),
+    }
+    weighted_score = 0.0
+    weight_total = 0.0
+    for metric, (ideal_min, ideal_max, poor_min, poor_max, weight) in rules.items():
+        value = form.get(metric)
+        if value is None:
+            continue
+        weighted_score += _angle_quality(
+            float(value),
+            ideal_min=ideal_min,
+            ideal_max=ideal_max,
+            poor_min=poor_min,
+            poor_max=poor_max,
+        ) * weight
+        weight_total += weight
+    if not weight_total:
+        return None
+    return round(weighted_score / weight_total, 3)
+
+
+def adjust_shot_confidence(
+    base_confidence: float,
+    outcome: str,
+    mechanics_quality: float | None,
+) -> float:
+    """Blend tracking confidence with soft outcome and mechanics signals.
+
+    Makes with a clean, well-supported release stay high. Misses and makes
+    with noticeably rough mechanics are intentionally less certain, even when
+    the ball crossed the hoop, so the number does not read like a skill grade.
+    """
+    confidence = float(base_confidence)
+    if mechanics_quality is not None:
+        if mechanics_quality < 0.76:
+            confidence *= 0.88
+            if outcome == "make":
+                confidence = min(confidence, 0.72)
+        elif mechanics_quality < 0.88:
+            confidence *= 0.94
+            if outcome == "make":
+                confidence = min(confidence, 0.78)
+        elif mechanics_quality >= 0.92:
+            confidence = min(0.97, confidence * 1.02)
+    if outcome == "miss":
+        confidence = min(confidence * 0.88, 0.73)
+    return round(clamp(confidence, 0.18, 0.97), 3)
+
+
 def _stabilized(point: BallTrackPoint, rim: BoundingBox) -> tuple[float, float]:
     scale = 0.4572 / max(1.0, rim.width)
     return ((point.x - rim.center[0]) * scale, (point.y - rim.center[1]) * scale)
@@ -958,6 +1034,14 @@ def _measure_shot(
         confidence *= 0.9
     if release_pose is None:
         flags.append("release pose not confidently visible")
+    mechanics_quality = (
+        estimate_mechanics_quality(form)
+        if release_pose is not None and pose_confidence >= 0.60
+        else None
+    )
+    if mechanics_quality is not None and mechanics_quality < 0.88:
+        flags.append("release mechanics lowered confidence; treat the form estimate as a cue")
+    confidence = adjust_shot_confidence(confidence, outcome, mechanics_quality)
 
     return ShotAnalysis(
         id=shot_id,
@@ -981,6 +1065,7 @@ def _measure_shot(
             "crossing_frame": crossing[0].frame if crossing else None,
             "crossing_offset_rim": round(crossing_offset, 3) if crossing_offset is not None else None,
             "rim_centered": bool(crossing_offset is not None and crossing_offset <= 0.08),
+            "mechanics_quality": mechanics_quality,
             "outcome_basis": outcome_basis,
             **net_evidence,
         },

@@ -370,6 +370,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .queue-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .queue-add, .queue-clear, .queue-show-hidden { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid var(--orange-soft); border-radius: 6px; background: rgba(238, 115, 63, .08); color: var(--orange); cursor: pointer; font-size: 11px; font-weight: 650; }
 .queue-add { flex: 1 1 130px; }
+.queue-add, .queue-add * { cursor: default; }
 .queue-clear, .queue-show-hidden { border-color: var(--line); background: transparent; color: var(--muted); }
 .queue-clear:disabled { opacity: .42; cursor: default; }
 .queue-add:hover { border-color: var(--orange); }
