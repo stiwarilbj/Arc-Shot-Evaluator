@@ -1,0 +1,33 @@
+[project]
+name = "arc-shot-evaluator"
+version = "1.0.0"
+description = "Private, local basketball shot and form analysis"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.141,<1",
+  "imageio-ffmpeg>=0.6,<1",
+  "numpy>=2.2,<3",
+  "opencv-python-headless>=4.11,<5.1",
+  "python-multipart>=0.0.20,<1",
+  "torch>=2.7,<3",
+  "ultralytics>=8.4,<9",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = ["httpx>=0.28,<1", "pytest>=8,<10"]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+exclude = ["design*", "frontend*", "models*", "sessions*", "tests*"]
+
+[tool.setuptools.package-data]
+"backend.coaching" = ["knowledge/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

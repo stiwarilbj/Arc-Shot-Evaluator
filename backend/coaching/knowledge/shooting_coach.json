@@ -1,0 +1,123 @@
+{
+  "sources": [
+    {
+      "id": "jr-nba-shooting",
+      "title": "Jr. NBA shooting guide",
+      "publisher": "Jr. NBA",
+      "url": "https://jr.nba.com/shooting/"
+    },
+    {
+      "id": "usa-basketball-mechanics",
+      "title": "USA Basketball mechanics guide",
+      "publisher": "USA Basketball",
+      "url": "https://www.usab.com/news/2014/01/7-tips-to-improve-your-shooting-mechanics"
+    },
+    {
+      "id": "biomechanics-review",
+      "title": "Biomechanics study",
+      "publisher": "Inquiries in Physical Education and Sport",
+      "url": "https://journals.lib.uth.gr/index.php/inquiries/article/view/1125"
+    },
+    {
+      "id": "release-variability",
+      "title": "Release variability study",
+      "publisher": "ISBS Proceedings Archive",
+      "url": "https://commons.nmu.edu/isbs/vol36/iss1/32/"
+    },
+    {
+      "id": "arc-footage",
+      "title": "ARC recording guide",
+      "publisher": "ARC",
+      "url": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "entry-path",
+      "topic": "entry_angle",
+      "source_id": "biomechanics-review",
+      "tags": ["entry", "angle", "arc", "trajectory", "lift", "rim"],
+      "summary": "The ball's path into the rim depends on release height, speed, angle, and distance. Treat a measured entry angle as one clue instead of one perfect target.",
+      "positive": [
+        "Your {value} entry angle looked clean on this shot. Keep that same lift.",
+        "That {value} entry angle gave the shot a nice path. Try to repeat it."
+      ],
+      "action": [
+        "The ball came in at {value}. Take five close shots and focus on sending it up smoothly.",
+        "Your entry angle was {value}. Try five easy reps and match the same lift each time."
+      ]
+    },
+    {
+      "id": "follow-through",
+      "topic": "elbow",
+      "source_id": "jr-nba-shooting",
+      "tags": ["elbow", "extension", "follow", "through", "finish", "arm"],
+      "summary": "A straight shooting line, full arm extension, and a held follow-through make the finish easier to repeat.",
+      "positive": [
+        "Your elbow gets close to full extension. Hold that finish for a beat.",
+        "Your arm finishes long here. Keep the follow-through up for one extra second."
+      ],
+      "action": [
+        "Your elbow finished at {value}. Try five close shots and freeze the finish a little longer.",
+        "Your arm stopped a little early at {value}. Finish tall and hold it for a beat."
+      ]
+    },
+    {
+      "id": "smooth-delivery",
+      "topic": "rhythm",
+      "source_id": "usa-basketball-mechanics",
+      "tags": ["smooth", "delivery", "balance", "rhythm", "elbow", "follow", "through"],
+      "summary": "A smooth upward delivery coordinates the legs, core, arm, elbow, and wrist instead of forcing one part of the shot.",
+      "positive": [
+        "The release looks smooth enough to build on. Keep the next rep relaxed too.",
+        "There is a clean rhythm here. Nice. Try to make the next shot feel the same."
+      ],
+      "action": [
+        "Keep the next five reps smooth and easy. Let the whole motion rise together.",
+        "Do five relaxed close shots and keep the lift smooth instead of forcing the ball."
+      ]
+    },
+    {
+      "id": "repeat-release",
+      "topic": "consistency",
+      "source_id": "release-variability",
+      "tags": ["consistency", "repeat", "release", "speed", "height", "angle", "variation"],
+      "summary": "Release speed, angle, and position work together. Useful practice compares repeated attempts rather than judging one number by itself.",
+      "positive": [
+        "Your release numbers stayed pretty steady. Nice. Keep chasing that same rhythm.",
+        "These releases are matching up well. Keep the routine simple and repeat it."
+      ],
+      "action": [
+        "Your {metric} moved around the most. Try five same-spot reps and match the finish.",
+        "The biggest change was {metric}. Slow down and repeat five shots from one spot."
+      ]
+    },
+    {
+      "id": "build-a-sample",
+      "topic": "sample_size",
+      "source_id": "release-variability",
+      "tags": ["sample", "attempts", "shots", "consistency", "repeat", "practice"],
+      "summary": "Consistency needs repeated attempts. One make or miss is not enough to establish a reliable movement pattern.",
+      "positive": [],
+      "action": [
+        "Only one shot here, so consistency is still a question. Add a few more clips.",
+        "One shot is a start, but it cannot show a pattern yet. Add a few more reps."
+      ]
+    },
+    {
+      "id": "limited-footage",
+      "topic": "footage",
+      "source_id": "arc-footage",
+      "tags": ["footage", "camera", "blur", "motion", "confidence", "quality", "recording"],
+      "summary": "Single-camera estimates become less dependable when the camera moves, the frame is blurry, or the shooter and rim are hard to see.",
+      "positive": [
+        "ARC still found a useful shot through a rough clip. That is a decent start.",
+        "The shot stayed visible enough to review. Nice. Take the exact numbers lightly though."
+      ],
+      "action": [
+        "This clip is a little shaky, so keep the next cue simple. Hold your finish and steady the camera if you can.",
+        "The footage makes the angles less certain. Use a steadier view, then check the same shot again."
+      ]
+    }
+  ]
+}

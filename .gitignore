@@ -1,0 +1,9 @@
+.DS_Store
+.venv/
+.pytest_cache/
+*.egg-info/
+**/__pycache__/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+sessions/
