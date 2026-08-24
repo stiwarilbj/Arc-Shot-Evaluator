@@ -21,6 +21,9 @@ def _shot(
     speed: float | None = 7.0,
     height: float | None = 2.3,
     elbow: float | None = 160.0,
+    knee: float | None = 165.0,
+    shoulder: float | None = 120.0,
+    hip: float | None = 170.0,
 ) -> ShotAnalysis:
     return ShotAnalysis(
         id=shot_id,
@@ -33,7 +36,7 @@ def _shot(
         release_height_m=height,
         entry_angle_deg=entry,
         arc_peak_m=3.7,
-        form={"elbow": elbow, "knee": 165.0, "shoulder": 120.0, "hip": 170.0},
+        form={"elbow": elbow, "knee": knee, "shoulder": shoulder, "hip": hip},
         flags=[],
         evidence={
             "rim_track_confidence": 0.9,
@@ -123,7 +126,8 @@ def test_session_advice_names_the_least_consistent_measurement() -> None:
     coaching = generate_coaching(shots, GOOD_QUALITY)
 
     assert "elbow extension" in coaching[1]["tips"][2]["text"].lower()
-    assert coaching[1]["tips"][2]["evidence"]["value"] == "Most variable"
+    assert "130.0°" in coaching[1]["tips"][2]["evidence"]["value"]
+    assert "175.0°" in coaching[1]["tips"][2]["evidence"]["value"]
 
 
 def test_consistent_session_gets_a_positive_repeatability_note() -> None:
@@ -136,7 +140,39 @@ def test_consistent_session_gets_a_positive_repeatability_note() -> None:
     coaching = generate_coaching(shots, GOOD_QUALITY)[1]
 
     assert "steady" in coaching["tips"][2]["text"].lower() or "matching" in coaching["tips"][2]["text"].lower()
-    assert coaching["tips"][2]["evidence"]["value"] == "Steady"
+    assert "160.0°" in coaching["tips"][2]["evidence"]["value"]
+    assert "161.0°" in coaching["tips"][2]["evidence"]["value"]
+
+
+def test_body_cue_uses_joint_stats_and_diverse_sources() -> None:
+    coaching = generate_coaching(
+        [_shot(1, entry=39.0, elbow=132.0, knee=118.0, shoulder=72.0, hip=125.0)],
+        GOOD_QUALITY,
+    )[1]
+
+    text = " ".join(tip["text"] for tip in coaching["tips"])
+    assert "132.0°" in text
+    assert "elbow" in text.lower()
+    assert "wrist" in text.lower() or "legs" in text.lower()
+    assert sum(len(tip["text"].split()) for tip in coaching["tips"]) <= 65
+    source_ids = {source["id"] for source in coaching["sources"]}
+    assert {"fiba-wabc-shooting", "shooting-kinematics", "distance-kinematics"} <= source_ids
+
+
+def test_consistency_cue_can_name_a_variable_knee_pattern() -> None:
+    shots = [
+        _shot(1, knee=122.0, elbow=160.0),
+        _shot(2, knee=166.0, elbow=161.0),
+        _shot(3, knee=140.0, elbow=160.5),
+        _shot(4, knee=174.0, elbow=160.5),
+    ]
+
+    coaching = generate_coaching(shots, GOOD_QUALITY)[1]
+
+    consistency = coaching["tips"][2]
+    assert "knee angle" in consistency["text"].lower()
+    assert "122.0°" in consistency["evidence"]["value"]
+    assert "174.0°" in consistency["evidence"]["value"]
 
 
 def test_readme_has_no_em_dash() -> None:

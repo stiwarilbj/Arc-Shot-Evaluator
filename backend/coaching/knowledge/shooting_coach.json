@@ -25,6 +25,24 @@
       "url": "https://commons.nmu.edu/isbs/vol36/iss1/32/"
     },
     {
+      "id": "fiba-wabc-shooting",
+      "title": "WABC Coach Workbook: Teaching Shooting",
+      "publisher": "FIBA World Association of Basketball Coaches",
+      "url": "https://assets.fiba.basketball/image/upload/documents-corporate-wabc-start-coaching-eng-coach-workbook.pdf"
+    },
+    {
+      "id": "shooting-kinematics",
+      "title": "Kinematic characteristics of proficient basketball shooters",
+      "publisher": "Open-access biomechanics research",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8822900/"
+    },
+    {
+      "id": "distance-kinematics",
+      "title": "Shooting kinematics across distance",
+      "publisher": "Open-access biomechanics research",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9590067/"
+    },
+    {
       "id": "arc-footage",
       "title": "ARC recording guide",
       "publisher": "ARC",
@@ -102,6 +120,51 @@
       "action": [
         "Only one shot here, so consistency is still a question. Add a few more clips.",
         "One shot is a start, but it cannot show a pattern yet. Add a few more reps."
+      ]
+    },
+    {
+      "id": "body-chain",
+      "topic": "body_chain",
+      "source_id": "fiba-wabc-shooting",
+      "tags": ["knee", "hip", "legs", "drive", "base", "balance", "power", "follow", "through", "body", "position"],
+      "summary": "Shooting power should flow from a balanced base through the knees and hips, then up through the arm and held follow-through.",
+      "positive": [
+        "Your leg-to-arm chain looks connected at release. Keep the same base and finish.",
+        "That release has a stable base underneath it. Repeat the same knee dip before adding distance."
+      ],
+      "action": [
+        "Start with a small knee dip, drive up, and let the arm finish last. Use five close reps.",
+        "Keep your chest stacked over your hips, then hold the wrist finish for one count."
+      ]
+    },
+    {
+      "id": "joint-angle-patterns",
+      "topic": "joint_angles",
+      "source_id": "shooting-kinematics",
+      "tags": ["elbow", "knee", "hip", "shoulder", "joint", "angle", "release", "height", "position", "proficient"],
+      "summary": "Joint angles and elbow height describe a visible release pattern, but they should be compared with the player's own repeatable shots.",
+      "positive": [
+        "Those joint angles sit in a repeatable release shape. Keep the same elbow path and leg lift.",
+        "Your upper and lower body angles line up well here. Repeat the shape instead of chasing a new one."
+      ],
+      "action": [
+        "Use the measured joint angle as a cue, not a grade. Match it for five close shots.",
+        "Keep the elbow path and knee lift together; do not change both at once."
+      ]
+    },
+    {
+      "id": "distance-adjustment",
+      "topic": "distance_adjustment",
+      "source_id": "distance-kinematics",
+      "tags": ["distance", "release", "angle", "speed", "height", "arc", "three", "free", "throw"],
+      "summary": "Shooting distance changes the needed release speed, angle, knee and hip motion, so one angle is not a universal target.",
+      "positive": [
+        "The release numbers fit this clip's distance. Keep the same lift before moving farther out.",
+        "That arc and release height give you a useful starting point for this spot."
+      ],
+      "action": [
+        "Keep the same release shape at this distance, then add range only when five shots feel easy.",
+        "Change distance in small steps; keep the knee dip and release angle moving together."
       ]
     },
     {
