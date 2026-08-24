@@ -65,6 +65,10 @@ def update_analysis_job(job_id: str, **values) -> None:
         jobs[job_id].update(values, updated_at=time.time())
 
 
+class AnalysisCancelled(Exception):
+    """Internal signal used to stop a running local analysis cleanly."""
+
+
 def run_analysis_job(job_id: str, source: Path, session_dir: Path, display_name: str) -> None:
     cancel_event = job_cancel_events[job_id]
     try:
@@ -92,12 +96,6 @@ def run_analysis_job(job_id: str, source: Path, session_dir: Path, display_name:
             update_analysis_job(job_id, status="cancelled", stage="Analysis stopped", error=None, result=None)
         else:
             update_analysis_job(job_id, status="error", stage="Analysis failed", error=str(error))
-
-
-class AnalysisCancelled(Exception):
-    """Internal signal used to stop a running local analysis cleanly."""
-
-
 def register_job(job_id: str, value: dict) -> None:
     with jobs_lock:
         jobs[job_id] = value
