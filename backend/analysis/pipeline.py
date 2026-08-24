@@ -1468,6 +1468,10 @@ def refresh_saved_analysis(payload: dict) -> dict:
                     1.0,
                 )
                 shot.evidence["miss_proximity"] = round(miss_proximity, 3)
+            shot.evidence["mechanics_quality"] = mechanics
+            shot.evidence["follow_through_quality"] = follow_through
+            shot.evidence["trajectory_quality"] = trajectory
+            shot.evidence["shot_quality"] = combine_shot_quality(mechanics, follow_through, trajectory)
             shot.confidence = adjust_shot_confidence(
                 shot.confidence,
                 shot.outcome,
