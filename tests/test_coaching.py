@@ -67,7 +67,10 @@ def test_coaching_is_stable_short_grounded_and_has_no_em_dash() -> None:
     assert len(first["tips"]) == 3
     assert sum(len(tip["text"].split()) for tip in first["tips"]) <= 65
     assert "—" not in first["intro"]
+    assert not first["intro"].endswith(".")
     assert all("—" not in tip["text"] for tip in first["tips"])
+    assert all(not tip["text"].endswith(".") for tip in first["tips"])
+    assert len({tip["text"].casefold() for tip in first["tips"]}) == len(first["tips"])
     source_ids = {source["id"] for source in first["sources"]}
     assert source_ids == {source_id for tip in first["tips"] for source_id in tip["source_ids"]}
     assert first["matched_source_count"] == len(first["sources"])

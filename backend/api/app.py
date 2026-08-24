@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.analysis.pipeline import analyze_video, probe_video
+from backend.analysis.pipeline import analyze_video, probe_video, refresh_saved_analysis
 from backend.config import (
     ANALYSIS_SESSIONS_DIR,
     EXAMPLE_VIDEOS_DIR,
@@ -161,7 +161,7 @@ def get_latest_session():
     files = find_saved_analysis_files()
     if not files:
         return JSONResponse(status_code=404, content={"detail": "No analysis sessions yet"})
-    return json.loads(files[0].read_text())
+    return refresh_saved_analysis(json.loads(files[0].read_text()))
 
 
 @app.get("/api/sessions/{session_id}")
@@ -171,7 +171,7 @@ def get_session_by_id(session_id: str):
     path = ANALYSIS_SESSIONS_DIR / session_id / "analysis.json"
     if not path.is_file():
         raise HTTPException(404, "Session not found")
-    return json.loads(path.read_text())
+    return refresh_saved_analysis(json.loads(path.read_text()))
 
 
 def build_example_video_metadata(example_id: str, filename: str, path: Path) -> dict:

@@ -5,6 +5,7 @@ from backend.analysis.pipeline import (
     estimate_mechanics_quality,
     estimate_shot_quality,
     evaluate_net_occlusion,
+    refresh_saved_analysis,
     summarize_session,
 )
 from backend.domain.models import BoundingBox, BallCandidate, FrameDetections, PlayerPose, BallTrackPoint, ShotAnalysis
@@ -140,3 +141,33 @@ def test_ft_projection_rewards_clean_form_and_penalizes_rough_release() -> None:
     assert estimate_shot_quality(clean.form, 7.0, 2.3, 50.0, 3.7) > estimate_shot_quality(
         rough.form, 2.0, 1.3, 25.0, 2.55
     )
+
+
+def test_saved_sessions_backfill_predicted_ft_and_clean_coach_copy() -> None:
+    payload = {
+        "quality": {"tier": "good", "camera_motion": 0.02, "blur_score": 0.8, "pose_coverage": 0.8},
+        "shots": [
+            {
+                "id": 1,
+                "outcome": "make",
+                "confidence": 0.78,
+                "release_frame": 100,
+                "release_time": 3.0,
+                "end_frame": 130,
+                "release_speed_ms": None,
+                "release_height_m": None,
+                "entry_angle_deg": 51.0,
+                "arc_peak_m": None,
+                "form": {"elbow": 166.0, "knee": 160.0, "shoulder": 120.0, "hip": 170.0},
+                "flags": [],
+                "evidence": {"rim_track_confidence": 0.9, "pose_confidence": 0.9},
+            }
+        ],
+    }
+
+    refreshed = refresh_saved_analysis(payload)
+
+    assert refreshed["summary"]["predicted_ft_pct"] is not None
+    assert refreshed["shots"][0]["evidence"]["predicted_ft_pct"] is not None
+    assert refreshed["shots"][0]["confidence"] > 0.78
+    assert not refreshed["shots"][0]["coaching"]["intro"].endswith(".")

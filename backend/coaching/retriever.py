@@ -135,10 +135,40 @@ def build_coaching_tip(
     return {
         "id": tip_id,
         "tone": tone,
-        "text": text.replace("—", "-"),
+        "text": clean_coaching_text(text),
         "evidence": evidence,
         "source_ids": list(dict.fromkeys(source_ids or [note.source_id])),
     }
+
+
+def clean_coaching_text(text: str) -> str:
+    """Keep the compact Coach Notes style consistent across old and new tips."""
+    return re.sub(r"[.!]+$", "", text.replace("—", "-").strip())
+
+
+def make_coaching_tips_unique(tips: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prevent a repeated phrase from taking two of the three coaching slots."""
+    fallbacks = {
+        "positive": "Keep this release shape on the next rep",
+        "action": "Use five close shots and hold the finish",
+        "consistency": "Add a few more reps before judging the pattern",
+    }
+    seen: set[str] = set()
+    output: list[dict[str, Any]] = []
+    for tip in tips:
+        cleaned = clean_coaching_text(str(tip.get("text", "")))
+        key = cleaned.casefold()
+        if key in seen:
+            replacement = fallbacks.get(str(tip.get("tone", "action")), "Repeat the motion slowly")
+            suffix = 2
+            while replacement.casefold() in seen:
+                replacement = f"{fallbacks.get(str(tip.get('tone', 'action')), 'Repeat the motion slowly')} {suffix}"
+                suffix += 1
+            cleaned = replacement
+            key = cleaned.casefold()
+        seen.add(key)
+        output.append({**tip, "text": cleaned})
+    return output
 
 
 def format_angle(value: float) -> str:
@@ -562,11 +592,11 @@ def generate_coaching(shots: list[ShotAnalysis], quality: dict[str, Any]) -> dic
                 )
             )
 
-        tips = tips[:3]
+        tips = make_coaching_tips_unique(tips[:3])
         source_ids = list(dict.fromkeys(source_id for tip in tips for source_id in tip["source_ids"]))
         sources = [build_source_reference(source_id) for source_id in source_ids]
         coaching[shot.id] = {
-            "intro": f"Here’s what stood out on Shot {shot.id}.",
+            "intro": f"Here’s what stood out on Shot {shot.id}",
             "limited": limited,
             "matched_source_count": len(sources),
             "tips": tips,

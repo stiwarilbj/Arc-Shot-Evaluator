@@ -870,7 +870,7 @@ def adjust_shot_confidence(
         elif mechanics_quality < 0.94:
             confidence = min(confidence * 0.94, 0.80)
         else:
-            confidence = min(0.97, confidence * 1.02)
+            confidence = min(0.97, confidence * 1.06)
     if follow_through_quality is not None:
         if follow_through_quality < 0.55:
             confidence = min(confidence * 0.72, 0.48)
@@ -884,7 +884,7 @@ def adjust_shot_confidence(
         elif trajectory_quality < 0.82:
             confidence *= 0.94
         else:
-            confidence = min(0.97, confidence * 1.015)
+            confidence = min(0.97, confidence * 1.04)
     if outcome == "miss":
         if miss_proximity is None:
             confidence = min(confidence * 0.88, 0.73)
@@ -894,7 +894,7 @@ def adjust_shot_confidence(
             and (trajectory_quality is None or trajectory_quality >= 0.68)
         ):
             # A close miss with a clean release is still a strong, useful call.
-            confidence = min(0.91, max(confidence, starting_confidence * 0.90))
+            confidence = min(0.93, max(confidence, starting_confidence * 0.96))
         elif miss_proximity <= 0.25 or (trajectory_quality is not None and trajectory_quality < 0.35):
             confidence = min(confidence * 0.56, 0.46)
         else:
@@ -1336,6 +1336,30 @@ def session_consistency_score(shots: list[ShotAnalysis]) -> float:
     return round(float(np.mean(scores)) if scores else 0.60, 3)
 
 
+def calibrate_session_confidence(shots: list[ShotAnalysis]) -> None:
+    """Give repeatable, close attempts back the confidence a single miss removed."""
+    consistency = session_consistency_score(shots)
+    if consistency < 0.80:
+        return
+    for shot in shots:
+        quality_value = shot.evidence.get("shot_quality")
+        quality = (
+            float(quality_value)
+            if quality_value is not None
+            else estimate_shot_quality(
+                shot.form,
+                shot.release_speed_ms,
+                shot.release_height_m,
+                shot.entry_angle_deg,
+                shot.arc_peak_m,
+            )
+        )
+        proximity = shot.evidence.get("miss_proximity")
+        close_enough = proximity is not None and float(proximity) >= 0.45
+        if quality >= 0.82 and (shot.outcome == "make" or (shot.outcome == "miss" and close_enough)):
+            shot.confidence = round(min(0.95, shot.confidence + 0.05), 3)
+
+
 def predict_ft_percentage(shots: list[ShotAnalysis]) -> float | None:
     """Project a free-throw percentage from visible mechanics and repetition.
 
@@ -1381,7 +1405,93 @@ def predict_ft_percentage(shots: list[ShotAnalysis]) -> float | None:
     return round(float(np.mean(predictions)), 1)
 
 
+def refresh_saved_analysis(payload: dict) -> dict:
+    """Backfill new confidence, FT projection, and coaching fields for old sessions."""
+    raw_shots = payload.get("shots") or []
+    shots: list[ShotAnalysis] = []
+    for index, raw in enumerate(raw_shots, 1):
+        form = raw.get("form") or {}
+        shots.append(
+            ShotAnalysis(
+                id=int(raw.get("id", index)),
+                outcome=str(raw.get("outcome", "review")),
+                confidence=float(raw.get("confidence", 0.5)),
+                release_frame=int(raw.get("release_frame", 0)),
+                release_time=float(raw.get("release_time", 0.0)),
+                end_frame=int(raw.get("end_frame", raw.get("release_frame", 0))),
+                release_speed_ms=raw.get("release_speed_ms"),
+                release_height_m=raw.get("release_height_m"),
+                entry_angle_deg=raw.get("entry_angle_deg"),
+                arc_peak_m=raw.get("arc_peak_m"),
+                form={
+                    "elbow": form.get("elbow"),
+                    "knee": form.get("knee"),
+                    "shoulder": form.get("shoulder"),
+                    "hip": form.get("hip"),
+                },
+                flags=list(raw.get("flags") or []),
+                evidence=dict(raw.get("evidence") or {}),
+                trace=[],
+                coaching=raw.get("coaching"),
+            )
+        )
+    if shots:
+        for shot in shots:
+            mechanics_quality = shot.evidence.get("mechanics_quality")
+            mechanics = (
+                float(mechanics_quality)
+                if mechanics_quality is not None
+                else estimate_mechanics_quality(shot.form)
+            )
+            trajectory_quality = shot.evidence.get("trajectory_quality")
+            trajectory = (
+                float(trajectory_quality)
+                if trajectory_quality is not None
+                else estimate_trajectory_quality(
+                    shot.release_speed_ms,
+                    shot.release_height_m,
+                    shot.entry_angle_deg,
+                    shot.arc_peak_m,
+                )
+            )
+            follow_through_quality = shot.evidence.get("follow_through_quality")
+            follow_through = (
+                float(follow_through_quality)
+                if follow_through_quality is not None
+                else estimate_follow_through_quality(shot.form)
+            )
+            miss_proximity = shot.evidence.get("miss_proximity")
+            if miss_proximity is None and shot.evidence.get("crossing_offset_rim") is not None:
+                miss_proximity = clamp(
+                    1.0 - float(shot.evidence["crossing_offset_rim"]) / 2.45,
+                    0.0,
+                    1.0,
+                )
+                shot.evidence["miss_proximity"] = round(miss_proximity, 3)
+            shot.confidence = adjust_shot_confidence(
+                shot.confidence,
+                shot.outcome,
+                mechanics,
+                outcome_supported=bool(
+                    shot.outcome == "make"
+                    and shot.evidence.get("crossing_frame") is not None
+                    and (
+                        shot.evidence.get("net_drag_confirmed")
+                        or shot.evidence.get("reappeared_below_rim")
+                    )
+                ),
+                trajectory_quality=trajectory,
+                follow_through_quality=follow_through,
+                miss_proximity=miss_proximity,
+            )
+        attach_coaching(shots, payload.get("quality") or {})
+    payload["summary"] = summarize_session(shots)
+    payload["shots"] = [shot.to_public_dict() for shot in shots]
+    return payload
+
+
 def summarize_session(shots: list[ShotAnalysis]) -> dict:
+    calibrate_session_confidence(shots)
     decided = [shot for shot in shots if shot.outcome in {"make", "miss"}]
     makes = sum(shot.outcome == "make" for shot in decided)
     streak = best = 0
@@ -1431,17 +1541,17 @@ def build_footage_quality_report(
     tier = "good" if score >= 0.78 else "limited" if score >= 0.48 else "insufficient"
     messages: list[str] = []
     if rim_coverage < 0.35:
-        messages.append("Keep the rim unobstructed and large enough to see throughout each attempt.")
+        messages.append("Keep the rim unobstructed and large enough to see throughout each attempt")
     if pose_coverage < 0.35:
-        messages.append("Keep the shooter's full body visible for reliable joint angles.")
+        messages.append("Keep the shooter's full body visible for reliable joint angles")
     if max(model_ball_coverage, any_ball_coverage) < 0.025:
-        messages.append("The ball is rarely visible; move the camera closer or use a higher-resolution clip.")
+        messages.append("The ball is rarely visible; move the camera closer or use a higher-resolution clip")
     if camera_motion > 0.10:
-        messages.append("The camera moves substantially; physical measurements are lower-confidence estimates.")
+        messages.append("The camera moves substantially; physical measurements are lower-confidence estimates")
     if blur_score < 0.22:
-        messages.append("Motion blur is substantial; temporal tracking was widened and release timing is estimated.")
+        messages.append("Motion blur is substantial; temporal tracking was widened and release timing is estimated")
     if meta.fps < 24:
-        messages.append("Frame rate is below 24 fps, which reduces release and occlusion timing precision.")
+        messages.append("Frame rate is below 24 fps, which reduces release and occlusion timing precision")
     orientation = "portrait" if meta.height > meta.width * 1.08 else "landscape" if meta.width > meta.height * 1.08 else "square"
     return {
         "tier": tier,
@@ -1495,9 +1605,9 @@ def analyze_video(
     attach_coaching(shots, quality)
     warnings: list[str] = []
     if not any(rim is not None for rim in rims):
-        warnings.append("No stable rim track was found; use a clearer side-on clip.")
+        warnings.append("No stable rim track was found; use a clearer side-on clip")
     if not shots:
-        warnings.append("No complete shot trajectory was found. Keep the ball, shooter, and rim visible.")
+        warnings.append("No complete shot trajectory was found. Keep the ball, shooter, and rim visible")
     warnings.extend(quality["messages"])
     if progress:
         progress("Rendering review videos", 0, meta.frame_count)

@@ -25,6 +25,10 @@ function sourceRows(coaching: ShotCoaching) {
   }).slice(0, 3);
 }
 
+function displayText(value: string) {
+  return value.replace(/[.!]+$/, "");
+}
+
 function evidenceText(evidence: ShotCoaching["tips"][number]["evidence"]) {
   if (!evidence) return "Coaching cue";
   if (evidence.metric === "session.attempts") {
@@ -38,7 +42,17 @@ export function CoachNotes({ shot }: CoachNotesProps) {
   const coaching = shot.coaching;
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
-  const rows = useMemo(() => coaching ? sourceRows(coaching) : [], [coaching]);
+  const tips = useMemo(() => {
+    if (!coaching) return [];
+    const seen = new Set<string>();
+    return coaching.tips.filter((tip) => {
+      const key = displayText(tip.text).trim().toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [coaching]);
+  const rows = useMemo(() => coaching ? sourceRows({ ...coaching, tips }) : [], [coaching, tips]);
 
   useEffect(() => setExpanded(false), [shot.id]);
 
@@ -49,14 +63,14 @@ export function CoachNotes({ shot }: CoachNotesProps) {
     <section className={`coach-notes ${coaching.limited ? "coach-notes-limited" : ""}`} aria-label={`Coach Notes for Shot ${shot.id}`}>
       <div className="coach-notes-main">
         <h2>Coach Notes</h2>
-        <p className="coach-intro">{coaching.intro}</p>
+        <p className="coach-intro">{displayText(coaching.intro)}</p>
         <ul className="coach-tip-list">
-          {coaching.tips.map((tip) => {
+          {tips.map((tip) => {
             const Icon = ICONS[tip.tone];
             return (
               <li className={`coach-tip coach-tip-${tip.tone}`} key={tip.id}>
                 <Icon size={17} aria-hidden="true" />
-                <span>{tip.text}</span>
+                <span>{displayText(tip.text)}</span>
               </li>
             );
           })}
@@ -93,7 +107,7 @@ export function CoachNotes({ shot }: CoachNotesProps) {
                 );
               })}
             </div>
-            <p>Single-camera numbers can be a little off.</p>
+            <p>Single-camera numbers can be a little off</p>
             <button className="coach-hide-details" type="button" onClick={() => setExpanded(false)}>Hide details</button>
           </div>
         ) : null}

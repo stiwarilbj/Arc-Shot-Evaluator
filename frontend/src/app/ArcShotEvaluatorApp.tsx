@@ -309,7 +309,7 @@ export function ArcShotEvaluatorApp() {
             setSelectedShot(index);
             setTab("shot");
           }} />
-          {session.warnings.length ? <div className="warning-row" role="status">{session.warnings.join(" · ")}</div> : null}
+          {session.warnings.length ? <div className="warning-row" role="status">{session.warnings.map((warning) => warning.replace(/[.!]+$/, "")).join(" · ")}</div> : null}
         </div>
         <aside className="analysis-side-workspace">
           <AnalysisQueue items={queue} compact {...queueActions} />
