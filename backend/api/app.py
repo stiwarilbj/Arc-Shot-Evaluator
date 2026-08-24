@@ -6,7 +6,7 @@ import shutil
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -49,6 +49,8 @@ EXAMPLE_FILES = (
 app = FastAPI(title="ARC Local Shot Analysis", version="1.0.0")
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
+job_cancel_events: dict[str, threading.Event] = {}
+job_futures: dict[str, Future] = {}
 try:
     ANALYSIS_WORKERS = max(1, min(4, int(os.environ.get("ARC_WORKERS", "2"))))
 except ValueError:
@@ -64,16 +66,52 @@ def update_analysis_job(job_id: str, **values) -> None:
 
 
 def run_analysis_job(job_id: str, source: Path, session_dir: Path, display_name: str) -> None:
+    cancel_event = job_cancel_events[job_id]
     try:
+        if cancel_event.is_set():
+            raise AnalysisCancelled
         update_analysis_job(job_id, status="processing", stage="Loading local vision models")
 
         def progress(stage: str, done: int, total: int) -> None:
+            if cancel_event.is_set():
+                raise AnalysisCancelled
             update_analysis_job(job_id, stage=stage, frames_done=done, frames_total=total)
 
         result = analyze_video(source, session_dir, progress, display_name=display_name)
+        if cancel_event.is_set():
+            raise AnalysisCancelled
         update_analysis_job(job_id, status="done", stage="Analysis complete", result=result)
+    except AnalysisCancelled:
+        # A cancelled run is disposable local working data. Remove the
+        # partial session so a stopped video never looks like a completed one.
+        shutil.rmtree(session_dir, ignore_errors=True)
+        update_analysis_job(job_id, status="cancelled", stage="Analysis stopped", error=None, result=None)
     except Exception as error:  # surfaced to the local UI
-        update_analysis_job(job_id, status="error", stage="Analysis failed", error=str(error))
+        if cancel_event.is_set():
+            shutil.rmtree(session_dir, ignore_errors=True)
+            update_analysis_job(job_id, status="cancelled", stage="Analysis stopped", error=None, result=None)
+        else:
+            update_analysis_job(job_id, status="error", stage="Analysis failed", error=str(error))
+
+
+class AnalysisCancelled(Exception):
+    """Internal signal used to stop a running local analysis cleanly."""
+
+
+def register_job(job_id: str, value: dict) -> None:
+    with jobs_lock:
+        jobs[job_id] = value
+        job_cancel_events[job_id] = threading.Event()
+        if len(jobs) > 100:
+            finished = [key for key, item in jobs.items() if item["status"] in {"done", "error", "cancelled"}]
+            for old_id in finished[: len(jobs) - 100]:
+                jobs.pop(old_id, None)
+                job_cancel_events.pop(old_id, None)
+                job_futures.pop(old_id, None)
+
+
+def submit_analysis_job(job_id: str, source: Path, session_dir: Path, display_name: str) -> None:
+    job_futures[job_id] = executor.submit(run_analysis_job, job_id, source, session_dir, display_name)
 
 
 def queue_analysis_job(source: Path, display_name: str) -> str:
@@ -92,13 +130,8 @@ def queue_analysis_job(source: Path, display_name: str) -> str:
         "error": None,
         "result": None,
     }
-    with jobs_lock:
-        jobs[job_id] = value
-        if len(jobs) > 100:
-            finished = [key for key, item in jobs.items() if item["status"] in {"done", "error"}]
-            for old_id in finished[: len(jobs) - 100]:
-                jobs.pop(old_id, None)
-    executor.submit(run_analysis_job, job_id, source, session_dir, display_name)
+    register_job(job_id, value)
+    submit_analysis_job(job_id, source, session_dir, display_name)
     return job_id
 
 
@@ -199,13 +232,8 @@ async def create_uploaded_video_job(file: UploadFile) -> dict:
         "error": None,
         "result": None,
     }
-    with jobs_lock:
-        jobs[job_id] = value
-        if len(jobs) > 100:
-            finished = [key for key, item in jobs.items() if item["status"] in {"done", "error"}]
-            for old_id in finished[: len(jobs) - 100]:
-                jobs.pop(old_id, None)
-    executor.submit(run_analysis_job, job_id, source, session_dir, display_name)
+    register_job(job_id, value)
+    submit_analysis_job(job_id, source, session_dir, display_name)
     return {"job_id": job_id}
 
 
@@ -232,6 +260,26 @@ def get_analysis_job(job_id: str) -> dict:
         value = jobs.get(job_id)
         if value is None:
             raise HTTPException(404, "Job not found")
+        return dict(value)
+
+
+@app.delete("/api/jobs/{job_id}")
+def cancel_analysis_job(job_id: str) -> dict:
+    """Request a cooperative stop for a queued or running local analysis."""
+    with jobs_lock:
+        value = jobs.get(job_id)
+        if value is None:
+            raise HTTPException(404, "Job not found")
+        if value["status"] in {"done", "error", "cancelled"}:
+            return dict(value)
+        event = job_cancel_events.get(job_id)
+        if event:
+            event.set()
+        future = job_futures.get(job_id)
+        if future and future.cancel():
+            value.update(status="cancelled", stage="Analysis stopped", error=None, result=None, updated_at=time.time())
+        else:
+            value.update(stage="Stopping analysis", updated_at=time.time())
         return dict(value)
 
 

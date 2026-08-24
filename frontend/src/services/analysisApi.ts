@@ -33,3 +33,9 @@ export async function startExampleVideoAnalysis(exampleId: string): Promise<stri
 export async function fetchAnalysisJob(jobId: string, signal?: AbortSignal): Promise<AnalysisJobState> {
   return parseJsonResponse<AnalysisJobState>(await fetch(`/api/jobs/${jobId}`, { signal }));
 }
+
+export async function cancelAnalysisJob(jobId: string): Promise<AnalysisJobState> {
+  return parseJsonResponse<AnalysisJobState>(
+    await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" }),
+  );
+}

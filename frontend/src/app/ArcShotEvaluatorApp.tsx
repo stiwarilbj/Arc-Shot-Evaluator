@@ -9,6 +9,7 @@ import { ExampleVideoLibrary } from "../features/upload/ExampleVideoLibrary";
 import { VideoUpload } from "../features/upload/VideoUpload";
 import { AppHeader } from "../layout/AppHeader";
 import {
+  cancelAnalysisJob,
   fetchAnalysisJob,
   fetchExampleVideos,
   startExampleVideoAnalysis,
@@ -72,6 +73,7 @@ export function ArcShotEvaluatorApp() {
   // an old video or replaying a stale analysis.
   const [session, setSession] = useState<AnalysisSession | null>(null);
   const [queue, setQueue] = useState<AnalysisQueueItem[]>([]);
+  const [hiddenQueueIds, setHiddenQueueIds] = useState<Set<string>>(new Set());
   const [examples, setExamples] = useState<ExampleVideo[]>([]);
   const [examplesLoading, setExamplesLoading] = useState(true);
   const [examplesError, setExamplesError] = useState<string | null>(null);
@@ -84,6 +86,8 @@ export function ArcShotEvaluatorApp() {
     return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark";
   });
   const activeQueueItemsRef = useRef<Set<string>>(new Set());
+  const cancelledQueueItemsRef = useRef<Set<string>>(new Set());
+  const jobIdsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -108,13 +112,21 @@ export function ArcShotEvaluatorApp() {
 
   async function processQueuedAnalysis(item: AnalysisQueueItem) {
     try {
+      if (cancelledQueueItemsRef.current.has(item.id)) return;
       updateAnalysisQueueItem(item.id, { status: "processing", stage: "Starting local analysis", progress: 3, error: null });
       const jobId = item.kind === "example"
         ? await startExampleVideoAnalysis(item.exampleId ?? "")
         : await startUploadedVideoAnalysis(item.file as File);
+      jobIdsRef.current.set(item.id, jobId);
+      if (cancelledQueueItemsRef.current.has(item.id)) {
+        await cancelAnalysisJob(jobId).catch(() => undefined);
+        return;
+      }
+      updateAnalysisQueueItem(item.id, { jobId });
 
       while (true) {
         const next = await fetchAnalysisJobWithRetries(jobId);
+        if (cancelledQueueItemsRef.current.has(item.id)) return;
         const rawProgress = next.frames_total
           ? Math.round((next.frames_done / next.frames_total) * 100)
           : 0;
@@ -130,7 +142,13 @@ export function ArcShotEvaluatorApp() {
               ? Math.min(90, Math.max(4, rawProgress))
               : 3;
         updateAnalysisQueueItem(item.id, {
-          status: next.status === "error" ? "error" : next.status === "done" ? "done" : "processing",
+          status: next.status === "error"
+            ? "error"
+            : next.status === "done"
+              ? "done"
+              : next.status === "cancelled"
+                ? "cancelled"
+                : "processing",
           stage: next.stage,
           progress,
           error: next.error,
@@ -143,15 +161,19 @@ export function ArcShotEvaluatorApp() {
           setTab(next.result.shots.length ? "shot" : "overview");
           return;
         }
+        if (next.status === "cancelled") return;
         if (next.status === "error") throw new Error(next.error ?? "Analysis failed");
         await delay(WAIT_MS);
       }
     } catch (caught) {
+      if (cancelledQueueItemsRef.current.has(item.id)) return;
       const message = caught instanceof Error ? caught.message : "Analysis failed";
       updateAnalysisQueueItem(item.id, { status: "error", stage: "Analysis failed", error: message });
       setError(message);
     } finally {
       activeQueueItemsRef.current.delete(item.id);
+      jobIdsRef.current.delete(item.id);
+      cancelledQueueItemsRef.current.delete(item.id);
     }
   }
 
@@ -178,6 +200,51 @@ export function ArcShotEvaluatorApp() {
     setQueue((current) => [...current, createQueuedAnalysis(example.filename, undefined, example.id)]);
   }
 
+  function requestQueueCancellation(item: AnalysisQueueItem) {
+    cancelledQueueItemsRef.current.add(item.id);
+    const jobId = item.jobId ?? jobIdsRef.current.get(item.id);
+    if (jobId) void cancelAnalysisJob(jobId).catch(() => undefined);
+  }
+
+  function removeQueueItem(item: AnalysisQueueItem) {
+    if (item.status === "processing" || activeQueueItemsRef.current.has(item.id)) requestQueueCancellation(item);
+    setQueue((current) => current.filter((queuedItem) => queuedItem.id !== item.id));
+    setHiddenQueueIds((current) => {
+      if (!current.has(item.id)) return current;
+      const next = new Set(current);
+      next.delete(item.id);
+      return next;
+    });
+  }
+
+  function clearQueue() {
+    queue.forEach((item) => {
+      if (item.status === "processing" || activeQueueItemsRef.current.has(item.id)) requestQueueCancellation(item);
+    });
+    setQueue([]);
+    setHiddenQueueIds(new Set());
+  }
+
+  function hideQueueItem(item: AnalysisQueueItem) {
+    if (item.status === "processing") return;
+    setHiddenQueueIds((current) => new Set(current).add(item.id));
+  }
+
+  function showHiddenQueueItems() {
+    setHiddenQueueIds(new Set());
+  }
+
+  const queueActions = {
+    hiddenIds: hiddenQueueIds,
+    onFiles: enqueueUploadedVideos,
+    onSelectResult: openCompletedAnalysis,
+    onClear: clearQueue,
+    onCancel: removeQueueItem,
+    onDelete: removeQueueItem,
+    onHide: hideQueueItem,
+    onShowHidden: showHiddenQueueItems,
+  };
+
   function openCompletedAnalysis(item: AnalysisQueueItem) {
     if (!item.result) return;
     setSession(item.result);
@@ -196,7 +263,7 @@ export function ArcShotEvaluatorApp() {
   }
 
   const queuePanel = (
-    <AnalysisQueue items={queue} onFiles={enqueueUploadedVideos} onSelectResult={openCompletedAnalysis} />
+    <AnalysisQueue items={queue} {...queueActions} />
   );
 
   if (!session) {
@@ -216,7 +283,7 @@ export function ArcShotEvaluatorApp() {
 
   const shot = session.shots[selectedShot] ?? null;
   return (
-    <div className="app-shell">
+    <div className="app-shell analysis-session-shell">
       <AppHeader filename={session.session.filename} complete onReset={showHomePage} theme={theme} onThemeChange={setTheme} />
       <nav className="workspace-tabs" aria-label="Analysis views">
         <TabButton active={tab === "overview"} onClick={() => setTab("overview")} icon={<BarChart3 size={17} />} label="Overview" />
@@ -244,7 +311,7 @@ export function ArcShotEvaluatorApp() {
           {session.warnings.length ? <div className="warning-row" role="status">{session.warnings.join(" · ")}</div> : null}
         </div>
         <aside className="analysis-side-workspace">
-          <AnalysisQueue items={queue} compact onFiles={enqueueUploadedVideos} onSelectResult={openCompletedAnalysis} />
+          <AnalysisQueue items={queue} compact {...queueActions} />
           <div className={`analysis-detail-columns ${shot?.coaching ? "" : "analysis-detail-legacy"}`}>
             {shot?.coaching ? <CoachNotes shot={shot} /> : null}
             <ShotDataPanel session={session} shot={shot} tab={tab} />

@@ -109,7 +109,7 @@ export interface AnalysisSession {
 export interface AnalysisJobState {
   id: string;
   filename: string;
-  status: "queued" | "processing" | "done" | "error";
+  status: "queued" | "processing" | "done" | "error" | "cancelled";
   stage: string;
   frames_done: number;
   frames_total: number;
@@ -129,7 +129,7 @@ export interface ExampleVideo {
   fps: number;
 }
 
-export type AnalysisQueueStatus = "queued" | "processing" | "done" | "error";
+export type AnalysisQueueStatus = "queued" | "processing" | "done" | "error" | "cancelled";
 
 export interface AnalysisQueueItem {
   id: string;
@@ -137,6 +137,7 @@ export interface AnalysisQueueItem {
   kind: "upload" | "example";
   file?: File;
   exampleId?: string;
+  jobId?: string;
   status: AnalysisQueueStatus;
   stage: string;
   progress: number;

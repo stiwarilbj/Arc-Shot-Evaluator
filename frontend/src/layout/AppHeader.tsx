@@ -23,16 +23,6 @@ export function AppHeader({ filename, complete, showReset = false, onReset, them
       <div className="header-actions">
         <div className="theme-switch" role="group" aria-label="Color theme">
           <button
-            className={theme === "light" ? "is-active" : ""}
-            type="button"
-            aria-label="Light"
-            aria-pressed={theme === "light"}
-            onClick={() => onThemeChange("light")}
-          >
-            <Sun aria-hidden="true" size={14} />
-            <span>Light</span>
-          </button>
-          <button
             className={theme === "dark" ? "is-active" : ""}
             type="button"
             aria-label="Dark"
@@ -41,6 +31,16 @@ export function AppHeader({ filename, complete, showReset = false, onReset, them
           >
             <Moon aria-hidden="true" size={14} />
             <span>Dark</span>
+          </button>
+          <button
+            className={theme === "light" ? "is-active" : ""}
+            type="button"
+            aria-label="Light"
+            aria-pressed={theme === "light"}
+            onClick={() => onThemeChange("light")}
+          >
+            <Sun aria-hidden="true" size={14} />
+            <span>Light</span>
           </button>
         </div>
         {complete ? (
