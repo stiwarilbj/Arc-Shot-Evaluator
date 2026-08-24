@@ -51,10 +51,10 @@ def test_confidence_respects_mechanics_quality_and_outcome() -> None:
     assert good_quality is not None and rough_quality is not None
     assert good_quality > rough_quality
 
-    good_make = adjust_shot_confidence(0.88, "make", good_quality)
+    good_make = adjust_shot_confidence(0.78, "make", good_quality, outcome_supported=True)
     rough_make = adjust_shot_confidence(0.88, "make", rough_quality)
     miss = adjust_shot_confidence(0.88, "miss", good_quality)
-    assert good_make >= 0.88
+    assert good_make >= 0.84
     assert rough_make < good_make
     assert miss < good_make
     assert rough_make <= 0.78

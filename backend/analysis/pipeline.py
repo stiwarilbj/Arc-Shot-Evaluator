@@ -733,6 +733,8 @@ def adjust_shot_confidence(
     base_confidence: float,
     outcome: str,
     mechanics_quality: float | None,
+    *,
+    outcome_supported: bool = False,
 ) -> float:
     """Blend tracking confidence with soft outcome and mechanics signals.
 
@@ -752,6 +754,8 @@ def adjust_shot_confidence(
                 confidence = min(confidence, 0.78)
         elif mechanics_quality >= 0.92:
             confidence = min(0.97, confidence * 1.02)
+            if outcome == "make" and outcome_supported:
+                confidence = max(confidence, 0.84)
     if outcome == "miss":
         confidence = min(confidence * 0.88, 0.73)
     return round(clamp(confidence, 0.18, 0.97), 3)
@@ -1041,7 +1045,17 @@ def _measure_shot(
     )
     if mechanics_quality is not None and mechanics_quality < 0.88:
         flags.append("release mechanics lowered confidence; treat the form estimate as a cue")
-    confidence = adjust_shot_confidence(confidence, outcome, mechanics_quality)
+    outcome_supported = bool(
+        outcome == "make"
+        and crossing is not None
+        and (net_evidence["net_drag_confirmed"] or net_evidence["reappeared_below_rim"])
+    )
+    confidence = adjust_shot_confidence(
+        confidence,
+        outcome,
+        mechanics_quality,
+        outcome_supported=outcome_supported,
+    )
 
     return ShotAnalysis(
         id=shot_id,
