@@ -6,6 +6,7 @@ import {
   RotateCcw,
   RotateCw,
   Volume2,
+  VolumeX,
 } from "lucide-react";
 import type { AnalysisSession, ShotAnalysis, VideoMode } from "../../domain/analysisTypes";
 
@@ -37,6 +38,7 @@ export function VideoWorkspace({ session, shot, mode, onMode }: VideoWorkspacePr
   const [duration, setDuration] = useState(session.session.duration);
   const [playing, setPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [muted, setMuted] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const sources = session.artifacts;
   const source = sources[mode];
@@ -54,8 +56,10 @@ export function VideoWorkspace({ session, shot, mode, onMode }: VideoWorkspacePr
 
   useEffect(() => {
     const video = videoRef.current;
-    if (video) video.playbackRate = playbackRate;
-  }, [playbackRate, source]);
+    if (!video) return;
+    video.playbackRate = playbackRate;
+    video.muted = muted;
+  }, [muted, playbackRate, source]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -115,6 +119,7 @@ export function VideoWorkspace({ session, shot, mode, onMode }: VideoWorkspacePr
           onLoadedMetadata={(event) => {
             const video = event.currentTarget;
             video.playbackRate = playbackRate;
+            video.muted = muted;
             setDuration(video.duration || session.session.duration);
             video.currentTime = Math.min(resumeTimeRef.current, Math.max(0, video.duration - 0.05));
             if (resumePlaybackRef.current) {
@@ -175,7 +180,20 @@ export function VideoWorkspace({ session, shot, mode, onMode }: VideoWorkspacePr
             {PLAYBACK_RATES.map((rate) => <option key={rate} value={rate}>{formatRate(rate)}</option>)}
           </select>
         </label>
-        <Volume2 className="transport-icon" aria-hidden="true" size={18} />
+        <button
+          className="icon-button volume-button"
+          type="button"
+          aria-label={muted ? "Unmute video" : "Mute video"}
+          aria-pressed={muted}
+          title={muted ? "Unmute video" : "Mute video"}
+          onClick={() => {
+            const nextMuted = !muted;
+            setMuted(nextMuted);
+            if (videoRef.current) videoRef.current.muted = nextMuted;
+          }}
+        >
+          {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+        </button>
         <button
           className="icon-button"
           type="button"
