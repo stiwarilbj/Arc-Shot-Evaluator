@@ -1,5 +1,5 @@
 ```bash
-cd ~/Downloads/Arc-Shot-Evaluator-main
+cd Arc-Shot-Evaluator
 ./scripts/setup.sh  # first run only
 ./scripts/start.sh
 ```
@@ -10,7 +10,7 @@ Then open <http://127.0.0.1:7888>. After the first setup, future runs only need:
 ./scripts/start.sh
 ```
 
-If you put the folder somewhere else, change the `cd` path to that folder.
+If you downloaded the ZIP into another folder, change the `cd` path to that folder.
 
 The setup script uses `pnpm` when it is installed and automatically falls back
 to `npm` when it is not. You only need Node.js and `uv`; there is no separate
