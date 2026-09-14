@@ -3,6 +3,32 @@ export type VideoMode = "original" | "annotated" | "pose";
 export type WorkspaceTab = "overview" | "shot" | "tracking";
 export type ThemeMode = "light" | "dark";
 export type ProcessingMode = "normal" | "deep";
+export type ShotMode = "free_throw" | "jump_shot";
+
+export interface JumpPrediction {
+  status: string;
+  model: string | null;
+  calibration_model?: string | null;
+  cutoff: string;
+  cutoff_ms_after_release?: number;
+  cutoff_frame?: number;
+  sample_size: number;
+  probability: number | null;
+  reason?: string;
+  supported_cohort?: string | null;
+}
+
+export interface CourtCalibration {
+  id?: string;
+  preset: "nba" | "wnba" | "ncaa" | "fiba" | "high_school" | "custom" | "unknown";
+  units?: "m" | "ft";
+  image_points: number[][];
+  world_points: number[][];
+  basket_ground_image?: number[];
+  uncertainty_m?: number;
+  three_point_radius_m?: number;
+  three_point_line_width_m?: number;
+}
 
 export interface ShotCoaching {
   intro: string;
@@ -35,6 +61,7 @@ export interface ShotAnalysis {
   confidence: number;
   observation_confidence?: number;
   confidence_label: "high" | "medium" | "review";
+  shot_mode?: ShotMode;
   release_frame: number;
   release_time: number;
   end_frame: number;
@@ -80,6 +107,59 @@ export interface ShotAnalysis {
     predicted_ft_pct?: number | null;
     session_consistency_score?: number | null;
     prediction_status?: string;
+    shot_type?: string;
+    statistics_eligibility?: { status: string; reason?: string };
+    motion_events?: {
+      timing_available?: boolean;
+      gather_frame?: number | null;
+      loading_frame?: number | null;
+      takeoff_frame?: number | null;
+      release_frame?: number | null;
+      landing_frame?: number | null;
+      follow_through_end_frame?: number | null;
+      follow_through_duration_ms?: number | null;
+      release_after_takeoff_ms?: number | null;
+      jump_height_projected_px?: number | null;
+      motion_type?: string;
+      uncertainty_frames?: number | null;
+    };
+    shooter_association_confidence?: number;
+    distance?: {
+      value: number | null;
+      units: string;
+      availability: boolean;
+      method: string;
+      uncertainty: number | null;
+      shot_type?: string;
+      basket_projection_basis?: string;
+      calibration_quality?: string;
+    };
+    defenders?: Array<{
+      id: string;
+      role?: string;
+      separation?: { value: number | null; units: string; availability: boolean; method: string; uncertainty: number | null };
+      closing_speed?: { value: number | null; units: string; availability: boolean; method: string; uncertainty: number | null };
+      approach_direction_deg?: number | null;
+      body_orientation_deg?: number | null;
+      arm_extension?: number | null;
+      hand_elevation_relative?: number | null;
+      hand_position_relative?: string;
+      timing_available?: boolean;
+      evidence_frames?: number[];
+      uncertainty?: string;
+    }>;
+    team_assignments?: Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown">;
+    player_height_m?: number | null;
+    mechanics_assessment?: {
+      status: string;
+      overall: number | null;
+      components: Record<string, number | string | null>;
+      uncertainty?: number | null;
+    };
+    predictions?: {
+      release?: JumpPrediction;
+      release_plus_200ms?: JumpPrediction;
+    };
     metric_availability?: Record<string, boolean>;
     metric_uncertainty?: Record<string, number | null>;
     measurement_space?: string;
@@ -109,6 +189,13 @@ export interface AnalysisSession {
     source_frame_count?: number | null;
     timing_preserved?: boolean;
     slow_motion_unknown?: boolean;
+    source_timing?: {
+      kind: string;
+      mapping: string;
+      fps: number;
+      frame_count: number;
+      unknown: boolean;
+    };
   };
   summary: {
     attempts: number;
@@ -116,6 +203,10 @@ export interface AnalysisSession {
     misses: number;
     review: number;
     fg_pct: number | null;
+    observed_fg_pct?: number | null;
+    observed_three_pct?: number | null;
+    detected_attempts?: number;
+    excluded_attempts?: number;
     observed_ft_pct?: number | null;
     predicted_ft_pct?: number | null;
     prediction_status?: string;
@@ -127,12 +218,20 @@ export interface AnalysisSession {
   analysis_version?: string;
   models?: Record<string, string>;
   processing_mode?: ProcessingMode;
+  shot_mode?: ShotMode;
   prediction?: {
     status: string;
     model: string | null;
     cutoff: number | null;
     sample_size: number;
   };
+  jump_predictions?: {
+    status: string;
+    models: Record<string, string> | null;
+    cutoffs: string[];
+  };
+  context?: { court_calibration?: CourtCalibration; player_heights?: Record<string, number>; shot_mode?: ShotMode };
+  players?: Array<{ id: string; frame_start: number | null; frame_end: number | null; frames: number; confidence: number }>;
   corrections?: { count: number; source: string | null };
   quality?: {
     tier: "good" | "limited" | "insufficient";
@@ -176,6 +275,7 @@ export interface AnalysisJobState {
   error: string | null;
   result: AnalysisSession | null;
   processing_mode?: ProcessingMode;
+  shot_mode?: ShotMode;
 }
 
 export interface ExampleVideo {
@@ -187,6 +287,7 @@ export interface ExampleVideo {
   width: number;
   height: number;
   fps: number;
+  supported_modes?: ShotMode[];
 }
 
 export type AnalysisQueueStatus = "queued" | "processing" | "done" | "error" | "cancelled";
@@ -204,4 +305,5 @@ export interface AnalysisQueueItem {
   result: AnalysisSession | null;
   error: string | null;
   processingMode: ProcessingMode;
+  shotMode: ShotMode;
 }

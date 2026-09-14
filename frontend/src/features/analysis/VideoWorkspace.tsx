@@ -15,6 +15,7 @@ interface VideoWorkspaceProps {
   shot: ShotAnalysis | null;
   mode: VideoMode;
   onMode: (mode: VideoMode) => void;
+  seekFrame?: number | null;
 }
 
 function formatTime(value: number) {
@@ -30,7 +31,7 @@ function formatRate(rate: number) {
   return `${rate % 1 === 0 ? rate.toFixed(1) : rate}×`;
 }
 
-export function VideoWorkspace({ session, shot, mode, onMode }: VideoWorkspaceProps) {
+export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null }: VideoWorkspaceProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const resumeTimeRef = useRef(0);
   const resumePlaybackRef = useRef(false);
@@ -68,6 +69,14 @@ export function VideoWorkspace({ session, shot, mode, onMode }: VideoWorkspacePr
     resumeTimeRef.current = target;
     if (video.readyState >= 1) video.currentTime = target;
   }, [shot?.id, shot?.release_time]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || seekFrame == null) return;
+    const target = Math.max(0, seekFrame / Math.max(1, session.session.fps));
+    video.currentTime = Math.min(target, video.duration || session.session.duration);
+    setCurrentTime(video.currentTime);
+  }, [seekFrame, session.session.duration, session.session.fps]);
 
   const modes = useMemo(
     () => [

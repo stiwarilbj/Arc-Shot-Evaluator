@@ -53,6 +53,32 @@ def test_analysis_mode_is_explicit() -> None:
     assert "normal or deep" in response.json()["detail"]
 
 
+def test_shot_mode_is_explicit() -> None:
+    response = TestClient(app).post("/api/examples/example-1/jobs?shot_mode=unsupported")
+    assert response.status_code == 400
+    assert "free_throw or jump_shot" in response.json()["detail"]
+
+
+def test_context_requires_four_court_landmarks(tmp_path, monkeypatch) -> None:
+    session_dir = tmp_path / "session-context"
+    session_dir.mkdir()
+    (session_dir / "analysis.json").write_text(json.dumps({
+        "shot_mode": "jump_shot",
+        "session": {"id": "session-context", "fps": 30},
+        "summary": {},
+        "shots": [],
+    }))
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+
+    response = TestClient(app).patch("/api/sessions/session-context/context", json={
+        "court_calibration": {"preset": "nba", "image_points": [[0, 0]], "world_points": [[0, 0]]},
+    })
+
+    assert response.status_code == 400
+    assert "four image points" in response.json()["detail"]
+
+
 def test_shot_correction_is_separate_from_model_evidence(tmp_path, monkeypatch) -> None:
     session_dir = tmp_path / "session-1"
     session_dir.mkdir()

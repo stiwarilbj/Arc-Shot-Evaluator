@@ -1,0 +1,9 @@
+{
+  "source": {"uri": "", "sha256": "", "rights": "commercial_or_public_release", "license": "", "duplicate_group": "", "game_or_session": "", "venue_id": "", "cohort": "amateur|college|professional"},
+  "shot": {"id": "", "outcome": "make|miss|review", "shot_type": "three_pointer|mid_range|unknown", "motion_type": "catch_and_shoot|pull_up|step_back|fadeaway|unknown", "shooter_id": "", "defender_ids": [], "team_assignments": {}, "review_status": "two_reviewer_adjudicated"},
+  "events": {"gather_frame": null, "takeoff_frame": null, "release_frame": null, "landing_frame": null, "presentation_timestamps": {"release": null, "rim_interaction": null}},
+  "court": {"preset": "nba|wnba|ncaa|fiba|high_school|custom|unknown", "calibration_id": "", "shooter_takeoff_xy_m": null, "basket_xy_m": null, "independent_distance_m": null, "distance_reference_source": ""},
+  "defense": [{"defender_id": "", "separation_m": null, "closing_speed_mps": null, "body_orientation_deg": null, "arm_extension": null, "hand_elevation_relative": null, "reference_source": ""}],
+  "visibility": {"shooter": "clear|partial|occluded", "ball": "clear|blurred|occluded", "rim": "clear|partial|occluded", "defender": "clear|partial|occluded", "scene_cut": false, "replay": false},
+  "labels": {"annotator_ids": [], "adjudication_note": "", "allowed_model_use": true}
+}

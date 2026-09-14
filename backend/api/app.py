@@ -46,7 +46,7 @@ EXAMPLE_FILES = (
     "YTDown.com_YouTube_LeBron-Jokes-After-Steph-Misses-Free-Thr_Media_welHDbZ0KBY_001_720p.mp4",
 )
 
-app = FastAPI(title="ARC Local Shot Analysis", version="2.1.0")
+app = FastAPI(title="ARC Local Shot Analysis", version="3.0.0")
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 job_cancel_events: dict[str, threading.Event] = {}
@@ -76,6 +76,8 @@ def run_analysis_job(
     session_dir: Path,
     display_name: str,
     processing_mode: str = "normal",
+    shot_mode: str = "free_throw",
+    court_calibration: dict | None = None,
 ) -> None:
     cancel_event = job_cancel_events[job_id]
     try:
@@ -95,6 +97,8 @@ def run_analysis_job(
             progress,
             display_name=display_name,
             processing_mode=processing_mode,
+            shot_mode=shot_mode,
+            court_calibration=court_calibration,
         )
         if cancel_event.is_set():
             raise AnalysisCancelled
@@ -130,6 +134,8 @@ def submit_analysis_job(
     session_dir: Path,
     display_name: str,
     processing_mode: str = "normal",
+    shot_mode: str = "free_throw",
+    court_calibration: dict | None = None,
 ) -> None:
     job_futures[job_id] = executor.submit(
         run_analysis_job,
@@ -138,12 +144,21 @@ def submit_analysis_job(
         session_dir,
         display_name,
         processing_mode,
+        shot_mode,
+        court_calibration,
     )
 
 
-def queue_analysis_job(source: Path, display_name: str, processing_mode: str = "normal") -> str:
+def queue_analysis_job(
+    source: Path,
+    display_name: str,
+    processing_mode: str = "normal",
+    shot_mode: str = "free_throw",
+    court_calibration: dict | None = None,
+) -> str:
     """Create a queued analysis job for an uploaded file or bundled example."""
     processing_mode = processing_mode if processing_mode in {"normal", "deep"} else "normal"
+    shot_mode = shot_mode if shot_mode in {"free_throw", "jump_shot"} else "free_throw"
     job_id = uuid.uuid4().hex[:12]
     session_dir = ANALYSIS_SESSIONS_DIR / job_id
     session_dir.mkdir(parents=True, exist_ok=False)
@@ -158,9 +173,10 @@ def queue_analysis_job(source: Path, display_name: str, processing_mode: str = "
         "error": None,
         "result": None,
         "processing_mode": processing_mode,
+        "shot_mode": shot_mode,
     }
     register_job(job_id, value, session_dir)
-    submit_analysis_job(job_id, source, session_dir, display_name, processing_mode)
+    submit_analysis_job(job_id, source, session_dir, display_name, processing_mode, shot_mode, court_calibration)
     return job_id
 
 
@@ -213,6 +229,10 @@ def build_example_video_metadata(example_id: str, filename: str, path: Path) -> 
         "width": meta.width,
         "height": meta.height,
         "fps": meta.fps,
+        # Examples are intentionally analyzable in either mode. The selected
+        # mode is captured when queued; the result still marks unsupported or
+        # unresolved shot types for review instead of guessing from filename.
+        "supported_modes": ["free_throw", "jump_shot"],
     }
 
 
@@ -228,9 +248,15 @@ def list_example_videos() -> list[dict]:
 
 
 @app.post("/api/jobs")
-async def create_uploaded_video_job(file: UploadFile, mode: str = "normal") -> dict:
+async def create_uploaded_video_job(
+    file: UploadFile,
+    mode: str = "normal",
+    shot_mode: str = "free_throw",
+) -> dict:
     if mode not in {"normal", "deep"}:
         raise HTTPException(400, "Analysis mode must be normal or deep")
+    if shot_mode not in {"free_throw", "jump_shot"}:
+        raise HTTPException(400, "Shot mode must be free_throw or jump_shot")
     display_name = Path(file.filename or "clip.mp4").name
     suffix = Path(display_name).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
@@ -263,16 +289,23 @@ async def create_uploaded_video_job(file: UploadFile, mode: str = "normal") -> d
         "error": None,
         "result": None,
         "processing_mode": mode,
+        "shot_mode": shot_mode,
     }
     register_job(job_id, value, session_dir)
-    submit_analysis_job(job_id, source, session_dir, display_name, mode)
+    submit_analysis_job(job_id, source, session_dir, display_name, mode, shot_mode)
     return {"job_id": job_id}
 
 
 @app.post("/api/examples/{example_id}/jobs")
-def create_example_video_job(example_id: str, mode: str = "normal") -> dict:
+def create_example_video_job(
+    example_id: str,
+    mode: str = "normal",
+    shot_mode: str = "free_throw",
+) -> dict:
     if mode not in {"normal", "deep"}:
         raise HTTPException(400, "Analysis mode must be normal or deep")
+    if shot_mode not in {"free_throw", "jump_shot"}:
+        raise HTTPException(400, "Shot mode must be free_throw or jump_shot")
     if not example_id.startswith("example-"):
         raise HTTPException(400, "Invalid example id")
     try:
@@ -285,7 +318,7 @@ def create_example_video_job(example_id: str, mode: str = "normal") -> dict:
     source = EXAMPLE_VIDEOS_DIR / filename
     if not source.is_file():
         raise HTTPException(404, "Example media is not installed")
-    return {"job_id": queue_analysis_job(source, filename, mode)}
+    return {"job_id": queue_analysis_job(source, filename, mode, shot_mode)}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -326,7 +359,10 @@ def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
     analysis_path = ANALYSIS_SESSIONS_DIR / session_id / "analysis.json"
     if not analysis_path.is_file():
         raise HTTPException(404, "Session not found")
-    allowed = {"outcome", "release_frame", "shooter_id", "comment"}
+    allowed = {
+        "outcome", "release_frame", "shooter_id", "shooting_hand", "shot_type",
+        "takeoff_frame", "defender_ids", "team_assignments", "player_height_m", "comment",
+    }
     unknown = set(correction) - allowed
     if unknown:
         raise HTTPException(400, f"Unsupported correction fields: {sorted(unknown)}")
@@ -336,7 +372,34 @@ def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
         not isinstance(correction["release_frame"], int) or correction["release_frame"] < 0
     ):
         raise HTTPException(400, "Release frame must be a non-negative integer")
-    for field in ("shooter_id", "comment"):
+    if "takeoff_frame" in correction and (
+        not isinstance(correction["takeoff_frame"], int) or correction["takeoff_frame"] < 0
+    ):
+        raise HTTPException(400, "Takeoff frame must be a non-negative integer")
+    if "shooting_hand" in correction and correction["shooting_hand"] not in {"left", "right", "unknown"}:
+        raise HTTPException(400, "Shooting hand must be left, right, or unknown")
+    if "shot_type" in correction and correction["shot_type"] not in {
+        "three_pointer", "mid_range", "near_three_point_line_review", "layup", "dunk", "pass", "pump_fake", "unknown",
+    }:
+        raise HTTPException(400, "Unsupported shot type")
+    if "defender_ids" in correction and (
+        not isinstance(correction["defender_ids"], list) or any(not isinstance(item, str) for item in correction["defender_ids"])
+    ):
+        raise HTTPException(400, "defender_ids must be a list of text labels")
+    if "team_assignments" in correction and (
+        not isinstance(correction["team_assignments"], dict)
+        or any(
+            not isinstance(track_id, str)
+            or role not in {"shooter", "teammate", "opponent", "official", "unknown"}
+            for track_id, role in correction["team_assignments"].items()
+        )
+    ):
+        raise HTTPException(400, "team_assignments must map track labels to shooter, teammate, opponent, official, or unknown")
+    if "player_height_m" in correction and (
+        not isinstance(correction["player_height_m"], (int, float)) or not 0.5 <= float(correction["player_height_m"]) <= 2.8
+    ):
+        raise HTTPException(400, "player_height_m must be between 0.5 and 2.8")
+    for field in ("shooter_id", "shooting_hand", "shot_type", "comment"):
         if field in correction and correction[field] is not None and not isinstance(correction[field], str):
             raise HTTPException(400, f"{field} must be text")
     payload = json.loads(analysis_path.read_text())
@@ -441,9 +504,112 @@ def add_manual_shot(session_id: str, attempt: dict) -> dict:
             "fields": ["manual_attempt"],
             **({"comment": attempt["comment"]} if attempt.get("comment") else {}),
         },
+        "shot_mode": payload.get("shot_mode", "free_throw"),
     })
     correction_path.write_text(json.dumps(stored, indent=2))
     return refresh_saved_analysis(payload)
+
+
+@app.patch("/api/sessions/{session_id}/context")
+def update_session_context(session_id: str, context: dict) -> dict:
+    """Persist court/player context separately from detector evidence."""
+    if not session_id.replace("-", "").isalnum():
+        raise HTTPException(400, "Invalid session id")
+    analysis_path = ANALYSIS_SESSIONS_DIR / session_id / "analysis.json"
+    if not analysis_path.is_file():
+        raise HTTPException(404, "Session not found")
+    allowed = {"court_calibration", "player_heights", "shot_mode"}
+    unknown = set(context) - allowed
+    if unknown:
+        raise HTTPException(400, f"Unsupported context fields: {sorted(unknown)}")
+    if "shot_mode" in context and context["shot_mode"] not in {"free_throw", "jump_shot"}:
+        raise HTTPException(400, "Shot mode must be free_throw or jump_shot")
+    calibration = context.get("court_calibration")
+    if calibration is not None:
+        if not isinstance(calibration, dict):
+            raise HTTPException(400, "court_calibration must be an object")
+        preset = calibration.get("preset", "custom")
+        if preset not in {"nba", "wnba", "ncaa", "fiba", "high_school", "custom", "unknown"}:
+            raise HTTPException(400, "Unknown court calibration preset")
+        image_points = calibration.get("image_points")
+        world_points = calibration.get("world_points")
+        if not isinstance(image_points, list) or not isinstance(world_points, list) or len(image_points) != 4 or len(world_points) != 4:
+            raise HTTPException(400, "Court calibration requires four image points and four court points")
+        if any(
+            not isinstance(point, list)
+            or len(point) != 2
+            or any(not isinstance(value, (int, float)) for value in point)
+            for point in image_points + world_points
+        ):
+            raise HTTPException(400, "Court calibration points must be [x, y] pairs")
+        basket_ground = calibration.get("basket_ground_image")
+        if basket_ground is not None and (
+            not isinstance(basket_ground, list)
+            or len(basket_ground) != 2
+            or any(not isinstance(value, (int, float)) for value in basket_ground)
+        ):
+            raise HTTPException(400, "basket_ground_image must be a [x, y] pair")
+    heights = context.get("player_heights")
+    if heights is not None and not isinstance(heights, dict):
+        raise HTTPException(400, "player_heights must be an object")
+    if isinstance(heights, dict) and any(
+        not isinstance(key, str)
+        or not isinstance(value, (int, float))
+        or not 0.5 <= float(value) <= 2.8
+        for key, value in heights.items()
+    ):
+        raise HTTPException(400, "player_heights values must be between 0.5 and 2.8 metres")
+    correction_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
+    stored: dict = {"version": 2, "shots": {}, "manual_shots": [], "session_context": {}}
+    if correction_path.is_file():
+        try:
+            loaded = json.loads(correction_path.read_text())
+            if isinstance(loaded, dict):
+                stored.update(loaded)
+        except (OSError, ValueError, TypeError):
+            pass
+    session_context = stored.setdefault("session_context", {})
+    if not isinstance(session_context, dict):
+        session_context = {}
+        stored["session_context"] = session_context
+    for field in allowed:
+        if field in context:
+            session_context[field] = context[field]
+    session_context["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    correction_path.write_text(json.dumps(stored, indent=2))
+    return refresh_saved_analysis(json.loads(analysis_path.read_text()))
+
+
+@app.post("/api/sessions/{session_id}/reanalysis")
+def reanalyze_saved_session(session_id: str, mode: str = "normal", shot_mode: str | None = None) -> dict:
+    """Queue a fresh analysis after a reviewed context correction."""
+    if not session_id.replace("-", "").isalnum():
+        raise HTTPException(400, "Invalid session id")
+    if mode not in {"normal", "deep"}:
+        raise HTTPException(400, "Analysis mode must be normal or deep")
+    session_dir = ANALYSIS_SESSIONS_DIR / session_id
+    analysis_path = session_dir / "analysis.json"
+    if not analysis_path.is_file():
+        raise HTTPException(404, "Session not found")
+    payload = json.loads(analysis_path.read_text())
+    selected_shot_mode = shot_mode or payload.get("shot_mode", "free_throw")
+    if selected_shot_mode not in {"free_throw", "jump_shot"}:
+        raise HTTPException(400, "Shot mode must be free_throw or jump_shot")
+    sources = sorted(path for path in session_dir.glob("upload.*") if path.is_file())
+    if not sources:
+        raise HTTPException(409, "Original upload is unavailable for reanalysis")
+    court_calibration = None
+    correction_path = session_dir / "corrections.json"
+    if correction_path.is_file():
+        try:
+            stored = json.loads(correction_path.read_text())
+            if isinstance(stored, dict) and isinstance(stored.get("session_context"), dict):
+                candidate = stored["session_context"].get("court_calibration")
+                if isinstance(candidate, dict):
+                    court_calibration = candidate
+        except (OSError, ValueError, TypeError):
+            court_calibration = None
+    return {"job_id": queue_analysis_job(sources[0], str(payload.get("session", {}).get("filename", sources[0].name)), mode, selected_shot_mode, court_calibration)}
 
 
 @app.get("/media/{session_id}/{filename}")

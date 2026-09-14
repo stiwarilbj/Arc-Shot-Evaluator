@@ -1,11 +1,12 @@
 import { Film, LoaderCircle, Play } from "lucide-react";
-import type { ExampleVideo } from "../../domain/analysisTypes";
+import type { ExampleVideo, ShotMode } from "../../domain/analysisTypes";
 
 interface ExampleVideoLibraryProps {
   examples: ExampleVideo[];
   loading: boolean;
   error: string | null;
   onSelect: (example: ExampleVideo) => void;
+  shotMode?: ShotMode;
 }
 
 function formatDuration(seconds: number) {
@@ -18,7 +19,8 @@ function formatDimensions(example: ExampleVideo) {
   return `${example.width}×${example.height}`;
 }
 
-export function ExampleVideoLibrary({ examples, loading, error, onSelect }: ExampleVideoLibraryProps) {
+export function ExampleVideoLibrary({ examples, loading, error, onSelect, shotMode = "free_throw" }: ExampleVideoLibraryProps) {
+  const compatibleExamples = examples.filter((example) => !example.supported_modes || example.supported_modes.includes(shotMode));
   return (
     <section className="example-video-library" aria-labelledby="example-heading">
       <div className="section-heading">
@@ -26,15 +28,15 @@ export function ExampleVideoLibrary({ examples, loading, error, onSelect }: Exam
           <span className="section-kicker">Downloaded test clips</span>
           <h2 id="example-heading">Test with these videos</h2>
         </div>
-        <span className="section-count">{examples.length ? `${examples.length} ready` : "Your clips"}</span>
+        <span className="section-count">{compatibleExamples.length ? `${compatibleExamples.length} ready` : "Your clips"}</span>
       </div>
       {loading ? (
         <div className="examples-state"><LoaderCircle className="spin" size={18} />Loading example clips</div>
       ) : error ? (
         <div className="examples-state examples-error">{error}</div>
-      ) : examples.length ? (
+      ) : compatibleExamples.length ? (
         <div className="example-grid">
-          {examples.map((example) => (
+          {compatibleExamples.map((example) => (
             <button
               className="example-card"
               key={example.id}

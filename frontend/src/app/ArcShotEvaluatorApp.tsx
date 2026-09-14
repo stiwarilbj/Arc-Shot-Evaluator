@@ -20,6 +20,7 @@ import type {
   AnalysisSession,
   ExampleVideo,
   ProcessingMode,
+  ShotMode,
   ThemeMode,
   VideoMode,
   WorkspaceTab,
@@ -58,6 +59,7 @@ function createQueuedAnalysis(
   file: File | undefined,
   exampleId: string | undefined,
   processingMode: ProcessingMode,
+  shotMode: ShotMode,
 ): AnalysisQueueItem {
   return {
     id: createQueueItemId(exampleId ? "example" : "upload"),
@@ -71,6 +73,7 @@ function createQueuedAnalysis(
     result: null,
     error: null,
     processingMode,
+    shotMode,
   };
 }
 
@@ -86,9 +89,13 @@ export function ArcShotEvaluatorApp() {
   const [examplesError, setExamplesError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedShot, setSelectedShot] = useState(0);
+  const [reviewFrame, setReviewFrame] = useState<number | null>(null);
   const [mode, setMode] = useState<VideoMode>("annotated");
   const [tab, setTab] = useState<WorkspaceTab>("shot");
   const [processingMode, setProcessingMode] = useState<ProcessingMode>("normal");
+  // Free throw is the safest default for a new launch; a selected mode is
+  // captured into each queue item so changing it never mutates an active job.
+  const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
     return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark";
@@ -123,8 +130,8 @@ export function ArcShotEvaluatorApp() {
       if (cancelledQueueItemsRef.current.has(item.id)) return;
       updateAnalysisQueueItem(item.id, { status: "processing", stage: "Starting local analysis", progress: 3, error: null });
       const jobId = item.kind === "example"
-        ? await startExampleVideoAnalysis(item.exampleId ?? "", item.processingMode)
-        : await startUploadedVideoAnalysis(item.file as File, item.processingMode);
+        ? await startExampleVideoAnalysis(item.exampleId ?? "", item.processingMode, item.shotMode)
+        : await startUploadedVideoAnalysis(item.file as File, item.processingMode, item.shotMode);
       jobIdsRef.current.set(item.id, jobId);
       if (cancelledQueueItemsRef.current.has(item.id)) {
         await cancelAnalysisJob(jobId).catch(() => undefined);
@@ -165,6 +172,7 @@ export function ArcShotEvaluatorApp() {
           updateAnalysisQueueItem(item.id, { status: "done", stage: "Analysis complete", progress: 100, result: next.result, error: null });
           setSession(next.result);
           setSelectedShot(0);
+          setReviewFrame(null);
           setMode("annotated");
           setTab(next.result.shots.length ? "shot" : "overview");
           return;
@@ -200,12 +208,12 @@ export function ArcShotEvaluatorApp() {
   function enqueueUploadedVideos(files: File[]) {
     if (!files.length) return;
     setError(null);
-    setQueue((current) => [...current, ...files.map((file) => createQueuedAnalysis(file.name, file, undefined, processingMode))]);
+    setQueue((current) => [...current, ...files.map((file) => createQueuedAnalysis(file.name, file, undefined, processingMode, shotMode))]);
   }
 
   function enqueueExampleVideo(example: ExampleVideo) {
     setError(null);
-    setQueue((current) => [...current, createQueuedAnalysis(example.filename, undefined, example.id, processingMode)]);
+    setQueue((current) => [...current, createQueuedAnalysis(example.filename, undefined, example.id, processingMode, shotMode)]);
   }
 
   function requestQueueCancellation(item: AnalysisQueueItem) {
@@ -257,6 +265,7 @@ export function ArcShotEvaluatorApp() {
     if (!item.result) return;
     setSession(item.result);
     setSelectedShot(0);
+    setReviewFrame(null);
     setMode("annotated");
     setTab(item.result.shots.length ? "shot" : "overview");
     setError(null);
@@ -264,6 +273,7 @@ export function ArcShotEvaluatorApp() {
 
   function showHomePage() {
     setSession(null);
+    setReviewFrame(null);
     setError(null);
     setSelectedShot(0);
     setMode("annotated");
@@ -286,8 +296,10 @@ export function ArcShotEvaluatorApp() {
               onFiles={enqueueUploadedVideos}
               processingMode={processingMode}
               onProcessingModeChange={setProcessingMode}
+              shotMode={shotMode}
+              onShotModeChange={setShotMode}
             />
-            <ExampleVideoLibrary examples={examples} loading={examplesLoading} error={examplesError} onSelect={enqueueExampleVideo} />
+            <ExampleVideoLibrary examples={examples} loading={examplesLoading} error={examplesError} shotMode={shotMode} onSelect={enqueueExampleVideo} />
           </div>
         </main>
       </div>
@@ -295,6 +307,7 @@ export function ArcShotEvaluatorApp() {
   }
 
   const shot = session.shots[selectedShot] ?? null;
+  const isJumpShot = session.shot_mode === "jump_shot";
   return (
     <div className="app-shell analysis-session-shell">
       <AppHeader filename={session.session.filename} complete onReset={showHomePage} theme={theme} onThemeChange={setTheme} />
@@ -308,18 +321,20 @@ export function ArcShotEvaluatorApp() {
         <section className="overview-strip" aria-label="Session summary">
           <Summary label="Attempts" value={String(session.summary.attempts)} />
           <Summary label="Makes" value={String(session.summary.makes)} tone="make" />
-          <Summary label="Observed FT%" value={(session.summary.observed_ft_pct ?? session.summary.fg_pct) === null ? "—" : `${(session.summary.observed_ft_pct ?? session.summary.fg_pct)?.toFixed(0)}%`} />
-          <Summary label="Future FT%" value={session.summary.predicted_ft_pct == null ? "Unavailable" : `${session.summary.predicted_ft_pct.toFixed(0)}%`} />
+          <Summary label={isJumpShot ? "Observed FG%" : "Observed FT%"} value={(isJumpShot ? session.summary.fg_pct : (session.summary.observed_ft_pct ?? session.summary.fg_pct)) === null ? "—" : `${(isJumpShot ? session.summary.fg_pct : (session.summary.observed_ft_pct ?? session.summary.fg_pct))?.toFixed(0)}%`} />
+          <Summary label={isJumpShot ? "Three-point%" : "Future FT%"} value={isJumpShot ? (session.summary.observed_three_pct == null ? "—" : `${session.summary.observed_three_pct.toFixed(0)}%`) : (session.summary.predicted_ft_pct == null ? "Unavailable" : `${session.summary.predicted_ft_pct.toFixed(0)}%`)} />
           <Summary label="Best streak" value={String(session.summary.best_streak)} />
           <Summary label="Observation confidence" value={`${session.summary.average_confidence.toFixed(0)}%`} />
         </section>
       ) : null}
+      {isJumpShot && session.summary.excluded_attempts ? <p className="warning-row" role="status">{session.summary.excluded_attempts} proposal(s) excluded from jump-shot statistics after review.</p> : null}
 
       <main className="analysis-grid">
         <div className="analysis-main">
-          <VideoWorkspace session={session} shot={shot} mode={mode} onMode={setMode} />
+          <VideoWorkspace session={session} shot={shot} mode={mode} onMode={setMode} seekFrame={reviewFrame} />
           <ShotSelector session={session} selected={selectedShot} onSelect={(index) => {
             setSelectedShot(index);
+            setReviewFrame(null);
             setTab("shot");
           }} />
           {session.warnings.length ? <div className="warning-row" role="status">{session.warnings.map((warning) => warning.replace(/[.!]+$/, "")).join(" · ")}</div> : null}
@@ -328,7 +343,7 @@ export function ArcShotEvaluatorApp() {
           <AnalysisQueue items={queue} compact {...queueActions} />
           <div className={`analysis-detail-columns ${shot?.coaching ? "" : "analysis-detail-legacy"}`}>
             {shot?.coaching ? <CoachNotes shot={shot} /> : null}
-            <ShotDataPanel session={session} shot={shot} tab={tab} onSessionChange={setSession} />
+            <ShotDataPanel session={session} shot={shot} tab={tab} onSessionChange={setSession} onSeekFrame={setReviewFrame} />
           </div>
         </aside>
       </main>

@@ -1,0 +1,34 @@
+dataset_version: jump-shot-v1
+collection_target:
+  shots: 6000
+  shooters: 150
+  venues: 20
+  cohorts: [amateur, college, professional]
+rights:
+  required: commercial_or_public_release
+  exclude_licenses: [research_only, noncommercial, no_derivatives, unknown]
+split:
+  grouping: [shooter_id, venue_id, game_or_session, duplicate_group]
+  train: 0.70
+  model_selection: 0.10
+  calibration: 0.10
+  final_test: 0.10
+  reserve_unseen_shooters: true
+  reserve_unseen_venues: true
+features:
+  release:
+    cutoff: release
+    allowed_events: [gather, takeoff, release, court_context, defender_context, eligible_prior_history]
+  early_flight:
+    cutoff: release_plus_200ms
+    allowed_events: [gather, takeoff, release, first_200ms_ball_flight, defender_context, eligible_prior_history]
+  forbidden: [target_outcome, rim_interaction, landing, later_footage, post_cutoff_smoothing]
+models:
+  candidates: [regularized_logistic_regression, histogram_gradient_boosted_trees]
+  selection_metric: [brier_score, log_loss]
+  calibration: separate_holdout
+release_gates:
+  calibration_error_max: 0.05
+  distance_mae_m_max: 0.30
+  defender_separation_mae_m_max: 0.30
+  defender_speed_mae_mps_max: 0.50

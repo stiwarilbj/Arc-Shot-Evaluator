@@ -1,6 +1,6 @@
 [project]
 name = "arc-shot-evaluator"
-version = "2.1.0"
+version = "3.0.0"
 description = "Private, local basketball shot and form analysis"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["httpx>=0.28,<1", "pytest>=8,<10"]
+training = ["scikit-learn>=1.5,<2"]
 
 [build-system]
 requires = ["setuptools>=77"]

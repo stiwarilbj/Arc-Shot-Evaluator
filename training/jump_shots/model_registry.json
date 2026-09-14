@@ -1,0 +1,7 @@
+{
+  "dataset_version": "jump-shot-v1",
+  "models": {
+    "at_release": {"status": "experimental_unavailable", "model": null, "calibration": null, "cohorts": [], "sample_size": 0},
+    "release_plus_200ms": {"status": "experimental_unavailable", "model": null, "calibration": null, "cohorts": [], "sample_size": 0}
+  }
+}

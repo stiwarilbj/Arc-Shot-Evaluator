@@ -10,11 +10,13 @@ import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
 
 from backend.analysis.geometry import clamp, distance, joint_angle, line_angle_degrees, robust_median, smooth_xy
+from backend.analysis.jump_shot import analyze_jump_shot, assign_player_tracks, distance_from_calibration
 from backend.analysis.video_normalization import normalize_video
 from backend.analysis.vision_models import (
     BasketballVisionModels,
@@ -25,6 +27,7 @@ from backend.analysis.vision_models import (
     merge_ball_candidates,
     select_rim_track,
 )
+from backend.prediction.jump_models import JUMP_MODEL_VERSION
 from backend.coaching.retriever import attach_coaching
 from backend.config import ANALYSIS_SESSIONS_DIR, MODEL_WEIGHTS_DIR
 from backend.domain.models import BoundingBox, BallCandidate, FrameDetections, PlayerPose, ShotAnalysis, BallTrackPoint
@@ -35,7 +38,7 @@ Progress = Callable[[str, int, int], None]
 # Bump this whenever the interpretation of a stored result changes. Saved
 # sessions are immutable evidence; readers may backfill display fields but
 # must never recompute the original observation.
-ANALYSIS_VERSION = "2.1.0"
+ANALYSIS_VERSION = "3.0.0"
 PREDICTION_STATUS = "unavailable_unvalidated"
 
 # Ultralytics' MPS path is fast for one batch, but two model predictions at
@@ -253,7 +256,7 @@ def _release_seed_candidates(
     for frame, item in enumerate(evidence[:-8]):
         if item.scene_cut or item.duplicate_frame:
             continue
-        for ball in item.balls[:28]:
+        for ball in item.balls:
             pose = find_pose_nearest_ball(evidence, frame, ball)
             if pose is None or pose.box.height < frame_height * 0.18:
                 continue
@@ -271,7 +274,7 @@ def _release_seed_candidates(
             for future in range(frame + 2, min(len(evidence), frame + 16)):
                 if evidence[future].scene_cut:
                     break
-                for candidate in evidence[future].balls[:36]:
+                for candidate in evidence[future].balls:
                     dt = future - frame
                     start_rim = _rim_center_at(rims, frame)
                     future_rim = _rim_center_at(rims, future)
@@ -411,7 +414,7 @@ def track_ball_from_release_candidate(
     for frame in range(seed_frame + 1, maximum_frame):
         if evidence[frame].scene_cut:
             break
-        candidates = [] if evidence[frame].duplicate_frame else evidence[frame].balls[:48]
+        candidates = [] if evidence[frame].duplicate_frame else evidence[frame].balls
         expanded: list[BallTrackCandidate] = []
         for beam in beams:
             predicted_x, predicted_y, vx, vy = predict_ball_with_camera_motion(
@@ -1681,7 +1684,7 @@ def find_shots(
     seen_seed_keys: set[tuple[int, int, int, str]] = set()
     for start in range(0, max(1, len(evidence)), step):
         end = min(len(evidence), start + window)
-        candidates = [seed for seed in raw_seeds if start <= seed[1] < end][:16]
+        candidates = [seed for seed in raw_seeds if start <= seed[1] < end]
         for candidate in candidates:
             # Keep each hypothesis once across overlapping windows. Keying by
             # a quantized location preserves genuinely different same-frame
@@ -1794,12 +1797,18 @@ def refresh_saved_analysis(payload: dict) -> dict:
     )
     raw_shots = [dict(raw) for raw in (payload.get("shots") or [])]
     session_id = str(payload.get("session", {}).get("id", ""))
+    shot_mode = payload.get("shot_mode", "free_throw")
+    shot_mode = shot_mode if shot_mode in {"free_throw", "jump_shot"} else "free_throw"
     corrections_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
     corrections: dict[str, dict] = {}
+    session_context: dict[str, Any] = {}
     if session_id and corrections_path.is_file():
         try:
             stored = json.loads(corrections_path.read_text())
             corrections = stored.get("shots", {}) if isinstance(stored, dict) else {}
+            session_context = stored.get("session_context", {}) if isinstance(stored, dict) else {}
+            if not isinstance(session_context, dict):
+                session_context = {}
         except (OSError, ValueError, TypeError):
             corrections = {}
     manual_shots: list[dict] = []
@@ -1811,6 +1820,8 @@ def refresh_saved_analysis(payload: dict) -> dict:
                 manual_shots = [dict(item) for item in raw_manual if isinstance(item, dict)]
         except (OSError, ValueError, TypeError):
             manual_shots = []
+    if session_context.get("shot_mode") in {"free_throw", "jump_shot"}:
+        shot_mode = session_context["shot_mode"]
     for manual in manual_shots:
         manual.setdefault("correction", {"source": "local_user", "fields": ["manual_attempt"]})
     raw_shots.extend(manual_shots)
@@ -1830,6 +1841,45 @@ def refresh_saved_analysis(payload: dict) -> dict:
                 **dict(raw.get("evidence") or {}),
                 "shooter_id": str(correction["shooter_id"]),
             }
+        for field in ("shot_type", "shooting_hand", "takeoff_frame", "defender_ids", "team_assignments", "player_height_m"):
+            if field in correction:
+                raw["evidence"] = {**dict(raw.get("evidence") or {}), field: correction[field]}
+        if correction.get("shot_type") in {"layup", "dunk", "pass", "pump_fake"}:
+            raw["evidence"] = {
+                **dict(raw.get("evidence") or {}),
+                "statistics_eligibility": {"status": "excluded", "reason": "non-jump attempt excluded from jump-shot statistics"},
+            }
+        if "takeoff_frame" in correction:
+            evidence = dict(raw.get("evidence") or {})
+            motion_events = dict(evidence.get("motion_events") or {})
+            motion_events["takeoff_frame"] = correction["takeoff_frame"]
+            evidence["motion_events"] = motion_events
+            raw["evidence"] = evidence
+        if "defender_ids" in correction:
+            evidence = dict(raw.get("evidence") or {})
+            defenders = evidence.get("defenders")
+            if isinstance(defenders, list) and isinstance(correction.get("defender_ids"), list):
+                allowed_ids = set(correction["defender_ids"])
+                evidence["defenders"] = [item for item in defenders if isinstance(item, dict) and item.get("id") in allowed_ids]
+            raw["evidence"] = evidence
+        if "team_assignments" in correction:
+            evidence = dict(raw.get("evidence") or {})
+            assignments = correction.get("team_assignments")
+            if isinstance(assignments, dict):
+                evidence["team_assignments"] = assignments
+                defenders = evidence.get("defenders")
+                if isinstance(defenders, list):
+                    updated_defenders = [dict(defender) if isinstance(defender, dict) else defender for defender in defenders]
+                    filtered_defenders: list[Any] = []
+                    for defender in updated_defenders:
+                        if isinstance(defender, dict) and defender.get("id") in assignments:
+                            role = assignments[defender["id"]]
+                            defender["role"] = role
+                            if role in {"teammate", "official"}:
+                                continue
+                        filtered_defenders.append(defender)
+                    evidence["defenders"] = filtered_defenders
+            raw["evidence"] = evidence
         raw["correction"] = {
             "source": "local_user",
             "updated_at": correction.get("updated_at"),
@@ -1879,6 +1929,7 @@ def refresh_saved_analysis(payload: dict) -> dict:
                 },
                 trace=[],
                 coaching=raw.get("coaching"),
+                shot_mode=str(raw.get("shot_mode", shot_mode)),
             )
         )
     if shots:
@@ -1914,20 +1965,53 @@ def refresh_saved_analysis(payload: dict) -> dict:
                     1.0,
                 )
                 shot.evidence["miss_proximity"] = round(miss_proximity, 3)
-            shot.evidence["mechanics_quality"] = mechanics
-            shot.evidence["follow_through_quality"] = follow_through
-            shot.evidence["trajectory_quality"] = trajectory
-            shot.evidence["shot_quality"] = combine_shot_quality(mechanics, follow_through, trajectory)
+            if shot.shot_mode == "jump_shot":
+                shot.evidence["mechanics_quality"] = None
+                shot.evidence["follow_through_quality"] = None
+                shot.evidence["trajectory_quality"] = None
+                shot.evidence["shot_quality"] = None
+            else:
+                shot.evidence["mechanics_quality"] = mechanics
+                shot.evidence["follow_through_quality"] = follow_through
+                shot.evidence["trajectory_quality"] = trajectory
+                shot.evidence["shot_quality"] = combine_shot_quality(mechanics, follow_through, trajectory)
             shot.evidence.pop("predicted_ft_pct", None)
             shot.evidence.pop("session_consistency_score", None)
             shot.evidence["prediction_status"] = (
                 "legacy_heuristic_unvalidated" if legacy_prediction else PREDICTION_STATUS
             )
+            shot.evidence["shot_mode"] = shot.shot_mode
+            if shot.shot_mode == "jump_shot":
+                calibration = session_context.get("court_calibration")
+                if isinstance(calibration, dict):
+                    takeoff = shot.evidence.get("takeoff_image")
+                    rim_image = shot.evidence.get("rim_image")
+                    if isinstance(takeoff, list) and len(takeoff) == 2 and isinstance(rim_image, list) and len(rim_image) == 2:
+                        shot.evidence["distance"] = distance_from_calibration(
+                            calibration,
+                            (float(takeoff[0]), float(takeoff[1])),
+                            (float(rim_image[0]), float(rim_image[1])),
+                        )
+                        shot.evidence["shot_type"] = shot.evidence["distance"].get("shot_type", "unknown")
+                shot.evidence.setdefault("predictions", {
+                    "release": {"status": "unavailable_unvalidated", "probability": None, "cutoff": "release", "cutoff_ms_after_release": 0, "cutoff_frame": shot.release_frame},
+                    "release_plus_200ms": {"status": "unavailable_unvalidated", "probability": None, "cutoff": "release_plus_200ms", "cutoff_ms_after_release": 200, "cutoff_frame": shot.release_frame},
+                })
+                predictions = shot.evidence.get("predictions")
+                if isinstance(predictions, dict):
+                    fps = float(payload.get("session", {}).get("fps") or 0.0)
+                    if isinstance(predictions.get("release"), dict):
+                        predictions["release"].setdefault("cutoff_frame", shot.release_frame)
+                    if isinstance(predictions.get("release_plus_200ms"), dict):
+                        predictions["release_plus_200ms"].setdefault(
+                            "cutoff_frame", shot.release_frame + round(fps * 0.2) if fps > 0 else shot.release_frame
+                        )
             # Preserve the stored observation confidence. Refreshing an old
             # session is a read operation and must not re-grade its evidence.
             shot.observation_confidence = shot.observation_confidence or shot.confidence
         attach_coaching(shots, payload.get("quality") or {})
-    payload["summary"] = summarize_session(shots)
+    payload["shot_mode"] = shot_mode
+    payload["summary"] = summarize_session(shots, shot_mode=shot_mode)
     if legacy_prediction:
         payload["summary"]["prediction_status"] = "legacy_heuristic_unvalidated"
     payload.setdefault("analysis_version", "1.0.0-legacy")
@@ -1938,6 +2022,16 @@ def refresh_saved_analysis(payload: dict) -> dict:
         "cutoff": None,
         "sample_size": 0,
     }
+    payload["jump_predictions"] = {
+        "status": "unavailable_unvalidated" if shot_mode == "jump_shot" else "not_applicable",
+        "models": None,
+        "cutoffs": ["release", "release_plus_200ms"] if shot_mode == "jump_shot" else [],
+    }
+    payload["context"] = {
+        key: session_context[key]
+        for key in ("court_calibration", "player_heights", "shot_mode")
+        if session_context.get(key) is not None
+    }
     payload["corrections"] = {
         "count": len(corrections) + len(manual_shots),
         "source": "local_user" if corrections or manual_shots else None,
@@ -1946,21 +2040,27 @@ def refresh_saved_analysis(payload: dict) -> dict:
     return payload
 
 
-def summarize_session(shots: list[ShotAnalysis]) -> dict:
-    decided = [shot for shot in shots if shot.outcome in {"make", "miss"}]
+def summarize_session(shots: list[ShotAnalysis], shot_mode: str = "free_throw") -> dict:
+    excluded = [
+        shot for shot in shots
+        if shot_mode == "jump_shot" and (shot.evidence.get("statistics_eligibility") or {}).get("status") == "excluded"
+    ]
+    excluded_ids = {id(shot) for shot in excluded}
+    stats_shots = [shot for shot in shots if id(shot) not in excluded_ids]
+    decided = [shot for shot in stats_shots if shot.outcome in {"make", "miss"}]
     makes = sum(shot.outcome == "make" for shot in decided)
     streak = best = 0
-    for shot in shots:
+    for shot in stats_shots:
         if shot.outcome == "make":
             streak += 1
             best = max(best, streak)
         elif shot.outcome == "miss":
             streak = 0
-    return {
-        "attempts": len(shots),
+    summary = {
+        "attempts": len(stats_shots),
         "makes": makes,
-        "misses": sum(shot.outcome == "miss" for shot in shots),
-        "review": sum(shot.outcome == "review" for shot in shots),
+        "misses": sum(shot.outcome == "miss" for shot in stats_shots),
+        "review": sum(shot.outcome == "review" for shot in stats_shots),
         "fg_pct": round(makes / len(decided) * 100, 1) if decided else None,
         # Keep the old field for exports, but give free-throw consumers an
         # explicit name that distinguishes observed history from prediction.
@@ -1970,8 +2070,22 @@ def summarize_session(shots: list[ShotAnalysis]) -> dict:
         "prediction_model": None,
         "prediction_sample_size": 0,
         "best_streak": best,
-        "average_confidence": round(float(np.mean([shot.confidence for shot in shots])) * 100, 1) if shots else 0.0,
+        "average_confidence": round(float(np.mean([shot.confidence for shot in stats_shots])) * 100, 1) if stats_shots else 0.0,
     }
+    if shot_mode == "jump_shot":
+        summary.update({
+            "detected_attempts": len(shots),
+            "excluded_attempts": len(excluded),
+            "observed_fg_pct": summary["fg_pct"],
+            "observed_three_pct": round(
+                sum(shot.outcome == "make" for shot in stats_shots if shot.evidence.get("shot_type") == "three_pointer")
+                / max(1, sum(shot.outcome in {"make", "miss"} and shot.evidence.get("shot_type") == "three_pointer" for shot in stats_shots))
+                * 100,
+                1,
+            ) if any(shot.evidence.get("shot_type") == "three_pointer" for shot in stats_shots) else None,
+            "prediction_status": "unavailable_unvalidated",
+        })
+    return summary
 
 
 def build_footage_quality_report(
@@ -2066,10 +2180,13 @@ def analyze_video(
     progress: Progress | None = None,
     display_name: str | None = None,
     processing_mode: str = "normal",
+    shot_mode: str = "free_throw",
+    court_calibration: dict[str, Any] | None = None,
 ) -> dict:
     from backend.analysis.video_rendering import render_outputs
 
     source = source.resolve()
+    shot_mode = shot_mode if shot_mode in {"free_throw", "jump_shot"} else "free_throw"
     filename = display_name or source.name
     if session_dir is None:
         session_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
@@ -2110,6 +2227,27 @@ def analyze_video(
         [item.scene_cut for item in evidence],
     )
     shots = find_shots(evidence, rims, meta)
+    player_tracks, frame_tracks = assign_player_tracks(evidence)
+    for shot in shots:
+        shot.shot_mode = shot_mode
+        shot.evidence["shot_mode"] = shot_mode
+    if shot_mode == "jump_shot":
+        for shot in shots:
+            jump = analyze_jump_shot(
+                shot=shot,
+                evidence=evidence,
+                frame_tracks=frame_tracks,
+                meta=meta,
+                rims=rims,
+                calibration=court_calibration,
+            )
+            shot.evidence.update(jump)
+            # Free-throw form ranges are not a validated jump-shot grade.
+            # Keep descriptive motion components and clear legacy aggregates.
+            for legacy_key in ("mechanics_quality", "follow_through_quality", "trajectory_quality", "shot_quality"):
+                shot.evidence.pop(legacy_key, None)
+            shot.evidence["player_tracks"] = player_tracks
+            shot.evidence["prediction_status"] = "unavailable_unvalidated"
     quality = build_footage_quality_report(evidence, rims, meta)
     attach_coaching(shots, quality)
     warnings: list[str] = []
@@ -2117,6 +2255,8 @@ def analyze_video(
         warnings.append("No stable rim track was found; use a clearer side-on clip")
     if not shots:
         warnings.append("No complete shot trajectory was found. Keep the ball, shooter, and rim visible")
+    if shot_mode == "jump_shot":
+        warnings.append("Jump-shot probabilities remain unavailable until the validated jump model is installed")
     warnings.extend(quality["messages"])
     if progress:
         progress("Rendering review videos", 0, meta.frame_count)
@@ -2135,14 +2275,23 @@ def analyze_video(
         "models": {
             "ball_rim_detector": "ebard-yolov8n.pt",
             "pose": "yolo11n-pose.pt",
+            "player_tracker": "temporal_pose_tracks_v1",
+            "jump_prediction": JUMP_MODEL_VERSION if shot_mode == "jump_shot" else "not_applicable",
         },
         "processing_mode": processing_mode if processing_mode in {"normal", "deep"} else "normal",
+        "shot_mode": shot_mode,
         "prediction": {
             "status": PREDICTION_STATUS,
             "model": None,
             "cutoff": None,
             "sample_size": 0,
         },
+        "jump_predictions": {
+            "status": "unavailable_unvalidated" if shot_mode == "jump_shot" else "not_applicable",
+            "models": None,
+            "cutoffs": ["release", "release_plus_200ms"] if shot_mode == "jump_shot" else [],
+        },
+        "context": {"court_calibration": court_calibration} if court_calibration else {},
         "session": {
             "id": session_id,
             "filename": filename,
@@ -2157,8 +2306,16 @@ def analyze_video(
             "source_frame_count": meta.source_frame_count,
             "timing_preserved": meta.timing_preserved,
             "slow_motion_unknown": meta.slow_motion_unknown,
+            "source_timing": {
+                "kind": "presentation_frame_index",
+                "mapping": "source_frame_index_to_source_pts",
+                "fps": meta.source_fps or meta.fps,
+                "frame_count": meta.source_frame_count or meta.frame_count,
+                "unknown": bool(meta.slow_motion_unknown or not meta.timing_preserved),
+            },
         },
-        "summary": summarize_session(shots),
+        "summary": summarize_session(shots, shot_mode=shot_mode),
+        "players": player_tracks,
         "quality": quality,
         "shots": [shot.to_public_dict() for shot in shots],
         "warnings": warnings,
@@ -2175,13 +2332,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze a basketball video locally")
     parser.add_argument("video", type=Path)
     parser.add_argument("--session-dir", type=Path)
+    parser.add_argument("--shot-mode", choices=("free_throw", "jump_shot"), default="free_throw")
     args = parser.parse_args()
 
     def report(stage: str, done: int, total: int) -> None:
         percent = int(done / total * 100) if total else 0
         print(f"[{percent:3d}%] {stage}", flush=True)
 
-    result = analyze_video(args.video, args.session_dir, report)
+    result = analyze_video(args.video, args.session_dir, report, shot_mode=args.shot_mode)
     print(json.dumps(result, indent=2))
 
 

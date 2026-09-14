@@ -1,12 +1,14 @@
 import { useRef, useState } from "react";
 import { Film, LockKeyhole, Upload } from "lucide-react";
-import type { ProcessingMode } from "../../domain/analysisTypes";
+import type { ProcessingMode, ShotMode } from "../../domain/analysisTypes";
 
 interface VideoUploadProps {
   error: string | null;
   onFiles: (files: File[]) => void;
   processingMode: ProcessingMode;
   onProcessingModeChange: (mode: ProcessingMode) => void;
+  shotMode: ShotMode;
+  onShotModeChange: (mode: ShotMode) => void;
 }
 
 const VIDEO_TYPES = [
@@ -14,7 +16,7 @@ const VIDEO_TYPES = [
   ".mpeg", ".mpg", ".3gp", ".m2ts", ".mts", ".ts", ".ogv", ".asf",
 ];
 
-export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange }: VideoUploadProps) {
+export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange }: VideoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -42,6 +44,29 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
           <option value="deep">Deep · finer pose and ball tracking</option>
         </select>
       </label>
+      <fieldset className="shot-mode-control">
+        <legend>Shot type</legend>
+        <div className="shot-mode-options" role="group" aria-label="Shot type">
+          <button
+            type="button"
+            className={shotMode === "free_throw" ? "is-active" : ""}
+            aria-pressed={shotMode === "free_throw"}
+            onClick={() => onShotModeChange("free_throw")}
+          >
+            Free throw
+          </button>
+          <button
+            type="button"
+            className={shotMode === "jump_shot" ? "is-active" : ""}
+            aria-pressed={shotMode === "jump_shot"}
+            onClick={() => onShotModeChange("jump_shot")}
+          >
+            Jump shot
+          </button>
+        </div>
+        <p>{shotMode === "free_throw" ? "Stationary free-throw sequence" : "Three-pointers and mid-range shots with shooter and defender context"}</p>
+        {shotMode === "jump_shot" ? <p className="experimental-note">Jump-shot probability stays unavailable until a separate model passes held-out validation.</p> : null}
+      </fieldset>
       <button
         className={`upload-drop ${dragging ? "is-dragging" : ""}`}
         type="button"

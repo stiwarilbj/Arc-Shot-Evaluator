@@ -31,7 +31,37 @@ trajectory was found. Metric values include `metric_availability` and
 User corrections are written to `sessions/<id>/corrections.json`. The original
 model evidence is retained, and reads apply corrections as a separate
 provenance layer. A correction can change an outcome or release frame without
-rewriting the original video or detector trace.
+rewriting the original video or detector trace. Jump-shot reviews can also
+assign shooter, teammate, opponent, or official roles to persistent tracks so
+a nearby referee or teammate is not counted as a defender.
+
+## Jump-shot mode
+
+The landing page defaults to `free_throw`; `jump_shot` is captured per queued
+upload and can be selected for three-pointers or mid-range jump shots. ARC
+tracks gather, takeoff, release, follow-through, landing, all visible players,
+and the hands of likely opponents. Defender distance and approach speed are
+reported in projected image units until court calibration and player identity
+are reviewed. A missing defender track is reported as unknown and never treated
+as an open shot.
+
+Shot distance is the horizontal court-plane distance from the shooter’s last
+floor contact before release to the basket ground projection. A four-point
+manual court calibration can be saved from the shot panel; NBA, WNBA, NCAA,
+FIBA, high-school, custom, and unknown presets are supported. Marking the
+basket ground projection gives a calibrated court-plane result; if it is not
+marked, ARC labels the rim-center projection as review-only. Measurements stay
+unavailable when the court projection is underconstrained. Three-point
+classification keeps a line-width uncertainty band and sends close calls to
+review.
+
+Jump-shot output contains two leakage-safe prediction records: `release` and
+`release_plus_200ms`. Both remain `unavailable_unvalidated` until separate
+models are trained and calibrated on the rights-cleared dataset described in
+`training/jump_shots/`. The model registry starts empty by design. Mechanics
+quality is descriptive until outcome-blinded coaching labels validate an
+aggregate score; visible timing and motion components remain available when
+their evidence supports them.
 
 ## Validation dataset
 
@@ -52,6 +82,15 @@ The initial release gate is a target of at least 95% attempt precision and
 recall, and 98% make/miss accuracy at at least 80% automatic-decision coverage
 on visually resolvable adjudicated footage. Evaluate unresolved uploads too,
 and publish condition-level uncertainty rather than filtering difficult clips.
+
+The jump-shot pilot target is 6,000 attempts from at least 150 shooters and 20
+venues, split across amateur, college, and professional cohorts. Keep games,
+recording sessions, replays, and duplicate footage together in train,
+selection, calibration, and final-test manifests. Required jump-shot gates
+include distance MAE ≤0.30 m, defender separation MAE ≤0.30 m, defender speed
+MAE ≤0.50 m/s, and calibrated release/early-flight probabilities that beat
+population and eligible player-history baselines on held-out Brier score and
+log loss. These are targets, not current results.
 
 The temporal tracker is a basketball-specific implementation point for the
 [TrackNet starting paper](https://arxiv.org/abs/1907.03698). Any camera

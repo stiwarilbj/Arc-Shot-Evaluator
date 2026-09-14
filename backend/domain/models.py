@@ -53,6 +53,10 @@ class PlayerPose:
     box: BoundingBox
     keypoints: list[tuple[float, float, float]]
     confidence: float
+    # Assigned by the temporal association layer. It is intentionally
+    # optional so older callers and fixtures that only have a single pose
+    # continue to deserialize unchanged.
+    track_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -93,6 +97,7 @@ class ShotAnalysis:
     trace: list[BallTrackPoint] = field(repr=False)
     observation_confidence: float | None = None
     coaching: dict[str, Any] | None = None
+    shot_mode: str = "free_throw"
 
     def to_public_dict(self) -> dict[str, Any]:
         """Return the serializable shot record stored in API responses and exports."""
@@ -110,6 +115,7 @@ class ShotAnalysis:
             if self.observation_confidence is not None
             else round(self.confidence, 3)
         )
+        data.setdefault("shot_mode", self.shot_mode)
         # Expose metric reliability at the shot boundary as well as inside the
         # evidence object so API consumers do not have to know the internal
         # evidence layout to distinguish unavailable from estimated values.

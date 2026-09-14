@@ -34,4 +34,16 @@ arc-shot-evaluator/
 5. The finished session is saved in `sessions/` with versioned evidence, uncertainty, and a withheld prediction status. Corrections are stored separately in `corrections.json`.
 6. `frontend/src/app/ArcShotEvaluatorApp.tsx` composes the video workspace, queue, Coach Notes, and shot data.
 
+Shot mode is captured when a queue item is created. Free throw remains the
+fresh-launch default; jump-shot analysis adds temporal player association,
+court-plane distance, takeoff/landing events, and per-opponent contest evidence
+through `backend/analysis/jump_shot.py`. The prediction boundary lives in
+`backend/prediction/jump_models.py` and returns explicit unavailable records
+until a validated model registry entry exists.
+
+Jump-shot training manifests and split rules live under
+`training/jump_shots/`. They are intentionally separate from free-throw data
+and keep source rights, duplicate groups, shooter/venue/session splits, and
+prediction cutoffs auditable.
+
 The API and export field names remain stable even though the internal Python and TypeScript types use more descriptive names such as `ShotAnalysis`, `BallTrackPoint`, and `AnalysisQueueItem`.

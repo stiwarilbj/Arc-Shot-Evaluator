@@ -37,6 +37,13 @@ future FT% stays unavailable until a trained model has been evaluated on held
 out shooters and calibrated; mechanics quality never changes confidence in an
 observed make or miss. Choose Normal or Deep analysis on the upload screen.
 
+Fresh sessions start in Free throw mode. Use the Jump shot switch for
+three-pointers and mid-range shots; ARC then records takeoff and landing,
+projects court-plane distance when calibrated, and reports each visible
+defender’s separation and closing motion. Jump-shot make probabilities at
+release and after 200 ms stay unavailable until the separate, rights-cleared
+models pass held-out validation.
+
 The accuracy and labeling protocol is documented in [docs/accuracy.md](docs/accuracy.md).
 
 ## The local Coach Notes
