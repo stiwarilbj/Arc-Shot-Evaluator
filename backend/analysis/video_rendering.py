@@ -189,6 +189,7 @@ def render_outputs(
     rims: list[BoundingBox | None],
     evidence: list[FrameDetections],
     progress=None,
+    original_source: Path | None = None,
 ) -> dict:
     annotated_raw = session_dir / "annotated-raw.mp4"
     pose_raw = session_dir / "pose-raw.mp4"
@@ -250,6 +251,11 @@ def render_outputs(
     session_id = session_dir.name
     return {
         "original": f"/media/{session_id}/{source.name}",
+        "source_original": (
+            f"/media/{session_id}/{original_source.name}"
+            if original_source is not None and original_source.is_file()
+            else f"/media/{session_id}/{source.name}"
+        ),
         "annotated": f"/media/{session_id}/annotated.mp4",
         "pose": f"/media/{session_id}/pose.mp4",
         "shots_jsonl": f"/media/{session_id}/shots.jsonl",

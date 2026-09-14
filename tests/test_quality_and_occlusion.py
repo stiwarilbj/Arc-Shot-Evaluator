@@ -6,6 +6,7 @@ from backend.analysis.pipeline import (
     estimate_shot_quality,
     evaluate_net_occlusion,
     refresh_saved_analysis,
+    session_consistency_score,
     summarize_session,
 )
 from backend.domain.models import BoundingBox, BallCandidate, FrameDetections, PlayerPose, BallTrackPoint, ShotAnalysis
@@ -45,7 +46,7 @@ def test_net_occlusion_evidence_separates_drag_from_freefall_like_drop() -> None
     assert float(freefall_like["net_slowdown_ratio"]) > 1.05
 
 
-def test_confidence_respects_mechanics_quality_and_outcome() -> None:
+def test_observation_confidence_is_separate_from_mechanics_quality() -> None:
     good_form = {"elbow": 165.0, "knee": 160.0, "shoulder": 120.0, "hip": 170.0}
     rough_form = {"elbow": 130.0, "knee": 133.0, "shoulder": 107.0, "hip": 142.0}
 
@@ -55,15 +56,21 @@ def test_confidence_respects_mechanics_quality_and_outcome() -> None:
     assert good_quality > rough_quality
 
     good_make = adjust_shot_confidence(0.78, "make", good_quality, outcome_supported=True)
-    rough_make = adjust_shot_confidence(0.88, "make", rough_quality)
+    rough_make = adjust_shot_confidence(0.88, "make", rough_quality, outcome_supported=True)
     miss = adjust_shot_confidence(0.88, "miss", good_quality)
     assert good_make >= 0.84
-    assert rough_make < good_make
+    assert rough_make >= 0.84
+    assert rough_make > good_make
     assert miss < good_make
-    assert rough_make <= 0.78
+    assert rough_make <= 0.97
 
 
-def test_confidence_separates_far_poor_misses_from_close_clean_misses() -> None:
+def test_missing_shot_quality_is_unavailable_instead_of_average() -> None:
+    assert estimate_shot_quality({}, None, None, None, None) is None
+    assert session_consistency_score([]) is None
+
+
+def test_observation_confidence_stays_high_for_both_clear_miss_geometries() -> None:
     close_clean = adjust_shot_confidence(
         0.88,
         "miss",
@@ -82,11 +89,11 @@ def test_confidence_separates_far_poor_misses_from_close_clean_misses() -> None:
     )
 
     assert close_clean >= 0.84
-    assert far_off <= 0.35
-    assert close_clean > far_off
+    assert far_off >= 0.84
+    assert close_clean >= 0.84
 
 
-def test_very_poor_mechanics_lower_confidence_even_when_make_is_supported() -> None:
+def test_very_poor_mechanics_does_not_lower_observation_confidence() -> None:
     confidence = adjust_shot_confidence(
         0.92,
         "make",
@@ -96,10 +103,30 @@ def test_very_poor_mechanics_lower_confidence_even_when_make_is_supported() -> N
         follow_through_quality=0.22,
     )
 
-    assert confidence <= 0.35
+    assert confidence >= 0.84
 
 
-def test_ft_projection_rewards_clean_form_and_penalizes_rough_release() -> None:
+def test_trajectory_quality_does_not_regrade_observation_confidence() -> None:
+    high = adjust_shot_confidence(
+        0.88,
+        "miss",
+        1.0,
+        trajectory_quality=0.95,
+        follow_through_quality=0.95,
+        miss_proximity=0.48,
+    )
+    low = adjust_shot_confidence(
+        0.88,
+        "miss",
+        0.2,
+        trajectory_quality=0.05,
+        follow_through_quality=0.1,
+        miss_proximity=0.48,
+    )
+    assert high == low
+
+
+def test_future_ft_projection_stays_unavailable_without_a_validated_model() -> None:
     clean = ShotAnalysis(
         id=1,
         outcome="miss",
@@ -135,9 +162,10 @@ def test_ft_projection_rewards_clean_form_and_penalizes_rough_release() -> None:
 
     summary = summarize_session([clean, rough])
 
-    assert summary["predicted_ft_pct"] is not None
-    assert clean.evidence["predicted_ft_pct"] > rough.evidence["predicted_ft_pct"]
-    assert rough.evidence["predicted_ft_pct"] < 60
+    assert summary["predicted_ft_pct"] is None
+    assert summary["prediction_status"] == "unavailable_unvalidated"
+    assert "predicted_ft_pct" not in clean.evidence
+    assert "predicted_ft_pct" not in rough.evidence
     assert estimate_shot_quality(clean.form, 7.0, 2.3, 50.0, 3.7) > estimate_shot_quality(
         rough.form, 2.0, 1.3, 25.0, 2.55
     )
@@ -145,6 +173,7 @@ def test_ft_projection_rewards_clean_form_and_penalizes_rough_release() -> None:
 
 def test_saved_sessions_backfill_predicted_ft_and_clean_coach_copy() -> None:
     payload = {
+        "summary": {"predicted_ft_pct": 68.0},
         "quality": {"tier": "good", "camera_motion": 0.02, "blur_score": 0.8, "pose_coverage": 0.8},
         "shots": [
             {
@@ -167,7 +196,37 @@ def test_saved_sessions_backfill_predicted_ft_and_clean_coach_copy() -> None:
 
     refreshed = refresh_saved_analysis(payload)
 
-    assert refreshed["summary"]["predicted_ft_pct"] is not None
-    assert refreshed["shots"][0]["evidence"]["predicted_ft_pct"] is not None
-    assert refreshed["shots"][0]["confidence"] > 0.78
+    assert refreshed["summary"]["predicted_ft_pct"] is None
+    assert "predicted_ft_pct" not in refreshed["shots"][0]["evidence"]
+    assert refreshed["shots"][0]["confidence"] == 0.78
+    assert refreshed["prediction"]["status"] == "legacy_heuristic_unvalidated"
     assert not refreshed["shots"][0]["coaching"]["intro"].endswith(".")
+    refreshed_again = refresh_saved_analysis(payload)
+    assert refreshed_again["shots"][0]["confidence"] == refreshed["shots"][0]["confidence"]
+    assert refreshed_again["summary"] == refreshed["summary"]
+    assert refreshed_again["prediction"] == refreshed["prediction"]
+
+
+def test_public_shot_export_names_observation_confidence() -> None:
+    shot = ShotAnalysis(
+        id=1,
+        outcome="make",
+        confidence=0.91,
+        observation_confidence=0.73,
+        release_frame=10,
+        release_time=0.33,
+        end_frame=30,
+        release_speed_ms=None,
+        release_height_m=None,
+        entry_angle_deg=None,
+        arc_peak_m=None,
+        form={"elbow": None, "knee": None, "shoulder": None, "hip": None},
+        flags=[],
+        evidence={},
+        trace=[],
+    )
+
+    exported = shot.to_public_dict()
+
+    assert exported["confidence"] == 0.91
+    assert exported["observation_confidence"] == 0.73

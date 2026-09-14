@@ -30,9 +30,14 @@ I built ARC because rewatching a jumper and guessing what went wrong gets old fa
 
 The website uses React, TypeScript, and regular CSS. A local FastAPI server handles the heavy work with Python, OpenCV, PyTorch, and two YOLO vision models. They find the ball, rim, players, and body points like the wrist, elbow, shoulder, hip, and knee. It sounds wild at first, but a college intern who knows some Python and web development could build a simpler version and understand each part.
 
-ARC connects detections across frames, keeps track of the rim when the camera moves, and uses the regulation 18-inch rim as a size reference. That lets it estimate release speed, height, arc, and joint angles from a normal single-camera clip. Portrait video, blur, camera movement, and different resolutions are supported. Clear side views still give the best numbers, of course.
+ARC connects detections across frames, keeps track of the rim when the camera moves, and uses the visible regulation rim as a conditional 2D scale reference. It reports projected measurements only when the evidence supports them, and marks single-camera geometry as estimated or unavailable when it does not. Portrait video, blur, camera movement, and different resolutions are supported. Clear side views still give the best numbers, of course.
 
-The overview also has a predicted FT% built from the visible release profile, body angles, follow-through proxy, shot result, and how much those numbers repeat across the session. It is meant as a useful practice estimate, not a guarantee.
+The overview keeps the observed make rate separate from future prediction. A
+future FT% stays unavailable until a trained model has been evaluated on held
+out shooters and calibrated; mechanics quality never changes confidence in an
+observed make or miss. Choose Normal or Deep analysis on the upload screen.
+
+The accuracy and labeling protocol is documented in [docs/accuracy.md](docs/accuracy.md).
 
 ## The local Coach Notes
 

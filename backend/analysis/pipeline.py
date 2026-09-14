@@ -32,6 +32,12 @@ from backend.domain.models import BoundingBox, BallCandidate, FrameDetections, P
 
 Progress = Callable[[str, int, int], None]
 
+# Bump this whenever the interpretation of a stored result changes. Saved
+# sessions are immutable evidence; readers may backfill display fields but
+# must never recompute the original observation.
+ANALYSIS_VERSION = "2.1.0"
+PREDICTION_STATUS = "unavailable_unvalidated"
+
 # Ultralytics' MPS path is fast for one batch, but two model predictions at
 # once can make Metal allocate a second copy of the graph and exhaust the
 # shared GPU memory on an ordinary Mac. Keep the model pair shared between
@@ -63,6 +69,10 @@ class VideoMetadata:
     fps: float
     frame_count: int
     duration: float
+    source_fps: float | None = None
+    source_frame_count: int | None = None
+    timing_preserved: bool = True
+    slow_motion_unknown: bool = False
 
 
 @dataclass
@@ -86,7 +96,16 @@ def probe_video(path: Path) -> VideoMetadata:
     capture.release()
     if fps <= 1 or frame_count <= 0 or width <= 0 or height <= 0:
         raise ValueError("Video metadata is incomplete or unsupported")
-    return VideoMetadata(width, height, fps, frame_count, frame_count / fps)
+    return VideoMetadata(
+        width,
+        height,
+        fps,
+        frame_count,
+        frame_count / fps,
+        source_fps=fps,
+        source_frame_count=frame_count,
+        timing_preserved=True,
+    )
 
 
 def read_video_frame_batch(capture: cv2.VideoCapture, size: int) -> list[np.ndarray]:
@@ -103,12 +122,15 @@ def collect_evidence(
     path: Path,
     meta: VideoMetadata,
     progress: Progress | None = None,
+    processing_mode: str = "normal",
 ) -> list[FrameDetections]:
     suite = get_shared_vision_models()
     capture = cv2.VideoCapture(str(path))
     evidence: list[FrameDetections] = []
-    batch_size = 12
+    deep = processing_mode == "deep"
+    batch_size = 6 if deep else 12
     completed = 0
+    previous_gray: np.ndarray | None = None
     while True:
         frames = read_video_frame_batch(capture, batch_size)
         if not frames:
@@ -119,15 +141,32 @@ def collect_evidence(
         # between safe concurrent jobs and two workers competing for a second
         # copy of the Metal graph.
         with _MODEL_INFERENCE_LOCK:
-            detected = suite.infer_detector(frames)
-            pose_frames = frames[::2]
-            pose_results = suite.infer_pose(pose_frames)
-        pose_by_offset = {offset: poses for offset, poses in zip(range(0, len(frames), 2), pose_results, strict=True)}
+            detected = suite.infer_detector(frames, deep=deep)
+            pose_stride = 1 if deep else 2
+            pose_frames = frames[::pose_stride]
+            pose_results = suite.infer_pose(pose_frames, deep=deep)
+        pose_by_offset = {offset: poses for offset, poses in zip(range(0, len(frames), pose_stride), pose_results, strict=True)}
         for offset, (frame, item) in enumerate(zip(frames, detected, strict=True)):
             item.balls = merge_ball_candidates(item.balls, color_ball_candidates(frame))
             item.hoops = add_model_hoops(color_rim_candidates(frame), item.hoops)
             item.poses = pose_by_offset.get(offset, [])
             item.sharpness = frame_sharpness(frame)
+            gray = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (96, 54))
+            if previous_gray is not None:
+                # A cut/replay boundary is a high-signal event, not a reason
+                # to manufacture a long ball gap. Keep the threshold
+                # conservative so normal pans and ball motion do not split a
+                # continuous attempt.
+                change = float(np.mean(cv2.absdiff(gray, previous_gray)) / 255.0)
+                item.scene_cut = change >= 0.38
+                # Only suppress near-identical frames when normalization had
+                # to change cadence. A static hold in a native-rate source is
+                # still real footage; a cadence conversion can insert exact
+                # duplicates that must not count as extra observations.
+                item.duplicate_frame = bool(
+                    not meta.timing_preserved and change <= 0.0025 and not item.scene_cut
+                )
+            previous_gray = gray
             evidence.append(item)
         completed += len(frames)
         if progress:
@@ -212,6 +251,8 @@ def _release_seed_candidates(
     _, frame_height = frame_size
     seeds: list[tuple[float, int, BallCandidate]] = []
     for frame, item in enumerate(evidence[:-8]):
+        if item.scene_cut or item.duplicate_frame:
+            continue
         for ball in item.balls[:28]:
             pose = find_pose_nearest_ball(evidence, frame, ball)
             if pose is None or pose.box.height < frame_height * 0.18:
@@ -228,6 +269,8 @@ def _release_seed_candidates(
             upward = 0.0
             target = rims[frame] if frame < len(rims) else None
             for future in range(frame + 2, min(len(evidence), frame + 16)):
+                if evidence[future].scene_cut:
+                    break
                 for candidate in evidence[future].balls[:36]:
                     dt = future - frame
                     start_rim = _rim_center_at(rims, frame)
@@ -260,7 +303,7 @@ def _release_seed_candidates(
             score = ball.confidence * 1.5 + pose.confidence * 0.3 + centered * 0.9 + upward * 0.8
             seeds.append((score, frame, ball))
     seeds.sort(key=lambda value: value[0], reverse=True)
-    return seeds[:80]
+    return seeds
 
 
 def predict_ball_from_recent_motion(
@@ -366,7 +409,9 @@ def track_ball_from_release_candidate(
     maximum_frame = min(len(evidence), seed_frame + int(fps * 4.2))
     diagonal = math.hypot(*frame_size)
     for frame in range(seed_frame + 1, maximum_frame):
-        candidates = evidence[frame].balls[:48]
+        if evidence[frame].scene_cut:
+            break
+        candidates = [] if evidence[frame].duplicate_frame else evidence[frame].balls[:48]
         expanded: list[BallTrackCandidate] = []
         for beam in beams:
             predicted_x, predicted_y, vx, vy = predict_ball_with_camera_motion(
@@ -622,12 +667,24 @@ def _dense_trace(
 
 
 def _form_metrics(
-    pose: PlayerPose | None, ball: BallTrackPoint, *, allow_separated_ball: bool = False
+    pose: PlayerPose | None,
+    ball: BallTrackPoint,
+    *,
+    allow_separated_ball: bool = False,
+    preferred_hand: str | None = None,
 ) -> dict[str, float | None]:
     empty = {"elbow": None, "knee": None, "shoulder": None, "hip": None}
     if pose is None:
         return empty
-    sides = ((5, 7, 9, 11, 13, 15), (6, 8, 10, 12, 14, 16))
+    left_side = (5, 7, 9, 11, 13, 15)
+    right_side = (6, 8, 10, 12, 14, 16)
+    sides = (
+        (left_side, right_side)
+        if preferred_hand == "left"
+        else (right_side, left_side)
+        if preferred_hand == "right"
+        else (left_side, right_side)
+    )
     candidates: list[tuple[float, dict[str, float | None]]] = []
     for shoulder, elbow, wrist, hip, knee, ankle in sides:
         required = [shoulder, elbow, wrist, hip, knee, ankle]
@@ -649,7 +706,55 @@ def _form_metrics(
         # view. The shooting arm is the extending arm, so prefer the larger
         # trusted elbow angle instead of blindly choosing nearest wrist.
         candidates.append((elbow_angle, metrics))
-    return max(candidates, key=lambda item: item[0])[1] if candidates else empty
+    if not candidates:
+        return empty
+    if preferred_hand is not None:
+        # ``sides`` puts the inferred shooting side first. Use it whenever the
+        # keypoints are usable; the larger-elbow fallback is only for unknown
+        # handedness where the guide arm may otherwise win by proximity.
+        return candidates[0][1]
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def infer_shooting_hand(
+    evidence: list[FrameDetections],
+    dense: list[BallTrackPoint],
+    release: int,
+    anchor_pose: PlayerPose | None,
+) -> tuple[str, float]:
+    """Infer the hand that stays closest to the ball through release.
+
+    COCO pose labels wrists as 9 (left) and 10 (right). The result is only a
+    sequence-level association cue; when both wrists are occluded or equally
+    plausible, return ``unknown`` instead of forcing a handedness guess.
+    """
+    if anchor_pose is None:
+        return "unknown", 0.0
+    distances: dict[str, list[float]] = {"left": [], "right": []}
+    scale = max(1.0, anchor_pose.box.height)
+    for point in dense:
+        if not release - 6 <= point.frame <= release + 4:
+            continue
+        pose = _pose_near_anchor(evidence, point.frame, anchor_pose)
+        if pose is None:
+            continue
+        for hand, keypoint_index in (("left", 9), ("right", 10)):
+            x, y, confidence = pose.keypoints[keypoint_index]
+            if confidence >= 0.18:
+                distances[hand].append(distance((point.x, point.y), (x, y)) / scale)
+    medians = {
+        hand: float(np.median(values))
+        for hand, values in distances.items()
+        if len(values) >= 2
+    }
+    if len(medians) < 2:
+        return "unknown", 0.0
+    best, second = sorted(medians.items(), key=lambda item: item[1])[:2]
+    margin = second[1] - best[1]
+    # A margin below 2% of body height is effectively a tie in a single view.
+    if margin < 0.02:
+        return "unknown", round(clamp(0.50 + margin * 2.0, 0.0, 0.95), 3)
+    return best[0], round(clamp(0.50 + margin * 1.8, 0.0, 0.95), 3)
 
 
 def _form_metrics_window(
@@ -657,6 +762,7 @@ def _form_metrics_window(
     dense: list[BallTrackPoint],
     release: int,
     anchor_pose: PlayerPose | None = None,
+    shooting_hand: str | None = None,
 ) -> dict[str, float | None]:
     samples: dict[str, list[float]] = {"elbow": [], "knee": [], "shoulder": [], "hip": []}
     for point in dense:
@@ -667,7 +773,12 @@ def _form_metrics_window(
             if anchor_pose is not None
             else find_pose_nearest_ball(evidence, point.frame, point)
         )
-        metrics = _form_metrics(pose, point, allow_separated_ball=anchor_pose is not None)
+        metrics = _form_metrics(
+            pose,
+            point,
+            allow_separated_ball=anchor_pose is not None,
+            preferred_hand=shooting_hand,
+        )
         for key, measurement in metrics.items():
             if measurement is not None:
                 samples[key].append(measurement)
@@ -681,6 +792,90 @@ def _form_metrics_window(
     return output
 
 
+def measure_temporal_mechanics(
+    evidence: list[FrameDetections],
+    dense: list[BallTrackPoint],
+    release: int,
+    anchor_pose: PlayerPose | None,
+    shooting_hand: str,
+    fps: float,
+    timing_preserved: bool,
+) -> dict[str, float | int | None | dict[str, float | int | None]]:
+    """Measure mechanics as changes through the release window.
+
+    These are descriptive timing and motion measurements, not outcome causes.
+    Every joint is accumulated independently so an occluded ankle does not
+    erase a visible elbow signal.
+    """
+    samples: dict[str, list[tuple[int, float]]] = {key: [] for key in ("elbow", "knee", "shoulder", "hip")}
+    alignment: list[float] = []
+    if anchor_pose is None:
+        return {
+            "release_frame_uncertainty": None,
+            "elbow_extension_timing_ms": None,
+            "follow_through_duration_ms": None,
+            "body_alignment_offset": None,
+            "joint_motion_range_deg": {key: None for key in samples},
+        }
+    for point in dense:
+        if not release <= point.frame <= release + max(12, round(fps * 0.85)):
+            continue
+        pose = _pose_near_anchor(evidence, point.frame, anchor_pose)
+        if pose is None:
+            continue
+        metrics = _form_metrics(
+            pose,
+            point,
+            allow_separated_ball=True,
+            preferred_hand=shooting_hand if shooting_hand != "unknown" else None,
+        )
+        for key, value in metrics.items():
+            if value is not None:
+                samples[key].append((point.frame, float(value)))
+        shoulders = [pose.keypoints[index] for index in (5, 6) if pose.keypoints[index][2] >= 0.18]
+        hips = [pose.keypoints[index] for index in (11, 12) if pose.keypoints[index][2] >= 0.18]
+        if shoulders and hips:
+            shoulder_x = float(np.mean([value[0] for value in shoulders]))
+            hip_x = float(np.mean([value[0] for value in hips]))
+            alignment.append(abs(shoulder_x - hip_x) / max(1.0, pose.box.height))
+
+    ranges = {
+        key: round(max(value for _, value in values) - min(value for _, value in values), 1)
+        if len(values) >= 2
+        else None
+        for key, values in samples.items()
+    }
+    elbow = samples["elbow"]
+    extension_index = next(
+        (
+            index
+            for index, (_, value) in enumerate(elbow)
+            if value >= 150.0
+            and all(next_value >= 145.0 for _, next_value in elbow[index : index + 2])
+        ),
+        None,
+    )
+    extension_frame = elbow[extension_index][0] if extension_index is not None else None
+    follow_duration: float | None = None
+    extension_timing: float | None = None
+    if extension_frame is not None:
+        extension_timing = round((extension_frame - release) / max(1.0, fps) * 1000.0, 1)
+        last_extended = extension_frame
+        for frame, value in elbow[extension_index:]:
+            if value < 145.0:
+                break
+            last_extended = frame
+        if timing_preserved:
+            follow_duration = round((last_extended - extension_frame) / max(1.0, fps) * 1000.0, 1)
+    return {
+        "release_frame_uncertainty": 1 if len(elbow) >= 3 else 3,
+        "elbow_extension_timing_ms": extension_timing,
+        "follow_through_duration_ms": follow_duration,
+        "body_alignment_offset": round(float(np.median(alignment)), 3) if alignment else None,
+        "joint_motion_range_deg": ranges,
+    }
+
+
 def _angle_quality(
     value: float,
     *,
@@ -692,8 +887,8 @@ def _angle_quality(
     """Turn a release angle into a soft mechanics-quality signal.
 
     This is deliberately a gentle heuristic, not a claim that one camera can
-    grade a player's whole form. It is only used to temper confidence when a
-    reliable pose has a clearly unusual release shape.
+    grade a player's whole form. It is a coaching signal and never changes
+    confidence in the observed outcome.
     """
     if ideal_min <= value <= ideal_max:
         return 1.0
@@ -812,7 +1007,7 @@ def combine_shot_quality(
     mechanics_quality: float | None,
     follow_through_quality: float | None,
     trajectory_quality: float | None,
-) -> float:
+) -> float | None:
     """Combine the available form and release evidence into a soft shot score."""
     components: list[tuple[float, float]] = []
     if mechanics_quality is not None:
@@ -822,7 +1017,8 @@ def combine_shot_quality(
     if trajectory_quality is not None:
         components.append((trajectory_quality, 0.32))
     if not components:
-        return 0.5
+        # Missing evidence is unavailable, not an average-quality shot.
+        return None
     total_weight = sum(weight for _, weight in components)
     return round(sum(score * weight for score, weight in components) / total_weight, 3)
 
@@ -833,8 +1029,8 @@ def estimate_shot_quality(
     release_height_m: float | None,
     entry_angle_deg: float | None,
     arc_peak_m: float | None,
-) -> float:
-    """Return a bounded mechanics-and-trajectory score for FT projection."""
+) -> float | None:
+    """Return a bounded visible mechanics-and-trajectory coaching signal."""
     return combine_shot_quality(
         estimate_mechanics_quality(form),
         estimate_follow_through_quality(form),
@@ -852,58 +1048,31 @@ def adjust_shot_confidence(
     follow_through_quality: float | None = None,
     miss_proximity: float | None = None,
 ) -> float:
-    """Blend tracking confidence with soft outcome and mechanics signals.
+    """Return confidence in the observed outcome and tracked attempt.
 
-    Makes with a clean, well-supported release stay high. Misses and makes
-    with noticeably rough mechanics are intentionally less certain, even when
-    the ball crossed the hoop, so the number does not read like a skill grade.
+    The quality arguments remain accepted for compatibility with saved-session
+    readers, but are intentionally ignored. Form and trajectory quality are
+    coaching signals; using them to lower outcome confidence makes an obvious
+    miss look uncertain merely because the release looked awkward.
     """
     starting_confidence = float(base_confidence)
     confidence = starting_confidence
-    if mechanics_quality is not None:
-        if mechanics_quality < 0.55:
-            confidence = min(confidence * 0.56, 0.42)
-        elif mechanics_quality < 0.72:
-            confidence = min(confidence * 0.72, 0.56)
-        elif mechanics_quality < 0.86:
-            confidence = min(confidence * 0.84, 0.67)
-        elif mechanics_quality < 0.94:
-            confidence = min(confidence * 0.94, 0.80)
-        else:
-            confidence = min(0.97, confidence * 1.06)
-    if follow_through_quality is not None:
-        if follow_through_quality < 0.55:
-            confidence = min(confidence * 0.72, 0.48)
-        elif follow_through_quality < 0.72:
-            confidence = min(confidence * 0.88, 0.66)
-    if trajectory_quality is not None:
-        if trajectory_quality < 0.40:
-            confidence = min(confidence * 0.58, 0.40)
-        elif trajectory_quality < 0.62:
-            confidence = min(confidence * 0.78, 0.58)
-        elif trajectory_quality < 0.82:
-            confidence *= 0.94
-        else:
-            confidence = min(0.97, confidence * 1.04)
     if outcome == "miss":
         if miss_proximity is None:
             confidence = min(confidence * 0.88, 0.73)
         elif (
             miss_proximity >= 0.68
-            and (mechanics_quality is None or mechanics_quality >= 0.84)
-            and (trajectory_quality is None or trajectory_quality >= 0.68)
         ):
             # A close miss with a clean release is still a strong, useful call.
             confidence = min(0.93, max(confidence, starting_confidence * 0.96))
-        elif miss_proximity <= 0.25 or (trajectory_quality is not None and trajectory_quality < 0.35):
-            confidence = min(confidence * 0.56, 0.46)
+        elif miss_proximity <= 0.25:
+            # A tracked ball that clearly misses wide is an equally strong
+            # observation. Distance from the hoop describes the outcome, not
+            # the quality of the release, so it must not turn into REVIEW.
+            confidence = min(0.93, max(confidence, starting_confidence * 0.96))
         else:
-            confidence = min(confidence * 0.76, 0.64)
-    if outcome == "make" and mechanics_quality is not None and mechanics_quality < 0.62:
-        confidence = min(confidence, 0.42)
-    if outcome == "make" and outcome_supported and mechanics_quality is not None and mechanics_quality >= 0.92:
-        confidence = max(confidence, 0.84)
-    if outcome == "make" and outcome_supported and trajectory_quality is not None and trajectory_quality >= 0.82:
+            confidence = min(0.86, max(confidence, starting_confidence * 0.90))
+    if outcome == "make" and outcome_supported:
         confidence = max(confidence, 0.84)
     return round(clamp(confidence, 0.18, 0.97), 3)
 
@@ -982,7 +1151,25 @@ def _measure_shot(
         anchor_pose = find_pose_nearest_ball(evidence, point.frame, point)
         if anchor_pose is not None:
             break
-    form = _form_metrics_window(evidence, dense, release_point.frame, anchor_pose)
+    shooting_hand, handedness_confidence = infer_shooting_hand(
+        evidence, dense, release_point.frame, anchor_pose
+    )
+    form = _form_metrics_window(
+        evidence,
+        dense,
+        release_point.frame,
+        anchor_pose,
+        shooting_hand if shooting_hand != "unknown" else None,
+    )
+    temporal_mechanics = measure_temporal_mechanics(
+        evidence,
+        dense,
+        release_point.frame,
+        anchor_pose,
+        shooting_hand,
+        meta.fps,
+        meta.timing_preserved and not meta.slow_motion_unknown,
+    )
     apex_index = int(np.argmin([point.y for point in dense]))
     if apex_index < 2 or apex_index >= len(dense) - 3:
         return None
@@ -993,6 +1180,64 @@ def _measure_shot(
         for point in dense
         if point.frame < len(rims) and rims[point.frame] is not None
     ]
+    release_pose = (
+        _pose_near_anchor(evidence, release_point.frame, anchor_pose)
+        if anchor_pose is not None
+        else find_pose_nearest_ball(evidence, release_point.frame, release_point)
+    )
+    observed_ratio = len(observed) / max(1, len(dense))
+    pose_confidence = release_pose.confidence if release_pose else 0.0
+    # A valid release and a tracked flight are still an attempt when the rim
+    # is outside the frame. Preserve it as REVIEW so users can correct the
+    # outcome locally instead of silently losing the attempt.
+    if not available_rims:
+        flags = ["rim was not confidently visible; outcome and physical metrics require review"]
+        observation_confidence = clamp(
+            observed_ratio * 0.72 + pose_confidence * 0.18 + 0.10,
+            0.18,
+            0.72,
+        )
+        return ShotAnalysis(
+            id=shot_id,
+            outcome="review",
+            confidence=round(observation_confidence, 3),
+            observation_confidence=round(observation_confidence, 3),
+            release_frame=release_point.frame,
+            release_time=round(release_point.frame / meta.fps, 3),
+            end_frame=dense[-1].frame,
+            release_speed_ms=None,
+            release_height_m=None,
+            entry_angle_deg=None,
+            arc_peak_m=None,
+            form=form,
+            flags=flags,
+            evidence={
+                "observed_ball_frames": len([point for point in dense if point.observed]),
+                "tracked_frames": len(dense),
+                "rim_track_confidence": 0.0,
+                "pose_confidence": round(pose_confidence, 3),
+                "shooter_box": anchor_pose.box.to_list() if anchor_pose is not None else None,
+                "shooting_hand": shooting_hand,
+                "handedness_confidence": handedness_confidence,
+                "temporal_mechanics": temporal_mechanics,
+                "crossing_frame": None,
+                "outcome_basis": "release and flight tracked, but no rim was confidently visible",
+                "metric_availability": {"release_speed_ms": False, "release_height_m": False, "entry_angle_deg": False, "arc_peak_m": False},
+                "metric_uncertainty": {"release_speed_ms": None, "release_height_m": None, "entry_angle_deg": None, "arc_peak_m": None},
+                "measurement_space": "unavailable",
+                "calibration_status": "insufficient_single_camera_geometry",
+                "mechanics_quality": estimate_mechanics_quality(form) if release_pose is not None else None,
+                "follow_through_quality": estimate_follow_through_quality(form) if release_pose is not None else None,
+                "trajectory_quality": None,
+                "shot_quality": combine_shot_quality(
+                    estimate_mechanics_quality(form) if release_pose is not None else None,
+                    estimate_follow_through_quality(form) if release_pose is not None else None,
+                    None,
+                ),
+                "prediction_status": PREDICTION_STATUS,
+            },
+            trace=dense,
+        )
     rim_scale = robust_median([rim.width for rim in available_rims]) or max(24.0, min(meta.width, meta.height) * 0.06)
     # Use the rim diameter as the scale reference.  Full-frame percentages
     # reject valid portrait/letterboxed clips where the court occupies only
@@ -1001,11 +1246,6 @@ def _measure_shot(
         return None
     if rise < rim_scale * 0.90 or descent < rim_scale * 0.55:
         return None
-    release_pose = (
-        _pose_near_anchor(evidence, release_point.frame, anchor_pose)
-        if anchor_pose is not None
-        else find_pose_nearest_ball(evidence, release_point.frame, release_point)
-    )
     applicable_rims = available_rims
     if not applicable_rims:
         return None
@@ -1162,6 +1402,10 @@ def _measure_shot(
         outcome_basis = "trajectory approached the rim but release calibration was not trustworthy"
         flags.append("miss was not counted because release calibration was incomplete")
 
+    if not meta.timing_preserved or meta.slow_motion_unknown:
+        release_speed = None
+        flags.append("release speed unavailable because source timing or slow-motion timing is unknown")
+
     stabilized = [
         (_stabilized(point, rims[point.frame]), point)
         for point in dense
@@ -1185,11 +1429,15 @@ def _measure_shot(
         arc_peak,
     )
 
-    observed_ratio = len(observed) / max(1, len(dense))
     rim_confidence = float(np.median([rim.confidence for rim in applicable_rims]))
-    pose_confidence = release_pose.confidence if release_pose else 0.0
-    proximity = clamp(1.0 - nearest_rim_distance / max(1.0, median_rim_width * 4), 0.0, 1.0)
-    confidence = clamp(observed_ratio * 0.40 + rim_confidence * 0.24 + pose_confidence * 0.13 + proximity * 0.14 + (0.09 if crossing else 0.03), 0.18, 0.97)
+    confidence = clamp(
+        observed_ratio * 0.44
+        + rim_confidence * 0.28
+        + pose_confidence * 0.18
+        + (0.08 if crossing else 0.05),
+        0.18,
+        0.97,
+    )
     if outcome == "review":
         confidence = min(confidence, 0.61)
     if observed_ratio < 0.55:
@@ -1216,7 +1464,7 @@ def _measure_shot(
         trajectory_quality,
     )
     if mechanics_quality is not None and mechanics_quality < 0.88:
-        flags.append("release mechanics lowered confidence; treat the form estimate as a cue")
+        flags.append("release mechanics look inconsistent; treat the form estimate as a cue")
     if trajectory_quality is not None and trajectory_quality < 0.42:
         flags.append("release profile was far outside the broad single-camera range")
     outcome_supported = bool(
@@ -1233,11 +1481,29 @@ def _measure_shot(
         follow_through_quality=follow_through_quality,
         miss_proximity=miss_proximity,
     )
+    observation_confidence = confidence
+    metric_reliability = clamp(
+        observed_ratio * 0.42 + rim_confidence * 0.36 + pose_confidence * 0.22,
+        0.05,
+        0.97,
+    )
+    metric_values = {
+        "release_speed_ms": release_speed,
+        "release_height_m": release_height,
+        "entry_angle_deg": entry_angle,
+        "arc_peak_m": arc_peak,
+    }
+    metric_availability = {key: value is not None for key, value in metric_values.items()}
+    metric_uncertainty = {
+        key: round(1.0 - metric_reliability, 3) if value is not None else None
+        for key, value in metric_values.items()
+    }
 
     return ShotAnalysis(
         id=shot_id,
         outcome=outcome,
         confidence=round(confidence, 3),
+        observation_confidence=round(observation_confidence, 3),
         release_frame=release_point.frame,
         release_time=round(release_point.frame / meta.fps, 3),
         end_frame=dense[-1].frame,
@@ -1253,6 +1519,9 @@ def _measure_shot(
             "rim_track_confidence": round(rim_confidence, 3),
             "pose_confidence": round(pose_confidence, 3),
             "shooter_box": anchor_pose.box.to_list() if anchor_pose is not None else None,
+            "shooting_hand": shooting_hand,
+            "handedness_confidence": handedness_confidence,
+            "temporal_mechanics": temporal_mechanics,
             "crossing_frame": crossing[0].frame if crossing else None,
             "crossing_offset_rim": round(crossing_offset, 3) if crossing_offset is not None else None,
             "rim_centered": bool(crossing_offset is not None and crossing_offset <= 0.08),
@@ -1260,6 +1529,11 @@ def _measure_shot(
             "follow_through_quality": follow_through_quality,
             "trajectory_quality": trajectory_quality,
             "shot_quality": shot_quality,
+            "metric_availability": metric_availability,
+            "metric_uncertainty": metric_uncertainty,
+            "measurement_space": "rim_relative_2d",
+            "calibration_status": "single_camera_rim_scale_estimate",
+            "prediction_status": PREDICTION_STATUS,
             "miss_proximity": round(miss_proximity, 3) if miss_proximity is not None else None,
             "outcome_basis": outcome_basis,
             **net_evidence,
@@ -1268,10 +1542,157 @@ def _measure_shot(
     )
 
 
+def _minimal_review_shot(
+    shot_id: int,
+    trace: list[BallTrackPoint],
+    release: int,
+    meta: VideoMetadata,
+    evidence: list[FrameDetections],
+) -> ShotAnalysis | None:
+    """Keep a plausible but incomplete attempt visible for local review."""
+    observed = [point for point in trace if point.observed and point.frame >= release]
+    if len(observed) < 3:
+        return None
+    release_point = min(observed, key=lambda point: abs(point.frame - release))
+    anchor_pose = find_pose_nearest_ball(evidence, release_point.frame, release_point)
+    shooting_hand, handedness_confidence = infer_shooting_hand(
+        evidence, observed, release_point.frame, anchor_pose
+    )
+    form = _form_metrics_window(
+        evidence,
+        observed,
+        release_point.frame,
+        anchor_pose,
+        shooting_hand if shooting_hand != "unknown" else None,
+    )
+    temporal_mechanics = measure_temporal_mechanics(
+        evidence,
+        observed,
+        release_point.frame,
+        anchor_pose,
+        shooting_hand,
+        meta.fps,
+        meta.timing_preserved and not meta.slow_motion_unknown,
+    )
+    pose_confidence = anchor_pose.confidence if anchor_pose is not None else 0.0
+    observation_confidence = clamp(
+        len(observed) / max(1, len(trace)) * 0.60 + pose_confidence * 0.20 + 0.08,
+        0.18,
+        0.58,
+    )
+    return ShotAnalysis(
+        id=shot_id,
+        outcome="review",
+        confidence=round(observation_confidence, 3),
+        observation_confidence=round(observation_confidence, 3),
+        release_frame=release_point.frame,
+        release_time=round(release_point.frame / meta.fps, 3),
+        end_frame=observed[-1].frame,
+        release_speed_ms=None,
+        release_height_m=None,
+        entry_angle_deg=None,
+        arc_peak_m=None,
+        form=form,
+        flags=["trajectory is incomplete; confirm the attempt and outcome"],
+        evidence={
+            "observed_ball_frames": len(observed),
+            "tracked_frames": len(trace),
+            "rim_track_confidence": 0.0,
+            "pose_confidence": round(pose_confidence, 3),
+            "shooter_box": anchor_pose.box.to_list() if anchor_pose is not None else None,
+            "shooting_hand": shooting_hand,
+            "handedness_confidence": handedness_confidence,
+            "temporal_mechanics": temporal_mechanics,
+            "crossing_frame": None,
+            "outcome_basis": "release-like motion found, but the complete rim interaction was not observed",
+            "metric_availability": {"release_speed_ms": False, "release_height_m": False, "entry_angle_deg": False, "arc_peak_m": False},
+            "metric_uncertainty": {"release_speed_ms": None, "release_height_m": None, "entry_angle_deg": None, "arc_peak_m": None},
+            "measurement_space": "unavailable",
+            "calibration_status": "insufficient_single_camera_geometry",
+            "prediction_status": PREDICTION_STATUS,
+        },
+        trace=trace,
+    )
+
+
+def _shot_trajectory_signature(
+    shot: ShotAnalysis,
+    rims: list[BoundingBox | None],
+    meta: VideoMetadata,
+    samples: int = 9,
+) -> np.ndarray | None:
+    """Sample a shot in rim-relative coordinates for replay de-duplication."""
+    observed = [point for point in shot.trace if point.observed]
+    if len(observed) < 5 or shot.end_frame <= shot.release_frame:
+        return None
+    values: list[float] = []
+    for index in range(samples):
+        fraction = index / max(1, samples - 1)
+        target_frame = shot.release_frame + fraction * (shot.end_frame - shot.release_frame)
+        point = min(observed, key=lambda candidate: abs(candidate.frame - target_frame))
+        rim = rims[point.frame] if 0 <= point.frame < len(rims) else None
+        if rim is not None:
+            scale = max(1.0, rim.width)
+            values.extend(((point.x - rim.center[0]) / scale, (point.y - rim.center[1]) / scale))
+        else:
+            values.extend((point.x / max(1.0, meta.width), point.y / max(1.0, meta.height)))
+    return np.asarray(values, dtype=float)
+
+
+def _is_replay_duplicate(
+    candidate: ShotAnalysis,
+    existing: ShotAnalysis,
+    evidence: list[FrameDetections],
+    rims: list[BoundingBox | None],
+    meta: VideoMetadata,
+) -> bool:
+    """Reject a near-identical trajectory repeated after an edit/replay."""
+    gap = candidate.release_frame - existing.end_frame
+    if gap <= max(8, round(meta.fps * 0.35)):
+        return False
+    start = max(0, existing.end_frame)
+    end = min(len(evidence), candidate.release_frame + 1)
+    if not any(item.scene_cut for item in evidence[start:end]):
+        return False
+    if candidate.outcome != existing.outcome and "review" not in {candidate.outcome, existing.outcome}:
+        return False
+    first = _shot_trajectory_signature(existing, rims, meta)
+    second = _shot_trajectory_signature(candidate, rims, meta)
+    if first is None or second is None or first.shape != second.shape:
+        return False
+    distance_value = float(np.mean(np.linalg.norm(first.reshape(-1, 2) - second.reshape(-1, 2), axis=1)))
+    duration_first = max(1, existing.end_frame - existing.release_frame)
+    duration_second = max(1, candidate.end_frame - candidate.release_frame)
+    duration_ratio = min(duration_first, duration_second) / max(duration_first, duration_second)
+    return distance_value <= 0.16 and duration_ratio >= 0.68
+
+
 def find_shots(
     evidence: list[FrameDetections], rims: list[BoundingBox | None], meta: VideoMetadata
 ) -> list[ShotAnalysis]:
-    seeds = _release_seed_candidates(evidence, rims, (meta.width, meta.height))
+    raw_seeds = _release_seed_candidates(evidence, rims, (meta.width, meta.height))
+    # Work in overlapping temporal windows so a long session is not silently
+    # truncated by a global candidate/shot cap. The overlap catches releases
+    # at window boundaries; temporal non-maximum suppression below removes the
+    # duplicate proposals.
+    window = max(1, round(meta.fps * 8.0))
+    step = max(1, round(meta.fps * 4.0))
+    windowed: list[tuple[float, int, BallCandidate]] = []
+    seen_seed_keys: set[tuple[int, int, int, str]] = set()
+    for start in range(0, max(1, len(evidence)), step):
+        end = min(len(evidence), start + window)
+        candidates = [seed for seed in raw_seeds if start <= seed[1] < end][:16]
+        for candidate in candidates:
+            # Keep each hypothesis once across overlapping windows. Keying by
+            # a quantized location preserves genuinely different same-frame
+            # ball hypotheses while removing only the overlap duplicate.
+            ball = candidate[2]
+            key = (candidate[1], round(ball.x / 12.0), round(ball.y / 12.0), ball.source)
+            if key in seen_seed_keys:
+                continue
+            seen_seed_keys.add(key)
+            windowed.append(candidate)
+    seeds = windowed
     proposals: list[tuple[float, ShotAnalysis]] = []
     for seed_score, seed_frame, seed in seeds:
         trace = track_ball_from_release_candidate(evidence, seed_frame, seed, meta.fps, rims, (meta.width, meta.height))
@@ -1282,13 +1703,13 @@ def find_shots(
             continue
         shot = _measure_shot(1, trace, release, meta, evidence, rims)
         if shot is None:
+            shot = _minimal_review_shot(1, trace, release, meta, evidence)
+        if shot is None:
             continue
-        # A moving broadcast camera can lower confidence even when the ball
-        # has a coherent rim-plane trajectory. Keep those attempts visible as
-        # REVIEW so the user can inspect the evidence instead of silently
-        # reporting zero shots; truly weak proposals are still discarded.
-        if shot.outcome == "review" and shot.confidence < 0.52:
-            continue
+        # Keep every release-like proposal visible as REVIEW when the outcome
+        # or trajectory is incomplete. Review is the safe fallback for weak
+        # evidence; silently dropping it makes a detector miss impossible to
+        # correct locally and hides failures from evaluation.
         trajectory_quality = seed_score + shot.confidence * 3 + (2 if shot.evidence["crossing_frame"] else 0)
         proposals.append((trajectory_quality, shot))
     proposals.sort(key=lambda value: value[0], reverse=True)
@@ -1299,18 +1720,20 @@ def find_shots(
             for existing in selected
         ):
             continue
+        if any(_is_replay_duplicate(proposal, existing, evidence, rims, meta) for existing in selected):
+            continue
         proposal.id = len(selected) + 1
         selected.append(proposal)
     selected.sort(key=lambda shot: shot.release_frame)
     for index, shot in enumerate(selected, 1):
         shot.id = index
-    return selected[:24]
+    return selected
 
 
-def session_consistency_score(shots: list[ShotAnalysis]) -> float:
+def session_consistency_score(shots: list[ShotAnalysis]) -> float | None:
     """Estimate repeatability from the measurements that are actually present."""
     if len(shots) < 2:
-        return 0.65
+        return None
     tolerances = {
         "release_speed_ms": 0.45,
         "release_height_m": 0.12,
@@ -1333,89 +1756,104 @@ def session_consistency_score(shots: list[ShotAnalysis]) -> float:
         median = float(np.median(values))
         spread = float(np.median(np.abs(np.asarray(values) - median)))
         scores.append(clamp(1.0 - spread / max(1e-6, tolerance), 0.0, 1.0))
-    return round(float(np.mean(scores)) if scores else 0.60, 3)
+    return round(float(np.mean(scores)), 3) if scores else None
 
 
 def calibrate_session_confidence(shots: list[ShotAnalysis]) -> None:
-    """Give repeatable, close attempts back the confidence a single miss removed."""
-    consistency = session_consistency_score(shots)
-    if consistency < 0.80:
-        return
-    for shot in shots:
-        quality_value = shot.evidence.get("shot_quality")
-        quality = (
-            float(quality_value)
-            if quality_value is not None
-            else estimate_shot_quality(
-                shot.form,
-                shot.release_speed_ms,
-                shot.release_height_m,
-                shot.entry_angle_deg,
-                shot.arc_peak_m,
-            )
-        )
-        proximity = shot.evidence.get("miss_proximity")
-        close_enough = proximity is not None and float(proximity) >= 0.45
-        if quality >= 0.82 and (shot.outcome == "make" or (shot.outcome == "miss" and close_enough)):
-            shot.confidence = round(min(0.95, shot.confidence + 0.05), 3)
+    """Compatibility shim for the removed quality-based confidence pass.
+
+    Older callers imported this helper after an analysis. Confidence now means
+    confidence in the observed event, so a session-level mechanics score must
+    never rewrite it. Keep the name callable for those integrations while
+    intentionally leaving every stored value unchanged.
+    """
+    return None
 
 
 def predict_ft_percentage(shots: list[ShotAnalysis]) -> float | None:
-    """Project a free-throw percentage from visible mechanics and repetition.
+    """Return a future make probability only after a validated model exists.
 
-    This is a practice estimate, not a promise of future makes. A good-looking
-    close miss can score higher than a lucky make with a rough release, while
-    more repeated variation lowers the session projection.
+    A hand-written blend of mechanics, a single observed result, and a
+    population prior is not a calibrated prediction. Returning ``None`` keeps
+    the observed make rate useful while preventing a made-up FT% from being
+    presented as predictive. A trained model can replace this function without
+    changing the session schema.
     """
-    if not shots:
-        return None
-    consistency = session_consistency_score(shots)
-    decided = [shot for shot in shots if shot.outcome in {"make", "miss"}]
-    makes = sum(shot.outcome == "make" for shot in decided)
-    outcome_prior = (makes + 2.5 * 0.72) / max(2.5, len(decided) + 2.5)
-    predictions: list[float] = []
-    for shot in shots:
-        quality_value = shot.evidence.get("shot_quality")
-        quality = (
-            float(quality_value)
-            if quality_value is not None
-            else estimate_shot_quality(
-                shot.form,
-                shot.release_speed_ms,
-                shot.release_height_m,
-                shot.entry_angle_deg,
-                shot.arc_peak_m,
-            )
-        )
-        prediction = 0.08 + 0.66 * clamp(quality, 0.0, 1.0) + 0.16 * consistency + 0.10 * outcome_prior
-        miss_proximity = shot.evidence.get("miss_proximity")
-        if (
-            shot.outcome == "miss"
-            and miss_proximity is not None
-            and float(miss_proximity) >= 0.68
-            and quality >= 0.78
-        ):
-            prediction += 0.02
-        if shot.outcome == "review":
-            prediction -= 0.04
-        projected = round(clamp(prediction, 0.05, 0.95) * 100, 1)
-        shot.evidence["predicted_ft_pct"] = projected
-        shot.evidence["session_consistency_score"] = consistency
-        predictions.append(projected)
-    return round(float(np.mean(predictions)), 1)
+    return None
 
 
 def refresh_saved_analysis(payload: dict) -> dict:
     """Backfill new confidence, FT projection, and coaching fields for old sessions."""
-    raw_shots = payload.get("shots") or []
+    # Treat the caller's decoded JSON as immutable input. This keeps repeated
+    # reads and repeated refreshes byte-for-byte stable while allowing the
+    # returned view to include compatibility fields and corrections.
+    payload = dict(payload)
+    legacy_prediction = (
+        "analysis_version" not in payload
+        and payload.get("summary", {}).get("predicted_ft_pct") is not None
+    )
+    raw_shots = [dict(raw) for raw in (payload.get("shots") or [])]
+    session_id = str(payload.get("session", {}).get("id", ""))
+    corrections_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
+    corrections: dict[str, dict] = {}
+    if session_id and corrections_path.is_file():
+        try:
+            stored = json.loads(corrections_path.read_text())
+            corrections = stored.get("shots", {}) if isinstance(stored, dict) else {}
+        except (OSError, ValueError, TypeError):
+            corrections = {}
+    manual_shots: list[dict] = []
+    if session_id and corrections_path.is_file():
+        try:
+            stored = json.loads(corrections_path.read_text())
+            raw_manual = stored.get("manual_shots", []) if isinstance(stored, dict) else []
+            if isinstance(raw_manual, list):
+                manual_shots = [dict(item) for item in raw_manual if isinstance(item, dict)]
+        except (OSError, ValueError, TypeError):
+            manual_shots = []
+    for manual in manual_shots:
+        manual.setdefault("correction", {"source": "local_user", "fields": ["manual_attempt"]})
+    raw_shots.extend(manual_shots)
+    for raw in raw_shots:
+        correction = corrections.get(str(raw.get("id")))
+        if not isinstance(correction, dict):
+            continue
+        if correction.get("outcome") in {"make", "miss", "review"}:
+            raw["outcome"] = correction["outcome"]
+        if isinstance(correction.get("release_frame"), int) and correction["release_frame"] >= 0:
+            raw["release_frame"] = correction["release_frame"]
+            fps = float(payload.get("session", {}).get("fps") or 0.0)
+            if fps > 0:
+                raw["release_time"] = round(correction["release_frame"] / fps, 3)
+        if correction.get("shooter_id") is not None:
+            raw["evidence"] = {
+                **dict(raw.get("evidence") or {}),
+                "shooter_id": str(correction["shooter_id"]),
+            }
+        raw["correction"] = {
+            "source": "local_user",
+            "updated_at": correction.get("updated_at"),
+            "fields": sorted(key for key in correction if key not in {"updated_at"}),
+            **({"comment": str(correction["comment"])} if correction.get("comment") is not None else {}),
+        }
     shots: list[ShotAnalysis] = []
     for index, raw in enumerate(raw_shots, 1):
-        form = raw.get("form") or {}
+        form = raw.get("form")
+        if not isinstance(form, dict):
+            form = {}
+        raw_evidence = raw.get("evidence")
+        if not isinstance(raw_evidence, dict):
+            raw_evidence = {}
         shots.append(
             ShotAnalysis(
                 id=int(raw.get("id", index)),
                 outcome=str(raw.get("outcome", "review")),
                 confidence=float(raw.get("confidence", 0.5)),
+                observation_confidence=(
+                    float(raw["observation_confidence"])
+                    if raw.get("observation_confidence") is not None
+                    else float(raw.get("confidence", 0.5))
+                ),
                 release_frame=int(raw.get("release_frame", 0)),
                 release_time=float(raw.get("release_time", 0.0)),
                 end_frame=int(raw.get("end_frame", raw.get("release_frame", 0))),
@@ -1430,7 +1868,15 @@ def refresh_saved_analysis(payload: dict) -> dict:
                     "hip": form.get("hip"),
                 },
                 flags=list(raw.get("flags") or []),
-                evidence=dict(raw.get("evidence") or {}),
+                evidence={
+                    "observed_ball_frames": int(raw_evidence.get("observed_ball_frames", 0)),
+                    "tracked_frames": int(raw_evidence.get("tracked_frames", 0)),
+                    "rim_track_confidence": float(raw_evidence.get("rim_track_confidence", 0.0)),
+                    "pose_confidence": float(raw_evidence.get("pose_confidence", 0.0)),
+                    "crossing_frame": raw_evidence.get("crossing_frame"),
+                    **raw_evidence,
+                    **({"correction": raw["correction"]} if raw.get("correction") else {}),
+                },
                 trace=[],
                 coaching=raw.get("coaching"),
             )
@@ -1472,30 +1918,35 @@ def refresh_saved_analysis(payload: dict) -> dict:
             shot.evidence["follow_through_quality"] = follow_through
             shot.evidence["trajectory_quality"] = trajectory
             shot.evidence["shot_quality"] = combine_shot_quality(mechanics, follow_through, trajectory)
-            shot.confidence = adjust_shot_confidence(
-                shot.confidence,
-                shot.outcome,
-                mechanics,
-                outcome_supported=bool(
-                    shot.outcome == "make"
-                    and shot.evidence.get("crossing_frame") is not None
-                    and (
-                        shot.evidence.get("net_drag_confirmed")
-                        or shot.evidence.get("reappeared_below_rim")
-                    )
-                ),
-                trajectory_quality=trajectory,
-                follow_through_quality=follow_through,
-                miss_proximity=miss_proximity,
+            shot.evidence.pop("predicted_ft_pct", None)
+            shot.evidence.pop("session_consistency_score", None)
+            shot.evidence["prediction_status"] = (
+                "legacy_heuristic_unvalidated" if legacy_prediction else PREDICTION_STATUS
             )
+            # Preserve the stored observation confidence. Refreshing an old
+            # session is a read operation and must not re-grade its evidence.
+            shot.observation_confidence = shot.observation_confidence or shot.confidence
         attach_coaching(shots, payload.get("quality") or {})
     payload["summary"] = summarize_session(shots)
+    if legacy_prediction:
+        payload["summary"]["prediction_status"] = "legacy_heuristic_unvalidated"
+    payload.setdefault("analysis_version", "1.0.0-legacy")
+    payload.setdefault("processing_mode", "normal")
+    payload["prediction"] = {
+        "status": "legacy_heuristic_unvalidated" if legacy_prediction else PREDICTION_STATUS,
+        "model": None,
+        "cutoff": None,
+        "sample_size": 0,
+    }
+    payload["corrections"] = {
+        "count": len(corrections) + len(manual_shots),
+        "source": "local_user" if corrections or manual_shots else None,
+    }
     payload["shots"] = [shot.to_public_dict() for shot in shots]
     return payload
 
 
 def summarize_session(shots: list[ShotAnalysis]) -> dict:
-    calibrate_session_confidence(shots)
     decided = [shot for shot in shots if shot.outcome in {"make", "miss"}]
     makes = sum(shot.outcome == "make" for shot in decided)
     streak = best = 0
@@ -1511,7 +1962,13 @@ def summarize_session(shots: list[ShotAnalysis]) -> dict:
         "misses": sum(shot.outcome == "miss" for shot in shots),
         "review": sum(shot.outcome == "review" for shot in shots),
         "fg_pct": round(makes / len(decided) * 100, 1) if decided else None,
+        # Keep the old field for exports, but give free-throw consumers an
+        # explicit name that distinguishes observed history from prediction.
+        "observed_ft_pct": round(makes / len(decided) * 100, 1) if decided else None,
         "predicted_ft_pct": predict_ft_percentage(shots),
+        "prediction_status": PREDICTION_STATUS,
+        "prediction_model": None,
+        "prediction_sample_size": 0,
         "best_streak": best,
         "average_confidence": round(float(np.mean([shot.confidence for shot in shots])) * 100, 1) if shots else 0.0,
     }
@@ -1531,10 +1988,30 @@ def build_footage_quality_report(
     visible_rims = [rim for rim in rims if rim is not None]
     camera_motion = 0.0
     if len(visible_rims) >= 3:
-        centers = np.asarray([rim.center for rim in visible_rims], dtype=float)
-        camera_motion = float(
-            max(np.ptp(centers[:, 0]) / max(1, meta.width), np.ptp(centers[:, 1]) / max(1, meta.height))
-        )
+        # A replay can put the same basket at a different image location. Do
+        # not call that camera motion; measure movement within each continuous
+        # edit segment and keep the worst segment as the reliability signal.
+        segment_centers: list[tuple[float, float]] = []
+        segments: list[list[tuple[float, float]]] = []
+        for index, rim in enumerate(rims):
+            if index < len(evidence) and evidence[index].scene_cut:
+                if segment_centers:
+                    segments.append(segment_centers)
+                segment_centers = []
+            if rim is not None:
+                segment_centers.append(rim.center)
+        if segment_centers:
+            segments.append(segment_centers)
+        for centers_list in segments:
+            if len(centers_list) < 3:
+                continue
+            centers = np.asarray(centers_list, dtype=float)
+            camera_motion = max(
+                camera_motion,
+                float(max(np.ptp(centers[:, 0]) / max(1, meta.width), np.ptp(centers[:, 1]) / max(1, meta.height))),
+            )
+    scene_cut_count = sum(item.scene_cut for item in evidence)
+    duplicate_frame_count = sum(item.duplicate_frame for item in evidence)
 
     score = (
         clamp(rim_coverage / 0.7, 0, 1) * 0.42
@@ -1556,6 +2033,12 @@ def build_footage_quality_report(
         messages.append("Motion blur is substantial; temporal tracking was widened and release timing is estimated")
     if meta.fps < 24:
         messages.append("Frame rate is below 24 fps, which reduces release and occlusion timing precision")
+    if scene_cut_count:
+        messages.append(f"{scene_cut_count} scene cut or replay boundary detected; tracking was reset there")
+    if duplicate_frame_count:
+        messages.append(f"{duplicate_frame_count} duplicate playback frame(s) were excluded from observed evidence")
+    if not meta.timing_preserved or meta.slow_motion_unknown:
+        messages.append("Source timing or slow-motion timing is unknown; speed metrics are unavailable")
     orientation = "portrait" if meta.height > meta.width * 1.08 else "landscape" if meta.width > meta.height * 1.08 else "square"
     return {
         "tier": tier,
@@ -1568,6 +2051,11 @@ def build_footage_quality_report(
         "ball_candidate_coverage": round(any_ball_coverage, 3),
         "camera_motion": round(camera_motion, 3),
         "blur_score": round(blur_score, 3),
+        "scene_cut_count": scene_cut_count,
+        "duplicate_frame_count": duplicate_frame_count,
+        "timing_preserved": meta.timing_preserved,
+        "source_fps": meta.source_fps,
+        "source_frame_count": meta.source_frame_count,
         "messages": messages,
     }
 
@@ -1577,6 +2065,7 @@ def analyze_video(
     session_dir: Path | None = None,
     progress: Progress | None = None,
     display_name: str | None = None,
+    processing_mode: str = "normal",
 ) -> dict:
     from backend.analysis.video_rendering import render_outputs
 
@@ -1593,17 +2082,33 @@ def analyze_video(
         shutil.copy2(source, uploaded_source)
     else:
         uploaded_source = source
+    try:
+        source_meta = probe_video(uploaded_source)
+    except ValueError:
+        source_meta = None
     if progress:
         progress("Normalizing rotation, codec, and frame timing", 0, 0)
     local_source = normalize_video(uploaded_source, session_dir / "original.mp4")
     meta = probe_video(local_source)
+    if source_meta is not None:
+        meta.source_fps = source_meta.fps
+        meta.source_frame_count = source_meta.frame_count
+        meta.timing_preserved = (
+            abs(meta.fps - source_meta.fps) < 0.51
+            and meta.frame_count == source_meta.frame_count
+        )
+        meta.slow_motion_unknown = False
     if progress:
         progress("Loading local vision models", 0, meta.frame_count)
-    evidence = collect_evidence(local_source, meta, progress)
+    evidence = collect_evidence(local_source, meta, progress, processing_mode=processing_mode)
     if progress:
         progress("Stabilizing rim geometry", meta.frame_count, meta.frame_count)
     rim_candidates = [item.hoops for item in evidence]
-    rims = select_rim_track(rim_candidates, (meta.width, meta.height))
+    rims = select_rim_track(
+        rim_candidates,
+        (meta.width, meta.height),
+        [item.scene_cut for item in evidence],
+    )
     shots = find_shots(evidence, rims, meta)
     quality = build_footage_quality_report(evidence, rims, meta)
     attach_coaching(shots, quality)
@@ -1615,8 +2120,29 @@ def analyze_video(
     warnings.extend(quality["messages"])
     if progress:
         progress("Rendering review videos", 0, meta.frame_count)
-    artifacts = render_outputs(local_source, session_dir, meta, shots, rims, evidence, progress)
+    artifacts = render_outputs(
+        local_source,
+        session_dir,
+        meta,
+        shots,
+        rims,
+        evidence,
+        progress,
+        original_source=uploaded_source,
+    )
     payload = {
+        "analysis_version": ANALYSIS_VERSION,
+        "models": {
+            "ball_rim_detector": "ebard-yolov8n.pt",
+            "pose": "yolo11n-pose.pt",
+        },
+        "processing_mode": processing_mode if processing_mode in {"normal", "deep"} else "normal",
+        "prediction": {
+            "status": PREDICTION_STATUS,
+            "model": None,
+            "cutoff": None,
+            "sample_size": 0,
+        },
         "session": {
             "id": session_id,
             "filename": filename,
@@ -1627,6 +2153,10 @@ def analyze_video(
             "frame_count": meta.frame_count,
             "duration": round(meta.duration, 3),
             "local_only": True,
+            "source_fps": meta.source_fps,
+            "source_frame_count": meta.source_frame_count,
+            "timing_preserved": meta.timing_preserved,
+            "slow_motion_unknown": meta.slow_motion_unknown,
         },
         "summary": summarize_session(shots),
         "quality": quality,

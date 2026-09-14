@@ -2,6 +2,7 @@ export type ShotOutcome = "make" | "miss" | "review";
 export type VideoMode = "original" | "annotated" | "pose";
 export type WorkspaceTab = "overview" | "shot" | "tracking";
 export type ThemeMode = "light" | "dark";
+export type ProcessingMode = "normal" | "deep";
 
 export interface ShotCoaching {
   intro: string;
@@ -15,6 +16,8 @@ export interface ShotCoaching {
       metric: string;
       label: string;
       value: string;
+      frame_start?: number;
+      frame_end?: number;
     } | null;
     source_ids: string[];
   }>;
@@ -30,6 +33,7 @@ export interface ShotAnalysis {
   id: number;
   outcome: ShotOutcome;
   confidence: number;
+  observation_confidence?: number;
   confidence_label: "high" | "medium" | "review";
   release_frame: number;
   release_time: number;
@@ -45,11 +49,23 @@ export interface ShotAnalysis {
     hip: number | null;
   };
   flags: string[];
+  metric_availability?: Record<string, boolean>;
+  metric_uncertainty?: Record<string, number | null>;
   evidence: {
     observed_ball_frames: number;
     tracked_frames: number;
     rim_track_confidence: number;
     pose_confidence: number;
+    shooter_id?: string;
+    shooting_hand?: "left" | "right" | "unknown";
+    handedness_confidence?: number;
+    temporal_mechanics?: {
+      release_frame_uncertainty?: number | null;
+      elbow_extension_timing_ms?: number | null;
+      follow_through_duration_ms?: number | null;
+      body_alignment_offset?: number | null;
+      joint_motion_range_deg?: Record<string, number | null>;
+    };
     crossing_frame: number | null;
     outcome_basis?: string;
     reappeared_below_rim?: boolean;
@@ -63,6 +79,17 @@ export interface ShotAnalysis {
     miss_proximity?: number | null;
     predicted_ft_pct?: number | null;
     session_consistency_score?: number | null;
+    prediction_status?: string;
+    metric_availability?: Record<string, boolean>;
+    metric_uncertainty?: Record<string, number | null>;
+    measurement_space?: string;
+    calibration_status?: string;
+    correction?: {
+      source: "local_user";
+      updated_at?: string;
+      fields: string[];
+      comment?: string;
+    };
   };
   coaching?: ShotCoaching;
 }
@@ -78,6 +105,10 @@ export interface AnalysisSession {
     frame_count: number;
     duration: number;
     local_only: boolean;
+    source_fps?: number | null;
+    source_frame_count?: number | null;
+    timing_preserved?: boolean;
+    slow_motion_unknown?: boolean;
   };
   summary: {
     attempts: number;
@@ -85,10 +116,24 @@ export interface AnalysisSession {
     misses: number;
     review: number;
     fg_pct: number | null;
+    observed_ft_pct?: number | null;
     predicted_ft_pct?: number | null;
+    prediction_status?: string;
+    prediction_model?: string | null;
+    prediction_sample_size?: number;
     best_streak: number;
     average_confidence: number;
   };
+  analysis_version?: string;
+  models?: Record<string, string>;
+  processing_mode?: ProcessingMode;
+  prediction?: {
+    status: string;
+    model: string | null;
+    cutoff: number | null;
+    sample_size: number;
+  };
+  corrections?: { count: number; source: string | null };
   quality?: {
     tier: "good" | "limited" | "insufficient";
     score: number;
@@ -100,12 +145,18 @@ export interface AnalysisSession {
     ball_candidate_coverage: number;
     camera_motion: number;
     blur_score?: number;
+    scene_cut_count?: number;
+    duplicate_frame_count?: number;
+    timing_preserved?: boolean;
+    source_fps?: number | null;
+    source_frame_count?: number | null;
     messages: string[];
   };
   shots: ShotAnalysis[];
   warnings: string[];
   artifacts: {
     original: string;
+    source_original?: string;
     annotated: string;
     pose: string;
     shots_jsonl: string;
@@ -124,6 +175,7 @@ export interface AnalysisJobState {
   updated_at?: number;
   error: string | null;
   result: AnalysisSession | null;
+  processing_mode?: ProcessingMode;
 }
 
 export interface ExampleVideo {
@@ -151,4 +203,5 @@ export interface AnalysisQueueItem {
   progress: number;
   result: AnalysisSession | null;
   error: string | null;
+  processingMode: ProcessingMode;
 }

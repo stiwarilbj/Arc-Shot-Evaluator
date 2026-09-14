@@ -1,6 +1,6 @@
 [project]
 name = "arc-shot-evaluator"
-version = "1.0.0"
+version = "2.1.0"
 description = "Private, local basketball shot and form analysis"
 requires-python = ">=3.12,<3.13"
 dependencies = [

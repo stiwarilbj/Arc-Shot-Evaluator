@@ -63,12 +63,22 @@ class FrameDetections:
     # Normalized Laplacian sharpness (0..1). It is used to widen temporal
     # tracking gaps when motion blur hides the ball for a few frames.
     sharpness: float = 1.0
+    # Large inter-frame changes usually indicate an edit, replay, or hard
+    # camera cut. Tracking must not bridge those boundaries.
+    scene_cut: bool = False
+    # Frames inserted by a cadence conversion are retained for playback but
+    # excluded from observed ball evidence. This keeps duplicated images from
+    # inflating coverage or creating extra attempts.
+    duplicate_frame: bool = False
 
 
 @dataclass(slots=True)
 class ShotAnalysis:
     id: int
     outcome: str
+    # Confidence that the observed outcome and tracked attempt are correct.
+    # This is deliberately independent from form quality: an awkward-looking
+    # release can still be an unambiguous make or miss.
     confidence: float
     release_frame: int
     release_time: float
@@ -81,6 +91,7 @@ class ShotAnalysis:
     flags: list[str]
     evidence: dict[str, Any]
     trace: list[BallTrackPoint] = field(repr=False)
+    observation_confidence: float | None = None
     coaching: dict[str, Any] | None = None
 
     def to_public_dict(self) -> dict[str, Any]:
@@ -92,4 +103,19 @@ class ShotAnalysis:
         data["confidence_label"] = (
             "high" if self.confidence >= 0.84 else "medium" if self.confidence >= 0.62 else "review"
         )
+        # Keep the old `confidence` field for clients written against v1 while
+        # making the semantic name explicit for new consumers.
+        data["observation_confidence"] = (
+            round(self.observation_confidence, 3)
+            if self.observation_confidence is not None
+            else round(self.confidence, 3)
+        )
+        # Expose metric reliability at the shot boundary as well as inside the
+        # evidence object so API consumers do not have to know the internal
+        # evidence layout to distinguish unavailable from estimated values.
+        evidence = data.get("evidence") or {}
+        if "metric_availability" in evidence:
+            data["metric_availability"] = evidence["metric_availability"]
+        if "metric_uncertainty" in evidence:
+            data["metric_uncertainty"] = evidence["metric_uncertainty"]
         return data

@@ -8,9 +8,10 @@ from backend.analysis.video_normalization import normalize_video, normalized_fps
 
 
 def test_normalized_fps_caps_and_repairs_unusual_rates() -> None:
-    assert normalized_fps(12) == 20
+    assert normalized_fps(12) == 12
     assert normalized_fps(29.97) == 30
     assert normalized_fps(59.94) == 60
+    assert normalized_fps(120) == 120
     assert normalized_fps(500) == 30
 
 
@@ -29,5 +30,5 @@ def test_normalize_video_creates_browser_safe_mp4(tmp_path: Path) -> None:
 
     assert output.is_file()
     assert (meta.width, meta.height) == (160, 120)
-    assert meta.fps == 20
-    assert meta.frame_count >= 38
+    assert meta.fps == 12
+    assert 22 <= meta.frame_count <= 26

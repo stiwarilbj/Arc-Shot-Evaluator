@@ -46,7 +46,7 @@ EXAMPLE_FILES = (
     "YTDown.com_YouTube_LeBron-Jokes-After-Steph-Misses-Free-Thr_Media_welHDbZ0KBY_001_720p.mp4",
 )
 
-app = FastAPI(title="ARC Local Shot Analysis", version="1.0.0")
+app = FastAPI(title="ARC Local Shot Analysis", version="2.1.0")
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 job_cancel_events: dict[str, threading.Event] = {}
@@ -70,19 +70,32 @@ class AnalysisCancelled(Exception):
     """Internal signal used to stop a running local analysis cleanly."""
 
 
-def run_analysis_job(job_id: str, source: Path, session_dir: Path, display_name: str) -> None:
+def run_analysis_job(
+    job_id: str,
+    source: Path,
+    session_dir: Path,
+    display_name: str,
+    processing_mode: str = "normal",
+) -> None:
     cancel_event = job_cancel_events[job_id]
     try:
         if cancel_event.is_set():
             raise AnalysisCancelled
-        update_analysis_job(job_id, status="processing", stage="Loading local vision models")
+        depth_label = "Deep" if processing_mode == "deep" else "Normal"
+        update_analysis_job(job_id, status="processing", stage=f"{depth_label} analysis · loading local vision models")
 
         def progress(stage: str, done: int, total: int) -> None:
             if cancel_event.is_set():
                 raise AnalysisCancelled
             update_analysis_job(job_id, stage=stage, frames_done=done, frames_total=total)
 
-        result = analyze_video(source, session_dir, progress, display_name=display_name)
+        result = analyze_video(
+            source,
+            session_dir,
+            progress,
+            display_name=display_name,
+            processing_mode=processing_mode,
+        )
         if cancel_event.is_set():
             raise AnalysisCancelled
         update_analysis_job(job_id, status="done", stage="Analysis complete", result=result)
@@ -111,12 +124,26 @@ def register_job(job_id: str, value: dict, session_dir: Path) -> None:
                 job_session_dirs.pop(old_id, None)
 
 
-def submit_analysis_job(job_id: str, source: Path, session_dir: Path, display_name: str) -> None:
-    job_futures[job_id] = executor.submit(run_analysis_job, job_id, source, session_dir, display_name)
+def submit_analysis_job(
+    job_id: str,
+    source: Path,
+    session_dir: Path,
+    display_name: str,
+    processing_mode: str = "normal",
+) -> None:
+    job_futures[job_id] = executor.submit(
+        run_analysis_job,
+        job_id,
+        source,
+        session_dir,
+        display_name,
+        processing_mode,
+    )
 
 
-def queue_analysis_job(source: Path, display_name: str) -> str:
+def queue_analysis_job(source: Path, display_name: str, processing_mode: str = "normal") -> str:
     """Create a queued analysis job for an uploaded file or bundled example."""
+    processing_mode = processing_mode if processing_mode in {"normal", "deep"} else "normal"
     job_id = uuid.uuid4().hex[:12]
     session_dir = ANALYSIS_SESSIONS_DIR / job_id
     session_dir.mkdir(parents=True, exist_ok=False)
@@ -130,9 +157,10 @@ def queue_analysis_job(source: Path, display_name: str) -> str:
         "updated_at": time.time(),
         "error": None,
         "result": None,
+        "processing_mode": processing_mode,
     }
     register_job(job_id, value, session_dir)
-    submit_analysis_job(job_id, source, session_dir, display_name)
+    submit_analysis_job(job_id, source, session_dir, display_name, processing_mode)
     return job_id
 
 
@@ -200,7 +228,9 @@ def list_example_videos() -> list[dict]:
 
 
 @app.post("/api/jobs")
-async def create_uploaded_video_job(file: UploadFile) -> dict:
+async def create_uploaded_video_job(file: UploadFile, mode: str = "normal") -> dict:
+    if mode not in {"normal", "deep"}:
+        raise HTTPException(400, "Analysis mode must be normal or deep")
     display_name = Path(file.filename or "clip.mp4").name
     suffix = Path(display_name).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
@@ -232,14 +262,17 @@ async def create_uploaded_video_job(file: UploadFile) -> dict:
         "updated_at": time.time(),
         "error": None,
         "result": None,
+        "processing_mode": mode,
     }
     register_job(job_id, value, session_dir)
-    submit_analysis_job(job_id, source, session_dir, display_name)
+    submit_analysis_job(job_id, source, session_dir, display_name, mode)
     return {"job_id": job_id}
 
 
 @app.post("/api/examples/{example_id}/jobs")
-def create_example_video_job(example_id: str) -> dict:
+def create_example_video_job(example_id: str, mode: str = "normal") -> dict:
+    if mode not in {"normal", "deep"}:
+        raise HTTPException(400, "Analysis mode must be normal or deep")
     if not example_id.startswith("example-"):
         raise HTTPException(400, "Invalid example id")
     try:
@@ -252,7 +285,7 @@ def create_example_video_job(example_id: str) -> dict:
     source = EXAMPLE_VIDEOS_DIR / filename
     if not source.is_file():
         raise HTTPException(404, "Example media is not installed")
-    return {"job_id": queue_analysis_job(source, filename)}
+    return {"job_id": queue_analysis_job(source, filename, mode)}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -283,6 +316,134 @@ def cancel_analysis_job(job_id: str) -> dict:
         else:
             value.update(stage="Stopping analysis", updated_at=time.time())
         return dict(value)
+
+
+@app.patch("/api/sessions/{session_id}/shots/{shot_id}")
+def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
+    """Persist a user correction without overwriting model evidence."""
+    if not session_id.replace("-", "").isalnum() or shot_id < 1:
+        raise HTTPException(400, "Invalid session or shot id")
+    analysis_path = ANALYSIS_SESSIONS_DIR / session_id / "analysis.json"
+    if not analysis_path.is_file():
+        raise HTTPException(404, "Session not found")
+    allowed = {"outcome", "release_frame", "shooter_id", "comment"}
+    unknown = set(correction) - allowed
+    if unknown:
+        raise HTTPException(400, f"Unsupported correction fields: {sorted(unknown)}")
+    if "outcome" in correction and correction["outcome"] not in {"make", "miss", "review"}:
+        raise HTTPException(400, "Outcome must be make, miss, or review")
+    if "release_frame" in correction and (
+        not isinstance(correction["release_frame"], int) or correction["release_frame"] < 0
+    ):
+        raise HTTPException(400, "Release frame must be a non-negative integer")
+    for field in ("shooter_id", "comment"):
+        if field in correction and correction[field] is not None and not isinstance(correction[field], str):
+            raise HTTPException(400, f"{field} must be text")
+    payload = json.loads(analysis_path.read_text())
+    correction_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
+    stored: dict = {"version": 1, "shots": {}}
+    if correction_path.is_file():
+        try:
+            loaded = json.loads(correction_path.read_text())
+            if isinstance(loaded, dict):
+                stored.update(loaded)
+        except (OSError, ValueError, TypeError):
+            pass
+    original_ids = {int(shot.get("id", -1)) for shot in payload.get("shots", [])}
+    raw_manual = stored.get("manual_shots", [])
+    manual_ids = {
+        int(shot.get("id", -1))
+        for shot in (raw_manual if isinstance(raw_manual, list) else [])
+        if isinstance(shot, dict)
+    }
+    if shot_id not in original_ids and shot_id not in manual_ids:
+        raise HTTPException(404, "Shot not found")
+    shots = stored.setdefault("shots", {})
+    if not isinstance(shots, dict):
+        shots = {}
+        stored["shots"] = shots
+    existing = shots.get(str(shot_id), {})
+    if not isinstance(existing, dict):
+        existing = {}
+    existing.update(correction)
+    existing["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    shots[str(shot_id)] = existing
+    correction_path.write_text(json.dumps(stored, indent=2))
+    return refresh_saved_analysis(payload)
+
+
+@app.post("/api/sessions/{session_id}/shots")
+def add_manual_shot(session_id: str, attempt: dict) -> dict:
+    """Add an attempt the detector missed, retaining it as user evidence."""
+    if not session_id.replace("-", "").isalnum():
+        raise HTTPException(400, "Invalid session id")
+    analysis_path = ANALYSIS_SESSIONS_DIR / session_id / "analysis.json"
+    if not analysis_path.is_file():
+        raise HTTPException(404, "Session not found")
+    outcome = attempt.get("outcome", "review")
+    release_frame = attempt.get("release_frame")
+    if outcome not in {"make", "miss", "review"}:
+        raise HTTPException(400, "Outcome must be make, miss, or review")
+    if not isinstance(release_frame, int) or release_frame < 0:
+        raise HTTPException(400, "Release frame must be a non-negative integer")
+    allowed = {"outcome", "release_frame", "shooter_id", "comment"}
+    unknown = set(attempt) - allowed
+    if unknown:
+        raise HTTPException(400, f"Unsupported attempt fields: {sorted(unknown)}")
+    for field in ("shooter_id", "comment"):
+        if field in attempt and attempt[field] is not None and not isinstance(attempt[field], str):
+            raise HTTPException(400, f"{field} must be text")
+    payload = json.loads(analysis_path.read_text())
+    existing_ids = [int(shot.get("id", 0)) for shot in payload.get("shots", [])]
+    correction_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
+    stored: dict = {"version": 1, "shots": {}, "manual_shots": []}
+    if correction_path.is_file():
+        try:
+            loaded = json.loads(correction_path.read_text())
+            if isinstance(loaded, dict):
+                stored.update(loaded)
+        except (OSError, ValueError, TypeError):
+            pass
+    manual_shots = stored.setdefault("manual_shots", [])
+    if not isinstance(manual_shots, list):
+        manual_shots = []
+        stored["manual_shots"] = manual_shots
+    for manual in manual_shots:
+        if isinstance(manual, dict):
+            existing_ids.append(int(manual.get("id", 0)))
+    shot_id = max(existing_ids, default=0) + 1
+    fps = float(payload.get("session", {}).get("fps") or 0.0)
+    manual_shots.append({
+        "id": shot_id,
+        "outcome": outcome,
+        "confidence": 1.0,
+        "observation_confidence": 1.0,
+        "release_frame": release_frame,
+        "release_time": round(release_frame / fps, 3) if fps > 0 else 0.0,
+        "end_frame": release_frame,
+        "release_speed_ms": None,
+        "release_height_m": None,
+        "entry_angle_deg": None,
+        "arc_peak_m": None,
+        "form": {"elbow": None, "knee": None, "shoulder": None, "hip": None},
+        "flags": ["manually added attempt; no model trace is available"],
+        "evidence": {
+            "manual": True,
+            "outcome_basis": "user-added attempt",
+            **({"shooter_id": attempt["shooter_id"]} if attempt.get("shooter_id") else {}),
+            "prediction_status": "unavailable_unvalidated",
+            "metric_availability": {},
+            "metric_uncertainty": {},
+        },
+        "correction": {
+            "source": "local_user",
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "fields": ["manual_attempt"],
+            **({"comment": attempt["comment"]} if attempt.get("comment") else {}),
+        },
+    })
+    correction_path.write_text(json.dumps(stored, indent=2))
+    return refresh_saved_analysis(payload)
 
 
 @app.get("/media/{session_id}/{filename}")

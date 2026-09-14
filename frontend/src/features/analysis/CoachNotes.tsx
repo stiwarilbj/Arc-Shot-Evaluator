@@ -35,7 +35,10 @@ function evidenceText(evidence: ShotCoaching["tips"][number]["evidence"]) {
     const count = Number.parseInt(evidence.value, 10);
     return `${Number.isFinite(count) ? count : evidence.value} analyzed ${count === 1 ? "shot" : "shots"}`;
   }
-  return `${evidence.value} ${evidence.label.toLowerCase()}`;
+  const frames = evidence.frame_start !== undefined && evidence.frame_end !== undefined
+    ? ` · frames ${evidence.frame_start}-${evidence.frame_end}`
+    : "";
+  return `${evidence.value} ${evidence.label.toLowerCase()}${frames}`;
 }
 
 export function CoachNotes({ shot }: CoachNotesProps) {

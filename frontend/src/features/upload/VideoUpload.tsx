@@ -1,9 +1,12 @@
 import { useRef, useState } from "react";
 import { Film, LockKeyhole, Upload } from "lucide-react";
+import type { ProcessingMode } from "../../domain/analysisTypes";
 
 interface VideoUploadProps {
   error: string | null;
   onFiles: (files: File[]) => void;
+  processingMode: ProcessingMode;
+  onProcessingModeChange: (mode: ProcessingMode) => void;
 }
 
 const VIDEO_TYPES = [
@@ -11,7 +14,7 @@ const VIDEO_TYPES = [
   ".mpeg", ".mpg", ".3gp", ".m2ts", ".mts", ".ts", ".ogv", ".asf",
 ];
 
-export function VideoUpload({ error, onFiles }: VideoUploadProps) {
+export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange }: VideoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -28,6 +31,17 @@ export function VideoUpload({ error, onFiles }: VideoUploadProps) {
           shooter&apos;s mechanics at release—entirely on this machine.
         </p>
       </section>
+      <label className="analysis-depth-control">
+        <span>Analysis depth</span>
+        <select
+          aria-label="Analysis depth"
+          value={processingMode}
+          onChange={(event) => onProcessingModeChange(event.currentTarget.value as ProcessingMode)}
+        >
+          <option value="normal">Normal · faster overview</option>
+          <option value="deep">Deep · finer pose and ball tracking</option>
+        </select>
+      </label>
       <button
         className={`upload-drop ${dragging ? "is-dragging" : ""}`}
         type="button"

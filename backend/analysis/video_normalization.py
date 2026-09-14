@@ -23,12 +23,17 @@ def _source_fps(path: Path) -> float:
 
 
 def normalized_fps(source_fps: float) -> int:
-    """Choose a stable analysis cadence without inventing high-speed frames."""
+    """Preserve a real source cadence without inventing high-speed frames.
+
+    Older ARC versions promoted low frame-rate clips to 20 fps and capped
+    high-speed clips at 60 fps. That silently changed the time base used for
+    release speed and occlusion timing. We now keep the source cadence within
+    the supported video range; callers can sample inference separately while
+    retaining the original timestamps.
+    """
     if not 1.0 <= source_fps <= 240.0:
         return 30
-    if source_fps >= 45:
-        return 60
-    return max(20, min(30, round(source_fps)))
+    return max(1, min(240, round(source_fps)))
 
 
 def _compatible_h264(source: Path) -> bool:
@@ -48,7 +53,7 @@ def _compatible_h264(source: Path) -> bool:
         raise ValueError("Videos longer than 20 minutes must be split into smaller sessions before analysis.")
     return (
         codec in {"h264", "avc1"}
-        and 15 <= fps <= 60.5
+        and 1 <= fps <= 240.5
         and frames >= 2
         and 0 < width <= MAX_EDGE_PIXELS
         and 0 < height <= MAX_EDGE_PIXELS

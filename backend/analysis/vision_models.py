@@ -29,12 +29,12 @@ class BasketballVisionModels:
         self.pose = YOLO(str(pose_path))
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-    def infer_detector(self, frames: list[np.ndarray]) -> list[FrameDetections]:
+    def infer_detector(self, frames: list[np.ndarray], *, deep: bool = False) -> list[FrameDetections]:
         results = self.detector.predict(
             frames,
             conf=0.07,
             iou=0.45,
-            imgsz=960,
+            imgsz=1280 if deep else 960,
             device=self.device,
             verbose=False,
         )
@@ -65,11 +65,11 @@ class BasketballVisionModels:
             evidence.append(item)
         return evidence
 
-    def infer_pose(self, frames: list[np.ndarray]) -> list[list[PlayerPose]]:
+    def infer_pose(self, frames: list[np.ndarray], *, deep: bool = False) -> list[list[PlayerPose]]:
         results = self.pose.predict(
             frames,
             conf=0.18,
-            imgsz=768,
+            imgsz=960 if deep else 768,
             device=self.device,
             verbose=False,
         )
@@ -257,11 +257,41 @@ class RimTrackCandidate:
         self.last_frame = frame
 
 
-def select_rim_track(all_candidates: list[list[BoundingBox]], frame_size: tuple[int, int]) -> list[BoundingBox | None]:
+def select_rim_track(
+    all_candidates: list[list[BoundingBox]],
+    frame_size: tuple[int, int],
+    scene_cuts: list[bool] | None = None,
+) -> list[BoundingBox | None]:
+    """Select one physical rim track, restarting it at edit boundaries.
+
+    A replay can show the same basket in a different image position. Carrying
+    a pre-cut track across that boundary lets the old basket bridge into the
+    replay and contaminates calibration. ``scene_cuts`` is optional for
+    callers that only have detections; production analysis supplies the
+    per-frame cut flags from the evidence pass.
+    """
+    cut_indices = sorted(
+        index
+        for index, is_cut in enumerate(scene_cuts or [])
+        if is_cut and 0 < index < len(all_candidates)
+    )
+    if cut_indices:
+        # Select a physical basket independently inside each edit segment, then
+        # stitch the segment-local tracks together. This retains valid shots
+        # before and after a replay while preventing one basket from being
+        # interpolated across a hard cut.
+        boundaries = [0, *cut_indices, len(all_candidates)]
+        stitched: list[BoundingBox | None] = [None] * len(all_candidates)
+        for start, end in zip(boundaries, boundaries[1:]):
+            segment = select_rim_track(all_candidates[start:end], frame_size)
+            stitched[start:end] = segment
+        return stitched
     frame_w, frame_h = frame_size
     diagonal = math.hypot(frame_w, frame_h)
     tracks: list[RimTrackCandidate] = []
     for frame_index, candidates in enumerate(all_candidates):
+        if scene_cuts is not None and frame_index < len(scene_cuts) and scene_cuts[frame_index]:
+            tracks = []
         available = sorted(candidates, key=lambda box: box.confidence, reverse=True)[:18]
         claimed: set[int] = set()
         # Keep tracks alive across short detector gaps. This matters at 60 fps
@@ -396,15 +426,38 @@ def select_rim_track(all_candidates: list[list[BoundingBox]], frame_size: tuple[
         )
 
     best = max(viable, key=score)
-    frames = np.asarray([frame for frame, _ in best.observations], dtype=float)
-    values = np.asarray([[box.x1, box.y1, box.x2, box.y2, box.confidence] for _, box in best.observations])
+    observations = best.observations
     output: list[BoundingBox | None] = []
     # Keep a short-lived rim visible through detector dropouts. A broadcast
     # cut or net occlusion can hide the edge for a meaningful fraction of a
     # 30/60 fps clip; nine percent ended the track before the descending ball
     # reached the cylinder in several portrait examples.
     max_bridge = max(12, int(len(all_candidates) * 0.20))
+    cut_indices = []
+    cut_pointer = 0
+    segment_start = 0
+    segment_end = cut_indices[0] if cut_indices else len(all_candidates)
+
+    def segment_arrays(start: int, end: int):
+        segment = [observation for observation in observations if start <= observation[0] < end]
+        if not segment:
+            return [], np.empty(0, dtype=float), np.empty((0, 5), dtype=float)
+        segment_frames = np.asarray([frame for frame, _ in segment], dtype=float)
+        segment_values = np.asarray(
+            [[box.x1, box.y1, box.x2, box.y2, box.confidence] for _, box in segment]
+        )
+        return segment, segment_frames, segment_values
+
+    segment_observations, frames, values = segment_arrays(segment_start, segment_end)
     for frame_index in range(len(all_candidates)):
+        if cut_pointer < len(cut_indices) and frame_index >= cut_indices[cut_pointer]:
+            segment_start = cut_indices[cut_pointer]
+            cut_pointer += 1
+            segment_end = cut_indices[cut_pointer] if cut_pointer < len(cut_indices) else len(all_candidates)
+            segment_observations, frames, values = segment_arrays(segment_start, segment_end)
+        if not segment_observations:
+            output.append(None)
+            continue
         nearest = int(np.min(np.abs(frames - frame_index)))
         if nearest > max_bridge:
             output.append(None)

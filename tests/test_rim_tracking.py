@@ -60,3 +60,17 @@ def test_portrait_rim_track_ignores_tiny_orange_edge_fragments() -> None:
     assert selected[30] is not None
     assert selected[30].width >= 45
     assert selected[30].center[1] < 720
+
+
+def test_rim_track_does_not_bridge_an_edit_boundary() -> None:
+    frames: list[list[BoundingBox]] = []
+    for frame in range(36):
+        x = 160 + frame * 0.2 if frame < 18 else 840 + (frame - 18) * 0.2
+        frames.append([BoundingBox(x, 130, x + 105, 158, 0.86, "color")])
+
+    scene_cuts = [False] * len(frames)
+    scene_cuts[18] = True
+    selected = select_rim_track(frames, (1280, 720), scene_cuts)
+
+    assert selected[17] is not None and selected[18] is not None
+    assert selected[18].center[0] - selected[17].center[0] > 500

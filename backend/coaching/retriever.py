@@ -593,6 +593,18 @@ def generate_coaching(shots: list[ShotAnalysis], quality: dict[str, Any]) -> dic
             )
 
         tips = make_coaching_tips_unique(tips[:3])
+        # Keep every measurement-backed cue tied to the evidence window that
+        # supports it. Consumers can use these frame bounds to seek the local
+        # review video; a consistency sample is intentionally left at the
+        # session level because it spans multiple attempts.
+        for tip in tips:
+            evidence = tip.get("evidence")
+            if isinstance(evidence, dict) and evidence.get("metric") != "session.attempts":
+                tip["evidence"] = {
+                    **evidence,
+                    "frame_start": max(0, shot.release_frame - 2),
+                    "frame_end": max(shot.release_frame, min(shot.end_frame, shot.release_frame + 8)),
+                }
         source_ids = list(dict.fromkeys(source_id for tip in tips for source_id in tip["source_ids"]))
         sources = [build_source_reference(source_id) for source_id in source_ids]
         coaching[shot.id] = {

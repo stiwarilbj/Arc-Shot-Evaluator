@@ -20,7 +20,11 @@ export function ShotSelector({ session, selected, onSelect }: ShotSelectorProps)
             className={`shot-option ${selected === index ? "is-selected" : ""}`}
             onClick={() => onSelect(index)}
           >
-            <img src={session.artifacts.thumbnails[index]} alt="" />
+            {session.artifacts.thumbnails[index] ? (
+              <img src={session.artifacts.thumbnails[index]} alt="" />
+            ) : (
+              <span className="shot-option-placeholder" aria-hidden="true">Manual</span>
+            )}
             <span>{String(shot.id).padStart(2, "0")}</span>
             <strong className={`text-${shot.outcome}`}>{shot.outcome.toUpperCase()}</strong>
           </button>
