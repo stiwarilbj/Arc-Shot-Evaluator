@@ -21,6 +21,8 @@ MAX_NAME_LENGTH = 80
 MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
+ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "handoff", "pick-roll"}
+ALLOWED_ARROW_PATHS = {"straight", "curve"}
 
 
 def _now() -> str:
@@ -77,13 +79,21 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             raise HTTPException(400, "Arrow ids must be short text labels")
         if arrow["id"] in arrow_ids:
             raise HTTPException(400, "Arrow ids must be unique")
-        if arrow.get("kind") not in {"movement", "pass"}:
-            raise HTTPException(400, "Arrow kind must be movement or pass")
+        if arrow.get("kind") not in ALLOWED_ARROW_KINDS:
+            raise HTTPException(400, "Arrow kind is not supported")
         arrow_ids.add(arrow["id"])
         sequence = arrow.get("sequence", len(arrows) + 1)
         if not isinstance(sequence, int) or isinstance(sequence, bool) or not 1 <= sequence <= MAX_ARROWS:
             raise HTTPException(400, "Arrow sequence must be a positive integer")
-        arrows.append({"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")})
+        path = arrow.get("path", "straight")
+        if path not in ALLOWED_ARROW_PATHS:
+            raise HTTPException(400, "Arrow path must be straight or curve")
+        timing = arrow.get("timing", 1.2)
+        if not isinstance(timing, (int, float)) or isinstance(timing, bool) or not 0.5 <= float(timing) <= 4:
+            raise HTTPException(400, "Arrow timing must be between 0.5 and 4 seconds")
+        control_value = arrow.get("control")
+        control = None if control_value is None else _point(control_value, "Arrow control")
+        arrows.append({"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "path": path, "timing": round(float(timing), 2), "control": control, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")})
     defenders_visible = payload.get("defenders_visible", False)
     if not isinstance(defenders_visible, bool):
         raise HTTPException(400, "defenders_visible must be boolean")

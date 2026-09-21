@@ -612,16 +612,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .court-line { fill: none; stroke: color-mix(in srgb, var(--text) 75%, transparent); stroke-width: 3; vector-effect: non-scaling-stroke; }
 .court-dash { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 9 10; vector-effect: non-scaling-stroke; }
 .basket-mark { fill: none; stroke: var(--orange); stroke-width: 4; vector-effect: non-scaling-stroke; }
-.movement-arrow, .pass-arrow { fill: none; stroke-width: 3; vector-effect: non-scaling-stroke; pointer-events: stroke; }
+.movement-arrow, .pass-arrow, .screen-arrow, .pick-roll-arrow { fill: none; stroke-width: 3; vector-effect: non-scaling-stroke; pointer-events: stroke; }
 .movement-arrow { stroke: var(--text); }
 .pass-arrow { stroke: var(--orange); stroke-dasharray: 9 8; }
+.screen-arrow { stroke: #73bff0; stroke-dasharray: 3 7; }
+.pick-roll-arrow { stroke: var(--orange); stroke-width: 4; }
 .play-arrow-group { cursor: pointer; }
-.play-arrow-group.is-selected line { stroke-width: 4.5; }
+.play-arrow-group.is-selected path { stroke-width: 4.5; }
 .shot-arc { fill: none; stroke: var(--orange); stroke-width: 2.5; stroke-dasharray: 6 8; opacity: .75; vector-effect: non-scaling-stroke; pointer-events: none; }
 .arrow-sequence-badge { pointer-events: none; }
 .arrow-sequence-badge circle { fill: var(--surface-2); stroke: var(--orange); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .arrow-sequence-badge text { fill: var(--text); font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; dominant-baseline: central; }
 .selection-handle { fill: var(--orange); stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
+.curve-handle { fill: #73bff0; stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 .drawing-preview { opacity: .72; pointer-events: none; }
 .offense-marker { fill: var(--orange); stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .offense-marker-group, .ball-marker-group, .defense-marker { cursor: grab; }
@@ -654,6 +657,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .simulation-settings-note { color: var(--dim); }
 .sequence-editor { display: inline-flex; align-items: center; gap: 5px; padding-left: 9px; border-left: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .sequence-editor input { width: 45px; min-height: 27px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--text); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
+.sequence-editor select { min-height: 27px; max-width: 95px; padding: 0 20px 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--text); font-size: 10px; }
+.sequence-editor select:focus { border-color: var(--orange); outline: none; }
 .sequence-editor input:focus { border-color: var(--orange); outline: none; }
 .sequence-editor small { color: var(--dim); }
 .playbook-statusbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 35px; padding: 6px 4px 0; color: var(--dim); font-size: 10px; }
@@ -686,6 +691,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .mini-move, .mini-pass { fill: none; stroke-width: 5; vector-effect: non-scaling-stroke; }
 .mini-move { stroke: var(--text); }
 .mini-pass { stroke: var(--orange); stroke-dasharray: 9 8; }
+.mini-screen { stroke: #73bff0; stroke-dasharray: 3 7; }
+.mini-pick-roll { stroke: var(--orange); stroke-width: 6; }
 .saved-empty { display: grid; justify-items: center; gap: 8px; padding: 34px 18px; color: var(--muted); text-align: center; }
 .saved-empty p { margin: 0; font-size: 11px; line-height: 1.45; }
 .saved-empty button { border: 0; background: transparent; color: var(--orange); cursor: pointer; font-size: 11px; font-weight: 650; }
@@ -752,6 +759,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .simulation-setting-range { display: block; min-width: 0; }
   .simulation-settings-note { line-height: 1.45; }
   .sequence-editor { padding-left: 0; border-left: 0; }
+  .sequence-editor select { max-width: 86px; }
   .court-frame { padding: 6px; }
   .court-hint { right: 12px; bottom: 13px; font-size: 9px; }
   .playbook-statusbar { display: block; line-height: 1.5; }

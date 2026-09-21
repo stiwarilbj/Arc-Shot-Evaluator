@@ -1,5 +1,6 @@
-export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "delete";
-export type ArrowKind = "movement" | "pass";
+export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "delete";
+export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll";
+export type ArrowPath = "straight" | "curve";
 export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
 export type DefenseOffBallStyle = "off" | "contain" | "help" | "switch";
 
@@ -31,6 +32,12 @@ export interface PlaybookArrow {
   end: CourtPoint;
   /** 1-based order in which this action happens during a simulation. */
   sequence?: number;
+  /** How the actor travels between the endpoints in the simulation. */
+  path?: ArrowPath;
+  /** Optional quadratic control point for a curved route. */
+  control?: CourtPoint;
+  /** Time in seconds reserved for this action. */
+  timing?: number;
 }
 
 export interface PlaybookDocument {

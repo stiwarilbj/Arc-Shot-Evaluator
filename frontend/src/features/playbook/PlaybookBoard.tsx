@@ -32,7 +32,7 @@ import type { ArrowKind, CourtPoint, PlaybookArrow, PlaybookDocument, PlaybookDr
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
-type DragState = { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end"; id: number | string; before: PlaybookDraft };
+type DragState = { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-control"; id: number | string; before: PlaybookDraft };
 type SimulationFrame = {
   players: PlaybookMarker[];
   defenders: PlaybookMarker[];
@@ -55,6 +55,8 @@ type SimulationAction = {
   actorId: number | null;
   recipientId: number | null;
   recipientStart: CourtPoint | null;
+  startTime: number;
+  durationMs: number;
 };
 
 const TOOL_LABELS: Record<PlaybookTool, string> = {
@@ -63,6 +65,9 @@ const TOOL_LABELS: Record<PlaybookTool, string> = {
   ball: "Add ball",
   movement: "Draw movement arrow",
   pass: "Draw pass arrow",
+  screen: "Add screen action",
+  handoff: "Add dribble handoff action",
+  "pick-roll": "Add pick and roll action",
   delete: "Delete selected object",
 };
 
@@ -106,6 +111,10 @@ function replacePoint(draft: PlaybookDraft, selection: Selection, point: CourtPo
   return next;
 }
 
+function clampTiming(value: number) {
+  return Math.max(0.5, Math.min(4, Number.isFinite(value) ? value : 1.2));
+}
+
 function removeSelection(draft: PlaybookDraft, selection: Selection): PlaybookDraft {
   if (!selection) return draft;
   const next = clonePlaybook(draft);
@@ -142,7 +151,9 @@ function normalizeDraft(source: PlaybookDraft) {
     let sequence = arrowSequence(arrow, index);
     while (used.has(sequence)) sequence += 1;
     used.add(sequence);
-    return { ...arrow, sequence };
+    const path = arrow.path === "curve" ? "curve" : "straight";
+    const control = arrow.control ?? defaultArrowControl(arrow.start, arrow.end);
+    return { ...arrow, sequence, path, timing: clampTiming(arrow.timing ?? 1.2), control };
   });
   return next;
 }
@@ -173,23 +184,92 @@ function shotArcPath(start: CourtPoint, end: CourtPoint) {
   return `M${from.x} ${from.y} Q${control.x} ${control.y} ${to.x} ${to.y}`;
 }
 
+function defaultArrowControl(start: CourtPoint, end: CourtPoint): CourtPoint {
+  const midpoint = lerpPoint(start, end, 0.5);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const offset = Math.max(6, Math.min(14, Math.hypot(dx, dy) * 0.22));
+  return { x: clamp(midpoint.x + dy * offset / Math.max(1, Math.hypot(dx, dy))), y: clamp(midpoint.y - dx * offset / Math.max(1, Math.hypot(dx, dy))) };
+}
+
+function arrowControl(arrow: PlaybookArrow) {
+  return arrow.control ?? defaultArrowControl(arrow.start, arrow.end);
+}
+
+function quadraticPoint(start: CourtPoint, end: CourtPoint, control: CourtPoint, amount: number): CourtPoint {
+  const progress = Math.max(0, Math.min(1, amount));
+  const inverse = 1 - progress;
+  return {
+    x: clamp(inverse * inverse * start.x + 2 * inverse * progress * control.x + progress * progress * end.x),
+    y: clamp(inverse * inverse * start.y + 2 * inverse * progress * control.y + progress * progress * end.y),
+  };
+}
+
+function actionPointAt(arrow: PlaybookArrow, amount: number) {
+  return arrow.path === "curve" ? quadraticPoint(arrow.start, arrow.end, arrowControl(arrow), amount) : lerpPoint(arrow.start, arrow.end, amount);
+}
+
+function actionPath(arrow: PlaybookArrow) {
+  const start = markerPoint(arrow.start);
+  const end = markerPoint(arrow.end);
+  if (arrow.path === "curve") {
+    const control = markerPoint(arrowControl(arrow));
+    return `M${start.x} ${start.y} Q${control.x} ${control.y} ${end.x} ${end.y}`;
+  }
+  return `M${start.x} ${start.y} L${end.x} ${end.y}`;
+}
+
+function actionLabel(kind: ArrowKind) {
+  if (kind === "pass") return "Pass";
+  if (kind === "screen") return "Screen";
+  if (kind === "handoff") return "Dribble handoff";
+  if (kind === "pick-roll") return "Pick and roll";
+  return "Movement";
+}
+
+function actionClass(kind: ArrowKind) {
+  if (kind === "pass" || kind === "handoff") return "pass-arrow";
+  if (kind === "screen") return "screen-arrow";
+  if (kind === "pick-roll") return "pick-roll-arrow";
+  return "movement-arrow";
+}
+
+function actionMarker(kind: ArrowKind) {
+  return kind === "pass" || kind === "handoff" ? "pass-arrow" : "movement-arrow";
+}
+
 function nearestPointIndex(points: CourtPoint[], target: CourtPoint) {
   if (!points.length) return -1;
   return points.reduce((best, point, index) => pointDistance(point, target) < pointDistance(points[best], target) ? index : best, 0);
 }
 
+function actionDurationMs(arrow: PlaybookArrow) {
+  return Math.round(clampTiming(arrow.timing ?? 1.2) * 1000);
+}
+
+function simulationTimelineDuration(arrows: PlaybookArrow[]) {
+  const total = orderedArrows(arrows).reduce((sum, { arrow }) => sum + actionDurationMs(arrow), 0);
+  return Math.max(SIMULATION_STEP_MS, total);
+}
+
 function buildSimulationActions(source: PlaybookDraft): SimulationAction[] {
   const positions = source.players.map((marker) => ({ ...marker }));
+  let cursor = 0;
   return orderedArrows(source.arrows).map(({ arrow, sequence }) => {
     const actorIndex = nearestPointIndex(positions, arrow.start);
     const actorId = actorIndex >= 0 ? positions[actorIndex].id : null;
-    if (arrow.kind === "movement" && actorIndex >= 0) positions[actorIndex] = { ...positions[actorIndex], ...arrow.end };
-    const recipientIndex = arrow.kind === "pass" ? nearestPointIndex(positions, arrow.end) : -1;
+    const movementLike = arrow.kind === "movement" || arrow.kind === "screen" || arrow.kind === "pick-roll";
+    const transferLike = arrow.kind === "pass" || arrow.kind === "handoff";
+    if (movementLike && actorIndex >= 0) positions[actorIndex] = { ...positions[actorIndex], ...arrow.end };
+    const recipientIndex = transferLike ? nearestPointIndex(positions, arrow.end) : -1;
     const recipient = recipientIndex >= 0 ? positions[recipientIndex] : null;
     const recipientId = recipient?.id ?? null;
     const recipientStart = recipient ? { x: recipient.x, y: recipient.y } : null;
-    if (arrow.kind === "pass" && recipientIndex >= 0) positions[recipientIndex] = { ...positions[recipientIndex], ...arrow.end };
-    return { arrow, sequence, actorId, recipientId, recipientStart };
+    if (transferLike && recipientIndex >= 0) positions[recipientIndex] = { ...positions[recipientIndex], ...arrow.end };
+    const durationMs = actionDurationMs(arrow);
+    const action = { arrow, sequence, actorId, recipientId, recipientStart, startTime: cursor, durationMs };
+    cursor += durationMs;
+    return action;
   });
 }
 
@@ -226,11 +306,13 @@ function offBallMovementQuality(players: PlaybookMarker[], ball: CourtPoint | nu
 }
 
 /** ARC defensive AI is local and deterministic so the same saved play behaves identically on FastAPI and GitHub Pages. */
-function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, defenders: PlaybookMarker[], settings: SimulationSettings, elapsed: number) {
+function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, defenders: PlaybookMarker[], settings: SimulationSettings, elapsed: number, actions: SimulationAction[] = []) {
   if (!players.length || settings.defenseOffBall === "off") return defenders.map((defender) => ({ x: defender.x, y: defender.y }));
   const ballThreatIndex = ball ? nearestPointIndex(players, ball) : 0;
   const phase = Math.floor(elapsed / SIMULATION_STEP_MS);
   const helpSpot = ball ? lerpPoint(ball, HOOP_POINT, 0.34) : HOOP_POINT;
+  const liveAction = actions.find((action) => elapsed >= action.startTime && elapsed < action.startTime + action.durationMs);
+  const liveActionPoint = liveAction ? actionPointAt(liveAction.arrow, (elapsed - liveAction.startTime) / liveAction.durationMs) : null;
   return defenders.map((defender, index) => {
     const assignment = players[(index + (settings.defenseOffBall === "switch" ? phase : 0)) % players.length] ?? players[0];
     let target: CourtPoint = assignment;
@@ -238,6 +320,13 @@ function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, de
     else if (settings.defenseOffBall === "help") target = lerpPoint(assignment, helpSpot, index === 1 ? 0.62 : 0.38);
     else if (settings.defenseOffBall === "switch") target = lerpPoint(assignment, ball ?? assignment, 0.2);
     else target = lerpPoint(assignment, ball ?? assignment, 0.16);
+    // Screens and handoffs create a second threat, so the closest defenders
+    // shade the action point while the remaining defenders stay home.
+    if (liveActionPoint && liveAction && (liveAction.arrow.kind === "screen" || liveAction.arrow.kind === "pick-roll")) {
+      if (index === 0 || index === ballThreatIndex) target = lerpPoint(target, liveActionPoint, liveAction.arrow.kind === "pick-roll" ? 0.4 : 0.28);
+      else if (index === 1 && liveAction.arrow.kind === "pick-roll") target = lerpPoint(target, liveActionPoint, 0.24);
+    }
+    if (liveActionPoint && liveAction?.arrow.kind === "handoff" && index === 0) target = lerpPoint(target, liveActionPoint, 0.38);
     const lateral = ((index % 3) - 1) * 3.6;
     return { x: clamp(target.x + lateral), y: clamp(target.y + (index % 2 ? 2.2 : -2.2)) };
   });
@@ -271,33 +360,34 @@ function shotQuality(players: PlaybookMarker[], defenders: PlaybookMarker[], bal
 
 function simulateDraft(source: PlaybookDraft, elapsed: number, settings: SimulationSettings): SimulationFrame {
   const actions = buildSimulationActions(source);
-  const actionDuration = Math.max(1, actions.length) * SIMULATION_STEP_MS;
+  const actionDuration = simulationTimelineDuration(source.arrows);
   const players = source.players.map((marker) => ({ ...marker }));
   const baseDefenders = source.defenders.map((marker) => ({ ...marker }));
   const defenders = baseDefenders.map((marker) => ({ ...marker }));
   let ball = source.ball ? { ...source.ball } : source.players[0] ? { x: source.players[0].x, y: source.players[0].y } : null;
   let activeSequence: number | null = null;
   const explicitIds = new Set<number>();
-  actions.forEach((action, index) => {
-    const startTime = index * SIMULATION_STEP_MS;
-    const arrowProgress = easeInOut(Math.max(0, Math.min(1, (elapsed - startTime) / SIMULATION_STEP_MS)));
-    if (action.arrow.kind === "movement") {
+  actions.forEach((action) => {
+    const startTime = action.startTime;
+    const arrowProgress = easeInOut(Math.max(0, Math.min(1, (elapsed - startTime) / action.durationMs)));
+    if (action.arrow.kind === "movement" || action.arrow.kind === "screen" || action.arrow.kind === "pick-roll") {
       if (elapsed >= startTime && action.actorId != null) {
         const playerIndex = players.findIndex((marker) => marker.id === action.actorId);
-        if (playerIndex >= 0) players[playerIndex] = { ...players[playerIndex], ...lerpPoint(action.arrow.start, action.arrow.end, arrowProgress) };
+        if (playerIndex >= 0) players[playerIndex] = { ...players[playerIndex], ...actionPointAt(action.arrow, arrowProgress) };
         explicitIds.add(action.actorId);
         if (arrowProgress < 1) activeSequence = action.sequence;
       }
       return;
     }
-    const prepStart = Math.max(0, startTime - PASS_PREP_MS);
+    const prepWindow = Math.min(PASS_PREP_MS, Math.max(180, action.durationMs * 0.42));
+    const prepStart = Math.max(0, startTime - prepWindow);
     if (action.recipientId != null && elapsed >= prepStart) {
       const recipientIndex = players.findIndex((marker) => marker.id === action.recipientId);
-      if (recipientIndex >= 0) players[recipientIndex] = { ...players[recipientIndex], ...lerpPoint(action.recipientStart ?? players[recipientIndex], action.arrow.end, easeInOut((elapsed - prepStart) / PASS_PREP_MS)) };
+      if (recipientIndex >= 0) players[recipientIndex] = { ...players[recipientIndex], ...actionPointAt({ ...action.arrow, start: action.recipientStart ?? players[recipientIndex] }, easeInOut((elapsed - prepStart) / prepWindow)) };
       explicitIds.add(action.recipientId);
     }
     if (elapsed >= startTime) {
-      ball = lerpPoint(action.arrow.start, action.arrow.end, arrowProgress);
+      ball = actionPointAt(action.arrow, arrowProgress);
       if (arrowProgress < 1) activeSequence = action.sequence;
     }
   });
@@ -328,7 +418,7 @@ function simulateDraft(source: PlaybookDraft, elapsed: number, settings: Simulat
     }
   }
   const releasePoint = shotStart ?? ball;
-  const targets = defensiveTargets(shapedPlayers, releasePoint, baseDefenders, settings, elapsed);
+  const targets = defensiveTargets(shapedPlayers, releasePoint, baseDefenders, settings, elapsed, actions);
   const defenderProgress = settings.defenseOffBall === "off" ? 0 : easeInOut(Math.max(0, Math.min(1, (elapsed - 140) / (SIMULATION_STEP_MS * 1.6))));
   defenders.forEach((defender, index) => {
     const target = targets[index];
@@ -385,8 +475,10 @@ export function PlaybookBoard() {
 
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
-  const simulationDuration = Math.max(1, draft.arrows.length) * SIMULATION_STEP_MS + SHOT_PHASE_MS;
+  const simulationDuration = simulationTimelineDuration(draft.arrows) + SHOT_PHASE_MS;
   const simulationActive = simulationPlaying || simulationElapsed > 0;
+  const simulationComplete = simulationElapsed >= simulationDuration && simulationElapsed > 0;
+  const simulationPaused = simulationActive && !simulationPlaying && !simulationComplete;
   const simulationFrame = useMemo(() => simulateDraft(draft, simulationElapsed, simulationSettings), [draft, simulationElapsed, simulationSettings]);
 
   useEffect(() => {
@@ -434,13 +526,14 @@ export function PlaybookBoard() {
 
   function changeSimulationSetting<Key extends keyof SimulationSettings>(key: Key, value: SimulationSettings[Key]) {
     setSimulationSettings((current) => ({ ...current, [key]: value }));
-    resetSimulation();
+    if (simulationPlaying || simulationElapsed === 0) resetSimulation();
     setError(null);
   }
 
-  function commit(next: PlaybookDraft, previous = draft) {
+  function commit(next: PlaybookDraft, previous = draft, options: { preserveSimulation?: boolean } = {}) {
     if (isSameDraft(next, previous)) return;
-    resetSimulation();
+    const preserveSimulation = options.preserveSimulation ?? (simulationElapsed > 0 && !simulationPlaying);
+    if (!preserveSimulation) resetSimulation();
     setHistory((current) => [...current.slice(-39), clonePlaybook(previous)]);
     setFuture([]);
     setDraft(next);
@@ -520,7 +613,7 @@ export function PlaybookBoard() {
       // the standard five defensive markers so the AI has a full matchup.
       commit(withDefenders(draft, true));
     }
-    setSimulationElapsed(0);
+    if (simulationComplete) setSimulationElapsed(0);
     setSimulationPlaying(true);
     setError(null);
     focusBoard();
@@ -528,7 +621,7 @@ export function PlaybookBoard() {
 
   function applyAIDefense() {
     const source = withDefenders(draft, true);
-    const targets = defensiveTargets(source.players, source.ball, source.defenders, simulationSettings, 0);
+    const targets = defensiveTargets(source.players, source.ball, source.defenders, simulationSettings, 0, buildSimulationActions(source));
     const next = clonePlaybook(source);
     next.defenders = source.defenders.map((defender, index) => ({ ...defender, ...(targets[index] ?? {}) }));
     commit(next);
@@ -546,6 +639,23 @@ export function PlaybookBoard() {
     current.splice(targetIndex, 0, item);
     const next = clonePlaybook(draft);
     next.arrows = current.map(({ arrow }, index) => ({ ...arrow, sequence: index + 1 }));
+    commit(next);
+    setSelected({ type: "arrow", id: arrowIdValue });
+  }
+
+  function changeArrowPath(arrowIdValue: string, path: "straight" | "curve") {
+    const next = clonePlaybook(draft);
+    next.arrows = next.arrows.map((arrow) => arrow.id === arrowIdValue
+      ? { ...arrow, path, control: path === "curve" ? arrowControl(arrow) : arrow.control }
+      : arrow);
+    commit(next);
+    setSelected({ type: "arrow", id: arrowIdValue });
+  }
+
+  function changeArrowTiming(arrowIdValue: string, requestedTiming: number) {
+    if (!Number.isFinite(requestedTiming)) return;
+    const next = clonePlaybook(draft);
+    next.arrows = next.arrows.map((arrow) => arrow.id === arrowIdValue ? { ...arrow, timing: clampTiming(requestedTiming) } : arrow);
     commit(next);
     setSelected({ type: "arrow", id: arrowIdValue });
   }
@@ -605,7 +715,7 @@ export function PlaybookBoard() {
       }
       return;
     }
-    if (tool === "movement" || tool === "pass") {
+    if (tool === "movement" || tool === "pass" || tool === "screen" || tool === "handoff" || tool === "pick-roll") {
       setDrawStart(point);
       setDrawEnd(point);
       svgRef.current?.setPointerCapture(event.pointerId);
@@ -630,6 +740,7 @@ export function PlaybookBoard() {
     if (drag.type === "arrow-start" || drag.type === "arrow-end") {
       next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, [drag.type === "arrow-start" ? "start" : "end"]: point } : arrow);
     }
+    if (drag.type === "arrow-control") next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, path: "curve", control: point } : arrow);
     setDraft(next);
     setDirty(true);
     setStatus("idle");
@@ -639,12 +750,14 @@ export function PlaybookBoard() {
     if (drawStart && drawEnd) {
       if (pointDistance(drawStart, drawEnd) > 3) {
         const next = clonePlaybook(draft);
-        const kind: ArrowKind = tool === "pass" ? "pass" : "movement";
+        const kind: ArrowKind = tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement";
         const newArrow: PlaybookArrow = {
           id: arrowId(),
           kind,
           start: drawStart,
           end: drawEnd,
+          path: "straight",
+          timing: kind === "screen" || kind === "pick-roll" ? 1.4 : 1.2,
           sequence: Math.max(0, ...draft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
         };
         next.arrows = [...next.arrows, newArrow];
@@ -694,7 +807,7 @@ export function PlaybookBoard() {
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
-  function onArrowEndpointPointerDown(event: ReactPointerEvent<SVGElement>, arrow: PlaybookArrow, endpoint: "start" | "end") {
+  function onArrowEndpointPointerDown(event: ReactPointerEvent<SVGElement>, arrow: PlaybookArrow, endpoint: "start" | "end" | "control") {
     event.stopPropagation();
     focusBoard();
     if (tool === "delete") {
@@ -706,7 +819,7 @@ export function PlaybookBoard() {
     // Endpoint handles follow the same always-draggable rule as the arrow
     // stroke, including while another drawing tool is active.
     setSelected({ type: "arrow", id: arrow.id });
-    dragRef.current = { type: endpoint === "start" ? "arrow-start" : "arrow-end", id: arrow.id, before: clonePlaybook(draft) };
+    dragRef.current = { type: endpoint === "start" ? "arrow-start" : endpoint === "end" ? "arrow-end" : "arrow-control", id: arrow.id, before: clonePlaybook(draft) };
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
@@ -755,7 +868,7 @@ export function PlaybookBoard() {
     clone.setAttribute("height", "1152");
     clone.querySelectorAll(".selection-handle, .drawing-preview").forEach((node) => node.remove());
     const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
-    style.textContent = `.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow{fill:none;stroke:#f3f1ec;stroke-width:3}.pass-arrow{fill:none;stroke:#ee733f;stroke-width:3;stroke-dasharray:9 8}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
+    style.textContent = `.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.pick-roll-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
     clone.prepend(style);
     const serialized = new XMLSerializer().serializeToString(clone);
     const image = new Image();
@@ -836,9 +949,12 @@ export function PlaybookBoard() {
             <ToolButton active={tool === "ball"} icon={<Circle size={15} />} label="Add ball" title={TOOL_LABELS.ball} onClick={() => chooseTool("ball")} />
             <ToolButton active={tool === "movement"} icon={<ArrowUpRight size={15} />} label="Movement" title={TOOL_LABELS.movement} onClick={() => chooseTool("movement")} />
             <ToolButton active={tool === "pass"} icon={<Send size={15} />} label="Pass" title={TOOL_LABELS.pass} onClick={() => chooseTool("pass")} />
+            <ToolButton active={tool === "screen"} icon={<Shield size={15} />} label="Screen" title={TOOL_LABELS.screen} onClick={() => chooseTool("screen")} />
+            <ToolButton active={tool === "handoff"} icon={<Hand size={15} />} label="Handoff" title={TOOL_LABELS.handoff} onClick={() => chooseTool("handoff")} />
+            <ToolButton active={tool === "pick-roll"} icon={<ArrowUpRight size={15} />} label="Pick & roll" title={TOOL_LABELS["pick-roll"]} onClick={() => chooseTool("pick-roll")} />
             <span className="toolbar-spacer" />
             <ToolButton icon={<BrainCircuit size={15} />} label="AI defense" title="Apply ARC defensive AI" onClick={applyAIDefense} />
-            <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : "Play"} title={simulationPlaying ? "Pause play simulation" : "Play simulation with defensive AI"} onClick={() => {
+            <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : simulationPaused ? "Resume" : "Play"} title={simulationPlaying ? "Pause play simulation" : simulationPaused ? "Resume play simulation" : "Play simulation with defensive AI"} onClick={() => {
               if (simulationPlaying) setSimulationPlaying(false);
               else startSimulation();
             }} />
@@ -848,17 +964,21 @@ export function PlaybookBoard() {
           </div>
           <div className="playbook-simulation-bar" role="region" aria-label="Play simulation controls">
             <span className="simulation-ai-label"><ShieldCheck size={14} /> ARC defensive AI</span>
-            <span className="simulation-copy">{simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
+            <span className="simulation-copy">{simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
             <span className="simulation-quality" role="status">Off-ball quality <strong>{simulationActive ? `${simulationFrame.offBallQuality}%` : "—"}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
-            {selectedArrow ? <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={selectedArrowSequence ?? 1} onChange={(event) => changeArrowSequence(selectedArrow.id, Number(event.currentTarget.value))} /><small>1 = first</small></label> : null}
+            {selectedArrow ? <>
+              <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={selectedArrowSequence ?? 1} onChange={(event) => changeArrowSequence(selectedArrow.id, Number(event.currentTarget.value))} /><small>1 = first</small></label>
+              <label className="sequence-editor"><span>Path</span><select aria-label="Arrow path" value={selectedArrow.path ?? "straight"} onChange={(event) => changeArrowPath(selectedArrow.id, event.currentTarget.value as "straight" | "curve")}><option value="straight">Straight</option><option value="curve">Curved</option></select></label>
+              <label className="sequence-editor"><span>Seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => changeArrowTiming(selectedArrow.id, Number(event.currentTarget.value))} /></label>
+            </> : null}
           </div>
           {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
             <label className="simulation-setting"><span>Offense off-ball</span><select aria-label="Offense off-ball style" value={simulationSettings.offenseOffBall} onChange={(event) => changeSimulationSetting("offenseOffBall", event.currentTarget.value as SimulationSettings["offenseOffBall"])}><option value="read-react">Read &amp; react</option><option value="cuts">Structured cuts</option><option value="spacing">Spacing only</option><option value="off">Off</option></select></label>
             <label className="simulation-setting"><span>Defense off-ball</span><select aria-label="Defense off-ball style" value={simulationSettings.defenseOffBall} onChange={(event) => changeSimulationSetting("defenseOffBall", event.currentTarget.value as SimulationSettings["defenseOffBall"])}><option value="help">Help &amp; recover</option><option value="contain">Contain &amp; deny</option><option value="switch">Switch reads</option><option value="off">Hold positions</option></select></label>
             <label className="simulation-setting simulation-setting-range"><span>Off-ball intensity <output>{simulationSettings.offBallIntensity}%</output></span><input aria-label="Off-ball intensity" type="range" min={0} max={100} step={1} value={simulationSettings.offBallIntensity} onChange={(event) => changeSimulationSetting("offBallIntensity", Number(event.currentTarget.value))} /></label>
-            <span className="simulation-settings-note">Passes wait for the receiver to arrive; the final action ends with a contested shot.</span>
+            <span className="simulation-settings-note">Receivers arrive before passes; screens and handoffs pull defenders into the action; the final action ends with a contested shot.</span>
           </div> : null}
           <div className="court-frame">
             <svg ref={svgRef} className="court-svg" viewBox="0 0 1000 720" preserveAspectRatio="none" role="img" aria-label="Editable half court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
@@ -878,18 +998,19 @@ export function PlaybookBoard() {
               {visibleArrows.map((arrow, arrowIndex) => {
                 const start = markerPoint(arrow.start);
                 const end = markerPoint(arrow.end);
+                const control = markerPoint(arrowControl(arrow));
                 const active = selected?.type === "arrow" && selected.id === arrow.id;
                 const sequence = arrowSequence(arrow, arrowIndex);
-                const badgeX = (start.x + end.x) / 2;
-                const badgeY = (start.y + end.y) / 2;
+                const badgePoint = actionPointAt(arrow, 0.5);
+                const badge = markerPoint(badgePoint);
                 return <g key={arrow.id} onPointerDown={(event) => onMarkerPointerDown(event, { type: "arrow", id: arrow.id })} className={`play-arrow-group ${active ? "is-selected" : ""}`}>
-                  <title>Move {sequence} · {arrow.kind === "pass" ? "Pass" : "Movement"}</title>
-                  <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} className={arrow.kind === "pass" ? "pass-arrow" : "movement-arrow"} markerEnd={`url(#${arrow.kind === "pass" ? "pass-arrow" : "movement-arrow"})`} />
-                  <g className="arrow-sequence-badge"><circle cx={badgeX} cy={badgeY} r="12" /><text x={badgeX} y={badgeY + 1}>{sequence}</text></g>
-                  {active ? <><circle cx={start.x} cy={start.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "start")} /><circle cx={end.x} cy={end.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "end")} /></> : null}
+                  <title>Move {sequence} · {actionLabel(arrow.kind)} · {clampTiming(arrow.timing ?? 1.2).toFixed(1)} seconds</title>
+                  <path d={actionPath(arrow)} className={actionClass(arrow.kind)} markerEnd={`url(#${actionMarker(arrow.kind)})`} />
+                  <g className="arrow-sequence-badge"><circle cx={badge.x} cy={badge.y} r="12" /><text x={badge.x} y={badge.y + 1}>{sequence}</text></g>
+                  {active ? <><circle cx={start.x} cy={start.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "start")} /><circle cx={end.x} cy={end.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "end")} />{arrow.path === "curve" ? <circle cx={control.x} cy={control.y} r="7" className="curve-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "control")} /> : null}</> : null}
                 </g>;
               })}
-              {drawStart && drawEnd ? <line x1={markerPoint(drawStart).x} y1={markerPoint(drawStart).y} x2={markerPoint(drawEnd).x} y2={markerPoint(drawEnd).y} className={`drawing-preview ${tool === "pass" ? "pass-arrow" : "movement-arrow"}`} markerEnd={`url(#${tool === "pass" ? "pass-arrow" : "movement-arrow"})`} /> : null}
+              {drawStart && drawEnd ? <path d={actionPath({ id: "preview", kind: tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement", start: drawStart, end: drawEnd, path: "straight" })} className={`drawing-preview ${actionClass(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")}`} markerEnd={`url(#${actionMarker(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")})`} /> : null}
               {(draft.defenders_visible || simulationActive) ? (simulationActive ? simulationFrame.defenders : draft.defenders).map((marker) => {
                 const point = markerPoint(marker);
                 const active = selected?.type === "defender" && selected.id === marker.id;
@@ -942,5 +1063,5 @@ function SavedPlayCard({ play, active, deletePending, onOpen, onDuplicate, onDel
 }
 
 function MiniCourt({ play }: { play: PlaybookDocument | PlaybookDraft }) {
-  return <svg className="mini-court" viewBox="0 0 1000 720" aria-hidden="true"><rect x="0" y="0" width="1000" height="720" rx="5" className="mini-floor" /><rect x="24" y="24" width="952" height="672" className="mini-line" /><path d="M330 24v208h340V24M285 24v318a215 215 0 0 0 430 0V24" className="mini-line" /><path d="M405 232a95 95 0 0 0 190 0" className="mini-dash" /><path d="M430 111h140v10M482 140q18 28 36 0" className="mini-basket" />{play.arrows.map((arrow) => <line key={arrow.id} x1={arrow.start.x * 10} y1={arrow.start.y * 7.2} x2={arrow.end.x * 10} y2={arrow.end.y * 7.2} className={arrow.kind === "pass" ? "mini-pass" : "mini-move"} />)}{play.defenders_visible ? play.defenders.map((marker) => <path key={`d-${marker.id}`} d={`M${marker.x * 10 - 7} ${marker.y * 7.2 - 7}l14 14M${marker.x * 10 + 7} ${marker.y * 7.2 - 7}l-14 14`} className="mini-defense" />) : null}{play.players.map((marker) => <circle key={`p-${marker.id}`} cx={marker.x * 10} cy={marker.y * 7.2} r="16" className="mini-player" />)}{play.ball ? <circle cx={play.ball.x * 10} cy={play.ball.y * 7.2} r="9" className="mini-ball" /> : null}</svg>;
+  return <svg className="mini-court" viewBox="0 0 1000 720" aria-hidden="true"><rect x="0" y="0" width="1000" height="720" rx="5" className="mini-floor" /><rect x="24" y="24" width="952" height="672" className="mini-line" /><path d="M330 24v208h340V24M285 24v318a215 215 0 0 0 430 0V24" className="mini-line" /><path d="M405 232a95 95 0 0 0 190 0" className="mini-dash" /><path d="M430 111h140v10M482 140q18 28 36 0" className="mini-basket" />{play.arrows.map((arrow) => <path key={arrow.id} d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" ? "mini-screen" : arrow.kind === "pick-roll" ? "mini-pick-roll" : "mini-move"} />)}{play.defenders_visible ? play.defenders.map((marker) => <path key={`d-${marker.id}`} d={`M${marker.x * 10 - 7} ${marker.y * 7.2 - 7}l14 14M${marker.x * 10 + 7} ${marker.y * 7.2 - 7}l-14 14`} className="mini-defense" />) : null}{play.players.map((marker) => <circle key={`p-${marker.id}`} cx={marker.x * 10} cy={marker.y * 7.2} r="16" className="mini-player" />)}{play.ball ? <circle cx={play.ball.x * 10} cy={play.ball.y * 7.2} r="9" className="mini-ball" /> : null}</svg>;
 }
