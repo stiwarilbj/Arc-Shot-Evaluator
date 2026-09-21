@@ -5,6 +5,21 @@ export type ThemeMode = "light" | "dark";
 export type ProcessingMode = "normal" | "deep";
 export type ShotMode = "free_throw" | "jump_shot";
 
+export type PoseKeypoint = [x: number, y: number, confidence: number];
+
+export interface BrowserPoseFrame {
+  frame: number;
+  keypoints: PoseKeypoint[];
+  confidence: number;
+}
+
+export interface BrowserPoseOverlay {
+  width: number;
+  height: number;
+  fps: number;
+  frames: BrowserPoseFrame[];
+}
+
 export interface JumpPrediction {
   status: string;
   model: string | null;
@@ -253,6 +268,8 @@ export interface AnalysisSession {
   };
   shots: ShotAnalysis[];
   warnings: string[];
+  /** Optional static pose track used by the hosted review overlay. */
+  pose_overlay?: BrowserPoseOverlay;
   artifacts: {
     original: string;
     source_original?: string;

@@ -132,13 +132,17 @@ export function ArcShotEvaluatorApp() {
 
   async function processQueuedAnalysis(item: AnalysisQueueItem) {
     try {
+      // ARC's original review flow is the normal free-throw pass; keep every
+      // queued clip on that path so the restored examples behave consistently.
+      const analysisMode: ProcessingMode = "normal";
+      const analysisShotMode: ShotMode = "free_throw";
       if (cancelledQueueItemsRef.current.has(item.id)) return;
       updateAnalysisQueueItem(item.id, { status: "processing", stage: IS_GITHUB_PAGES ? "Starting browser analysis" : "Starting analysis", progress: 3, error: null });
       if (IS_GITHUB_PAGES) {
         const example = item.kind === "example" ? examples.find((candidate) => candidate.id === item.exampleId) : undefined;
         const source = item.file ?? example?.url;
         if (!source) throw new Error("This example is no longer available");
-        const browserResult = await analyzeVideoInBrowser(source, item.filename, item.processingMode, item.shotMode, (progress, stage) => {
+        const browserResult = await analyzeVideoInBrowser(source, item.filename, analysisMode, analysisShotMode, (progress, stage) => {
           updateAnalysisQueueItem(item.id, { status: "processing", stage, progress, error: null });
         });
         registerBrowserAnalysisSession(browserResult);
@@ -151,8 +155,8 @@ export function ArcShotEvaluatorApp() {
         return;
       }
       const jobId = item.kind === "example"
-        ? await startExampleVideoAnalysis(item.exampleId ?? "", item.processingMode, item.shotMode)
-        : await startUploadedVideoAnalysis(item.file as File, item.processingMode, item.shotMode);
+        ? await startExampleVideoAnalysis(item.exampleId ?? "", analysisMode, analysisShotMode)
+        : await startUploadedVideoAnalysis(item.file as File, analysisMode, analysisShotMode);
       jobIdsRef.current.set(item.id, jobId);
       if (cancelledQueueItemsRef.current.has(item.id)) {
         await cancelAnalysisJob(jobId).catch(() => undefined);
@@ -229,12 +233,12 @@ export function ArcShotEvaluatorApp() {
   function enqueueUploadedVideos(files: File[]) {
     if (!files.length) return;
     setError(null);
-    setQueue((current) => [...current, ...files.map((file) => createQueuedAnalysis(file.name, file, undefined, processingMode, shotMode))]);
+    setQueue((current) => [...current, ...files.map((file) => createQueuedAnalysis(file.name, file, undefined, "normal", "free_throw"))]);
   }
 
   function enqueueExampleVideo(example: ExampleVideo) {
     setError(null);
-    setQueue((current) => [...current, createQueuedAnalysis(example.filename, undefined, example.id, processingMode, shotMode)]);
+    setQueue((current) => [...current, createQueuedAnalysis(example.filename, undefined, example.id, "normal", "free_throw")]);
   }
 
   function requestQueueCancellation(item: AnalysisQueueItem) {

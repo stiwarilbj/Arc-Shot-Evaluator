@@ -37,10 +37,9 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
         <select
           aria-label="Analysis depth"
           value={processingMode}
-          onChange={(event) => onProcessingModeChange(event.currentTarget.value as ProcessingMode)}
+          onChange={() => onProcessingModeChange("normal")}
         >
-          <option value="normal">Normal · faster overview</option>
-          <option value="deep">Deep · finer motion sampling</option>
+          <option value="normal">Normal · standard shot review</option>
         </select>
       </label>
       <fieldset className="shot-mode-control">
@@ -54,16 +53,8 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
           >
             Free throw
           </button>
-          <button
-            type="button"
-            className={shotMode === "jump_shot" ? "is-active" : ""}
-            aria-pressed={shotMode === "jump_shot"}
-            onClick={() => onShotModeChange("jump_shot")}
-          >
-            Jump shot
-          </button>
         </div>
-        <p>{shotMode === "free_throw" ? "Stationary free-throw sequence" : "Three-pointers and mid-range shots with shooter and defender context"}</p>
+        <p>{shotMode === "free_throw" ? "Normal free-throw shot review" : "Normal shot review"}</p>
       </fieldset>
       <button
         className={`upload-drop ${dragging ? "is-dragging" : ""}`}

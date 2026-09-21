@@ -43,6 +43,11 @@ jobs:
           VITE_DEPLOY_TARGET: github-pages
         run: pnpm run build
 
+      - name: Restore example clips for hosted review
+        run: |
+          mkdir -p frontend/dist/examples
+          cp -R examples/. frontend/dist/examples/
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
