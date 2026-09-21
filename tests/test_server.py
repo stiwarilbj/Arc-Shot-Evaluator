@@ -13,8 +13,8 @@ def test_health_reports_local_models() -> None:
     assert response.json() == {"ok": True, "local_only": True, "models_ready": True}
 
 
-def test_analysis_executor_allows_concurrent_workers() -> None:
-    assert ANALYSIS_WORKERS >= 2
+def test_analysis_executor_uses_a_predictable_local_worker() -> None:
+    assert ANALYSIS_WORKERS >= 1
 
 
 def test_upload_rejects_unsupported_extension() -> None:
@@ -51,6 +51,44 @@ def test_analysis_mode_is_explicit() -> None:
     response = TestClient(app).post("/api/examples/example-1/jobs?mode=unsupported")
     assert response.status_code == 400
     assert "normal or deep" in response.json()["detail"]
+
+
+def test_persisted_job_status_can_be_reopened_without_memory(tmp_path, monkeypatch) -> None:
+    session_dir = tmp_path / "persisted-job"
+    session_dir.mkdir()
+    status = {
+        "id": "persisted-job",
+        "filename": "clip.mp4",
+        "status": "done",
+        "stage": "Analysis complete",
+        "frames_done": 12,
+        "frames_total": 12,
+        "updated_at": 1.0,
+        "error": None,
+        "result": {"session": {"id": "persisted-job"}, "shots": [], "summary": {}},
+    }
+    status_path = session_dir / "job.json"
+    status_path.write_text(json.dumps(status))
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+
+    response = TestClient(app).get("/api/jobs/persisted-job")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "done"
+
+
+def test_unreadable_persisted_job_is_left_untouched(tmp_path, monkeypatch) -> None:
+    session_dir = tmp_path / "broken-job"
+    session_dir.mkdir()
+    status_path = session_dir / "job.json"
+    original = "{not json"
+    status_path.write_text(original)
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+
+    response = TestClient(app).get("/api/jobs/broken-job")
+
+    assert response.status_code == 500
+    assert status_path.read_text() == original
 
 
 def test_shot_mode_is_explicit() -> None:

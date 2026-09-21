@@ -206,9 +206,9 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
 
   const modes = useMemo(
     () => [
-      { id: "original" as const, label: "Original" },
-      { id: "annotated" as const, label: "Annotated" },
       { id: "pose" as const, label: "Pose" },
+      { id: "annotated" as const, label: "Annotated" },
+      { id: "original" as const, label: "Original" },
     ],
     [],
   );

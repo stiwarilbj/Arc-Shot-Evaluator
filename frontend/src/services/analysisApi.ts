@@ -241,6 +241,11 @@ export async function fetchAnalysisJob(jobId: string, signal?: AbortSignal): Pro
   return parseJsonResponse<AnalysisJobState>(await fetch(`/api/jobs/${jobId}`, { signal }));
 }
 
+export async function fetchAnalysisJobs(signal?: AbortSignal): Promise<AnalysisJobState[]> {
+  if (IS_GITHUB_PAGES) return [];
+  return parseJsonResponse<AnalysisJobState[]>(await fetch("/api/jobs", { signal }));
+}
+
 export async function cancelAnalysisJob(jobId: string): Promise<AnalysisJobState> {
   return parseJsonResponse<AnalysisJobState>(
     await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" }),

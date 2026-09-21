@@ -38,7 +38,7 @@ Progress = Callable[[str, int, int], None]
 # Bump this whenever the interpretation of a stored result changes. Saved
 # sessions are immutable evidence; readers may backfill display fields but
 # must never recompute the original observation.
-ANALYSIS_VERSION = "3.0.0"
+ANALYSIS_VERSION = "3.1.0"
 PREDICTION_STATUS = "unavailable_unvalidated"
 
 # Ultralytics' MPS path is fast for one batch, but two model predictions at
@@ -252,6 +252,10 @@ def _release_seed_candidates(
     evidence: list[FrameDetections], rims: list[BoundingBox | None], frame_size: tuple[int, int]
 ) -> list[tuple[float, int, BallCandidate]]:
     _, frame_height = frame_size
+    # Camera-motion detection scans the complete rim track. Compute it once
+    # for this pass instead of rebuilding a NumPy array for every ball and
+    # every future candidate in the release search.
+    camera_moving = _rim_motion_ratio(rims, frame_size) >= 0.075
     seeds: list[tuple[float, int, BallCandidate]] = []
     for frame, item in enumerate(evidence[:-8]):
         if item.scene_cut or item.duplicate_frame:
@@ -271,22 +275,18 @@ def _release_seed_candidates(
                 continue
             upward = 0.0
             target = rims[frame] if frame < len(rims) else None
+            start_rim = _rim_center_at(rims, frame)
             for future in range(frame + 2, min(len(evidence), frame + 16)):
                 if evidence[future].scene_cut:
                     break
+                future_rim = _rim_center_at(rims, future)
+                shift = (
+                    (future_rim[0] - start_rim[0], future_rim[1] - start_rim[1])
+                    if start_rim is not None and future_rim is not None and camera_moving
+                    else (0.0, 0.0)
+                )
                 for candidate in evidence[future].balls:
                     dt = future - frame
-                    start_rim = _rim_center_at(rims, frame)
-                    future_rim = _rim_center_at(rims, future)
-                    shift = (
-                        (future_rim[0] - start_rim[0], future_rim[1] - start_rim[1])
-                        if (
-                            start_rim is not None
-                            and future_rim is not None
-                            and _rim_motion_ratio(rims, frame_size) >= 0.075
-                        )
-                        else (0.0, 0.0)
-                    )
                     relative_candidate = (candidate.x - shift[0], candidate.y - shift[1])
                     if candidate.y < ball.y - max(18.0, pose.box.height * 0.055) and distance(
                         (ball.x, ball.y), relative_candidate
@@ -306,7 +306,26 @@ def _release_seed_candidates(
             score = ball.confidence * 1.5 + pose.confidence * 0.3 + centered * 0.9 + upward * 0.8
             seeds.append((score, frame, ball))
     seeds.sort(key=lambda value: value[0], reverse=True)
-    return seeds
+    # A single release can be proposed for many neighboring frames. Tracking
+    # every hypothesis through a 4.2 second beam search turns that harmless
+    # detector noise into an O(seeds × frames × beams) stall. Keep the best
+    # spatially distinct release candidates and scale the cap with clip length
+    # so a longer session can still surface several attempts.
+    max_seeds = max(48, min(128, len(evidence) // 5 or 1))
+    spacing = 10
+    selected: list[tuple[float, int, BallCandidate]] = []
+    for candidate in seeds:
+        _, frame, ball = candidate
+        if any(
+            abs(frame - existing_frame) <= spacing
+            and distance((ball.x, ball.y), (existing_ball.x, existing_ball.y)) <= 120.0
+            for _, existing_frame, existing_ball in selected
+        ):
+            continue
+        selected.append(candidate)
+        if len(selected) >= max_seeds:
+            break
+    return selected
 
 
 def predict_ball_from_recent_motion(
@@ -355,7 +374,11 @@ def _rim_motion_ratio(rims: list[BoundingBox | None], frame_size: tuple[int, int
 
 
 def predict_ball_with_camera_motion(
-    beam: BallTrackCandidate, frame: int, rims: list[BoundingBox | None], frame_size: tuple[int, int] | None = None
+    beam: BallTrackCandidate,
+    frame: int,
+    rims: list[BoundingBox | None],
+    frame_size: tuple[int, int] | None = None,
+    camera_moving: bool | None = None,
 ) -> tuple[float, float, float, float]:
     """Predict after learning velocity in rim-relative coordinates.
 
@@ -366,7 +389,9 @@ def predict_ball_with_camera_motion(
     # Keep the helper's historical standalone behavior for callers/tests that
     # do not have video dimensions; production tracking always supplies them
     # and can therefore distinguish detector jitter from a real camera pan.
-    if frame_size is not None and _rim_motion_ratio(rims, frame_size) < 0.075:
+    if camera_moving is None and frame_size is not None:
+        camera_moving = _rim_motion_ratio(rims, frame_size) >= 0.075
+    if camera_moving is False:
         return predict_ball_from_recent_motion(beam, frame)
     observed = beam.observed()
     last = observed[-1]
@@ -411,6 +436,7 @@ def track_ball_from_release_candidate(
     beams = [BallTrackCandidate([first], seed.confidence * 2.0)]
     maximum_frame = min(len(evidence), seed_frame + int(fps * 4.2))
     diagonal = math.hypot(*frame_size)
+    camera_moving = _rim_motion_ratio(rims, frame_size) >= 0.075
     for frame in range(seed_frame + 1, maximum_frame):
         if evidence[frame].scene_cut:
             break
@@ -418,7 +444,7 @@ def track_ball_from_release_candidate(
         expanded: list[BallTrackCandidate] = []
         for beam in beams:
             predicted_x, predicted_y, vx, vy = predict_ball_with_camera_motion(
-                beam, frame, rims, frame_size
+                beam, frame, rims, frame_size, camera_moving
             )
             observed = beam.observed()
             last = observed[-1]
@@ -890,8 +916,8 @@ def _angle_quality(
     """Turn a release angle into a soft mechanics-quality signal.
 
     This is deliberately a gentle heuristic, not a claim that one camera can
-    grade a player's whole form. It is a coaching signal and never changes
-    confidence in the observed outcome.
+    grade a player's whole form. It is surfaced as a coaching signal and is
+    folded into the observed confidence only after the event is tracked.
     """
     if ideal_min <= value <= ideal_max:
         return 1.0
@@ -1053,10 +1079,11 @@ def adjust_shot_confidence(
 ) -> float:
     """Return confidence in the observed outcome and tracked attempt.
 
-    The quality arguments remain accepted for compatibility with saved-session
-    readers, but are intentionally ignored. Form and trajectory quality are
-    coaching signals; using them to lower outcome confidence makes an obvious
-    miss look uncertain merely because the release looked awkward.
+    A tracked make or miss can be visually clear while the release itself is
+    poor. The displayed confidence is therefore softened by the available
+    mechanics, follow-through, and trajectory evidence. Clean form stays high;
+    a severe form and release breakdown lowers the score even when the ball
+    happens to fall.
     """
     starting_confidence = float(base_confidence)
     confidence = starting_confidence
@@ -1077,6 +1104,19 @@ def adjust_shot_confidence(
             confidence = min(0.86, max(confidence, starting_confidence * 0.90))
     if outcome == "make" and outcome_supported:
         confidence = max(confidence, 0.84)
+    quality = combine_shot_quality(mechanics_quality, follow_through_quality, trajectory_quality)
+    if quality is not None:
+        # Keep clean form close to the tracking confidence while making poor
+        # releases visible in the same 0.18–0.97 range as all other outcomes.
+        quality_factor = 0.66 + 0.34 * clamp(float(quality), 0.0, 1.0)
+        confidence *= quality_factor
+        if quality < 0.55:
+            confidence *= 0.82 if outcome == "miss" else 0.78
+        # A supported make with usable form should not be pushed below the
+        # established high-confidence floor merely because the base tracker
+        # was conservative.
+        if outcome == "make" and outcome_supported and quality >= 0.70:
+            confidence = max(confidence, 0.84)
     return round(clamp(confidence, 0.18, 0.97), 3)
 
 
@@ -2226,7 +2266,11 @@ def analyze_video(
         (meta.width, meta.height),
         [item.scene_cut for item in evidence],
     )
+    if progress:
+        progress("Detecting shot attempts", meta.frame_count, meta.frame_count)
     shots = find_shots(evidence, rims, meta)
+    if progress:
+        progress("Linking player tracks", meta.frame_count, meta.frame_count)
     player_tracks, frame_tracks = assign_player_tracks(evidence)
     for shot in shots:
         shot.shot_mode = shot_mode

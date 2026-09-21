@@ -40,8 +40,9 @@ ARC also includes **Playbook** as a second tab for drawing half-court diagrams; 
 
 The overview keeps the observed make rate separate from future prediction. A
 future FT% stays unavailable until a trained model has been evaluated on held
-out shooters and calibrated; mechanics quality never changes confidence in an
-observed make or miss. Every new clip uses the Normal analysis path.
+out shooters and calibrated; the observed confidence stays high for clean
+form and drops when a miss or a made shot has severe release problems. Every
+new clip uses the Normal analysis path.
 
 Fresh sessions use the original Normal free-throw review path for every clip;
 the restored example library includes the Celtics vs Pelicans set plus the

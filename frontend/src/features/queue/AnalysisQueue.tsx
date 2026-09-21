@@ -158,9 +158,9 @@ export function AnalysisQueue({
           <button type="button" onClick={onShowHidden}>Unhide</button>
         </div>
       ) : (
-        <div className="queue-empty"><Film size={18} /><p>Choose an example or add a few clips; they will run in parallel when slots are available and stay available here</p></div>
+        <div className="queue-empty"><Film size={18} /><p>Choose an example or add a few clips; local analysis runs one at a time and stays available here</p></div>
       )}
-      <p className="queue-footnote">Up to 2 analyses · completed results stay in this session</p>
+      <p className="queue-footnote">One local worker keeps analyses fast · completed results stay in this session</p>
     </aside>
   );
 }

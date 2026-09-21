@@ -292,13 +292,18 @@ def select_rim_track(
     for frame_index, candidates in enumerate(all_candidates):
         if scene_cuts is not None and frame_index < len(scene_cuts) and scene_cuts[frame_index]:
             tracks = []
-        available = sorted(candidates, key=lambda box: box.confidence, reverse=True)[:18]
+        # Color fallback proposals can create many short-lived tracks in a
+        # broadcast frame. Keeping the strongest candidates bounds the local
+        # association work without changing the selected physical rim.
+        available = sorted(candidates, key=lambda box: box.confidence, reverse=True)[:12]
         claimed: set[int] = set()
         # Keep tracks alive across short detector gaps. This matters at 60 fps
         # when a physical rim alternates between a learned backboard box and
         # a thin orange-cylinder proposal; five frames was short enough to
         # split one basket into several competing tracks.
         active = [track for track in tracks if frame_index - track.last_frame <= 24]
+        if len(active) > 72:
+            active = sorted(active, key=lambda value: len(value.observations), reverse=True)[:72]
         for track in sorted(active, key=lambda value: len(value.observations), reverse=True):
             predicted = track.predict(frame_index)
             last_box = track.observations[-1][1]

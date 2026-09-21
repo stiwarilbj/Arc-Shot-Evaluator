@@ -31,7 +31,8 @@ import type {
 } from "../domain/analysisTypes";
 
 const WAIT_MS = 750;
-const MAX_CONCURRENT_ANALYSES = 2;
+const MAX_CONCURRENT_ANALYSES = 1;
+const QUEUE_STORAGE_KEY = "arc-analysis-queue-v2";
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
@@ -81,6 +82,8 @@ function createQueuedAnalysis(
   };
 }
 
+type PersistedQueueItem = Omit<AnalysisQueueItem, "file" | "result">;
+
 export function ArcShotEvaluatorApp() {
   // The landing state intentionally starts empty. Previous sessions remain on
   // disk for export, but opening the page never surprises the user by loading
@@ -94,7 +97,7 @@ export function ArcShotEvaluatorApp() {
   const [error, setError] = useState<string | null>(null);
   const [selectedShot, setSelectedShot] = useState(0);
   const [reviewFrame, setReviewFrame] = useState<number | null>(null);
-  const [mode, setMode] = useState<VideoMode>("annotated");
+  const [mode, setMode] = useState<VideoMode>("pose");
   const [tab, setTab] = useState<WorkspaceTab>("shot");
   const [processingMode, setProcessingMode] = useState<ProcessingMode>("normal");
   // Free throw is the safest default for a new launch; a selected mode is
@@ -108,6 +111,7 @@ export function ArcShotEvaluatorApp() {
   const activeQueueItemsRef = useRef<Set<string>>(new Set());
   const cancelledQueueItemsRef = useRef<Set<string>>(new Set());
   const jobIdsRef = useRef<Map<string, string>>(new Map());
+  const [queueHydrated, setQueueHydrated] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -130,6 +134,65 @@ export function ArcShotEvaluatorApp() {
     setQueue((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }
 
+  useEffect(() => {
+    if (IS_GITHUB_PAGES) {
+      setQueueHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    let saved: PersistedQueueItem[] = [];
+    try {
+      const raw = window.localStorage.getItem(QUEUE_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        saved = parsed.filter((item): item is PersistedQueueItem => Boolean(item && typeof item.id === "string"));
+      }
+    } catch {
+      saved = [];
+    }
+    const restored = saved.map((item) => ({
+      ...item,
+      file: undefined,
+      result: null,
+      status: item.jobId && (item.status === "queued" || item.status === "processing")
+        ? "queued" as const
+        : item.status,
+      stage: item.jobId && (item.status === "queued" || item.status === "processing")
+        ? "Reconnecting to local analysis"
+        : item.stage,
+      error: item.jobId ? item.error : item.status === "queued" ? "This upload was not started before the page closed" : item.error,
+    }));
+    setQueue(restored);
+    setQueueHydrated(true);
+    restored.forEach((item) => {
+      if (!item.jobId) return;
+      fetchAnalysisJobWithRetries(item.jobId)
+        .then((state) => {
+          if (cancelled) return;
+          if (state.status === "done" && state.result) {
+            updateAnalysisQueueItem(item.id, { status: "done", stage: "Analysis complete", progress: 100, result: state.result, error: null });
+          } else if (state.status === "error" || state.status === "cancelled") {
+            updateAnalysisQueueItem(item.id, { status: state.status, stage: state.stage, progress: 0, error: state.error });
+          } else {
+            updateAnalysisQueueItem(item.id, { status: "queued", stage: "Reconnected; analysis continues in the background", jobId: item.jobId, error: null });
+          }
+        })
+        .catch((caught: unknown) => {
+          if (cancelled) return;
+          updateAnalysisQueueItem(item.id, { status: "error", stage: "Could not reconnect to analysis", error: caught instanceof Error ? caught.message : "Job status is unavailable" });
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!queueHydrated || IS_GITHUB_PAGES) return;
+    const persisted = queue.map(({ file: _file, result: _result, ...item }) => item);
+    window.localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(persisted));
+  }, [queue, queueHydrated]);
+
   async function processQueuedAnalysis(item: AnalysisQueueItem) {
     try {
       // ARC's original review flow is the normal free-throw pass; keep every
@@ -150,13 +213,15 @@ export function ArcShotEvaluatorApp() {
         setSession(browserResult);
         setSelectedShot(0);
         setReviewFrame(null);
-        setMode("annotated");
+        setMode("pose");
         setTab(browserResult.shots.length ? "shot" : "overview");
         return;
       }
-      const jobId = item.kind === "example"
+      const jobId = item.jobId ?? (item.kind === "example"
         ? await startExampleVideoAnalysis(item.exampleId ?? "", analysisMode, analysisShotMode)
-        : await startUploadedVideoAnalysis(item.file as File, analysisMode, analysisShotMode);
+        : item.file
+          ? await startUploadedVideoAnalysis(item.file, analysisMode, analysisShotMode)
+          : (() => { throw new Error("This upload was not started before the page closed"); })());
       jobIdsRef.current.set(item.id, jobId);
       if (cancelledQueueItemsRef.current.has(item.id)) {
         await cancelAnalysisJob(jobId).catch(() => undefined);
@@ -198,7 +263,7 @@ export function ArcShotEvaluatorApp() {
           setSession(next.result);
           setSelectedShot(0);
           setReviewFrame(null);
-          setMode("annotated");
+          setMode("pose");
           setTab(next.result.shots.length ? "shot" : "overview");
           return;
         }
@@ -291,7 +356,7 @@ export function ArcShotEvaluatorApp() {
     setSession(item.result);
     setSelectedShot(0);
     setReviewFrame(null);
-    setMode("annotated");
+    setMode("pose");
     setTab(item.result.shots.length ? "shot" : "overview");
     setError(null);
   }
@@ -302,7 +367,7 @@ export function ArcShotEvaluatorApp() {
     setReviewFrame(null);
     setError(null);
     setSelectedShot(0);
-    setMode("annotated");
+    setMode("pose");
     setTab("shot");
   }
 

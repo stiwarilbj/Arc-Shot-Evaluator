@@ -46,7 +46,7 @@ def test_net_occlusion_evidence_separates_drag_from_freefall_like_drop() -> None
     assert float(freefall_like["net_slowdown_ratio"]) > 1.05
 
 
-def test_observation_confidence_is_separate_from_mechanics_quality() -> None:
+def test_observation_confidence_reflects_mechanics_quality() -> None:
     good_form = {"elbow": 165.0, "knee": 160.0, "shoulder": 120.0, "hip": 170.0}
     rough_form = {"elbow": 130.0, "knee": 133.0, "shoulder": 107.0, "hip": 142.0}
 
@@ -60,7 +60,8 @@ def test_observation_confidence_is_separate_from_mechanics_quality() -> None:
     miss = adjust_shot_confidence(0.88, "miss", good_quality)
     assert good_make >= 0.84
     assert rough_make >= 0.84
-    assert rough_make > good_make
+    assert rough_make < 0.88
+    assert rough_make <= good_make
     assert miss < good_make
     assert rough_make <= 0.97
 
@@ -70,7 +71,7 @@ def test_missing_shot_quality_is_unavailable_instead_of_average() -> None:
     assert session_consistency_score([]) is None
 
 
-def test_observation_confidence_stays_high_for_both_clear_miss_geometries() -> None:
+def test_observation_confidence_penalizes_a_clear_miss_with_poor_form() -> None:
     close_clean = adjust_shot_confidence(
         0.88,
         "miss",
@@ -89,11 +90,10 @@ def test_observation_confidence_stays_high_for_both_clear_miss_geometries() -> N
     )
 
     assert close_clean >= 0.84
-    assert far_off >= 0.84
-    assert close_clean >= 0.84
+    assert far_off < close_clean
 
 
-def test_very_poor_mechanics_does_not_lower_observation_confidence() -> None:
+def test_very_poor_mechanics_lowers_even_a_supported_make() -> None:
     confidence = adjust_shot_confidence(
         0.92,
         "make",
@@ -103,10 +103,10 @@ def test_very_poor_mechanics_does_not_lower_observation_confidence() -> None:
         follow_through_quality=0.22,
     )
 
-    assert confidence >= 0.84
+    assert confidence < 0.84
 
 
-def test_trajectory_quality_does_not_regrade_observation_confidence() -> None:
+def test_trajectory_quality_regrades_observation_confidence() -> None:
     high = adjust_shot_confidence(
         0.88,
         "miss",
@@ -123,7 +123,7 @@ def test_trajectory_quality_does_not_regrade_observation_confidence() -> None:
         follow_through_quality=0.1,
         miss_proximity=0.48,
     )
-    assert high == low
+    assert high > low
 
 
 def test_future_ft_projection_stays_unavailable_without_a_validated_model() -> None:

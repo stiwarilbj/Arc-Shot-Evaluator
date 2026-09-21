@@ -47,7 +47,7 @@ EXAMPLE_FILES = (
     "YTDown.com_YouTube_LeBron-Jokes-After-Steph-Misses-Free-Thr_Media_welHDbZ0KBY_001_720p.mp4",
 )
 
-app = FastAPI(title="ARC Local Shot Analysis", version="3.0.0")
+app = FastAPI(title="ARC Local Shot Analysis", version="3.1.0")
 app.include_router(playbooks_router)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
@@ -55,10 +55,27 @@ job_cancel_events: dict[str, threading.Event] = {}
 job_futures: dict[str, Future] = {}
 job_session_dirs: dict[str, Path] = {}
 try:
-    ANALYSIS_WORKERS = max(1, min(4, int(os.environ.get("ARC_WORKERS", "2"))))
+    # One local vision/render pipeline at a time is substantially faster and
+    # more predictable on typical laptops than competing model loads. Users
+    # can opt into a higher value with ARC_WORKERS when they have the hardware
+    # for it.
+    ANALYSIS_WORKERS = max(1, min(4, int(os.environ.get("ARC_WORKERS", "1"))))
 except ValueError:
-    ANALYSIS_WORKERS = 2
+    ANALYSIS_WORKERS = 1
 executor = ThreadPoolExecutor(max_workers=ANALYSIS_WORKERS, thread_name_prefix="arc-analysis")
+
+
+def _job_state_path(session_dir: Path) -> Path:
+    return session_dir / "job.json"
+
+
+def _persist_job_locked(value: dict, session_dir: Path) -> None:
+    """Write a small atomic status record so a browser can reconnect safely."""
+    session_dir.mkdir(parents=True, exist_ok=True)
+    target = _job_state_path(session_dir)
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps(value, indent=2))
+    os.replace(temporary, target)
 
 
 def update_analysis_job(job_id: str, **values) -> None:
@@ -66,6 +83,9 @@ def update_analysis_job(job_id: str, **values) -> None:
         if job_id not in jobs:
             return
         jobs[job_id].update(values, updated_at=time.time())
+        session_dir = job_session_dirs.get(job_id)
+        if session_dir is not None:
+            _persist_job_locked(jobs[job_id], session_dir)
 
 
 class AnalysisCancelled(Exception):
@@ -121,6 +141,7 @@ def register_job(job_id: str, value: dict, session_dir: Path) -> None:
         jobs[job_id] = value
         job_cancel_events[job_id] = threading.Event()
         job_session_dirs[job_id] = session_dir
+        _persist_job_locked(value, session_dir)
         if len(jobs) > 100:
             finished = [key for key, item in jobs.items() if item["status"] in {"done", "error", "cancelled"}]
             for old_id in finished[: len(jobs) - 100]:
@@ -128,6 +149,37 @@ def register_job(job_id: str, value: dict, session_dir: Path) -> None:
                 job_cancel_events.pop(old_id, None)
                 job_futures.pop(old_id, None)
                 job_session_dirs.pop(old_id, None)
+
+
+def restore_persisted_jobs() -> None:
+    """Restore completed jobs and surface interrupted jobs after a restart."""
+    if not ANALYSIS_SESSIONS_DIR.exists():
+        return
+    for status_path in ANALYSIS_SESSIONS_DIR.glob("*/job.json"):
+        try:
+            value = json.loads(status_path.read_text())
+            if not isinstance(value, dict) or not isinstance(value.get("id"), str):
+                continue
+            session_dir = status_path.parent
+            analysis_path = session_dir / "analysis.json"
+            if value.get("status") in {"queued", "processing"}:
+                value.update(
+                    status="error",
+                    stage="Analysis interrupted before completion; retry this clip",
+                    error="The local worker was restarted before this analysis finished",
+                    result=None,
+                    updated_at=time.time(),
+                )
+            elif value.get("status") == "done" and value.get("result") is None and analysis_path.is_file():
+                value["result"] = refresh_saved_analysis(json.loads(analysis_path.read_text()))
+            register_job(value["id"], value, session_dir)
+        except (OSError, ValueError, TypeError, KeyError):
+            # Never overwrite an unreadable session; it can still be opened
+            # through the explicit session endpoint for manual recovery.
+            continue
+
+
+restore_persisted_jobs()
 
 
 def submit_analysis_job(
@@ -325,11 +377,31 @@ def create_example_video_job(
 
 @app.get("/api/jobs/{job_id}")
 def get_analysis_job(job_id: str) -> dict:
+    if not job_id.replace("-", "").isalnum():
+        raise HTTPException(400, "Invalid job id")
     with jobs_lock:
         value = jobs.get(job_id)
-        if value is None:
-            raise HTTPException(404, "Job not found")
-        return dict(value)
+        if value is not None:
+            return dict(value)
+    status_path = ANALYSIS_SESSIONS_DIR / job_id / "job.json"
+    if not status_path.is_file():
+        raise HTTPException(404, "Job not found")
+    try:
+        value = json.loads(status_path.read_text())
+    except (OSError, ValueError, TypeError) as error:
+        raise HTTPException(500, "Saved job status is unreadable; the session was left untouched") from error
+    if not isinstance(value, dict) or value.get("id") != job_id:
+        raise HTTPException(500, "Saved job status is invalid; the session was left untouched")
+    return value
+
+
+@app.get("/api/jobs")
+def list_analysis_jobs() -> list[dict]:
+    """List recent local jobs so the UI can reconnect after navigation."""
+    with jobs_lock:
+        values = [dict(item) for item in jobs.values()]
+    values.sort(key=lambda item: float(item.get("updated_at") or 0), reverse=True)
+    return values[:100]
 
 
 @app.delete("/api/jobs/{job_id}")
@@ -348,6 +420,9 @@ def cancel_analysis_job(job_id: str) -> dict:
         if future and future.cancel():
             shutil.rmtree(job_session_dirs.get(job_id), ignore_errors=True)
             value.update(status="cancelled", stage="Analysis stopped", error=None, result=None, updated_at=time.time())
+            session_dir = job_session_dirs.get(job_id)
+            if session_dir is not None:
+                _persist_job_locked(value, session_dir)
         else:
             value.update(stage="Stopping analysis", updated_at=time.time())
         return dict(value)

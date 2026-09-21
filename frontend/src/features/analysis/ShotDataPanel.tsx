@@ -291,7 +291,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
 
       <section className="rail-panel correction-panel">
         <h3>Review this outcome</h3>
-        <p className="basis-note">Observation confidence describes what the video shows. Form quality does not change it.</p>
+        <p className="basis-note">Observation confidence describes what the video shows; severe form and release problems lower the score even when the ball falls.</p>
         <div className="correction-actions" role="group" aria-label="Correct shot outcome">
           {(["make", "miss", "review"] as const).map((nextOutcome) => (
             <button
