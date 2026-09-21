@@ -1,6 +1,6 @@
 ```bash
 cd Arc-Shot-Evaluator
-./scripts/setup.sh  # first run only
+./scripts/setup.sh  #first run only
 ./scripts/start.sh
 ```
 
