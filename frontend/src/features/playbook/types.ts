@@ -1,5 +1,19 @@
 export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "delete";
 export type ArrowKind = "movement" | "pass";
+export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
+export type DefenseOffBallStyle = "off" | "contain" | "help" | "switch";
+
+export interface SimulationSettings {
+  offenseOffBall: OffenseOffBallStyle;
+  defenseOffBall: DefenseOffBallStyle;
+  offBallIntensity: number;
+}
+
+export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = {
+  offenseOffBall: "read-react",
+  defenseOffBall: "help",
+  offBallIntensity: 68,
+};
 
 export interface CourtPoint {
   x: number;

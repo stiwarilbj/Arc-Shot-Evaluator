@@ -18,6 +18,7 @@ import {
   Redo2,
   Save,
   Send,
+  Settings2,
   Shield,
   ShieldCheck,
   Trash2,
@@ -27,8 +28,8 @@ import {
 } from "lucide-react";
 import { createPlaybook, deletePlaybook, fetchPlaybooks, updatePlaybook } from "./api";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAYS, withDefenders } from "./data";
-import type { ArrowKind, CourtPoint, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool } from "./types";
-import { clonePlaybook, pointDistance } from "./types";
+import type { ArrowKind, CourtPoint, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
+import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
 type DragState = { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end"; id: number | string; before: PlaybookDraft };
@@ -38,6 +39,22 @@ type SimulationFrame = {
   ball: CourtPoint | null;
   activeSequence: number | null;
   defensiveQuality: number;
+  offBallQuality: number;
+  shotPhase: "idle" | "setup" | "air" | "result";
+  shotProgress: number;
+  shotResult: "pending" | "made" | "missed";
+  shotQuality: number;
+  shooterId: number | null;
+  shotStart: CourtPoint | null;
+  shotTarget: CourtPoint | null;
+};
+
+type SimulationAction = {
+  arrow: PlaybookArrow;
+  sequence: number;
+  actorId: number | null;
+  recipientId: number | null;
+  recipientStart: CourtPoint | null;
 };
 
 const TOOL_LABELS: Record<PlaybookTool, string> = {
@@ -104,6 +121,9 @@ function isSameDraft(a: PlaybookDraft, b: PlaybookDraft) {
 }
 
 const SIMULATION_STEP_MS = 1200;
+const PASS_PREP_MS = 440;
+const SHOT_PHASE_MS = 1500;
+const HOOP_POINT: CourtPoint = { x: 50, y: 18.75 };
 
 function arrowSequence(arrow: PlaybookArrow, index: number) {
   return Number.isInteger(arrow.sequence) && (arrow.sequence ?? 0) > 0 ? arrow.sequence as number : index + 1;
@@ -135,61 +155,181 @@ function lerpPoint(start: CourtPoint, end: CourtPoint, amount: number): CourtPoi
   };
 }
 
+function easeInOut(amount: number) {
+  const progress = Math.max(0, Math.min(1, amount));
+  return progress * progress * (3 - 2 * progress);
+}
+
+function parabolicPoint(start: CourtPoint, end: CourtPoint, amount: number) {
+  const progress = Math.max(0, Math.min(1, amount));
+  const point = lerpPoint(start, end, progress);
+  return { x: point.x, y: clamp(point.y - Math.sin(Math.PI * progress) * 14) };
+}
+
+function shotArcPath(start: CourtPoint, end: CourtPoint) {
+  const from = markerPoint(start);
+  const to = markerPoint(end);
+  const control = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 105 };
+  return `M${from.x} ${from.y} Q${control.x} ${control.y} ${to.x} ${to.y}`;
+}
+
 function nearestPointIndex(points: CourtPoint[], target: CourtPoint) {
   if (!points.length) return -1;
   return points.reduce((best, point, index) => pointDistance(point, target) < pointDistance(points[best], target) ? index : best, 0);
 }
 
-/**
- * ARC defensive AI is intentionally local and deterministic so a saved play
- * behaves the same on FastAPI and GitHub Pages. It assigns one on-ball
- * defender and sends the remaining defenders toward the nearest passing lanes
- * and help spots instead of moving the authored diagram itself.
- */
-function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, defenders: PlaybookMarker[]) {
-  if (!players.length) return defenders.map((defender) => ({ x: defender.x, y: defender.y }));
-  const ballThreatIndex = ball ? nearestPointIndex(players, ball) : 0;
-  return defenders.map((defender, index) => {
-    const threat = players[index === 0 ? ballThreatIndex : index % players.length] ?? players[0];
-    const focus = index === 0 && ball ? lerpPoint(threat, ball, 0.36) : lerpPoint(threat, ball ?? threat, 0.18);
-    const lateral = ((index % 3) - 1) * 4.5;
-    return { x: clamp(focus.x + lateral), y: clamp(focus.y + (index % 2 ? 2.5 : -2.5)) };
+function buildSimulationActions(source: PlaybookDraft): SimulationAction[] {
+  const positions = source.players.map((marker) => ({ ...marker }));
+  return orderedArrows(source.arrows).map(({ arrow, sequence }) => {
+    const actorIndex = nearestPointIndex(positions, arrow.start);
+    const actorId = actorIndex >= 0 ? positions[actorIndex].id : null;
+    if (arrow.kind === "movement" && actorIndex >= 0) positions[actorIndex] = { ...positions[actorIndex], ...arrow.end };
+    const recipientIndex = arrow.kind === "pass" ? nearestPointIndex(positions, arrow.end) : -1;
+    const recipient = recipientIndex >= 0 ? positions[recipientIndex] : null;
+    const recipientId = recipient?.id ?? null;
+    const recipientStart = recipient ? { x: recipient.x, y: recipient.y } : null;
+    if (arrow.kind === "pass" && recipientIndex >= 0) positions[recipientIndex] = { ...positions[recipientIndex], ...arrow.end };
+    return { arrow, sequence, actorId, recipientId, recipientStart };
   });
 }
 
-function defensiveQuality(players: PlaybookMarker[], defenders: PlaybookMarker[], ball: CourtPoint | null) {
-  if (!players.length || !defenders.length) return 0;
-  const playerPoints = players.map(({ x, y }) => ({ x, y }));
-  const separation = defenders.reduce((total, defender) => {
-    const nearest = Math.min(...playerPoints.map((player) => pointDistance(defender, player)));
-    return total + Math.min(1, nearest / 42);
-  }, 0) / defenders.length;
-  const closeout = 1 - separation;
-  const ballContest = ball ? 1 - Math.min(1, Math.min(...defenders.map((defender) => pointDistance(defender, ball))) / 42) : 0.5;
-  return Math.round(Math.max(0, Math.min(100, (closeout * 0.68 + ballContest * 0.32) * 100)));
+function offBallTarget(marker: PlaybookMarker, index: number, players: PlaybookMarker[], ball: CourtPoint | null, phase: number, settings: SimulationSettings) {
+  if (!ball || players.length < 2 || settings.offenseOffBall === "off") return marker;
+  const handlerIndex = nearestPointIndex(players, ball);
+  if (index === handlerIndex) return marker;
+  const intensity = Math.max(0, Math.min(1, settings.offBallIntensity / 100));
+  const angle = (index - handlerIndex) * 1.2 + phase * 0.38;
+  const radius = 18 + intensity * 9;
+  const spacing = { x: clamp(ball.x + Math.cos(angle) * radius), y: clamp(ball.y + Math.sin(angle) * radius * 0.8) };
+  const rotatingCutter = (Math.floor(phase) + 1) % players.length;
+  const cutting = settings.offenseOffBall === "cuts" || (settings.offenseOffBall === "read-react" && Math.floor(phase) % 3 === 1);
+  const target = cutting && index === rotatingCutter
+    ? { x: clamp(50 + (index % 2 ? 1 : -1) * (13 + index * 2)), y: clamp(24 + (index % 3) * 11) }
+    : spacing;
+  const blend = easeInOut(Math.min(1, 0.16 + intensity * 0.5));
+  return { ...marker, ...lerpPoint(marker, target, blend) };
 }
 
-function simulateDraft(source: PlaybookDraft, elapsed: number): SimulationFrame {
+function offBallMovementQuality(players: PlaybookMarker[], ball: CourtPoint | null, settings: SimulationSettings) {
+  if (!ball || players.length < 2) return 0;
+  if (settings.offenseOffBall === "off") return 42;
+  const handlerIndex = nearestPointIndex(players, ball);
+  const offBallPlayers = players.filter((_, index) => index !== handlerIndex);
+  if (!offBallPlayers.length) return 0;
+  const ideal = 18 + Math.max(0, Math.min(1, settings.offBallIntensity / 100)) * 9;
+  const spacingScore = offBallPlayers.reduce((total, player) => total + (1 - Math.min(1, Math.abs(pointDistance(player, ball) - ideal) / 30)), 0) / offBallPlayers.length;
+  const laneScore = offBallPlayers.length < 2 ? 1 : offBallPlayers.reduce((total, player, index) => {
+    const nearest = Math.min(...offBallPlayers.filter((_, otherIndex) => otherIndex !== index).map((other) => pointDistance(player, other)));
+    return total + Math.min(1, nearest / 24);
+  }, 0) / offBallPlayers.length;
+  return Math.round(Math.max(0, Math.min(100, (spacingScore * 0.7 + laneScore * 0.3) * 100)));
+}
+
+/** ARC defensive AI is local and deterministic so the same saved play behaves identically on FastAPI and GitHub Pages. */
+function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, defenders: PlaybookMarker[], settings: SimulationSettings, elapsed: number) {
+  if (!players.length || settings.defenseOffBall === "off") return defenders.map((defender) => ({ x: defender.x, y: defender.y }));
+  const ballThreatIndex = ball ? nearestPointIndex(players, ball) : 0;
+  const phase = Math.floor(elapsed / SIMULATION_STEP_MS);
+  const helpSpot = ball ? lerpPoint(ball, HOOP_POINT, 0.34) : HOOP_POINT;
+  return defenders.map((defender, index) => {
+    const assignment = players[(index + (settings.defenseOffBall === "switch" ? phase : 0)) % players.length] ?? players[0];
+    let target: CourtPoint = assignment;
+    if (index === 0 || index === ballThreatIndex) target = ball ? lerpPoint(assignment, ball, 0.48) : assignment;
+    else if (settings.defenseOffBall === "help") target = lerpPoint(assignment, helpSpot, index === 1 ? 0.62 : 0.38);
+    else if (settings.defenseOffBall === "switch") target = lerpPoint(assignment, ball ?? assignment, 0.2);
+    else target = lerpPoint(assignment, ball ?? assignment, 0.16);
+    const lateral = ((index % 3) - 1) * 3.6;
+    return { x: clamp(target.x + lateral), y: clamp(target.y + (index % 2 ? 2.2 : -2.2)) };
+  });
+}
+
+function defensiveQuality(players: PlaybookMarker[], defenders: PlaybookMarker[], ball: CourtPoint | null, settings: SimulationSettings) {
+  if (!players.length || !defenders.length) return 0;
+  const handlerIndex = ball ? nearestPointIndex(players, ball) : 0;
+  const handler = players[handlerIndex] ?? players[0];
+  const onBallGap = Math.min(...defenders.map((defender) => pointDistance(defender, ball ?? handler)));
+  const onBallScore = 1 - Math.min(1, onBallGap / 36);
+  const assignmentScore = defenders.reduce((total, defender, index) => {
+    const assignment = players[(index + (settings.defenseOffBall === "switch" ? 1 : 0)) % players.length];
+    return total + (1 - Math.min(1, pointDistance(defender, assignment) / 48));
+  }, 0) / defenders.length;
+  const helpSpot = ball ? lerpPoint(ball, HOOP_POINT, 0.34) : HOOP_POINT;
+  const helpScore = defenders.length < 2 ? 0.5 : 1 - Math.min(1, Math.min(...defenders.slice(1).map((defender) => pointDistance(defender, helpSpot))) / 44);
+  const contestScore = ball ? 1 - Math.min(1, Math.min(...defenders.map((defender) => pointDistance(defender, ball))) / 46) : 0.5;
+  const styleWeight = settings.defenseOffBall === "off" ? 0.65 : 1;
+  return Math.round(Math.max(0, Math.min(100, (onBallScore * 0.38 + assignmentScore * 0.3 + helpScore * 0.17 + contestScore * 0.15) * 100 * styleWeight)));
+}
+
+function shotQuality(players: PlaybookMarker[], defenders: PlaybookMarker[], ball: CourtPoint | null, offBallQuality: number, shooterId: number | null = null) {
+  if (!players.length || !ball) return 0;
+  const shooter = (shooterId == null ? null : players.find((player) => player.id === shooterId)) ?? players[nearestPointIndex(players, ball)] ?? players[0];
+  const rangeScore = 1 - Math.min(1, pointDistance(shooter, HOOP_POINT) / 74);
+  const closestDefenderGap = defenders.length ? Math.min(...defenders.map((defender) => pointDistance(defender, shooter))) : 38;
+  const contestScore = Math.min(1, closestDefenderGap / 38);
+  return Math.round(Math.max(0, Math.min(100, (rangeScore * 0.52 + contestScore * 0.28 + (offBallQuality / 100) * 0.2) * 100)));
+}
+
+function simulateDraft(source: PlaybookDraft, elapsed: number, settings: SimulationSettings): SimulationFrame {
+  const actions = buildSimulationActions(source);
+  const actionDuration = Math.max(1, actions.length) * SIMULATION_STEP_MS;
   const players = source.players.map((marker) => ({ ...marker }));
   const baseDefenders = source.defenders.map((marker) => ({ ...marker }));
   const defenders = baseDefenders.map((marker) => ({ ...marker }));
-  let ball = source.ball ? { ...source.ball } : null;
+  let ball = source.ball ? { ...source.ball } : source.players[0] ? { x: source.players[0].x, y: source.players[0].y } : null;
   let activeSequence: number | null = null;
-  const arrows = orderedArrows(source.arrows);
-  arrows.forEach(({ arrow, sequence }, index) => {
+  const explicitIds = new Set<number>();
+  actions.forEach((action, index) => {
     const startTime = index * SIMULATION_STEP_MS;
-    if (elapsed < startTime) return;
-    const progress = Math.max(0, Math.min(1, (elapsed - startTime) / SIMULATION_STEP_MS));
-    if (progress < 1) activeSequence = sequence;
-    if (arrow.kind === "pass") {
-      ball = lerpPoint(arrow.start, arrow.end, progress);
+    const arrowProgress = easeInOut(Math.max(0, Math.min(1, (elapsed - startTime) / SIMULATION_STEP_MS)));
+    if (action.arrow.kind === "movement") {
+      if (elapsed >= startTime && action.actorId != null) {
+        const playerIndex = players.findIndex((marker) => marker.id === action.actorId);
+        if (playerIndex >= 0) players[playerIndex] = { ...players[playerIndex], ...lerpPoint(action.arrow.start, action.arrow.end, arrowProgress) };
+        explicitIds.add(action.actorId);
+        if (arrowProgress < 1) activeSequence = action.sequence;
+      }
       return;
     }
-    const playerIndex = nearestPointIndex(players, arrow.start);
-    if (playerIndex >= 0) players[playerIndex] = { ...players[playerIndex], ...lerpPoint(arrow.start, arrow.end, progress) };
+    const prepStart = Math.max(0, startTime - PASS_PREP_MS);
+    if (action.recipientId != null && elapsed >= prepStart) {
+      const recipientIndex = players.findIndex((marker) => marker.id === action.recipientId);
+      if (recipientIndex >= 0) players[recipientIndex] = { ...players[recipientIndex], ...lerpPoint(action.recipientStart ?? players[recipientIndex], action.arrow.end, easeInOut((elapsed - prepStart) / PASS_PREP_MS)) };
+      explicitIds.add(action.recipientId);
+    }
+    if (elapsed >= startTime) {
+      ball = lerpPoint(action.arrow.start, action.arrow.end, arrowProgress);
+      if (arrowProgress < 1) activeSequence = action.sequence;
+    }
   });
-  const targets = defensiveTargets(players, ball, baseDefenders);
-  const defenderProgress = Math.min(1, elapsed / Math.max(1, SIMULATION_STEP_MS * 1.7));
+
+  const phase = elapsed / SIMULATION_STEP_MS;
+  const shapedPlayers = elapsed <= actionDuration
+    ? players.map((marker, index) => explicitIds.has(marker.id) ? marker : offBallTarget(marker, index, players, ball, phase, settings))
+    : players;
+  let shotPhase: SimulationFrame["shotPhase"] = "idle";
+  let shotProgress = 0;
+  let shotResult: SimulationFrame["shotResult"] = "pending";
+  let shooterId: number | null = null;
+  let shotStart: CourtPoint | null = null;
+  const shotTarget = shapedPlayers.length && ball ? HOOP_POINT : null;
+  const shotElapsed = elapsed - actionDuration;
+  if (shotTarget && shotElapsed >= 0) {
+    const shooter = shapedPlayers[nearestPointIndex(shapedPlayers, ball as CourtPoint)] ?? shapedPlayers[0];
+    shooterId = shooter.id;
+    shotStart = { x: ball!.x, y: ball!.y };
+    shotProgress = Math.max(0, Math.min(1, shotElapsed / SHOT_PHASE_MS));
+    if (shotProgress < 0.18) shotPhase = "setup";
+    else if (shotProgress < 0.84) {
+      shotPhase = "air";
+      ball = parabolicPoint(shotStart, shotTarget, (shotProgress - 0.18) / 0.66);
+    } else {
+      shotPhase = "result";
+      ball = { ...shotTarget };
+    }
+  }
+  const releasePoint = shotStart ?? ball;
+  const targets = defensiveTargets(shapedPlayers, releasePoint, baseDefenders, settings, elapsed);
+  const defenderProgress = settings.defenseOffBall === "off" ? 0 : easeInOut(Math.max(0, Math.min(1, (elapsed - 140) / (SIMULATION_STEP_MS * 1.6))));
   defenders.forEach((defender, index) => {
     const target = targets[index];
     if (target) {
@@ -197,7 +337,25 @@ function simulateDraft(source: PlaybookDraft, elapsed: number): SimulationFrame 
       defenders[index] = { ...defender, ...point };
     }
   });
-  return { players, defenders, ball, activeSequence, defensiveQuality: defensiveQuality(players, defenders, ball) };
+  const offBallScore = offBallMovementQuality(shapedPlayers, releasePoint, settings);
+  const defenseScore = defensiveQuality(shapedPlayers, defenders, releasePoint, settings);
+  const finalShotQuality = shotQuality(shapedPlayers, defenders, releasePoint, offBallScore, shooterId);
+  if (shotPhase === "result") shotResult = finalShotQuality >= 68 ? "made" : "missed";
+  return {
+    players: shapedPlayers,
+    defenders,
+    ball,
+    activeSequence,
+    defensiveQuality: defenseScore,
+    offBallQuality: offBallScore,
+    shotPhase,
+    shotProgress,
+    shotResult,
+    shotQuality: finalShotQuality,
+    shooterId,
+    shotStart,
+    shotTarget,
+  };
 }
 
 export function PlaybookBoard() {
@@ -221,13 +379,15 @@ export function PlaybookBoard() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [simulationPlaying, setSimulationPlaying] = useState(false);
   const [simulationElapsed, setSimulationElapsed] = useState(0);
+  const [simulationSettings, setSimulationSettings] = useState<SimulationSettings>(() => ({ ...DEFAULT_SIMULATION_SETTINGS }));
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const simulationFrameRef = useRef<number | null>(null);
 
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
-  const simulationDuration = Math.max(1, draft.arrows.length) * SIMULATION_STEP_MS;
+  const simulationDuration = Math.max(1, draft.arrows.length) * SIMULATION_STEP_MS + SHOT_PHASE_MS;
   const simulationActive = simulationPlaying || simulationElapsed > 0;
-  const simulationFrame = useMemo(() => simulateDraft(draft, simulationElapsed), [draft, simulationElapsed]);
+  const simulationFrame = useMemo(() => simulateDraft(draft, simulationElapsed, simulationSettings), [draft, simulationElapsed, simulationSettings]);
 
   useEffect(() => {
     if (!simulationPlaying) return;
@@ -270,6 +430,12 @@ export function PlaybookBoard() {
   function resetSimulation() {
     setSimulationPlaying(false);
     setSimulationElapsed(0);
+  }
+
+  function changeSimulationSetting<Key extends keyof SimulationSettings>(key: Key, value: SimulationSettings[Key]) {
+    setSimulationSettings((current) => ({ ...current, [key]: value }));
+    resetSimulation();
+    setError(null);
   }
 
   function commit(next: PlaybookDraft, previous = draft) {
@@ -362,7 +528,7 @@ export function PlaybookBoard() {
 
   function applyAIDefense() {
     const source = withDefenders(draft, true);
-    const targets = defensiveTargets(source.players, source.ball, source.defenders);
+    const targets = defensiveTargets(source.players, source.ball, source.defenders, simulationSettings, 0);
     const next = clonePlaybook(source);
     next.defenders = source.defenders.map((defender, index) => ({ ...defender, ...(targets[index] ?? {}) }));
     commit(next);
@@ -682,10 +848,18 @@ export function PlaybookBoard() {
           </div>
           <div className="playbook-simulation-bar" role="region" aria-label="Play simulation controls">
             <span className="simulation-ai-label"><ShieldCheck size={14} /> ARC defensive AI</span>
-            <span className="simulation-copy">{simulationActive ? (simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
+            <span className="simulation-copy">{simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
+            <span className="simulation-quality" role="status">Off-ball quality <strong>{simulationActive ? `${simulationFrame.offBallQuality}%` : "—"}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
+            <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
             {selectedArrow ? <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={selectedArrowSequence ?? 1} onChange={(event) => changeArrowSequence(selectedArrow.id, Number(event.currentTarget.value))} /><small>1 = first</small></label> : null}
           </div>
+          {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
+            <label className="simulation-setting"><span>Offense off-ball</span><select aria-label="Offense off-ball style" value={simulationSettings.offenseOffBall} onChange={(event) => changeSimulationSetting("offenseOffBall", event.currentTarget.value as SimulationSettings["offenseOffBall"])}><option value="read-react">Read &amp; react</option><option value="cuts">Structured cuts</option><option value="spacing">Spacing only</option><option value="off">Off</option></select></label>
+            <label className="simulation-setting"><span>Defense off-ball</span><select aria-label="Defense off-ball style" value={simulationSettings.defenseOffBall} onChange={(event) => changeSimulationSetting("defenseOffBall", event.currentTarget.value as SimulationSettings["defenseOffBall"])}><option value="help">Help &amp; recover</option><option value="contain">Contain &amp; deny</option><option value="switch">Switch reads</option><option value="off">Hold positions</option></select></label>
+            <label className="simulation-setting simulation-setting-range"><span>Off-ball intensity <output>{simulationSettings.offBallIntensity}%</output></span><input aria-label="Off-ball intensity" type="range" min={0} max={100} step={1} value={simulationSettings.offBallIntensity} onChange={(event) => changeSimulationSetting("offBallIntensity", Number(event.currentTarget.value))} /></label>
+            <span className="simulation-settings-note">Passes wait for the receiver to arrive; the final action ends with a contested shot.</span>
+          </div> : null}
           <div className="court-frame">
             <svg ref={svgRef} className="court-svg" viewBox="0 0 1000 720" preserveAspectRatio="none" role="img" aria-label="Editable half court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
               <defs>
@@ -700,6 +874,7 @@ export function PlaybookBoard() {
               <path d="M285 24v318a215 215 0 0 0 430 0V24" className="court-line" />
               <path d="M285 342a215 215 0 0 0 430 0" className="court-line" />
               <path d="M430 111h140v10H430z" className="basket-mark" /><circle cx="500" cy="135" r="18" className="basket-mark" /><path d="M482 140q18 28 36 0" className="court-line" />
+              {simulationFrame.shotPhase !== "idle" && simulationFrame.shotStart && simulationFrame.shotTarget ? <path d={shotArcPath(simulationFrame.shotStart, simulationFrame.shotTarget)} className="shot-arc" /> : null}
               {visibleArrows.map((arrow, arrowIndex) => {
                 const start = markerPoint(arrow.start);
                 const end = markerPoint(arrow.end);
