@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Film, LockKeyhole, Upload } from "lucide-react";
 import type { ProcessingMode, ShotMode } from "../../domain/analysisTypes";
+import { REPOSITORY_URL } from "../../runtime";
 
 interface VideoUploadProps {
   error: string | null;
@@ -9,6 +10,7 @@ interface VideoUploadProps {
   onProcessingModeChange: (mode: ProcessingMode) => void;
   shotMode: ShotMode;
   onShotModeChange: (mode: ShotMode) => void;
+  onlineOnly?: boolean;
 }
 
 const VIDEO_TYPES = [
@@ -16,12 +18,30 @@ const VIDEO_TYPES = [
   ".mpeg", ".mpg", ".3gp", ".m2ts", ".mts", ".ts", ".ogv", ".asf",
 ];
 
-export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange }: VideoUploadProps) {
+export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange, onlineOnly = false }: VideoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
   function accept(files: FileList | File[] | undefined) {
     if (files?.length) onFiles(Array.from(files));
+  }
+
+  if (onlineOnly) {
+    return (
+      <main className="video-upload online-analyzer-notice">
+        <section className="upload-intro">
+          <h1>Video analysis stays local.</h1>
+          <p>The hosted GitHub Pages build keeps your footage private by leaving the Python vision pipeline on your machine. The Playbook workspace is ready to use here in the browser.</p>
+        </section>
+        <div className="online-analyzer-card">
+          <span className="upload-icon"><LockKeyhole aria-hidden="true" size={24} /></span>
+          <strong>Run ARC locally for video analysis</strong>
+          <span>Use the setup guide to enable uploads, queue processing, annotated playback, and Coach Notes.</span>
+          <a className="button button-primary" href={`${REPOSITORY_URL}#arc-a-local-basketball-shot-tracker`}>Open local setup guide</a>
+        </div>
+        <p className="local-note">Playbook diagrams remain fully available online and save in this browser.</p>
+      </main>
+    );
   }
 
   return (

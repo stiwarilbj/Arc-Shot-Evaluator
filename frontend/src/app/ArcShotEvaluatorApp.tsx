@@ -9,6 +9,7 @@ import { ExampleVideoLibrary } from "../features/upload/ExampleVideoLibrary";
 import { VideoUpload } from "../features/upload/VideoUpload";
 import { PlaybookBoard } from "../features/playbook/PlaybookBoard";
 import { AppHeader, type AppWorkspace } from "../layout/AppHeader";
+import { IS_GITHUB_PAGES } from "../runtime";
 import {
   cancelAnalysisJob,
   fetchAnalysisJob,
@@ -97,7 +98,7 @@ export function ArcShotEvaluatorApp() {
   // Free throw is the safest default for a new launch; a selected mode is
   // captured into each queue item so changing it never mutates an active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
-  const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
+  const [workspace, setWorkspace] = useState<AppWorkspace>(() => IS_GITHUB_PAGES ? "playbook" : "analyzer");
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
     return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark";
@@ -339,8 +340,9 @@ export function ArcShotEvaluatorApp() {
           onProcessingModeChange={setProcessingMode}
           shotMode={shotMode}
           onShotModeChange={setShotMode}
+          onlineOnly={IS_GITHUB_PAGES}
         />
-        <ExampleVideoLibrary examples={examples} loading={examplesLoading} error={examplesError} shotMode={shotMode} onSelect={enqueueExampleVideo} />
+        {!IS_GITHUB_PAGES ? <ExampleVideoLibrary examples={examples} loading={examplesLoading} error={examplesError} shotMode={shotMode} onSelect={enqueueExampleVideo} /> : null}
       </div>
     </main>
   );

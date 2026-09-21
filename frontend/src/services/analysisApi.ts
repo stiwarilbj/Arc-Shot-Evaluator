@@ -1,4 +1,5 @@
 import type { AnalysisJobState, AnalysisSession, ExampleVideo, ProcessingMode, ShotMode } from "../domain/analysisTypes";
+import { IS_GITHUB_PAGES } from "../runtime";
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -11,6 +12,7 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 }
 
 export async function fetchExampleVideos(signal?: AbortSignal): Promise<ExampleVideo[]> {
+  if (IS_GITHUB_PAGES) return [];
   return parseJsonResponse<ExampleVideo[]>(await fetch("/api/examples", { signal }));
 }
 
