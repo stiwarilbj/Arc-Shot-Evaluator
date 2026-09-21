@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.analysis.pipeline import analyze_video, probe_video, refresh_saved_analysis
+from backend.api.playbooks import router as playbooks_router
 from backend.config import (
     ANALYSIS_SESSIONS_DIR,
     EXAMPLE_VIDEOS_DIR,
@@ -47,6 +48,7 @@ EXAMPLE_FILES = (
 )
 
 app = FastAPI(title="ARC Local Shot Analysis", version="3.0.0")
+app.include_router(playbooks_router)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 job_cancel_events: dict[str, threading.Event] = {}

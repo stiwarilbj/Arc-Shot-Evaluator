@@ -555,3 +555,176 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Playbook workspace */
+.workspace-view-hidden { display: none; }
+.workspace-nav { display: flex; align-items: stretch; gap: 2px; height: 100%; }
+.workspace-nav button { position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 42px; padding: 0 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.workspace-nav button:hover { color: var(--text); }
+.workspace-nav button.is-active { border-bottom-color: var(--orange); color: var(--orange); }
+.workspace-nav button svg { stroke-width: 1.8; }
+.playbook-app-shell { min-height: 100vh; }
+.playbook-page { width: min(1500px, calc(100% - 40px)); margin: 0 auto; padding: 22px 0 34px; outline: none; }
+.playbook-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 64px; padding: 0 0 18px; border-bottom: 1px solid var(--line); }
+.playbook-title-group, .playbook-header-actions, .playbook-statusbar span, .play-save-status, .tool-button, .preset-button, .saved-plays-heading, .modal-heading, .modal-actions { display: flex; align-items: center; }
+.playbook-title-group { min-width: 0; gap: 14px; }
+.play-name-input-wrap { position: relative; width: min(340px, 42vw); }
+.play-name-input-wrap input { width: 100%; min-height: 44px; padding: 0 35px 0 14px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+.play-name-input-wrap input:focus { border-color: var(--orange); }
+.play-name-input-wrap svg { position: absolute; top: 15px; right: 12px; color: var(--dim); pointer-events: none; }
+.play-save-status { gap: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.play-save-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.play-status-saving i { background: var(--orange); animation: pulse-dot 1s ease-in-out infinite; }
+.play-status-saved { color: var(--make); }
+.play-status-saved i { background: var(--make); }
+.play-status-error { color: var(--miss); }
+.play-status-error i { background: var(--miss); }
+@keyframes pulse-dot { 50% { opacity: .35; } }
+.playbook-header-actions { justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.button-primary { border: 1px solid var(--orange); background: var(--orange); color: #1a100c; }
+.button-primary:hover { border-color: var(--text); background: var(--text); }
+.button-primary:disabled { cursor: progress; opacity: .65; }
+.button-subtle { border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.button-subtle:hover { border-color: var(--line-strong); color: var(--text); }
+.playbook-alert { margin: 12px 0 -2px; padding: 9px 12px; border-left: 2px solid var(--miss); background: color-mix(in srgb, var(--miss) 8%, var(--surface)); color: var(--miss); font-size: 12px; }
+.playbook-layout { display: grid; grid-template-columns: 164px minmax(0, 1fr) 252px; gap: 14px; margin-top: 18px; align-items: start; }
+.playbook-presets, .saved-plays-panel { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.playbook-presets { padding: 8px; }
+.preset-button { width: 100%; min-height: 45px; gap: 10px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 650; text-align: left; }
+.preset-button:hover { border-color: var(--line-strong); color: var(--text); }
+.preset-button.is-active { border-color: color-mix(in srgb, var(--orange) 60%, var(--line)); background: color-mix(in srgb, var(--orange) 10%, var(--surface)); color: var(--orange); }
+.preset-button svg { flex: 0 0 auto; stroke-width: 1.7; }
+.toggle-dot { width: 21px; height: 12px; margin-left: auto; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--line); position: relative; }
+.toggle-dot::after { content: ""; position: absolute; top: 2px; left: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: transform 150ms ease, background 150ms ease; }
+.toggle-dot.is-on { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 20%, var(--surface)); }
+.toggle-dot.is-on::after { transform: translateX(9px); background: var(--orange); }
+.playbook-help { margin: 15px 7px 5px; color: var(--dim); font-size: 10px; line-height: 1.5; }
+.playbook-editor { min-width: 0; }
+.playbook-toolbar { display: flex; align-items: center; gap: 5px; min-height: 52px; padding: 7px; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius) var(--radius) 0 0; background: var(--surface); }
+.tool-button { flex: 0 0 auto; justify-content: center; gap: 6px; min-height: 35px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.tool-button:hover:not(:disabled) { border-color: var(--line-strong); color: var(--text); }
+.tool-button.is-active { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 11%, var(--surface)); color: var(--orange); }
+.tool-button:disabled { cursor: default; opacity: .35; }
+.toolbar-spacer { flex: 1 1 auto; min-width: 8px; }
+.court-frame { position: relative; padding: 12px; border: 1px solid var(--line); border-top: 0; background: var(--media-bg); box-shadow: var(--shadow); }
+.court-svg { display: block; width: 100%; aspect-ratio: 1000 / 720; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 5px; cursor: crosshair; touch-action: none; }
+.court-floor { fill: var(--surface); }
+.court-line { fill: none; stroke: color-mix(in srgb, var(--text) 75%, transparent); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.court-dash { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 9 10; vector-effect: non-scaling-stroke; }
+.basket-mark { fill: none; stroke: var(--orange); stroke-width: 4; vector-effect: non-scaling-stroke; }
+.movement-arrow, .pass-arrow { fill: none; stroke-width: 3; vector-effect: non-scaling-stroke; pointer-events: stroke; }
+.movement-arrow { stroke: var(--text); }
+.pass-arrow { stroke: var(--orange); stroke-dasharray: 9 8; }
+.play-arrow-group { cursor: pointer; }
+.play-arrow-group.is-selected line { stroke-width: 4.5; }
+.selection-handle { fill: var(--orange); stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
+.drawing-preview { opacity: .72; pointer-events: none; }
+.offense-marker { fill: var(--orange); stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.offense-marker-group, .ball-marker-group, .defense-marker { cursor: grab; }
+.offense-marker-group:active, .ball-marker-group:active, .defense-marker:active, .selection-handle:active { cursor: grabbing; }
+.offense-marker-group.is-selected .offense-marker, .ball-marker-group.is-selected .ball-marker { stroke: #fff; stroke-width: 4; }
+.marker-number { fill: #fff8f0; font: 700 18px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.defense-marker { fill: none; stroke: #73bff0; stroke-width: 3; vector-effect: non-scaling-stroke; }
+.defense-marker-ring { fill: color-mix(in srgb, #73bff0 8%, transparent); stroke: transparent; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.defense-marker.is-selected .defense-marker-ring { stroke: #73bff0; }
+.ball-marker { fill: #d96b38; stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.ball-seam { fill: none; stroke: #fff3e8; stroke-width: 1.6; vector-effect: non-scaling-stroke; pointer-events: none; }
+.marker-caption { fill: var(--muted); font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; pointer-events: none; }
+.court-hint { position: absolute; right: 22px; bottom: 20px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--overlay-bg); color: var(--dim); font-size: 10px; pointer-events: none; }
+.playbook-statusbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 35px; padding: 6px 4px 0; color: var(--dim); font-size: 10px; }
+.playbook-statusbar span { gap: 6px; min-width: 0; }
+.playbook-statusbar span:last-child { justify-content: flex-end; text-align: right; }
+.saved-plays-panel { position: sticky; top: 16px; max-height: calc(100vh - 120px); overflow: hidden; }
+.saved-plays-heading { justify-content: space-between; gap: 10px; padding: 14px 13px 10px; border-bottom: 1px solid var(--line); }
+.saved-plays-heading h2 { margin: 2px 0 0; font-size: 15px; font-weight: 650; }
+.section-kicker { color: var(--dim); font-size: 9px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+.saved-plays-heading .icon-button { display: none; }
+.saved-play-list { display: grid; gap: 8px; padding: 10px; overflow-y: auto; scrollbar-width: thin; }
+.saved-play-card { position: relative; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); overflow: hidden; }
+.saved-play-card.is-active { border-color: var(--orange); }
+.saved-play-open { display: grid; width: 100%; gap: 6px; padding: 7px 7px 10px; border: 0; background: transparent; color: var(--text); cursor: pointer; text-align: left; }
+.saved-play-open:hover strong { color: var(--orange); }
+.saved-play-open strong { font-size: 12px; font-weight: 650; }
+.saved-play-open span { color: var(--dim); font-size: 10px; }
+.saved-play-actions { display: flex; justify-content: flex-end; gap: 3px; padding: 0 7px 7px; }
+.saved-play-actions button { display: grid; place-items: center; width: 25px; height: 24px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--dim); cursor: pointer; }
+.saved-play-actions button:hover { border-color: var(--line-strong); color: var(--orange); }
+.saved-play-actions button:disabled { opacity: .4; }
+.mini-court { display: block; width: 100%; aspect-ratio: 1000 / 720; border: 1px solid var(--line); border-radius: 4px; }
+.mini-floor { fill: var(--media-bg); }
+.mini-line, .mini-dash { fill: none; stroke: var(--muted); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.mini-dash { stroke-dasharray: 9 10; }
+.mini-basket { fill: none; stroke: var(--orange); stroke-width: 4; vector-effect: non-scaling-stroke; }
+.mini-player { fill: var(--orange); }
+.mini-defense { fill: none; stroke: #73bff0; stroke-width: 4; vector-effect: non-scaling-stroke; }
+.mini-ball { fill: #d96b38; }
+.mini-move, .mini-pass { fill: none; stroke-width: 5; vector-effect: non-scaling-stroke; }
+.mini-move { stroke: var(--text); }
+.mini-pass { stroke: var(--orange); stroke-dasharray: 9 8; }
+.saved-empty { display: grid; justify-items: center; gap: 8px; padding: 34px 18px; color: var(--muted); text-align: center; }
+.saved-empty p { margin: 0; font-size: 11px; line-height: 1.45; }
+.saved-empty button { border: 0; background: transparent; color: var(--orange); cursor: pointer; font-size: 11px; font-weight: 650; }
+.playbook-modal-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(5, 7, 8, .72); }
+.playbook-modal { width: min(660px, 100%); padding: 18px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); box-shadow: 0 22px 60px rgba(0,0,0,.38); }
+.modal-heading { justify-content: space-between; gap: 14px; margin-bottom: 16px; }
+.modal-heading h2 { margin: 3px 0 0; font-size: 20px; }
+.starter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.starter-card { display: grid; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--text); cursor: pointer; text-align: left; }
+.starter-card:hover { border-color: var(--orange); }
+.starter-card strong { font-size: 12px; }
+.starter-card span { color: var(--dim); font-size: 10px; }
+.replacement-modal { width: min(440px, 100%); }
+.replacement-modal p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.modal-actions { justify-content: flex-end; gap: 7px; margin-top: 20px; }
+
+@media (min-width: 861px) {
+  .app-header { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+}
+@media (max-width: 1279px) and (min-width: 861px) {
+  .app-header { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+  .workspace-nav button { padding-left: 8px; padding-right: 8px; }
+}
+@media (max-width: 1100px) and (min-width: 861px) {
+  .playbook-layout { grid-template-columns: 145px minmax(0, 1fr); }
+  .saved-plays-panel { grid-column: 1 / -1; position: static; max-height: none; }
+  .saved-play-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 860px) {
+  .app-header { grid-template-columns: auto 1fr auto; }
+  .workspace-nav { grid-column: 1 / -1; grid-row: 2; justify-content: center; height: 34px; }
+  .workspace-nav button { min-height: 32px; }
+  .playbook-page { width: min(720px, calc(100% - 24px)); padding-top: 14px; }
+  .playbook-header { align-items: flex-start; flex-direction: column; }
+  .playbook-header-actions { width: 100%; justify-content: flex-start; }
+  .playbook-layout { grid-template-columns: 1fr; }
+  .playbook-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; padding: 6px; }
+  .preset-button { justify-content: center; min-height: 42px; padding: 0 6px; font-size: 10px; text-align: center; }
+  .preset-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preset-button .toggle-dot { display: none; }
+  .playbook-help { grid-column: 1 / -1; margin: 5px 6px 1px; }
+  .saved-plays-panel { position: fixed; z-index: 10; inset: 60px 12px auto auto; width: min(320px, calc(100% - 24px)); max-height: calc(100vh - 80px); transform: translateX(calc(100% + 24px)); transition: transform 180ms ease; }
+  .saved-plays-panel.is-open { transform: translateX(0); }
+  .saved-plays-heading .icon-button { display: grid; }
+  .playbook-header-actions .button-subtle { margin-left: auto; }
+}
+@media (max-width: 620px) {
+  .app-header { grid-template-columns: auto 1fr; min-height: 86px; }
+  .app-header .header-actions { grid-column: 2; grid-row: 1; }
+  .workspace-nav { grid-column: 1 / -1; grid-row: 2; }
+  .playbook-page { width: calc(100% - 16px); }
+  .play-name-input-wrap { width: min(100%, 340px); }
+  .playbook-header-actions { gap: 5px; }
+  .playbook-header-actions .button { min-height: 34px; padding: 0 8px; font-size: 10px; }
+  .playbook-header-actions .button-subtle { margin-left: 0; }
+  .playbook-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .playbook-toolbar { gap: 2px; }
+  .tool-button { padding: 0 8px; }
+  .tool-button span { display: none; }
+  .court-frame { padding: 6px; }
+  .court-hint { right: 12px; bottom: 13px; font-size: 9px; }
+  .playbook-statusbar { display: block; line-height: 1.5; }
+  .playbook-statusbar span:last-child { justify-content: flex-start; text-align: left; }
+  .starter-grid { grid-template-columns: 1fr; }
+  .starter-card { grid-template-columns: 110px minmax(0, 1fr); align-items: center; }
+  .starter-card span { grid-column: 2; grid-row: 1; align-self: end; }
+}

@@ -1,5 +1,7 @@
-import { CheckCircle2, Moon, RotateCw, Sun } from "lucide-react";
+import { CheckCircle2, CircleDot, ClipboardList, Moon, RotateCw, Sun } from "lucide-react";
 import type { ThemeMode } from "../domain/analysisTypes";
+
+export type AppWorkspace = "analyzer" | "playbook";
 
 interface AppHeaderProps {
   filename?: string;
@@ -8,9 +10,11 @@ interface AppHeaderProps {
   onReset: () => void;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
+  workspace?: AppWorkspace;
+  onWorkspaceChange?: (workspace: AppWorkspace) => void;
 }
 
-export function AppHeader({ filename, complete, showReset = false, onReset, theme, onThemeChange }: AppHeaderProps) {
+export function AppHeader({ filename, complete, showReset = false, onReset, theme, onThemeChange, workspace = "analyzer", onWorkspaceChange }: AppHeaderProps) {
   return (
     <header className="app-header">
       <button className="brand-lockup" type="button" onClick={onReset} aria-label="Go to ARC home">
@@ -19,6 +23,16 @@ export function AppHeader({ filename, complete, showReset = false, onReset, them
         </div>
         <span>Local Shot Analysis</span>
       </button>
+      {onWorkspaceChange ? (
+        <nav className="workspace-nav" aria-label="ARC workspaces">
+          <button type="button" className={workspace === "analyzer" ? "is-active" : ""} aria-current={workspace === "analyzer" ? "page" : undefined} onClick={() => onWorkspaceChange("analyzer")}>
+            <CircleDot size={15} /> Shot Analyzer
+          </button>
+          <button type="button" className={workspace === "playbook" ? "is-active" : ""} aria-current={workspace === "playbook" ? "page" : undefined} onClick={() => onWorkspaceChange("playbook")}>
+            <ClipboardList size={15} /> Playbook
+          </button>
+        </nav>
+      ) : null}
       {filename ? <div className="header-filename" title={filename}>{filename}</div> : <div />}
       <div className="header-actions">
         <div className="theme-switch" role="group" aria-label="Color theme">

@@ -21,6 +21,7 @@ arc-shot-evaluator/
 ├── examples/         Videos shown in the test library
 ├── models/           Local YOLO detector and pose weights
 ├── sessions/         Generated local analyses and exports
+├── playbooks/        Saved local half-court diagrams
 ├── docs/             Architecture notes, design references, and screenshots
 └── scripts/          One-command setup and startup helpers
 ```
@@ -33,6 +34,8 @@ arc-shot-evaluator/
 4. `backend/coaching/retriever.py` matches reliable shot measurements to the local shooting guide.
 5. The finished session is saved in `sessions/` with versioned evidence, uncertainty, and a withheld prediction status. Corrections are stored separately in `corrections.json`.
 6. `frontend/src/app/ArcShotEvaluatorApp.tsx` composes the video workspace, queue, Coach Notes, and shot data.
+
+The Playbook workspace remains mounted beside the analyzer so switching destinations preserves an in-progress diagram and analysis queue. Its SVG editor uses normalized 0–100 court coordinates, while `backend/api/playbooks.py` validates and atomically persists versioned documents under `playbooks/`.
 
 Shot mode is captured when a queue item is created. Free throw remains the
 fresh-launch default; jump-shot analysis adds temporal player association,

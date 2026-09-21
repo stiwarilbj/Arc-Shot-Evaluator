@@ -32,6 +32,8 @@ The website uses React, TypeScript, and regular CSS. A local FastAPI server hand
 
 ARC connects detections across frames, keeps track of the rim when the camera moves, and uses the visible regulation rim as a conditional 2D scale reference. It reports projected measurements only when the evidence supports them, and marks single-camera geometry as estimated or unavailable when it does not. Portrait video, blur, camera movement, and different resolutions are supported. Clear side views still give the best numbers, of course.
 
+ARC also includes a separate **Playbook** workspace for drawing half-court diagrams. Start with the ready setup, a starter play, or an empty court; drag the five offensive markers, toggle defenders, draw movement and pass arrows, and save diagrams locally or export a high-resolution PNG. The playbook files stay in the project’s `playbooks/` directory and never leave the machine.
+
 The overview keeps the observed make rate separate from future prediction. A
 future FT% stays unavailable until a trained model has been evaluated on held
 out shooters and calibrated; mechanics quality never changes confidence in an

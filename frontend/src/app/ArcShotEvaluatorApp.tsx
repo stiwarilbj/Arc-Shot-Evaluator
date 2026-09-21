@@ -7,7 +7,8 @@ import { VideoWorkspace } from "../features/analysis/VideoWorkspace";
 import { AnalysisQueue } from "../features/queue/AnalysisQueue";
 import { ExampleVideoLibrary } from "../features/upload/ExampleVideoLibrary";
 import { VideoUpload } from "../features/upload/VideoUpload";
-import { AppHeader } from "../layout/AppHeader";
+import { PlaybookBoard } from "../features/playbook/PlaybookBoard";
+import { AppHeader, type AppWorkspace } from "../layout/AppHeader";
 import {
   cancelAnalysisJob,
   fetchAnalysisJob,
@@ -96,6 +97,7 @@ export function ArcShotEvaluatorApp() {
   // Free throw is the safest default for a new launch; a selected mode is
   // captured into each queue item so changing it never mutates an active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
+  const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
     return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark";
@@ -272,6 +274,7 @@ export function ArcShotEvaluatorApp() {
   }
 
   function showHomePage() {
+    setWorkspace("analyzer");
     setSession(null);
     setReviewFrame(null);
     setError(null);
@@ -284,33 +287,10 @@ export function ArcShotEvaluatorApp() {
     <AnalysisQueue items={queue} {...queueActions} />
   );
 
-  if (!session) {
-    return (
-      <div className="app-shell">
-        <AppHeader complete={false} onReset={showHomePage} theme={theme} onThemeChange={setTheme} />
-        <main className={`landing-layout ${queue.length ? "landing-has-queue" : "landing-empty"}`}>
-          {queue.length ? queuePanel : null}
-          <div className="landing-main">
-            <VideoUpload
-              error={error}
-              onFiles={enqueueUploadedVideos}
-              processingMode={processingMode}
-              onProcessingModeChange={setProcessingMode}
-              shotMode={shotMode}
-              onShotModeChange={setShotMode}
-            />
-            <ExampleVideoLibrary examples={examples} loading={examplesLoading} error={examplesError} shotMode={shotMode} onSelect={enqueueExampleVideo} />
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  const shot = session.shots[selectedShot] ?? null;
-  const isJumpShot = session.shot_mode === "jump_shot";
-  return (
-    <div className="app-shell analysis-session-shell">
-      <AppHeader filename={session.session.filename} complete onReset={showHomePage} theme={theme} onThemeChange={setTheme} />
+  const shot = session?.shots[selectedShot] ?? null;
+  const isJumpShot = session?.shot_mode === "jump_shot";
+  const analyzerView = session ? (
+    <div className="analysis-session-shell">
       <nav className="workspace-tabs" aria-label="Analysis views">
         <TabButton active={tab === "overview"} onClick={() => setTab("overview")} icon={<BarChart3 size={17} />} label="Overview" />
         <TabButton active={tab === "shot"} onClick={() => setTab("shot")} icon={<CircleDot size={17} />} label={shot ? `Shot ${String(shot.id).padStart(2, "0")}` : "Shot"} />
@@ -331,7 +311,7 @@ export function ArcShotEvaluatorApp() {
 
       <main className="analysis-grid">
         <div className="analysis-main">
-          <VideoWorkspace session={session} shot={shot} mode={mode} onMode={setMode} seekFrame={reviewFrame} />
+          <VideoWorkspace session={session} shot={shot} mode={mode} onMode={setMode} seekFrame={reviewFrame} active={workspace === "analyzer"} />
           <ShotSelector session={session} selected={selectedShot} onSelect={(index) => {
             setSelectedShot(index);
             setReviewFrame(null);
@@ -347,6 +327,33 @@ export function ArcShotEvaluatorApp() {
           </div>
         </aside>
       </main>
+    </div>
+  ) : (
+    <main className={`landing-layout ${queue.length ? "landing-has-queue" : "landing-empty"}`}>
+      {queue.length ? queuePanel : null}
+      <div className="landing-main">
+        <VideoUpload
+          error={error}
+          onFiles={enqueueUploadedVideos}
+          processingMode={processingMode}
+          onProcessingModeChange={setProcessingMode}
+          shotMode={shotMode}
+          onShotModeChange={setShotMode}
+        />
+        <ExampleVideoLibrary examples={examples} loading={examplesLoading} error={examplesError} shotMode={shotMode} onSelect={enqueueExampleVideo} />
+      </div>
+    </main>
+  );
+
+  return (
+    <div className={`app-shell ${workspace === "playbook" ? "playbook-app-shell" : session ? "analysis-session-shell" : ""}`}>
+      <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={setWorkspace} />
+      <div className={workspace === "playbook" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "playbook"}>
+        <PlaybookBoard />
+      </div>
+      <div className={workspace === "analyzer" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "analyzer"}>
+        {analyzerView}
+      </div>
     </div>
   );
 }
