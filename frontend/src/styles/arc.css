@@ -352,7 +352,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .upload-drop > span:not(.upload-icon) { color: var(--muted); font-size: 12px; }
 .privacy-row { display: flex; align-items: center; justify-content: center; gap: 32px; margin-top: 22px; color: var(--dim); font-size: 11px; }
 .privacy-row span { gap: 7px; }
-.local-note { margin: 9px 0 0; color: var(--dim); font-size: 10px; line-height: 1.4; text-align: center; opacity: .78; }
 .error-message { margin: 15px auto 0; color: var(--miss); text-align: center; font-size: 13px; }
 .loading-state { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--muted); font-size: 13px; }
 .loading-state i { width: 26px; height: 26px; border: 2px solid var(--line-strong); border-top-color: var(--orange); border-radius: 50%; animation: spin .8s linear infinite; }
@@ -587,12 +586,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .button-subtle { border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
 .button-subtle:hover { border-color: var(--line-strong); color: var(--text); }
 .playbook-alert { margin: 12px 0 -2px; padding: 9px 12px; border-left: 2px solid var(--miss); background: color-mix(in srgb, var(--miss) 8%, var(--surface)); color: var(--miss); font-size: 12px; }
-.online-analyzer-notice { align-content: start; }
-.online-analyzer-card { display: grid; justify-items: start; gap: 10px; max-width: 560px; margin-top: 26px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow); }
-.online-analyzer-card .upload-icon { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid color-mix(in srgb, var(--orange) 55%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--orange) 10%, var(--surface)); color: var(--orange); }
-.online-analyzer-card strong { color: var(--text); font-size: 16px; }
-.online-analyzer-card > span:not(.upload-icon) { max-width: 46ch; color: var(--muted); font-size: 12px; line-height: 1.55; }
-.online-analyzer-card a { margin-top: 5px; text-decoration: none; }
 .playbook-layout { display: grid; grid-template-columns: 164px minmax(0, 1fr) 252px; gap: 14px; margin-top: 18px; align-items: start; }
 .playbook-presets, .saved-plays-panel { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .playbook-presets { padding: 8px; }

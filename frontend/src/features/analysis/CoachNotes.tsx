@@ -60,7 +60,7 @@ export function CoachNotes({ shot }: CoachNotesProps) {
   useEffect(() => setExpanded(false), [shot.id]);
 
   if (!coaching) return null;
-  const matchedLabel = `${coaching.matched_source_count} local coaching ${coaching.matched_source_count === 1 ? "note" : "notes"} matched`;
+  const matchedLabel = `${coaching.matched_source_count} ARC coaching ${coaching.matched_source_count === 1 ? "note" : "notes"} matched`;
 
   return (
     <section className={`coach-notes ${coaching.limited ? "coach-notes-limited" : ""}`} aria-label={`Coach Notes for Shot ${shot.id}`}>

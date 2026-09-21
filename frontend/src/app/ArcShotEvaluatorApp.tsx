@@ -14,9 +14,11 @@ import {
   cancelAnalysisJob,
   fetchAnalysisJob,
   fetchExampleVideos,
+  registerBrowserAnalysisSession,
   startExampleVideoAnalysis,
   startUploadedVideoAnalysis,
 } from "../services/analysisApi";
+import { analyzeVideoInBrowser } from "../services/browserAnalysis";
 import type {
   AnalysisQueueItem,
   AnalysisSession,
@@ -98,7 +100,7 @@ export function ArcShotEvaluatorApp() {
   // Free throw is the safest default for a new launch; a selected mode is
   // captured into each queue item so changing it never mutates an active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
-  const [workspace, setWorkspace] = useState<AppWorkspace>(() => IS_GITHUB_PAGES ? "playbook" : "analyzer");
+  const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
     return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark";
@@ -131,7 +133,23 @@ export function ArcShotEvaluatorApp() {
   async function processQueuedAnalysis(item: AnalysisQueueItem) {
     try {
       if (cancelledQueueItemsRef.current.has(item.id)) return;
-      updateAnalysisQueueItem(item.id, { status: "processing", stage: "Starting local analysis", progress: 3, error: null });
+      updateAnalysisQueueItem(item.id, { status: "processing", stage: IS_GITHUB_PAGES ? "Starting browser analysis" : "Starting analysis", progress: 3, error: null });
+      if (IS_GITHUB_PAGES) {
+        const example = item.kind === "example" ? examples.find((candidate) => candidate.id === item.exampleId) : undefined;
+        const source = item.file ?? example?.url;
+        if (!source) throw new Error("This example is no longer available");
+        const browserResult = await analyzeVideoInBrowser(source, item.filename, item.processingMode, item.shotMode, (progress, stage) => {
+          updateAnalysisQueueItem(item.id, { status: "processing", stage, progress, error: null });
+        });
+        registerBrowserAnalysisSession(browserResult);
+        updateAnalysisQueueItem(item.id, { status: "done", stage: "Analysis complete", progress: 100, result: browserResult, error: null });
+        setSession(browserResult);
+        setSelectedShot(0);
+        setReviewFrame(null);
+        setMode("annotated");
+        setTab(browserResult.shots.length ? "shot" : "overview");
+        return;
+      }
       const jobId = item.kind === "example"
         ? await startExampleVideoAnalysis(item.exampleId ?? "", item.processingMode, item.shotMode)
         : await startUploadedVideoAnalysis(item.file as File, item.processingMode, item.shotMode);
@@ -308,7 +326,7 @@ export function ArcShotEvaluatorApp() {
           <Summary label="Observation confidence" value={`${session.summary.average_confidence.toFixed(0)}%`} />
         </section>
       ) : null}
-      {isJumpShot && session.summary.excluded_attempts ? <p className="warning-row" role="status">{session.summary.excluded_attempts} proposal(s) excluded from jump-shot statistics after review.</p> : null}
+      {isJumpShot && session.summary.excluded_attempts ? <p className="warning-row" role="status">{session.summary.excluded_attempts} proposal(s) excluded from jump-shot statistics after review</p> : null}
 
       <main className="analysis-grid">
         <div className="analysis-main">
@@ -340,9 +358,8 @@ export function ArcShotEvaluatorApp() {
           onProcessingModeChange={setProcessingMode}
           shotMode={shotMode}
           onShotModeChange={setShotMode}
-          onlineOnly={IS_GITHUB_PAGES}
         />
-        {!IS_GITHUB_PAGES ? <ExampleVideoLibrary examples={examples} loading={examplesLoading} error={examplesError} shotMode={shotMode} onSelect={enqueueExampleVideo} /> : null}
+        <ExampleVideoLibrary examples={examples} loading={examplesLoading} error={examplesError} shotMode={shotMode} onSelect={enqueueExampleVideo} />
       </div>
     </main>
   );

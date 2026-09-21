@@ -417,7 +417,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
         >
           Add missed attempt at this frame
         </button>
-        {shot.evidence.correction ? <p className="basis-note">Locally corrected · model evidence remains in the export</p> : null}
+        {shot.evidence.correction ? <p className="basis-note">Correction saved · model evidence remains in the export</p> : null}
         {correctionError ? <p className="error-message" role="alert">{correctionError}</p> : null}
       </section>
 

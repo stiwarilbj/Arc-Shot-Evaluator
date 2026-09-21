@@ -73,7 +73,7 @@ export function AnalysisQueue({
       <div className="queue-topline">
         <div className="queue-heading">
           <div>
-            <span className="section-kicker">Local workflow</span>
+            <span className="section-kicker">ARC workflow</span>
             <h2>Analysis Queue</h2>
           </div>
           <span className="queue-count">{countLabel}</span>
@@ -154,13 +154,13 @@ export function AnalysisQueue({
       ) : items.length ? (
         <div className="queue-hidden-empty">
           <EyeOff size={16} />
-          <span>Queue videos are hidden.</span>
+          <span>Queue videos are hidden</span>
           <button type="button" onClick={onShowHidden}>Unhide</button>
         </div>
       ) : (
-        <div className="queue-empty"><Film size={18} /><p>Choose an example or add a few clips. They will run in parallel when slots are available and stay available here.</p></div>
+        <div className="queue-empty"><Film size={18} /><p>Choose an example or add a few clips; they will run in parallel when slots are available and stay available here</p></div>
       )}
-      <p className="queue-footnote">Up to 2 local workers · no cloud upload · completed analyses stay in this session.</p>
+      <p className="queue-footnote">Up to 2 analyses · completed results stay in this session</p>
     </aside>
   );
 }

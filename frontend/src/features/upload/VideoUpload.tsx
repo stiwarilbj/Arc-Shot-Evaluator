@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
-import { Film, LockKeyhole, Upload } from "lucide-react";
+import { Film, ScanLine, Upload } from "lucide-react";
 import type { ProcessingMode, ShotMode } from "../../domain/analysisTypes";
-import { REPOSITORY_URL } from "../../runtime";
 
 interface VideoUploadProps {
   error: string | null;
@@ -10,7 +9,6 @@ interface VideoUploadProps {
   onProcessingModeChange: (mode: ProcessingMode) => void;
   shotMode: ShotMode;
   onShotModeChange: (mode: ShotMode) => void;
-  onlineOnly?: boolean;
 }
 
 const VIDEO_TYPES = [
@@ -18,7 +16,7 @@ const VIDEO_TYPES = [
   ".mpeg", ".mpg", ".3gp", ".m2ts", ".mts", ".ts", ".ogv", ".asf",
 ];
 
-export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange, onlineOnly = false }: VideoUploadProps) {
+export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange }: VideoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -26,31 +24,12 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
     if (files?.length) onFiles(Array.from(files));
   }
 
-  if (onlineOnly) {
-    return (
-      <main className="video-upload online-analyzer-notice">
-        <section className="upload-intro">
-          <h1>Video analysis stays local.</h1>
-          <p>The hosted GitHub Pages build keeps your footage private by leaving the Python vision pipeline on your machine. The Playbook workspace is ready to use here in the browser.</p>
-        </section>
-        <div className="online-analyzer-card">
-          <span className="upload-icon"><LockKeyhole aria-hidden="true" size={24} /></span>
-          <strong>Run ARC locally for video analysis</strong>
-          <span>Use the setup guide to enable uploads, queue processing, annotated playback, and Coach Notes.</span>
-          <a className="button button-primary" href={`${REPOSITORY_URL}#arc-a-local-basketball-shot-tracker`}>Open local setup guide</a>
-        </div>
-        <p className="local-note">Playbook diagrams remain fully available online and save in this browser.</p>
-      </main>
-    );
-  }
-
   return (
     <main className="video-upload">
       <section className="upload-intro">
-        <h1>See the shot. Fix the form.</h1>
+        <h1>See the shot; fix the form</h1>
         <p>
-          Drop a recorded session to trace the ball, score each attempt, and inspect the
-          shooter&apos;s mechanics at release—entirely on this machine.
+          Upload a basketball clip to review movement, release timing, and shot attempts in ARC; use Playbook for a half-court diagram when you need a plan
         </p>
       </section>
       <label className="analysis-depth-control">
@@ -61,7 +40,7 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
           onChange={(event) => onProcessingModeChange(event.currentTarget.value as ProcessingMode)}
         >
           <option value="normal">Normal · faster overview</option>
-          <option value="deep">Deep · finer pose and ball tracking</option>
+          <option value="deep">Deep · finer motion sampling</option>
         </select>
       </label>
       <fieldset className="shot-mode-control">
@@ -85,7 +64,6 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
           </button>
         </div>
         <p>{shotMode === "free_throw" ? "Stationary free-throw sequence" : "Three-pointers and mid-range shots with shooter and defender context"}</p>
-        {shotMode === "jump_shot" ? <p className="experimental-note">Jump-shot probability stays unavailable until a separate model passes held-out validation.</p> : null}
       </fieldset>
       <button
         className={`upload-drop ${dragging ? "is-dragging" : ""}`}
@@ -120,10 +98,9 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
       </button>
       {error ? <p className="error-message" role="alert">{error}</p> : null}
       <div className="privacy-row">
-        <span><LockKeyhole aria-hidden="true" size={16} />No cloud upload</span>
+        <span><ScanLine aria-hidden="true" size={16} />Browser motion review</span>
         <span><Film aria-hidden="true" size={16} />Rotation and codec normalized automatically</span>
       </div>
-      <p className="local-note">Single-camera estimates · review low-confidence calls · footage stays on this machine.</p>
     </main>
   );
 }

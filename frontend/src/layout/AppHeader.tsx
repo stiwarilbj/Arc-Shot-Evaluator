@@ -21,7 +21,7 @@ export function AppHeader({ filename, complete, showReset = false, onReset, them
         <div className="brand-mark" aria-label="ARC">
           ARC
         </div>
-        <span>Local Shot Analysis</span>
+        <span>Online Shot Analysis</span>
       </button>
       {onWorkspaceChange ? (
         <nav className="workspace-nav" aria-label="ARC workspaces">

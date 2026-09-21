@@ -1,6 +1,6 @@
 [Open the live ARC GitHub Pages demo →](https://stiwarilbj.github.io/Arc-Shot-Evaluator/)
 
-The hosted demo opens in the browser-based Playbook workspace. Video analysis stays local because its FastAPI, PyTorch, and OpenCV pipeline runs on your machine.
+The hosted demo opens in ARC Shot Analyzer; Playbook is the second tab for half-court diagrams and saved plays
 
 ```bash
 cd Arc-Shot-Evaluator
@@ -20,9 +20,9 @@ The setup script uses `pnpm` when it is installed and automatically falls back
 to `npm` when it is not. You only need Node.js and `uv`; there is no separate
 pnpm install step.
 
-# ARC, a local basketball shot tracker
+# ARC, basketball shot analysis and Playbook
 
-I built ARC because rewatching a jumper and guessing what went wrong gets old fast. You drop in one video or a whole group, and it tracks the shot, marks up the replay, estimates the useful numbers, and gives you a few coach notes. Everything stays on your computer, which is honestly one of my favorite parts. 🏀
+I built ARC because rewatching a jumper and guessing what went wrong gets old fast; upload one video or a whole group, review the shot windows, inspect the replay, and keep a Playbook diagram beside the analysis 🏀
 
 <p align="center">
   <img src="docs/screenshots/current/arc-coach-notes.png" alt="ARC with video, analysis queue, Coach Notes, and shot data visible together" width="900" />
@@ -32,11 +32,11 @@ I built ARC because rewatching a jumper and guessing what went wrong gets old fa
 
 ## How it works
 
-The website uses React, TypeScript, and regular CSS. A local FastAPI server handles the heavy work with Python, OpenCV, PyTorch, and two YOLO vision models. They find the ball, rim, players, and body points like the wrist, elbow, shoulder, hip, and knee. It sounds wild at first, but a college intern who knows some Python and web development could build a simpler version and understand each part.
+The website uses React, TypeScript, and regular CSS; the hosted build runs its browser motion pass in the page, while the repository also includes the full FastAPI, OpenCV, PyTorch, and YOLO pipeline for development
 
 ARC connects detections across frames, keeps track of the rim when the camera moves, and uses the visible regulation rim as a conditional 2D scale reference. It reports projected measurements only when the evidence supports them, and marks single-camera geometry as estimated or unavailable when it does not. Portrait video, blur, camera movement, and different resolutions are supported. Clear side views still give the best numbers, of course.
 
-ARC also includes a separate **Playbook** workspace for drawing half-court diagrams. Start with the ready setup, a starter play, or an empty court; drag the five offensive markers, toggle defenders, draw movement and pass arrows, and save diagrams locally or export a high-resolution PNG. The local app stores playbook files in the project’s `playbooks/` directory; the hosted demo keeps them in the browser’s local storage.
+ARC also includes **Playbook** as a second tab for drawing half-court diagrams; start with the ready setup, a starter play, or an empty court, then drag markers, toggle defenders, draw arrows, save diagrams, or export a high-resolution PNG. The hosted demo keeps saved plays in the browser; the development server stores them in the project’s `playbooks/` directory
 
 The overview keeps the observed make rate separate from future prediction. A
 future FT% stays unavailable until a trained model has been evaluated on held
@@ -72,7 +72,7 @@ There is a simple folder map and video data flow in [docs/architecture.md](docs/
 
 ## Why it feels different
 
-- Videos never leave your machine, and there is no cloud bill or account.
+- Browser review starts in the page; the repository also includes the full model pipeline for development runs.
 - Two clips can analyze at the same time, while extra videos wait in the queue.
 - If the net hides the ball, ARC checks the ball's reappearance and drop instead of blindly guessing.
 - Weak evidence becomes `review`, and shaky footage gets careful advice instead of fake confidence.
