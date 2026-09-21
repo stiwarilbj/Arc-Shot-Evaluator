@@ -242,7 +242,12 @@ export function ArcShotEvaluatorApp() {
       updateAnalysisQueueItem(item.id, { status: "processing", stage: IS_GITHUB_PAGES ? "Starting browser analysis" : "Starting analysis", progress: 3, error: null });
       if (IS_GITHUB_PAGES) {
         const example = item.kind === "example" ? examples.find((candidate) => candidate.id === item.exampleId) : undefined;
-        const source = item.file ?? example?.url;
+        const source = item.file
+          ?? example?.url
+          // A restored Pages queue can start before the example manifest
+          // request finishes; the filename is enough to resume the static
+          // project asset without racing that request.
+          ?? (item.kind === "example" ? new URL(`examples/${encodeURIComponent(item.filename)}`, document.baseURI).toString() : undefined);
         if (!source) throw new Error("This example is no longer available");
         const browserResult = await analyzeVideoInBrowser(source, item.filename, analysisMode, analysisShotMode, (progress, stage) => {
           updateAnalysisQueueItem(item.id, { status: "processing", stage, progress, error: null });
