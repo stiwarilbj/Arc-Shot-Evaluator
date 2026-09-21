@@ -33,6 +33,7 @@ import type {
 const WAIT_MS = 750;
 const MAX_CONCURRENT_ANALYSES = 1;
 const QUEUE_STORAGE_KEY = "arc-analysis-queue-v2";
+const HOSTED_QUEUE_STORAGE_KEY = "arc-analysis-queue-pages-v1";
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
@@ -83,6 +84,7 @@ function createQueuedAnalysis(
 }
 
 type PersistedQueueItem = Omit<AnalysisQueueItem, "file" | "result">;
+type HostedPersistedQueueItem = Omit<AnalysisQueueItem, "file">;
 
 export function ArcShotEvaluatorApp() {
   // The landing state intentionally starts empty. Previous sessions remain on
@@ -135,20 +137,48 @@ export function ArcShotEvaluatorApp() {
   }
 
   useEffect(() => {
-    if (IS_GITHUB_PAGES) {
-      setQueueHydrated(true);
-      return;
-    }
     let cancelled = false;
-    let saved: PersistedQueueItem[] = [];
+    let saved: Array<PersistedQueueItem | HostedPersistedQueueItem> = [];
+    const storageKey = IS_GITHUB_PAGES ? HOSTED_QUEUE_STORAGE_KEY : QUEUE_STORAGE_KEY;
     try {
-      const raw = window.localStorage.getItem(QUEUE_STORAGE_KEY);
+      const raw = window.localStorage.getItem(storageKey);
       const parsed = raw ? JSON.parse(raw) : [];
       if (Array.isArray(parsed)) {
-        saved = parsed.filter((item): item is PersistedQueueItem => Boolean(item && typeof item.id === "string"));
+        saved = parsed.filter((item): item is PersistedQueueItem | HostedPersistedQueueItem => Boolean(item && typeof item.id === "string"));
       }
     } catch {
       saved = [];
+    }
+    if (IS_GITHUB_PAGES) {
+      const restored = saved.map((item) => {
+        const storedResult = "result" in item && item.result ? item.result : null;
+        if (storedResult) registerBrowserAnalysisSession(storedResult);
+        const canResume = item.kind === "example" && !storedResult;
+        const completedUpload = item.kind === "upload" && item.status === "done" && !storedResult;
+        return {
+          ...item,
+          file: undefined,
+          result: storedResult,
+          status: canResume && (item.status === "queued" || item.status === "processing")
+            ? "queued" as const
+            : completedUpload
+              ? "error" as const
+              : item.status,
+          stage: canResume && (item.status === "queued" || item.status === "processing")
+            ? "Ready to resume browser analysis"
+            : completedUpload
+              ? "Upload is available while this page is open"
+              : item.stage,
+          error: completedUpload
+            ? "This uploaded clip cannot be restored after a page reload"
+            : item.error,
+        };
+      });
+      setQueue(restored);
+      setQueueHydrated(true);
+      return () => {
+        cancelled = true;
+      };
     }
     const restored = saved.map((item) => ({
       ...item,
@@ -188,9 +218,18 @@ export function ArcShotEvaluatorApp() {
   }, []);
 
   useEffect(() => {
-    if (!queueHydrated || IS_GITHUB_PAGES) return;
-    const persisted = queue.map(({ file: _file, result: _result, ...item }) => item);
-    window.localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(persisted));
+    if (!queueHydrated) return;
+    const storageKey = IS_GITHUB_PAGES ? HOSTED_QUEUE_STORAGE_KEY : QUEUE_STORAGE_KEY;
+    const persisted = queue.map(({ file: _file, result, ...item }) => ({
+      ...item,
+      ...(IS_GITHUB_PAGES && item.kind === "example" ? { result } : {}),
+    }));
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(persisted));
+    } catch {
+      // A large uploaded result should never block the queue or discard the
+      // in-memory analysis when browser storage is unavailable or full.
+    }
   }, [queue, queueHydrated]);
 
   async function processQueuedAnalysis(item: AnalysisQueueItem) {
@@ -361,6 +400,19 @@ export function ArcShotEvaluatorApp() {
     setError(null);
   }
 
+  function handleSessionChange(next: AnalysisSession) {
+    setSession(next);
+    if (IS_GITHUB_PAGES) {
+      // Keep hosted corrections in the same durable queue record as the
+      // original browser analysis so reopening the page preserves review work
+      // just like a local session reconnect.
+      setQueue((current) => current.map((item) => (
+        item.result?.session.id === next.session.id ? { ...item, result: next } : item
+      )));
+      registerBrowserAnalysisSession(next);
+    }
+  }
+
   function showHomePage() {
     setWorkspace("analyzer");
     setSession(null);
@@ -411,7 +463,7 @@ export function ArcShotEvaluatorApp() {
           <AnalysisQueue items={queue} compact {...queueActions} />
           <div className={`analysis-detail-columns ${shot?.coaching ? "" : "analysis-detail-legacy"}`}>
             {shot?.coaching ? <CoachNotes shot={shot} /> : null}
-            <ShotDataPanel session={session} shot={shot} tab={tab} onSessionChange={setSession} onSeekFrame={setReviewFrame} />
+            <ShotDataPanel session={session} shot={shot} tab={tab} onSessionChange={handleSessionChange} onSeekFrame={setReviewFrame} />
           </div>
         </aside>
       </main>

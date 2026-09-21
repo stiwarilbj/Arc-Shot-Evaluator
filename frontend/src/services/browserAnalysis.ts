@@ -152,6 +152,23 @@ function formMetricsAtFrame(overlay: BrowserPoseOverlay | undefined, frame: numb
   return { form, confidence: pose.confidence };
 }
 
+function rangeQuality(value: number | null, minimum: number, maximum: number) {
+  if (value == null) return null;
+  if (value >= minimum && value <= maximum) return 1;
+  const distance = value < minimum ? minimum - value : value - maximum;
+  return clamp(1 - distance / 70, 0, 1);
+}
+
+function formQuality(form: { elbow: number | null; knee: number | null; shoulder: number | null; hip: number | null }) {
+  const values = [
+    rangeQuality(form.elbow, 65, 125),
+    rangeQuality(form.knee, 125, 195),
+    rangeQuality(form.shoulder, 20, 105),
+    rangeQuality(form.hip, 125, 205),
+  ].filter((value): value is number => value != null);
+  return values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0.62;
+}
+
 function buildShot(
   id: number,
   time: number,
@@ -162,8 +179,20 @@ function buildShot(
   poseOverlay?: BrowserPoseOverlay,
 ): ShotAnalysis {
   const releaseFrame = Math.round(time * fps);
-  const confidence = clamp(0.42 + score * 0.55, 0.42, 0.82);
   const pose = formMetricsAtFrame(poseOverlay, poseOverlay ? Math.round(time * poseOverlay.fps) : releaseFrame);
+  const visibleQuality = formQuality(pose.form);
+  // The hosted pass is intentionally conservative. Motion alone should not
+  // make a difficult or poorly formed attempt look certain; static pose data
+  // gives the Pages build the same quality signal the local review exposes.
+  const confidence = clamp(
+    (0.42 + score * 0.55)
+      * (0.7 + 0.3 * clamp(pose.confidence, 0, 1))
+      * (0.62 + 0.38 * visibleQuality),
+    0.22,
+    0.86,
+  );
+  const flags = ["Motion window ready for review"];
+  if (visibleQuality < 0.45) flags.push("Visible form needs review");
   return {
     id,
     outcome: "review",
@@ -179,13 +208,15 @@ function buildShot(
     entry_angle_deg: null,
     arc_peak_m: null,
     form: pose.form,
-    flags: ["Motion window ready for review"],
+    flags,
     metric_availability: {},
     evidence: {
       observed_ball_frames: 0,
       tracked_frames: Math.max(1, Math.round(fps * 0.8)),
       rim_track_confidence: 0,
       pose_confidence: pose.confidence,
+      shot_quality: visibleQuality,
+      mechanics_quality: visibleQuality,
       crossing_frame: null,
       outcome_basis: "Browser motion window; choose the visible outcome in Review this outcome",
       shot_type: shotMode === "jump_shot" ? "unknown" : "free_throw",
@@ -205,6 +236,13 @@ function recomputeSummary(shots: ShotAnalysis[]) {
   const misses = shots.filter((shot) => shot.outcome === "miss").length;
   const review = shots.filter((shot) => shot.outcome === "review").length;
   const attempts = shots.length;
+  let bestStreak = 0;
+  let currentStreak = 0;
+  for (const shot of shots) {
+    if (shot.outcome === "make") currentStreak += 1;
+    else currentStreak = 0;
+    bestStreak = Math.max(bestStreak, currentStreak);
+  }
   return {
     attempts,
     makes,
@@ -214,7 +252,7 @@ function recomputeSummary(shots: ShotAnalysis[]) {
     observed_fg_pct: attempts ? (makes / attempts) * 100 : null,
     observed_ft_pct: attempts ? (makes / attempts) * 100 : null,
     predicted_ft_pct: null,
-    best_streak: 0,
+    best_streak: bestStreak,
     average_confidence: attempts
       ? shots.reduce((total, shot) => total + (shot.observation_confidence ?? shot.confidence), 0) / attempts
       : 0,
@@ -244,9 +282,10 @@ export async function analyzeVideoInBrowser(
   const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
   const width = video.videoWidth || 1280;
   const height = video.videoHeight || 720;
-  const fps = 30;
-  const frameCount = Math.max(1, Math.round(duration * fps));
   const poseOverlay = typeof source === "string" ? await loadPoseOverlay(filename) : undefined;
+  const fps = poseOverlay?.fps ?? 30;
+  const poseFrameCount = poseOverlay?.frames.reduce((maximum, frame) => Math.max(maximum, frame.frame + 1), 0) ?? 0;
+  const frameCount = Math.max(1, Math.round(duration * fps), poseFrameCount);
   const sampleCount = clamp(Math.round(duration * (processingMode === "deep" ? 4 : 2.5)), 12, 72);
   const canvas = document.createElement("canvas");
   canvas.width = Math.min(320, width);
