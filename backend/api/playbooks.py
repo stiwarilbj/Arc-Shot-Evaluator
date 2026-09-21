@@ -80,7 +80,10 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         if arrow.get("kind") not in {"movement", "pass"}:
             raise HTTPException(400, "Arrow kind must be movement or pass")
         arrow_ids.add(arrow["id"])
-        arrows.append({"id": arrow["id"], "kind": arrow["kind"], "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")})
+        sequence = arrow.get("sequence", len(arrows) + 1)
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or not 1 <= sequence <= MAX_ARROWS:
+            raise HTTPException(400, "Arrow sequence must be a positive integer")
+        arrows.append({"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")})
     defenders_visible = payload.get("defenders_visible", False)
     if not isinstance(defenders_visible, bool):
         raise HTTPException(400, "defenders_visible must be boolean")

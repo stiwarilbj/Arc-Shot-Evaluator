@@ -26,6 +26,7 @@ def test_playbook_crud_is_local_and_versioned(tmp_path, monkeypatch) -> None:
     value = created.json()
     assert value["version"] == 1
     assert value["id"].startswith("play-")
+    assert value["arrows"][0]["sequence"] == 1
     assert json.loads((tmp_path / f"{value['id']}.json").read_text())["name"] == "Pick and roll"
 
     listed = client.get("/api/playbooks")
@@ -53,6 +54,10 @@ def test_playbook_rejects_out_of_bounds_or_duplicate_markers(tmp_path, monkeypat
     duplicate = _payload()
     duplicate["players"] = [{"id": 1, "x": 30, "y": 50}, {"id": 1, "x": 60, "y": 50}]
     assert client.post("/api/playbooks", json=duplicate).status_code == 400
+
+    invalid_sequence = _payload()
+    invalid_sequence["arrows"][0]["sequence"] = 0
+    assert client.post("/api/playbooks", json=invalid_sequence).status_code == 400
 
 
 def test_corrupt_saved_play_is_skipped_from_library(tmp_path, monkeypatch) -> None:

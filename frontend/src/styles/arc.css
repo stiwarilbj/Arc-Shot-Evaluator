@@ -617,6 +617,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .pass-arrow { stroke: var(--orange); stroke-dasharray: 9 8; }
 .play-arrow-group { cursor: pointer; }
 .play-arrow-group.is-selected line { stroke-width: 4.5; }
+.arrow-sequence-badge { pointer-events: none; }
+.arrow-sequence-badge circle { fill: var(--surface-2); stroke: var(--orange); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.arrow-sequence-badge text { fill: var(--text); font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; dominant-baseline: central; }
 .selection-handle { fill: var(--orange); stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 .drawing-preview { opacity: .72; pointer-events: none; }
 .offense-marker { fill: var(--orange); stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; }
@@ -631,6 +634,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .ball-seam { fill: none; stroke: #fff3e8; stroke-width: 1.6; vector-effect: non-scaling-stroke; pointer-events: none; }
 .marker-caption { fill: var(--muted); font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; pointer-events: none; }
 .court-hint { position: absolute; right: 22px; bottom: 20px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--overlay-bg); color: var(--dim); font-size: 10px; pointer-events: none; }
+.playbook-simulation-bar { display: flex; align-items: center; gap: 10px; min-height: 43px; padding: 6px 9px; border: 1px solid var(--line); border-top: 0; background: var(--surface-2); color: var(--muted); font-size: 10px; flex-wrap: wrap; }
+.simulation-ai-label { display: inline-flex; align-items: center; gap: 5px; color: var(--orange); font-weight: 700; white-space: nowrap; }
+.simulation-copy { min-width: 120px; color: var(--dim); }
+.simulation-quality { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: var(--muted); white-space: nowrap; }
+.simulation-quality strong { color: var(--make); font-size: 13px; }
+.sequence-editor { display: inline-flex; align-items: center; gap: 5px; padding-left: 9px; border-left: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.sequence-editor input { width: 45px; min-height: 27px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--text); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
+.sequence-editor input:focus { border-color: var(--orange); outline: none; }
+.sequence-editor small { color: var(--dim); }
 .playbook-statusbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 35px; padding: 6px 4px 0; color: var(--dim); font-size: 10px; }
 .playbook-statusbar span { gap: 6px; min-width: 0; }
 .playbook-statusbar span:last-child { justify-content: flex-end; text-align: right; }
@@ -720,6 +732,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .playbook-toolbar { gap: 2px; }
   .tool-button { padding: 0 8px; }
   .tool-button span { display: none; }
+  .playbook-simulation-bar { gap: 7px; }
+  .simulation-quality { margin-left: 0; }
+  .sequence-editor { padding-left: 0; border-left: 0; }
   .court-frame { padding: 6px; }
   .court-hint { right: 12px; bottom: 13px; font-size: 9px; }
   .playbook-statusbar { display: block; line-height: 1.5; }

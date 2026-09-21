@@ -15,6 +15,8 @@ export interface PlaybookArrow {
   kind: ArrowKind;
   start: CourtPoint;
   end: CourtPoint;
+  /** 1-based order in which this action happens during a simulation. */
+  sequence?: number;
 }
 
 export interface PlaybookDocument {

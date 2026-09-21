@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import {
   ArrowDownToLine,
   ArrowUpRight,
+  BrainCircuit,
   Check,
   Circle,
   Copy,
@@ -11,11 +12,14 @@ import {
   Hand,
   MousePointer2,
   Pencil,
+  Pause,
   Plus,
+  Play,
   Redo2,
   Save,
   Send,
   Shield,
+  ShieldCheck,
   Trash2,
   Undo2,
   UserRound,
@@ -28,6 +32,13 @@ import { clonePlaybook, pointDistance } from "./types";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
 type DragState = { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end"; id: number | string; before: PlaybookDraft };
+type SimulationFrame = {
+  players: PlaybookMarker[];
+  defenders: PlaybookMarker[];
+  ball: CourtPoint | null;
+  activeSequence: number | null;
+  defensiveQuality: number;
+};
 
 const TOOL_LABELS: Record<PlaybookTool, string> = {
   select: "Select / move",
@@ -61,7 +72,7 @@ function arrowId() {
 }
 
 function draftPayload(draft: PlaybookDraft): PlaybookDraft {
-  return clonePlaybook(draft);
+  return normalizeDraft(draft);
 }
 
 function markerCount(draft: PlaybookDraft, type: "player" | "defender") {
@@ -92,6 +103,103 @@ function isSameDraft(a: PlaybookDraft, b: PlaybookDraft) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+const SIMULATION_STEP_MS = 1200;
+
+function arrowSequence(arrow: PlaybookArrow, index: number) {
+  return Number.isInteger(arrow.sequence) && (arrow.sequence ?? 0) > 0 ? arrow.sequence as number : index + 1;
+}
+
+function orderedArrows(arrows: PlaybookArrow[]) {
+  return arrows
+    .map((arrow, index) => ({ arrow, index, sequence: arrowSequence(arrow, index) }))
+    .sort((left, right) => left.sequence - right.sequence || left.index - right.index);
+}
+
+function normalizeDraft(source: PlaybookDraft) {
+  const next = clonePlaybook(source);
+  const used = new Set<number>();
+  next.arrows = next.arrows.map((arrow, index) => {
+    let sequence = arrowSequence(arrow, index);
+    while (used.has(sequence)) sequence += 1;
+    used.add(sequence);
+    return { ...arrow, sequence };
+  });
+  return next;
+}
+
+function lerpPoint(start: CourtPoint, end: CourtPoint, amount: number): CourtPoint {
+  const progress = Math.max(0, Math.min(1, amount));
+  return {
+    x: clamp(start.x + (end.x - start.x) * progress),
+    y: clamp(start.y + (end.y - start.y) * progress),
+  };
+}
+
+function nearestPointIndex(points: CourtPoint[], target: CourtPoint) {
+  if (!points.length) return -1;
+  return points.reduce((best, point, index) => pointDistance(point, target) < pointDistance(points[best], target) ? index : best, 0);
+}
+
+/**
+ * ARC defensive AI is intentionally local and deterministic so a saved play
+ * behaves the same on FastAPI and GitHub Pages. It assigns one on-ball
+ * defender and sends the remaining defenders toward the nearest passing lanes
+ * and help spots instead of moving the authored diagram itself.
+ */
+function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, defenders: PlaybookMarker[]) {
+  if (!players.length) return defenders.map((defender) => ({ x: defender.x, y: defender.y }));
+  const ballThreatIndex = ball ? nearestPointIndex(players, ball) : 0;
+  return defenders.map((defender, index) => {
+    const threat = players[index === 0 ? ballThreatIndex : index % players.length] ?? players[0];
+    const focus = index === 0 && ball ? lerpPoint(threat, ball, 0.36) : lerpPoint(threat, ball ?? threat, 0.18);
+    const lateral = ((index % 3) - 1) * 4.5;
+    return { x: clamp(focus.x + lateral), y: clamp(focus.y + (index % 2 ? 2.5 : -2.5)) };
+  });
+}
+
+function defensiveQuality(players: PlaybookMarker[], defenders: PlaybookMarker[], ball: CourtPoint | null) {
+  if (!players.length || !defenders.length) return 0;
+  const playerPoints = players.map(({ x, y }) => ({ x, y }));
+  const separation = defenders.reduce((total, defender) => {
+    const nearest = Math.min(...playerPoints.map((player) => pointDistance(defender, player)));
+    return total + Math.min(1, nearest / 42);
+  }, 0) / defenders.length;
+  const closeout = 1 - separation;
+  const ballContest = ball ? 1 - Math.min(1, Math.min(...defenders.map((defender) => pointDistance(defender, ball))) / 42) : 0.5;
+  return Math.round(Math.max(0, Math.min(100, (closeout * 0.68 + ballContest * 0.32) * 100)));
+}
+
+function simulateDraft(source: PlaybookDraft, elapsed: number): SimulationFrame {
+  const players = source.players.map((marker) => ({ ...marker }));
+  const baseDefenders = source.defenders.map((marker) => ({ ...marker }));
+  const defenders = baseDefenders.map((marker) => ({ ...marker }));
+  let ball = source.ball ? { ...source.ball } : null;
+  let activeSequence: number | null = null;
+  const arrows = orderedArrows(source.arrows);
+  arrows.forEach(({ arrow, sequence }, index) => {
+    const startTime = index * SIMULATION_STEP_MS;
+    if (elapsed < startTime) return;
+    const progress = Math.max(0, Math.min(1, (elapsed - startTime) / SIMULATION_STEP_MS));
+    if (progress < 1) activeSequence = sequence;
+    if (arrow.kind === "pass") {
+      ball = lerpPoint(arrow.start, arrow.end, progress);
+      return;
+    }
+    const playerIndex = nearestPointIndex(players, arrow.start);
+    if (playerIndex >= 0) players[playerIndex] = { ...players[playerIndex], ...lerpPoint(arrow.start, arrow.end, progress) };
+  });
+  const targets = defensiveTargets(players, ball, baseDefenders);
+  const defenderProgress = Math.min(1, elapsed / Math.max(1, SIMULATION_STEP_MS * 1.7));
+  defenders.forEach((defender, index) => {
+    const target = targets[index];
+    if (target) {
+      const point = lerpPoint(defender, target, defenderProgress);
+      defenders[index] = { ...defender, ...point };
+    }
+  });
+  return { players, defenders, ball, activeSequence, defensiveQuality: defensiveQuality(players, defenders, ball) };
+}
+
 export function PlaybookBoard() {
   const rootRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -111,8 +219,35 @@ export function PlaybookBoard() {
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [simulationPlaying, setSimulationPlaying] = useState(false);
+  const [simulationElapsed, setSimulationElapsed] = useState(0);
+  const simulationFrameRef = useRef<number | null>(null);
 
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
+  const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
+  const simulationDuration = Math.max(1, draft.arrows.length) * SIMULATION_STEP_MS;
+  const simulationActive = simulationPlaying || simulationElapsed > 0;
+  const simulationFrame = useMemo(() => simulateDraft(draft, simulationElapsed), [draft, simulationElapsed]);
+
+  useEffect(() => {
+    if (!simulationPlaying) return;
+    const startedAt = performance.now() - simulationElapsed;
+    const tick = (now: number) => {
+      const elapsed = Math.min(simulationDuration, now - startedAt);
+      setSimulationElapsed(elapsed);
+      if (elapsed >= simulationDuration) {
+        setSimulationPlaying(false);
+        simulationFrameRef.current = null;
+        return;
+      }
+      simulationFrameRef.current = window.requestAnimationFrame(tick);
+    };
+    simulationFrameRef.current = window.requestAnimationFrame(tick);
+    return () => {
+      if (simulationFrameRef.current != null) window.cancelAnimationFrame(simulationFrameRef.current);
+      simulationFrameRef.current = null;
+    };
+  }, [simulationPlaying, simulationDuration]);
 
   useEffect(() => {
     fetchPlaybooks().then(setSaved).catch(() => setError("Saved plays are unavailable until the local server is running."));
@@ -132,8 +267,14 @@ export function PlaybookBoard() {
     rootRef.current?.focus();
   }
 
+  function resetSimulation() {
+    setSimulationPlaying(false);
+    setSimulationElapsed(0);
+  }
+
   function commit(next: PlaybookDraft, previous = draft) {
     if (isSameDraft(next, previous)) return;
+    resetSimulation();
     setHistory((current) => [...current.slice(-39), clonePlaybook(previous)]);
     setFuture([]);
     setDraft(next);
@@ -172,7 +313,7 @@ export function PlaybookBoard() {
   }
 
   function loadDraft(next: PlaybookDraft) {
-    setDraft(clonePlaybook(next));
+    setDraft(normalizeDraft(next));
     setHistory([]);
     setFuture([]);
     setSelected(null);
@@ -182,6 +323,7 @@ export function PlaybookBoard() {
     setDirty(false);
     setStatus("idle");
     setError(null);
+    resetSimulation();
   }
 
   function requestLoad(next: PlaybookDraft) {
@@ -204,6 +346,42 @@ export function PlaybookBoard() {
       setError(caught instanceof Error ? caught.message : "Play could not be saved. Your draft is still here.");
       return false;
     }
+  }
+
+  function startSimulation() {
+    if (!draft.defenders.length) {
+      // A play can be simulated from any starting option; the first run adds
+      // the standard five defensive markers so the AI has a full matchup.
+      commit(withDefenders(draft, true));
+    }
+    setSimulationElapsed(0);
+    setSimulationPlaying(true);
+    setError(null);
+    focusBoard();
+  }
+
+  function applyAIDefense() {
+    const source = withDefenders(draft, true);
+    const targets = defensiveTargets(source.players, source.ball, source.defenders);
+    const next = clonePlaybook(source);
+    next.defenders = source.defenders.map((defender, index) => ({ ...defender, ...(targets[index] ?? {}) }));
+    commit(next);
+    setSelected(null);
+    setError(null);
+  }
+
+  function changeArrowSequence(arrowIdValue: string, requestedSequence: number) {
+    if (!Number.isFinite(requestedSequence)) return;
+    const current = orderedArrows(draft.arrows);
+    const selectedIndex = current.findIndex(({ arrow }) => arrow.id === arrowIdValue);
+    if (selectedIndex < 0) return;
+    const targetIndex = Math.max(0, Math.min(current.length - 1, Math.round(requestedSequence) - 1));
+    const [item] = current.splice(selectedIndex, 1);
+    current.splice(targetIndex, 0, item);
+    const next = clonePlaybook(draft);
+    next.arrows = current.map(({ arrow }, index) => ({ ...arrow, sequence: index + 1 }));
+    commit(next);
+    setSelected({ type: "arrow", id: arrowIdValue });
   }
 
   function duplicate(play: PlaybookDocument) {
@@ -296,7 +474,13 @@ export function PlaybookBoard() {
       if (pointDistance(drawStart, drawEnd) > 3) {
         const next = clonePlaybook(draft);
         const kind: ArrowKind = tool === "pass" ? "pass" : "movement";
-        const newArrow: PlaybookArrow = { id: arrowId(), kind, start: drawStart, end: drawEnd };
+        const newArrow: PlaybookArrow = {
+          id: arrowId(),
+          kind,
+          start: drawStart,
+          end: drawEnd,
+          sequence: Math.max(0, ...draft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
+        };
         next.arrows = [...next.arrows, newArrow];
         commit(next);
         setSelected({ type: "arrow", id: newArrow.id });
@@ -328,10 +512,19 @@ export function PlaybookBoard() {
       setTool("select");
       return;
     }
+    // Lines remain editable from every toolbar mode. This keeps an accidental
+    // tool choice from trapping the user in a mode before an arrow can be
+    // pulled to a new endpoint; player and defender markers still require
+    // Select so clicks in placement modes remain predictable.
+    if (selection.type === "arrow") {
+      setSelected(selection);
+      dragRef.current = { type: "arrow-end", id: selection.id, before: clonePlaybook(draft) };
+      svgRef.current?.setPointerCapture(event.pointerId);
+      return;
+    }
     if (tool !== "select") return;
     setSelected(selection);
-    const dragType = selection.type === "arrow" ? "arrow-end" : selection.type;
-    dragRef.current = { type: dragType as DragState["type"], id: selection.id, before: clonePlaybook(draft) };
+    dragRef.current = { type: selection.type, id: selection.id, before: clonePlaybook(draft) };
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
@@ -344,7 +537,8 @@ export function PlaybookBoard() {
       setTool("select");
       return;
     }
-    if (tool !== "select") return;
+    // Endpoint handles follow the same always-draggable rule as the arrow
+    // stroke, including while another drawing tool is active.
     setSelected({ type: "arrow", id: arrow.id });
     dragRef.current = { type: endpoint === "start" ? "arrow-start" : "arrow-end", id: arrow.id, before: clonePlaybook(draft) };
     svgRef.current?.setPointerCapture(event.pointerId);
@@ -477,9 +671,20 @@ export function PlaybookBoard() {
             <ToolButton active={tool === "movement"} icon={<ArrowUpRight size={15} />} label="Movement" title={TOOL_LABELS.movement} onClick={() => chooseTool("movement")} />
             <ToolButton active={tool === "pass"} icon={<Send size={15} />} label="Pass" title={TOOL_LABELS.pass} onClick={() => chooseTool("pass")} />
             <span className="toolbar-spacer" />
+            <ToolButton icon={<BrainCircuit size={15} />} label="AI defense" title="Apply ARC defensive AI" onClick={applyAIDefense} />
+            <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : "Play"} title={simulationPlaying ? "Pause play simulation" : "Play simulation with defensive AI"} onClick={() => {
+              if (simulationPlaying) setSimulationPlaying(false);
+              else startSimulation();
+            }} />
             <ToolButton active={tool === "delete"} icon={<Eraser size={15} />} label="Delete" title={TOOL_LABELS.delete} onClick={() => chooseTool("delete")} />
             <ToolButton disabled={!history.length} icon={<Undo2 size={15} />} label="Undo" title="Undo last edit" onClick={undo} />
             <ToolButton disabled={!future.length} icon={<Redo2 size={15} />} label="Redo" title="Redo last edit" onClick={redo} />
+          </div>
+          <div className="playbook-simulation-bar" role="region" aria-label="Play simulation controls">
+            <span className="simulation-ai-label"><ShieldCheck size={14} /> ARC defensive AI</span>
+            <span className="simulation-copy">{simulationActive ? (simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
+            <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
+            {selectedArrow ? <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={selectedArrowSequence ?? 1} onChange={(event) => changeArrowSequence(selectedArrow.id, Number(event.currentTarget.value))} /><small>1 = first</small></label> : null}
           </div>
           <div className="court-frame">
             <svg ref={svgRef} className="court-svg" viewBox="0 0 1000 720" preserveAspectRatio="none" role="img" aria-label="Editable half court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
@@ -495,37 +700,42 @@ export function PlaybookBoard() {
               <path d="M285 24v318a215 215 0 0 0 430 0V24" className="court-line" />
               <path d="M285 342a215 215 0 0 0 430 0" className="court-line" />
               <path d="M430 111h140v10H430z" className="basket-mark" /><circle cx="500" cy="135" r="18" className="basket-mark" /><path d="M482 140q18 28 36 0" className="court-line" />
-              {visibleArrows.map((arrow) => {
+              {visibleArrows.map((arrow, arrowIndex) => {
                 const start = markerPoint(arrow.start);
                 const end = markerPoint(arrow.end);
                 const active = selected?.type === "arrow" && selected.id === arrow.id;
+                const sequence = arrowSequence(arrow, arrowIndex);
+                const badgeX = (start.x + end.x) / 2;
+                const badgeY = (start.y + end.y) / 2;
                 return <g key={arrow.id} onPointerDown={(event) => onMarkerPointerDown(event, { type: "arrow", id: arrow.id })} className={`play-arrow-group ${active ? "is-selected" : ""}`}>
+                  <title>Move {sequence} · {arrow.kind === "pass" ? "Pass" : "Movement"}</title>
                   <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} className={arrow.kind === "pass" ? "pass-arrow" : "movement-arrow"} markerEnd={`url(#${arrow.kind === "pass" ? "pass-arrow" : "movement-arrow"})`} />
+                  <g className="arrow-sequence-badge"><circle cx={badgeX} cy={badgeY} r="12" /><text x={badgeX} y={badgeY + 1}>{sequence}</text></g>
                   {active ? <><circle cx={start.x} cy={start.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "start")} /><circle cx={end.x} cy={end.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "end")} /></> : null}
                 </g>;
               })}
               {drawStart && drawEnd ? <line x1={markerPoint(drawStart).x} y1={markerPoint(drawStart).y} x2={markerPoint(drawEnd).x} y2={markerPoint(drawEnd).y} className={`drawing-preview ${tool === "pass" ? "pass-arrow" : "movement-arrow"}`} markerEnd={`url(#${tool === "pass" ? "pass-arrow" : "movement-arrow"})`} /> : null}
-              {draft.defenders_visible ? draft.defenders.map((marker) => {
+              {(draft.defenders_visible || simulationActive) ? (simulationActive ? simulationFrame.defenders : draft.defenders).map((marker) => {
                 const point = markerPoint(marker);
                 const active = selected?.type === "defender" && selected.id === marker.id;
                 return <g key={`defender-${marker.id}`} className={`defense-marker ${active ? "is-selected" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "defender", id: marker.id })}>
                   <circle cx={point.x} cy={point.y} r="24" className="defense-marker-ring" /><path d={`M${point.x - 10} ${point.y - 10}l20 20M${point.x + 10} ${point.y - 10}l-20 20`} className="defense-marker" /><text x={point.x} y={point.y + 39} className="marker-caption">D{marker.id}</text>
                 </g>;
               }) : null}
-              {draft.players.map((marker) => {
+              {(simulationActive ? simulationFrame.players : draft.players).map((marker) => {
                 const point = markerPoint(marker);
                 const active = selected?.type === "player" && selected.id === marker.id;
                 return <g key={`player-${marker.id}`} className={`offense-marker-group ${active ? "is-selected" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "player", id: marker.id })}>
                   <circle cx={point.x} cy={point.y} r="25" className="offense-marker" /><text x={point.x} y={point.y + 1} className="marker-number">{marker.id}</text>
                 </g>;
               })}
-              {draft.ball ? <g className={`ball-marker-group ${selected?.type === "ball" ? "is-selected" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "ball", id: "ball" })}>
-                <circle cx={markerPoint(draft.ball).x} cy={markerPoint(draft.ball).y} r="14" className="ball-marker" /><path d={`M${markerPoint(draft.ball).x - 11} ${markerPoint(draft.ball).y}h22M${markerPoint(draft.ball).x} ${markerPoint(draft.ball).y - 11}v22`} className="ball-seam" />
+              {(simulationActive ? simulationFrame.ball : draft.ball) ? <g className={`ball-marker-group ${selected?.type === "ball" ? "is-selected" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "ball", id: "ball" })}>
+                <circle cx={markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x} cy={markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y} r="14" className="ball-marker" /><path d={`M${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x - 11} ${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y}h22M${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x} ${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y - 11}v22`} className="ball-seam" />
               </g> : null}
             </svg>
             <div className="court-hint">{tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : "Drag across the court to draw"}</div>
           </div>
-          <div className="playbook-statusbar"><span><Hand size={14} /> {selected ? `${selected.type === "ball" ? "Ball" : selected.type === "arrow" ? "Arrow" : `${selected.type === "defender" ? "Defender" : "Player"} ${selected.id}`} selected` : "Nothing selected"}</span><span>Arrow keys nudge · Shift for larger steps · Cmd/Ctrl Z to undo</span></div>
+          <div className="playbook-statusbar"><span><Hand size={14} /> {selected ? `${selected.type === "ball" ? "Ball" : selected.type === "arrow" ? `Move ${selectedArrowSequence ?? ""}` : `${selected.type === "defender" ? "Defender" : "Player"} ${selected.id}`} selected` : "Nothing selected"}</span><span>Arrows stay draggable · Arrow keys nudge · Shift for larger steps · Cmd/Ctrl Z to undo</span></div>
         </main>
         <aside className={`saved-plays-panel ${savedOpen ? "is-open" : ""}`} aria-label="Saved plays">
           <div className="saved-plays-heading"><div><span className="section-kicker">Local library</span><h2>Saved plays</h2></div><button type="button" className="icon-button" aria-label="Close saved plays" onClick={() => setSavedOpen(false)}><X size={17} /></button></div>

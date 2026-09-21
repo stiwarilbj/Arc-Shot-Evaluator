@@ -9,7 +9,7 @@ function draft(name: string, players: Array<[number, number]>, ball: [number, nu
     players: players.map(([x, y], index) => ({ id: index + 1, x, y })),
     defenders: defenders.map(([x, y], index) => ({ id: index + 1, x, y })),
     ball: ball ? { x: ball[0], y: ball[1] } : null,
-    arrows,
+    arrows: arrows.map((item, index) => ({ ...item, sequence: item.sequence ?? index + 1 })),
   };
 }
 
