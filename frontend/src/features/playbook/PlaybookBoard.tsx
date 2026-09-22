@@ -310,6 +310,34 @@ function bestDefensiveMatchups(players: PlaybookMarker[], defenders: PlaybookMar
   return defenders.map((_, index) => best[index % Math.max(1, defenderCount)] ?? index % players.length);
 }
 
+function findOpenFloorSpot(marker: PlaybookMarker, home: CourtPoint, players: PlaybookMarker[], ball: CourtPoint, defenders: PlaybookMarker[]) {
+  if (!defenders.length) return home;
+  const candidates = [
+    home,
+    { x: clamp(home.x - 8), y: home.y },
+    { x: clamp(home.x + 8), y: home.y },
+    { x: home.x, y: clamp(home.y - 6) },
+    { x: home.x, y: clamp(home.y + 6) },
+    { x: clamp(home.x - 6), y: clamp(home.y - 4) },
+    { x: clamp(home.x + 6), y: clamp(home.y - 4) },
+  ];
+  const teammates = players.filter((player) => player.id !== marker.id);
+  return candidates.reduce((best, candidate) => {
+    const defenderGap = Math.min(...defenders.map((defender) => pointDistance(candidate, defender)));
+    const teammateGap = teammates.length ? Math.min(...teammates.map((teammate) => pointDistance(candidate, teammate))) : 26;
+    const ballGap = pointDistance(candidate, ball);
+    const spacing = Math.max(0, 30 - Math.abs(ballGap - 23));
+    const travelCost = pointDistance(candidate, home) * 0.16;
+    const score = Math.min(32, defenderGap) * 0.55 + Math.min(28, teammateGap) * 0.3 + spacing * 0.15 - travelCost;
+    const bestDefenderGap = Math.min(...defenders.map((defender) => pointDistance(best, defender)));
+    const bestTeammateGap = teammates.length ? Math.min(...teammates.map((teammate) => pointDistance(best, teammate))) : 26;
+    const bestBallGap = pointDistance(best, ball);
+    const bestSpacing = Math.max(0, 30 - Math.abs(bestBallGap - 23));
+    const bestScore = Math.min(32, bestDefenderGap) * 0.55 + Math.min(28, bestTeammateGap) * 0.3 + bestSpacing * 0.15 - pointDistance(best, home) * 0.16;
+    return score > bestScore ? candidate : best;
+  }, home);
+}
+
 function offBallTarget(
   marker: PlaybookMarker,
   index: number,
@@ -352,18 +380,30 @@ function offBallTarget(
     target.y = clamp(target.y + Math.max(-5, Math.min(5, (ball.y - 56) * 0.12)));
   }
 
+  // Read the current shell and choose a nearby gap instead of sending every
+  // off-ball player to a fixed five-out spot regardless of defensive pressure.
+  if (settings.offenseOffBall === "read-react" || settings.offenseOffBall === "spacing") {
+    target = findOpenFloorSpot(marker, target, players, ball, defenders);
+  }
+
   // Preserve a playable passing lane and stop off-ball routes from bunching up.
   if (pointDistance(target, ball) < 17) {
     const side = target.x < ball.x ? -1 : 1;
     target = { x: clamp(target.x + side * 10), y: clamp(target.y + (target.y > ball.y ? 5 : -5)) };
   }
+  const closestTeammate = players
+    .filter((player) => player.id !== marker.id && player.id !== handler.id)
+    .reduce<PlaybookMarker | null>((closest, player) => !closest || pointDistance(player, target) < pointDistance(closest, target) ? player : closest, null);
+  if (closestTeammate && pointDistance(target, closestTeammate) < 13) {
+    const side = target.x <= closestTeammate.x ? -1 : 1;
+    target = { x: clamp(target.x + side * 8), y: clamp(target.y + (target.y < closestTeammate.y ? -5 : 5)) };
+  }
   const blend = easeInOut(Math.min(0.92, 0.12 + intensity * 0.66));
   return { ...marker, ...lerpPoint(marker, target, blend) };
 }
 
-function offBallMovementQuality(players: PlaybookMarker[], ball: CourtPoint | null, settings: SimulationSettings) {
+function offBallMovementQuality(players: PlaybookMarker[], ball: CourtPoint | null, settings: SimulationSettings, defenders: PlaybookMarker[]) {
   if (!ball || players.length < 2) return 0;
-  if (settings.offenseOffBall === "off") return 42;
   const handlerIndex = nearestPointIndex(players, ball);
   const offBallPlayers = players.filter((_, index) => index !== handlerIndex);
   if (!offBallPlayers.length) return 0;
@@ -373,7 +413,12 @@ function offBallMovementQuality(players: PlaybookMarker[], ball: CourtPoint | nu
     const nearest = Math.min(...offBallPlayers.filter((_, otherIndex) => otherIndex !== index).map((other) => pointDistance(player, other)));
     return total + Math.min(1, nearest / 24);
   }, 0) / offBallPlayers.length;
-  return Math.round(Math.max(0, Math.min(100, (spacingScore * 0.7 + laneScore * 0.3) * 100)));
+  const clearanceScore = !defenders.length ? 0.72 : offBallPlayers.reduce((total, player) => {
+    const nearestDefender = Math.min(...defenders.map((defender) => pointDistance(player, defender)));
+    return total + Math.max(0, Math.min(1, nearestDefender / 22));
+  }, 0) / offBallPlayers.length;
+  const weight = settings.offenseOffBall === "off" ? [0.5, 0.3, 0.2] : [0.48, 0.3, 0.22];
+  return Math.round(Math.max(0, Math.min(100, (spacingScore * weight[0] + laneScore * weight[1] + clearanceScore * weight[2]) * 100)));
 }
 
 /** ARC defensive AI is local and deterministic so the same saved play behaves identically on FastAPI and GitHub Pages. */
@@ -385,6 +430,8 @@ function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, de
   const assignmentIndexes = [...matchups];
   const liveAction = actions.find((action) => elapsed >= action.startTime && elapsed < action.startTime + action.durationMs);
   const isScreenAction = liveAction?.arrow.kind === "screen" || liveAction?.arrow.kind === "pick-roll";
+  const isTransfer = liveAction?.arrow.kind === "pass" || liveAction?.arrow.kind === "handoff";
+  const driveThreat = Boolean(ball && ball.y > 43 && Math.abs(ball.x - 50) < 24);
 
   // Switch the two guards involved in a screen or handoff; keep the rest of
   // the floor matched instead of rotating every defender on a timer.
@@ -401,13 +448,18 @@ function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, de
   const helpSpot = ball ? lerpPoint(ball, HOOP_POINT, 0.38) : HOOP_POINT;
   const liveActionPoint = liveAction ? actionPointAt(liveAction.arrow, (elapsed - liveAction.startTime) / liveAction.durationMs) : null;
   const handlerDefenderIndex = assignmentIndexes.findIndex((playerIndex) => players[playerIndex]?.id === ballHandler.id);
+  const receiver = liveAction?.recipientId == null ? null : players.find((player) => player.id === liveAction.recipientId) ?? null;
   const helpDefenderIndex = assignmentIndexes.reduce((best, playerIndex, defenderIndex) => {
     if (defenderIndex === handlerDefenderIndex || playerIndex < 0) return best;
+    const candidate = players[playerIndex];
+    if (isTransfer && receiver?.id === candidate?.id) return best;
     if (best < 0) return defenderIndex;
     const current = players[assignmentIndexes[best]];
-    const candidate = players[playerIndex];
-    return pointDistance(candidate, ball ?? ballHandler) > pointDistance(current, ball ?? ballHandler) ? defenderIndex : best;
+    // Choose the low defender who can actually protect the rim, instead of
+    // automatically abandoning the farthest perimeter matchup to help
+    return pointDistance(candidate, helpSpot) < pointDistance(current, helpSpot) ? defenderIndex : best;
   }, -1);
+  const transferProgress = liveAction && isTransfer ? Math.max(0, Math.min(1, (elapsed - liveAction.startTime) / liveAction.durationMs)) : 0;
 
   return defenders.map((defender, index) => {
     const assignedIndex = assignmentIndexes[index];
@@ -424,6 +476,24 @@ function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, de
       target = lerpPoint(target, helpSpot, ball && ball.y > 42 ? 0.52 : 0.28);
     } else if (!isOnBall && settings.defenseOffBall === "help" && ball) {
       target = lerpPoint(target, ball, 0.12);
+    }
+
+    if (settings.defenseOffBall === "trap-rotate" && driveThreat) {
+      if (isOnBall) {
+        target = lerpPoint(target, ball ?? ballHandler, 0.24);
+      } else if (index === helpDefenderIndex) {
+        // The low-side defender steps up to form a two-player trap; other
+        // defenders stay goal-side and prepare to rotate to the open shooter.
+        target = lerpPoint(target, ball ?? ballHandler, 0.62);
+      } else if (ball) {
+        target = lerpPoint(target, helpSpot, 0.18);
+      }
+    }
+
+    if (receiver && isTransfer && assignment.id === receiver.id) {
+      // The receiver's defender closes out as the ball travels, rather than
+      // waiting for the catch to register as the new possession.
+      target = lerpPoint(target, receiver, 0.28 + transferProgress * 0.52);
     }
 
     if (liveActionPoint && liveAction) {
@@ -540,7 +610,7 @@ function simulateDraft(source: PlaybookDraft, elapsed: number, settings: Simulat
       defenders[index] = { ...defender, ...point };
     }
   });
-  const offBallScore = offBallMovementQuality(shapedPlayers, releasePoint, settings);
+  const offBallScore = offBallMovementQuality(shapedPlayers, releasePoint, settings, defenders);
   const defenseScore = defensiveQuality(shapedPlayers, defenders, releasePoint, settings);
   const finalShotQuality = shotQuality(shapedPlayers, defenders, releasePoint, offBallScore, shooterId);
   if (shotPhase === "result") shotResult = finalShotQuality >= 68 ? "made" : "missed";
@@ -584,6 +654,7 @@ export function PlaybookBoard() {
   const [simulationElapsed, setSimulationElapsed] = useState(0);
   const [simulationSettings, setSimulationSettings] = useState<SimulationSettings>(() => ({ ...DEFAULT_SIMULATION_SETTINGS }));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [arrowFields, setArrowFields] = useState({ id: "", sequence: "", timing: "" });
   const simulationFrameRef = useRef<number | null>(null);
 
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
@@ -593,6 +664,11 @@ export function PlaybookBoard() {
   const simulationComplete = simulationElapsed >= simulationDuration && simulationElapsed > 0;
   const simulationPaused = simulationActive && !simulationPlaying && !simulationComplete;
   const simulationFrame = useMemo(() => simulateDraft(draft, simulationElapsed, simulationSettings), [draft, simulationElapsed, simulationSettings]);
+
+  useEffect(() => {
+    if (selectedArrow) setArrowFields({ id: selectedArrow.id, sequence: String(selectedArrowSequence ?? 1), timing: clampTiming(selectedArrow.timing ?? 1.2).toFixed(1) });
+    else setArrowFields({ id: "", sequence: "", timing: "" });
+  }, [selectedArrow?.id, selectedArrowSequence, selectedArrow?.timing]);
 
   useEffect(() => {
     if (!simulationPlaying) return;
@@ -721,6 +797,10 @@ export function PlaybookBoard() {
   }
 
   function startSimulation() {
+    if (!draft.players.length) {
+      setError("Add at least one offensive player before running a simulation.");
+      return;
+    }
     if (!draft.defenders.length) {
       // A play can be simulated from any starting option; the first run adds
       // the standard five defensive markers so the AI has a full matchup.
@@ -937,6 +1017,8 @@ export function PlaybookBoard() {
   }
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (target.closest("input, textarea, select, [contenteditable='true']") || event.nativeEvent.isComposing) return;
     const modifier = event.metaKey || event.ctrlKey;
     if (modifier && event.key.toLowerCase() === "z") {
       event.preventDefault();
@@ -1067,7 +1149,7 @@ export function PlaybookBoard() {
             <ToolButton active={tool === "pick-roll"} icon={<ArrowUpRight size={15} />} label="Pick & roll" title={TOOL_LABELS["pick-roll"]} onClick={() => chooseTool("pick-roll")} />
             <span className="toolbar-spacer" />
             <ToolButton icon={<BrainCircuit size={15} />} label="AI defense" title="Apply ARC defensive AI" onClick={applyAIDefense} />
-            <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : simulationPaused ? "Resume" : "Play"} title={simulationPlaying ? "Pause play simulation" : simulationPaused ? "Resume play simulation" : "Play simulation with defensive AI"} onClick={() => {
+            <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : simulationPaused ? "Resume" : "Play"} title={!draft.players.length ? "Add at least one offensive player before simulating" : simulationPlaying ? "Pause play simulation" : simulationPaused ? "Resume play simulation" : "Play simulation with defensive AI"} disabled={!draft.players.length && !simulationActive} onClick={() => {
               if (simulationPlaying) setSimulationPlaying(false);
               else startSimulation();
             }} />
@@ -1082,14 +1164,14 @@ export function PlaybookBoard() {
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
             {selectedArrow ? <>
-              <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={selectedArrowSequence ?? 1} onChange={(event) => changeArrowSequence(selectedArrow.id, Number(event.currentTarget.value))} /><small>1 = first</small></label>
+              <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>1 = first</small></label>
               <label className="sequence-editor"><span>Path</span><select aria-label="Arrow path" value={selectedArrow.path ?? "straight"} onChange={(event) => changeArrowPath(selectedArrow.id, event.currentTarget.value as "straight" | "curve")}><option value="straight">Straight</option><option value="curve">Curved</option></select></label>
-              <label className="sequence-editor"><span>Seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => changeArrowTiming(selectedArrow.id, Number(event.currentTarget.value))} /></label>
+              <label className="sequence-editor"><span>Seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
             </> : null}
           </div>
           {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
             <label className="simulation-setting"><span>Offense off-ball</span><select aria-label="Offense off-ball style" value={simulationSettings.offenseOffBall} onChange={(event) => changeSimulationSetting("offenseOffBall", event.currentTarget.value as SimulationSettings["offenseOffBall"])}><option value="read-react">Read &amp; react</option><option value="cuts">Structured cuts</option><option value="spacing">Spacing only</option><option value="off">Off</option></select></label>
-            <label className="simulation-setting"><span>Defense off-ball</span><select aria-label="Defense off-ball style" value={simulationSettings.defenseOffBall} onChange={(event) => changeSimulationSetting("defenseOffBall", event.currentTarget.value as SimulationSettings["defenseOffBall"])}><option value="help">Help &amp; recover</option><option value="contain">Contain &amp; deny</option><option value="switch">Switch reads</option><option value="off">Hold positions</option></select></label>
+            <label className="simulation-setting"><span>Defense off-ball</span><select aria-label="Defense off-ball style" value={simulationSettings.defenseOffBall} onChange={(event) => changeSimulationSetting("defenseOffBall", event.currentTarget.value as SimulationSettings["defenseOffBall"])}><option value="help">Help &amp; recover</option><option value="contain">Contain &amp; deny</option><option value="switch">Switch reads</option><option value="trap-rotate">Trap &amp; rotate</option><option value="off">Hold positions</option></select></label>
             <label className="simulation-setting simulation-setting-range"><span>Off-ball intensity <output>{simulationSettings.offBallIntensity}%</output></span><input aria-label="Off-ball intensity" type="range" min={0} max={100} step={1} value={simulationSettings.offBallIntensity} onChange={(event) => changeSimulationSetting("offBallIntensity", Number(event.currentTarget.value))} /></label>
             <span className="simulation-settings-note">Receivers arrive before passes; screens and handoffs pull defenders into the action; the final action ends with a contested shot.</span>
           </div> : null}

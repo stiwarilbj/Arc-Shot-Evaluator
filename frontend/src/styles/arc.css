@@ -115,6 +115,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .header-filename { text-align: center; font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .header-filename { min-width: 0; }
 .header-actions { min-width: 0; justify-content: flex-end; gap: 12px; }
+.guide-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.guide-trigger:hover { border-color: var(--orange); color: var(--orange); }
 .complete-state { gap: 8px; color: var(--make); font-size: 13px; white-space: nowrap; }
 .button { justify-content: center; gap: 9px; min-height: 39px; padding: 0 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 650; }
 .button-outline { background: transparent; color: var(--orange); border: 1px solid var(--orange); transition: border-color 160ms ease; }
@@ -697,7 +699,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .saved-empty p { margin: 0; font-size: 11px; line-height: 1.45; }
 .saved-empty button { border: 0; background: transparent; color: var(--orange); cursor: pointer; font-size: 11px; font-weight: 650; }
 .playbook-modal-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(5, 7, 8, .72); }
+.guide-backdrop { z-index: 50; }
 .playbook-modal { width: min(660px, 100%); padding: 18px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); box-shadow: 0 22px 60px rgba(0,0,0,.38); }
+.guide-modal { width: min(860px, 100%); max-height: min(84dvh, 760px); overflow-y: auto; overscroll-behavior: contain; }
+.guide-modal .modal-heading { margin-bottom: 10px; }
+.guide-intro { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.guide-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.guide-card { min-width: 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
+.guide-card h3 { margin: 0 0 7px; color: var(--text); font-size: 12px; }
+.guide-card ul, .guide-card ol { display: grid; gap: 5px; margin: 0; padding-left: 17px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.guide-card li::marker { color: var(--orange); }
+.guide-shortcuts { display: grid; gap: 4px; margin-top: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.guide-shortcuts strong { color: var(--text); font-size: 11px; }
 .modal-heading { justify-content: space-between; gap: 14px; margin-bottom: 16px; }
 .modal-heading h2 { margin: 3px 0 0; font-size: 20px; }
 .starter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -742,6 +755,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 620px) {
   .app-header { grid-template-columns: auto 1fr; min-height: 86px; }
   .app-header .header-actions { grid-column: 2; grid-row: 1; }
+  .guide-trigger { width: 34px; min-width: 34px; padding: 0; }
+  .guide-trigger span { display: none; }
   .workspace-nav { grid-column: 1 / -1; grid-row: 2; }
   .playbook-page { width: calc(100% - 16px); }
   .play-name-input-wrap { width: min(100%, 340px); }
@@ -765,6 +780,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .playbook-statusbar { display: block; line-height: 1.5; }
   .playbook-statusbar span:last-child { justify-content: flex-start; text-align: left; }
   .starter-grid { grid-template-columns: 1fr; }
+  .guide-backdrop { padding: 10px; }
+  .guide-modal { max-height: 88dvh; padding: 13px; }
+  .guide-grid { grid-template-columns: 1fr; gap: 7px; }
+  .guide-card { padding: 9px 10px; }
   .starter-card { grid-template-columns: 110px minmax(0, 1fr); align-items: center; }
   .starter-card span { grid-column: 2; grid-row: 1; align-self: end; }
 }

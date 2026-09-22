@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleDot, ClipboardList, Moon, RotateCw, Sun } from "lucide-react";
 import type { ThemeMode } from "../domain/analysisTypes";
+import { UsageGuide } from "./UsageGuide";
 
 export type AppWorkspace = "analyzer" | "playbook";
 
@@ -35,6 +36,7 @@ export function AppHeader({ filename, complete, showReset = false, onReset, them
       ) : null}
       {filename ? <div className="header-filename" title={filename}>{filename}</div> : <div />}
       <div className="header-actions">
+        <UsageGuide />
         <div className="theme-switch" role="group" aria-label="Color theme">
           <button
             className={theme === "dark" ? "is-active" : ""}

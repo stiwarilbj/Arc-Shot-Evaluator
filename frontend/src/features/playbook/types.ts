@@ -2,7 +2,7 @@ export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | 
 export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll";
 export type ArrowPath = "straight" | "curve";
 export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
-export type DefenseOffBallStyle = "off" | "contain" | "help" | "switch";
+export type DefenseOffBallStyle = "off" | "contain" | "help" | "switch" | "trap-rotate";
 
 export interface SimulationSettings {
   offenseOffBall: OffenseOffBallStyle;
