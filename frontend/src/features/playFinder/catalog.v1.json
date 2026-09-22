@@ -1,0 +1,3512 @@
+{
+  "version": 1,
+  "lastReviewed": "2026-09-22",
+  "clips": [
+    {
+      "id": "nbab-2024-jokic-court-vision",
+      "title": "Nikola Jokic assists and court vision",
+      "publishedAt": "2024-02-29",
+      "season": "2023-24",
+      "players": [
+        "Nikola Jokic"
+      ],
+      "actions": [
+        "drive-and-kick"
+      ],
+      "description": "An official NBA Breakdown feature about Jokic creating opportunities for teammates; exact game and individual action details are not specified on the source page.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-nikola-jokic-assists-court-vision?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nbab-2023-nuggets-ball-movement",
+      "title": "Nuggets ball movement vs Suns",
+      "publishedAt": "2023-05-11",
+      "season": "2022-23",
+      "teams": [
+        "Denver Nuggets",
+        "Phoenix Suns"
+      ],
+      "players": [
+        "Denver Nuggets"
+      ],
+      "actions": [
+        "drive-and-kick"
+      ],
+      "description": "NBA describes ball movement by Denver in Game 5 against Phoenix; the indexed page does not identify individual clock or score details.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-nuggets-ball-movement?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "teams",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nbab-2023-jokic-murray-connection",
+      "title": "Nikola Jokic and Jamal Murray offensive connection",
+      "publishedAt": "2023-05-05",
+      "season": "2022-23",
+      "players": [
+        "Nikola Jokic",
+        "Jamal Murray"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "description": "NBA describes a Jokic–Murray give-and-go connection. The page does not identify a specific game in its short description.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-nikola-jokic-and-jamal-murray-duo?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nbab-2023-lakers-defense-to-offense",
+      "title": "Lakers defense creating offense",
+      "publishedAt": "2023-04-28",
+      "season": "2022-23",
+      "team": "Los Angeles Lakers",
+      "teams": [
+        "Los Angeles Lakers"
+      ],
+      "players": [
+        "Los Angeles Lakers"
+      ],
+      "actions": [
+        "transition"
+      ],
+      "description": "An official NBA Breakdown about the Lakers turning defensive plays into offense; individual possessions are not specified in the page description.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-lakers-defense-to-transition-offense?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nbab-2023-curry-off-ball",
+      "title": "Stephen Curry off-ball movement in Game 1",
+      "publishedAt": "2023-04-20",
+      "season": "2022-23",
+      "teams": [
+        "Golden State Warriors"
+      ],
+      "team": "Golden State Warriors",
+      "players": [
+        "Stephen Curry"
+      ],
+      "actions": [
+        "off-ball-screen"
+      ],
+      "description": "NBA identifies Curry moving without the ball over a single possession in Game 1. Opponent and clock are not supplied in the indexed description.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nba-breakdown-stephen-curry-off-ball-movement?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nbab-2023-jokic-passing-big",
+      "title": "Nikola Jokic passing as a big man",
+      "publishedAt": "2023-04-16",
+      "season": "2022-23",
+      "players": [
+        "Nikola Jokic"
+      ],
+      "actions": [],
+      "description": "Official NBA feature focused on Nikola Jokic’s passing. No particular action sequence is confirmed by the source summary.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-nikola-jokics-passing-ability-as-a-big-man-is-unmatched-as-hes-in-contention-for-a-3rd-straight-mvp?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players"
+        ]
+      }
+    },
+    {
+      "id": "nbab-2023-jokic-assists",
+      "title": "Nikola Jokic assists and creating opportunities",
+      "publishedAt": "2023-01-31",
+      "season": "2022-23",
+      "players": [
+        "Nikola Jokic"
+      ],
+      "actions": [],
+      "description": "NBA describes Jokic creating opportunities for teammates; no exact play type or game context is supplied.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nba-breakdown-nikola-jokic-assists?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players"
+        ]
+      }
+    },
+    {
+      "id": "nbab-2022-tatum-brown",
+      "title": "Jayson Tatum and Jaylen Brown offensive connection",
+      "publishedAt": "2022-12-13",
+      "season": "2022-23",
+      "team": "Boston Celtics",
+      "teams": [
+        "Boston Celtics"
+      ],
+      "players": [
+        "Jayson Tatum",
+        "Jaylen Brown"
+      ],
+      "actions": [],
+      "description": "NBA highlights the offensive connection between Boston teammates Tatum and Brown; the exact action is not specified.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-jayson-tatum-jaylen-brown-offensive-connection?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "team",
+          "players"
+        ]
+      }
+    },
+    {
+      "id": "nbab-giannis-versatility",
+      "title": "Giannis Antetokounmpo versatility",
+      "players": [
+        "Giannis Antetokounmpo"
+      ],
+      "team": "Milwaukee Bucks",
+      "teams": [
+        "Milwaukee Bucks"
+      ],
+      "actions": [],
+      "description": "Official NBA highlights of Giannis across multiple situations; individual play tags are left blank because the listing does not name a specific action.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-giannis-antetokounmpo-versatility?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team"
+        ]
+      }
+    },
+    {
+      "id": "nbab-garland-offense",
+      "title": "Darius Garland offense",
+      "players": [
+        "Darius Garland"
+      ],
+      "team": "Cleveland Cavaliers",
+      "teams": [
+        "Cleveland Cavaliers"
+      ],
+      "actions": [],
+      "description": "Official NBA highlights of Darius Garland’s offense; the source listing does not identify individual action types.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nba-breakdown-darius-garland-offense?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team"
+        ]
+      }
+    },
+    {
+      "id": "nbab-booker-offense",
+      "title": "Devin Booker offensive power",
+      "players": [
+        "Devin Booker"
+      ],
+      "team": "Phoenix Suns",
+      "teams": [
+        "Phoenix Suns"
+      ],
+      "actions": [],
+      "description": "Official NBA highlights of Devin Booker’s offense; a specific play type is not stated in the source listing.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nba-breakdown-devin-booker-offensive-power?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team"
+        ]
+      }
+    },
+    {
+      "id": "nbab-draymond-playmaking",
+      "title": "Draymond Green playmaking",
+      "players": [
+        "Draymond Green"
+      ],
+      "team": "Golden State Warriors",
+      "teams": [
+        "Golden State Warriors"
+      ],
+      "actions": [],
+      "description": "NBA describes Green creating opportunities for himself and teammates; the short listing does not identify a precise action.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nba-breakdown-draymond-green-playmaking?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team"
+        ]
+      }
+    },
+    {
+      "id": "nbab-morant-athleticism",
+      "title": "Ja Morant speed and athleticism",
+      "players": [
+        "Ja Morant"
+      ],
+      "team": "Memphis Grizzlies",
+      "teams": [
+        "Memphis Grizzlies"
+      ],
+      "actions": [],
+      "description": "NBA describes Morant’s speed and athleticism; exact sequence and game details are not listed.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nba-breakdown-ja-morant-athleticism?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team"
+        ]
+      }
+    },
+    {
+      "id": "nbab-walton-finals-game6",
+      "title": "Bill Walton 20-point, 23-rebound Finals performance",
+      "players": [
+        "Bill Walton"
+      ],
+      "teams": [
+        "Portland Trail Blazers",
+        "Philadelphia 76ers"
+      ],
+      "game": "1977 NBA Finals, Game 6",
+      "season": "1976-77",
+      "postseason": true,
+      "actions": [],
+      "description": "A retrospective NBA breakdown of Bill Walton’s Game 6 performance; this is a multi-play feature rather than one tagged possession.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-bill-walton-20-pts-23-reb-7-ast-8-blk-over-phi-06-05-77-nba-finals-gm-6?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "game",
+          "season",
+          "postseason"
+        ]
+      }
+    },
+    {
+      "id": "nbab-draymond-defense",
+      "title": "Draymond Green defensive communication and disruption",
+      "players": [
+        "Draymond Green"
+      ],
+      "team": "Golden State Warriors",
+      "teams": [
+        "Golden State Warriors"
+      ],
+      "actions": [],
+      "description": "Official NBA description focuses on Green anchoring the defense; defensive coverage details are not provided.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-draymond-green-defense-mhe4ni?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team"
+        ]
+      }
+    },
+    {
+      "id": "nbab-holiday-endgame",
+      "title": "Jrue Holiday end-of-game sequence",
+      "players": [
+        "Jrue Holiday"
+      ],
+      "teams": [
+        "Boston Celtics",
+        "Milwaukee Bucks"
+      ],
+      "game": "Game 5, 2022 Eastern Conference Semifinals",
+      "season": "2021-22",
+      "postseason": true,
+      "actions": [],
+      "description": "NBA describes a close Game 5 sequence; the source does not attribute a specific offensive action or defensive coverage.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-jrue-holidays-game-5-end-of-game-sequence?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "game",
+          "season",
+          "postseason"
+        ]
+      }
+    },
+    {
+      "id": "nbab-rivers-pass-breakup",
+      "title": "Austin Rivers clutch pass breakup",
+      "players": [
+        "Austin Rivers"
+      ],
+      "actions": [],
+      "description": "NBA Breakdown identifies a clutch pass breakup; exact game and coverage scheme are not stated in the listing.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-austin-rivers-clutch-pass-breakup?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "players"
+        ]
+      }
+    },
+    {
+      "id": "nbab-embiid-game-winner",
+      "title": "Joel Embiid game winner",
+      "players": [
+        "Joel Embiid"
+      ],
+      "actions": [
+        "isolation"
+      ],
+      "result": "made",
+      "description": "NBA says Philadelphia called a designed play for Embiid to seal Game 3; the exact play type is not specified, so only the made game-winning result is tagged.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-joel-embiid-game-winner?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nbab-celtics-winning-sequence",
+      "title": "Celtics game-winning sequence",
+      "players": [
+        "Boston Celtics"
+      ],
+      "team": "Boston Celtics",
+      "teams": [
+        "Boston Celtics"
+      ],
+      "actions": [],
+      "result": "made",
+      "description": "Official NBA feature describes a game-winning sequence; no individual action, opponent, or game clock is stored.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-celtics-game-winning-sequence?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "team",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nbab-timberwolves-defense",
+      "title": "Minnesota Timberwolves defense",
+      "players": [
+        "Minnesota Timberwolves"
+      ],
+      "team": "Minnesota Timberwolves",
+      "teams": [
+        "Minnesota Timberwolves"
+      ],
+      "postseason": true,
+      "actions": [],
+      "description": "NBA says the Timberwolves defended their way to a Play-In Tournament win; coverage details are not supplied.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-minnesota-timberwolves-defense?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "team",
+          "postseason"
+        ]
+      }
+    },
+    {
+      "id": "nbab-giannis-dunks",
+      "title": "Giannis Antetokounmpo dunks",
+      "players": [
+        "Giannis Antetokounmpo"
+      ],
+      "team": "Milwaukee Bucks",
+      "teams": [
+        "Milwaukee Bucks"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "actions": [],
+      "description": "NBA feature about Giannis dunks; the listing does not state transition or half-court context.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-giannis-antetokounmpo-dunks?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nbab-jokic-assists-2021",
+      "title": "Nikola Jokic assists",
+      "publishedAt": "2021-10-20",
+      "season": "2021-22",
+      "players": [
+        "Nikola Jokic"
+      ],
+      "actions": [],
+      "description": "NBA feature about Jokic’s assists; no specific game or play type is identified by the listing.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-nikola-jokic-assists-sm8oc7?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players"
+        ]
+      }
+    },
+    {
+      "id": "nbab-klay-dray-chemistry",
+      "title": "Klay Thompson and Draymond Green chemistry",
+      "players": [
+        "Klay Thompson",
+        "Draymond Green"
+      ],
+      "team": "Golden State Warriors",
+      "teams": [
+        "Golden State Warriors"
+      ],
+      "actions": [],
+      "description": "NBA highlights the teammates’ on-court chemistry across many games; it is a compilation, not a single possession record.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-klay-thompson-x-draymond-green-chemistry?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team"
+        ]
+      }
+    },
+    {
+      "id": "nbab-morant-scoring",
+      "title": "Ja Morant scoring",
+      "players": [
+        "Ja Morant"
+      ],
+      "team": "Memphis Grizzlies",
+      "teams": [
+        "Memphis Grizzlies"
+      ],
+      "result": "made",
+      "actions": [],
+      "description": "NBA features Morant scoring in recent games; the exact shot type and action are not described in the listing.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-ja-morant-scoring?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nbab-jaren-jackson-blocks",
+      "title": "Jaren Jackson Jr. rim protection and blocks",
+      "publishedAt": "2022-02-02",
+      "season": "2021-22",
+      "players": [
+        "Jaren Jackson Jr."
+      ],
+      "team": "Memphis Grizzlies",
+      "teams": [
+        "Memphis Grizzlies"
+      ],
+      "result": "block",
+      "actions": [],
+      "description": "NBA describes Jackson protecting the rim and turning defense into offense; exact coverage and opponent are not stated.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-jaren-jackson-jr-blocks?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nbab-dominique-wilkins-1989",
+      "title": "Dominique Wilkins Christmas Day performance",
+      "players": [
+        "Dominique Wilkins"
+      ],
+      "teams": [
+        "Atlanta Hawks"
+      ],
+      "game": "December 25, 1989 game",
+      "season": "1989-90",
+      "actions": [],
+      "description": "Retrospective NBA Breakdown of an all-around performance; it is a multi-play feature and does not verify a single action type.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-dominique-wilkins-december-25-1989-performance?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "game",
+          "season"
+        ]
+      }
+    },
+    {
+      "id": "nbab-curry-green-chemistry",
+      "title": "Stephen Curry and Draymond Green chemistry",
+      "players": [
+        "Stephen Curry",
+        "Draymond Green"
+      ],
+      "team": "Golden State Warriors",
+      "teams": [
+        "Golden State Warriors"
+      ],
+      "actions": [],
+      "description": "NBA feature about the pair’s multi-season chemistry; no exact action sequence is specified.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-stephen-curry-draymond-green-chemistry?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team"
+        ]
+      }
+    },
+    {
+      "id": "nbab-lowry-floor-general",
+      "title": "Kyle Lowry pushing the pace and setting the table",
+      "players": [
+        "Kyle Lowry"
+      ],
+      "team": "Miami Heat",
+      "teams": [
+        "Miami Heat"
+      ],
+      "actions": [
+        "transition"
+      ],
+      "description": "NBA describes Lowry pushing pace and creating for new Heat teammates; individual possessions and outcomes are not detailed.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Breakdown",
+        "url": "https://www.nba.com/watch/video/nbabreakdown-kyle-lowry-floor-general?collection=nbabreakdown&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-hali-turner-pnr",
+      "title": "Tyrese Haliburton and Myles Turner pick-and-roll",
+      "publishedAt": "2025-05-31",
+      "season": "2024-25",
+      "players": [
+        "Tyrese Haliburton",
+        "Myles Turner"
+      ],
+      "team": "Indiana Pacers",
+      "teams": [
+        "Indiana Pacers"
+      ],
+      "actions": [
+        "pick-and-roll"
+      ],
+      "sequence": [
+        "pick-and-roll"
+      ],
+      "description": "The official video title identifies a Pacers pick-and-roll between Haliburton and Turner; game context is not listed.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA official video",
+        "url": "https://www.nba.com/watch/video/tyrese-haliburton-and-myles-turner-play-pick-and-1-roll"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "season",
+          "players",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-chris-paul-pnr-film",
+      "title": "Film Study: Chris Paul in pick-and-roll",
+      "publishedAt": "2020-06-29",
+      "season": "2019-20",
+      "players": [
+        "Chris Paul"
+      ],
+      "team": "Oklahoma City Thunder",
+      "teams": [
+        "Oklahoma City Thunder"
+      ],
+      "actions": [
+        "pick-and-roll"
+      ],
+      "description": "NBA film study examines Chris Paul and the Thunder executing pick-and-roll situations; the film-study page is a multi-play breakdown.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/watch/video/film-study-chris-paul-in-pick-and-roll"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-cp3-ayton-pnr",
+      "title": "Chris Paul and Deandre Ayton pick-and-roll plays",
+      "publishedAt": "2021-07-07",
+      "season": "2020-21",
+      "players": [
+        "Chris Paul",
+        "Deandre Ayton"
+      ],
+      "team": "Phoenix Suns",
+      "teams": [
+        "Phoenix Suns"
+      ],
+      "actions": [
+        "pick-and-roll"
+      ],
+      "description": "Official NBA compilation of the Chris Paul–Deandre Ayton pick-and-roll connection; exact opponents and clocks are not provided.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/best-pick-roll-plays-from-chris-paul-deandre-ayton-this-season?plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-pnr-alley-oop-2017",
+      "title": "Pick-and-roll alley-oop",
+      "publishedAt": "2017-12-04",
+      "season": "2017-18",
+      "players": [
+        "Caris LeVert",
+        "Jarrett Allen"
+      ],
+      "teams": [
+        "Brooklyn Nets",
+        "Atlanta Hawks"
+      ],
+      "game": "Brooklyn Nets at Atlanta Hawks",
+      "actions": [
+        "pick-and-roll"
+      ],
+      "sequence": [
+        "pick-and-roll"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Official NBA game clip description says Allen sets the pick, rolls to the hoop, and receives LeVert’s alley-oop.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA game clip",
+        "url": "https://www.nba.com/watch/video/2017/12/04/0021700342-bkn-atl-play7"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "teams",
+          "game",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-embiid-pick-pop",
+      "title": "Joel Embiid pick-and-pop shot",
+      "publishedAt": "2022-03-26",
+      "season": "2021-22",
+      "players": [
+        "Joel Embiid"
+      ],
+      "team": "Philadelphia 76ers",
+      "teams": [
+        "Philadelphia 76ers"
+      ],
+      "actions": [
+        "pick-and-pop"
+      ],
+      "shotType": "mid-range",
+      "result": "made",
+      "description": "NBA title explicitly identifies Embiid's pick-and-pop field goal; opponent and game clock are not stated.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/joel-embiid-gets-the-pick-and-pop-shot-to-go"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-rockets-pick-pop",
+      "title": "Pick and Pop",
+      "players": [
+        "Houston Rockets"
+      ],
+      "team": "Houston Rockets",
+      "teams": [
+        "Houston Rockets"
+      ],
+      "actions": [
+        "pick-and-pop"
+      ],
+      "description": "Official Houston Rockets video titled Pick and Pop; no individual player or game context is named on the source page.",
+      "source": {
+        "publisher": "Houston Rockets",
+        "label": "Team video",
+        "url": "https://www.nba.com/rockets/videos/pick-and-pop"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-finals-sga-williams-pnr",
+      "title": "Thunder use Shai Gilgeous-Alexander and Jalen Williams pick-and-roll",
+      "publishedAt": "2025-06-14",
+      "season": "2024-25",
+      "players": [
+        "Shai Gilgeous-Alexander",
+        "Jalen Williams"
+      ],
+      "team": "Oklahoma City Thunder",
+      "teams": [
+        "Oklahoma City Thunder",
+        "Indiana Pacers"
+      ],
+      "game": "2025 NBA Finals, Game 4",
+      "postseason": true,
+      "actions": [
+        "pick-and-roll"
+      ],
+      "description": "NBA film-room description says SGA begins screening for Williams late in Game 4 and the action opens the offense.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Finals Film Room",
+        "url": "https://www.nba.com/watch/video/shai-gilgeous-alexander-jalen-williams-pick-and-roll-game-4-finals-film-room"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "season",
+          "players",
+          "teams",
+          "game",
+          "postseason",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-bam-screen-roll-2025",
+      "title": "Bam Adebayo scores on the screen and roll",
+      "publishedAt": "2025-02-01",
+      "season": "2024-25",
+      "players": [
+        "Bam Adebayo"
+      ],
+      "team": "Miami Heat",
+      "teams": [
+        "Miami Heat"
+      ],
+      "actions": [
+        "pick-and-roll"
+      ],
+      "result": "foul",
+      "description": "Official NBA title identifies a scoring screen-and-roll sequence that draws a foul.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/bam-adebayo-gets-fouled-and-scores-on-the-screen-and-roll"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-pacers-perfect-pnr",
+      "title": "Perfect Pick and Roll",
+      "players": [
+        "Indiana Pacers"
+      ],
+      "team": "Indiana Pacers",
+      "teams": [
+        "Indiana Pacers"
+      ],
+      "actions": [
+        "pick-and-roll"
+      ],
+      "description": "Official Indiana Pacers video titled Perfect Pick and Roll; player names and game context are not identified on the source page.",
+      "source": {
+        "publisher": "Indiana Pacers",
+        "label": "Team video",
+        "url": "https://www.nba.com/pacers/videos/perfect-pick-and-roll"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-kyrie-isolation-stepback",
+      "title": "Kyrie Irving isolation step-back three vs Toronto",
+      "publishedAt": "2022-12-17",
+      "season": "2022-23",
+      "players": [
+        "Kyrie Irving"
+      ],
+      "teams": [
+        "Brooklyn Nets",
+        "Toronto Raptors"
+      ],
+      "game": "Brooklyn Nets at Toronto Raptors",
+      "actions": [
+        "isolation"
+      ],
+      "shotType": "three",
+      "result": "made",
+      "description": "NBA article describes Irving creating a game-tying buzzer-beater from an isolation step-back three; game clock is described as 3.7 seconds remaining, but no event clock is stored.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Horry Scale",
+        "url": "https://www.nba.com/news/horry-scale-kyrie-irving-beats-raptors-from-long-range"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "teams",
+          "game",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-tatum-iso-film",
+      "title": "Jayson Tatum isolation reads against Utah",
+      "players": [
+        "Jayson Tatum"
+      ],
+      "teams": [
+        "Boston Celtics",
+        "Utah Jazz"
+      ],
+      "actions": [
+        "isolation"
+      ],
+      "shotType": "mid-range",
+      "description": "NBA film study describes Smart clearing a sideline screen so Tatum attacks Clarkson one-on-one and scores a floater; this indexed item links to the source analysis.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-boston-celtics"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-drive-kick-lebron-bosh",
+      "title": "Pick-and-roll drive and kick by LeBron James",
+      "publishedAt": "2013-06-14",
+      "season": "2012-13",
+      "players": [
+        "LeBron James",
+        "Chris Bosh"
+      ],
+      "teams": [
+        "Miami Heat",
+        "San Antonio Spurs"
+      ],
+      "game": "2013 NBA Finals",
+      "postseason": true,
+      "actions": [
+        "pick-and-roll",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "pick-and-roll",
+        "drive-and-kick"
+      ],
+      "shotType": "three",
+      "description": "NBA film study says James and Bosh set up the pick-and-roll before James kicks across court rather than driving to the rim.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/watch/video/channels/playoffs/2013/06/12/film-study-pick-roll-kick-out.nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "teams",
+          "game",
+          "postseason",
+          "actions",
+          "sequence"
+        ]
+      }
+    },
+    {
+      "id": "nba-drive-kick-teague-millsap",
+      "title": "Jeff Teague drives and kicks to Paul Millsap",
+      "publishedAt": "2014-04-19",
+      "season": "2013-14",
+      "players": [
+        "Jeff Teague",
+        "Paul Millsap"
+      ],
+      "teams": [
+        "Atlanta Hawks",
+        "Indiana Pacers"
+      ],
+      "game": "2014 Eastern Conference First Round",
+      "postseason": true,
+      "actions": [
+        "drive-and-kick"
+      ],
+      "shotType": "three",
+      "result": "foul",
+      "description": "NBA clip description says Teague drives, finds Millsap for a made three, and Millsap draws the foul.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA game clip",
+        "url": "https://www.nba.com/watch/video/channels/playoffs/2014/04/19/0041300101-atl-ind-play2.nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "teams",
+          "game",
+          "postseason",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-nuggets-drive-kick",
+      "title": "Drive-and-kick basketball",
+      "players": [
+        "Denver Nuggets"
+      ],
+      "team": "Denver Nuggets",
+      "teams": [
+        "Denver Nuggets"
+      ],
+      "actions": [
+        "drive-and-kick"
+      ],
+      "description": "Official Denver Nuggets video titled Drive-and-kick basketball; individual players and opponent are not named.",
+      "source": {
+        "publisher": "Denver Nuggets",
+        "label": "Team video",
+        "url": "https://www.nba.com/nuggets/videos/drive-and-kick-basketball"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-handoff-film-1",
+      "title": "Jamal Murray handoff and kick-out to Gary Harris",
+      "players": [
+        "Jamal Murray",
+        "Nikola Jokic",
+        "Gary Harris"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "San Antonio Spurs"
+      ],
+      "game": "Denver Nuggets at San Antonio Spurs, 2020",
+      "season": "2019-20",
+      "actions": [
+        "handoff",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "handoff",
+        "drive-and-kick"
+      ],
+      "shotType": "three",
+      "description": "NBA film analysis describes Murray flipping the ball to Jokic, taking the handoff, drawing help, then kicking out to Harris for an open three. NBA’s official embedded film-study video is included.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256010&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-handoff-film-2",
+      "title": "Jamal Murray handoff jumper",
+      "players": [
+        "Jamal Murray",
+        "Nikola Jokic",
+        "Courtney Lee"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "San Antonio Spurs"
+      ],
+      "actions": [
+        "handoff",
+        "off-ball-screen"
+      ],
+      "sequence": [
+        "handoff"
+      ],
+      "shotType": "mid-range",
+      "description": "NBA film study describes Murray taking an immediate handoff from Jokic as Lee gets caught in a screen, followed by a made elbow jumper.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256010&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-handoff-film-3",
+      "title": "Jamal Murray curls into a Jokic handoff",
+      "players": [
+        "Jamal Murray",
+        "Nikola Jokic",
+        "Tim Hardaway Jr."
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Dallas Mavericks"
+      ],
+      "actions": [
+        "handoff",
+        "off-ball-screen"
+      ],
+      "sequence": [
+        "handoff"
+      ],
+      "shotType": "mid-range",
+      "description": "NBA film study describes Murray setting up the defender before curling back into a handoff and making a jumper over Boban Marjanovic.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256010&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-handoff-film-4",
+      "title": "Gary Harris handoff against Oklahoma City",
+      "players": [
+        "Gary Harris",
+        "Nikola Jokic",
+        "Shai Gilgeous-Alexander",
+        "Nerlens Noel"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Oklahoma City Thunder"
+      ],
+      "actions": [
+        "handoff",
+        "off-ball-screen"
+      ],
+      "sequence": [
+        "handoff"
+      ],
+      "shotType": "two",
+      "description": "NBA film study describes Harris coming out of the corner for Jokic’s handoff as a screen forces a defensive switch; the shot is contested and Jokic follows the miss for a putback.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256010&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-backdoor-murray",
+      "title": "Jamal Murray backdoor cut after feeding Jokic",
+      "players": [
+        "Jamal Murray",
+        "Nikola Jokic",
+        "Mychal Mulder"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Golden State Warriors"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "shotType": "layup",
+      "description": "NBA film study describes Murray feeding Jokic at the high post, cutting backdoor, and receiving the return pass for a finish.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1255998&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-backdoor-spurs",
+      "title": "Jamal Murray beats Dejounte Murray on the backdoor cut",
+      "players": [
+        "Jamal Murray",
+        "Nikola Jokic",
+        "Dejounte Murray"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "San Antonio Spurs"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "description": "NBA analysis describes Dejounte Murray staying attached to the cutter as Jokic creates a passing angle for Jamal Murray.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1255998&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-backdoor-barton",
+      "title": "Will Barton cuts after selling the handoff",
+      "players": [
+        "Will Barton",
+        "Nikola Jokic",
+        "Alfonzo McKinnie"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Golden State Warriors"
+      ],
+      "actions": [
+        "cut",
+        "handoff"
+      ],
+      "sequence": [
+        "handoff",
+        "cut"
+      ],
+      "shotType": "layup",
+      "description": "NBA film study describes Barton selling the handoff to get the defender leaning, then receiving Jokic’s one-handed pass over the defender.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1255998&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-backdoor-barton2",
+      "title": "Will Barton back-cuts as defender watches the ball",
+      "players": [
+        "Will Barton",
+        "Nikola Jokic",
+        "Matt Thomas"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Toronto Raptors"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "result": "made",
+      "description": "NBA film study says Barton’s defender turns toward Jokic, leaving Barton open to receive the pass; the description identifies a back-cut.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1255998&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-role-curl",
+      "title": "Jokic curls off a Murray pin-down after a handoff",
+      "players": [
+        "Nikola Jokic",
+        "Jamal Murray",
+        "Dwight Powell",
+        "Steven Adams"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Oklahoma City Thunder"
+      ],
+      "actions": [
+        "handoff",
+        "off-ball-screen",
+        "cut"
+      ],
+      "sequence": [
+        "handoff",
+        "off-ball-screen",
+        "cut"
+      ],
+      "shotType": "three",
+      "description": "NBA analysis describes a sideline out-of-bounds action that starts with a handoff, then Murray screens for Jokic, who curls to draw help and open a three for Murray.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256000&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-role-pistol",
+      "title": "Pistol action with two ball screens for Jokic",
+      "players": [
+        "Nikola Jokic",
+        "Gary Harris",
+        "Jamal Murray"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Los Angeles Clippers"
+      ],
+      "actions": [
+        "pick-and-roll"
+      ],
+      "sequence": [
+        "pick-and-roll"
+      ],
+      "shotType": "two",
+      "description": "NBA film study describes Harris and Murray setting ball screens in a pistol action that gets Jokic into the paint.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256000&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-high-pnr",
+      "title": "Jokic attacks off a Murray high ball screen",
+      "players": [
+        "Nikola Jokic",
+        "Jamal Murray"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Los Angeles Clippers"
+      ],
+      "actions": [
+        "pick-and-roll"
+      ],
+      "sequence": [
+        "pick-and-roll"
+      ],
+      "shotType": "three",
+      "description": "NBA film study describes Jokic bringing the ball up and using Murray’s high ball screen before pulling up from three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256000&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-hammer-screen",
+      "title": "Jokic hammer action creates a corner finish",
+      "players": [
+        "Nikola Jokic",
+        "Gary Harris",
+        "Paul Millsap",
+        "Eric Paschall"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Golden State Warriors"
+      ],
+      "actions": [
+        "off-ball-screen",
+        "cut",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "off-ball-screen",
+        "cut",
+        "drive-and-kick"
+      ],
+      "shotType": "layup",
+      "description": "NBA film study details a back screen and flare screen with Jokic driving baseline; a defender runs Harris off the corner and he finishes the drive.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256020&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-lebron-transition-pass-ahead",
+      "title": "Lakers pass ahead to Danny Green in transition",
+      "players": [
+        "LeBron James",
+        "Danny Green",
+        "JaVale McGee"
+      ],
+      "teams": [
+        "Los Angeles Lakers",
+        "Milwaukee Bucks"
+      ],
+      "actions": [
+        "transition"
+      ],
+      "sequence": [
+        "transition"
+      ],
+      "shotType": "three",
+      "description": "NBA film study describes McGee securing a rebound, passing to James, who spots Green ahead for an open three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-lakers-transition-lebron-james-anthony-davis",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1059509&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-lebron-transition-kuzma",
+      "title": "LeBron passes ahead to Kuzma for a transition corner three",
+      "players": [
+        "LeBron James",
+        "Kyle Kuzma",
+        "Tyler Herro",
+        "Andre Iguodala"
+      ],
+      "teams": [
+        "Los Angeles Lakers",
+        "Miami Heat"
+      ],
+      "actions": [
+        "transition",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "transition",
+        "drive-and-kick"
+      ],
+      "shotType": "three",
+      "description": "NBA film study describes a stop, a James pass-ahead to Kuzma, and a return pass from Green leading to an open corner three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-lakers-transition-lebron-james-anthony-davis",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1059509&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-lebron-transition-davis-coast",
+      "title": "Anthony Davis goes coast to coast",
+      "players": [
+        "Anthony Davis",
+        "Brandon Ingram",
+        "Jahlil Okafor"
+      ],
+      "teams": [
+        "Los Angeles Lakers",
+        "New Orleans Pelicans"
+      ],
+      "actions": [
+        "transition"
+      ],
+      "shotType": "layup",
+      "description": "NBA film study describes Davis grabbing a rebound and going coast to coast before finishing at the rim.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-lakers-transition-lebron-james-anthony-davis",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1059512&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-lebron-transition-davis-lob",
+      "title": "LeBron James finds Anthony Davis for a transition lob",
+      "players": [
+        "LeBron James",
+        "Anthony Davis",
+        "Brook Lopez"
+      ],
+      "teams": [
+        "Los Angeles Lakers",
+        "Milwaukee Bucks"
+      ],
+      "actions": [
+        "transition"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "NBA describes James advancing the ball in transition as Davis runs free for a lob finish.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-lakers-transition-lebron-james-anthony-davis",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1059512&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-lebron-transition-green-fast",
+      "title": "Lakers fast break leads to Danny Green three",
+      "players": [
+        "LeBron James",
+        "Danny Green",
+        "JaVale McGee"
+      ],
+      "teams": [
+        "Los Angeles Lakers",
+        "Denver Nuggets"
+      ],
+      "actions": [
+        "transition"
+      ],
+      "sequence": [
+        "transition"
+      ],
+      "shotType": "three",
+      "description": "NBA film study describes James starting a sprint after a loose ball and creating an open catch-and-shoot three for Green.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-lakers-transition-lebron-james-anthony-davis",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1059513&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-pnr-broken-play",
+      "title": "Jokic–Murray pick-and-roll in NBA Finals Game 4",
+      "players": [
+        "Nikola Jokic",
+        "Jamal Murray"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Miami Heat"
+      ],
+      "game": "2023 NBA Finals, Game 4",
+      "season": "2022-23",
+      "postseason": true,
+      "actions": [
+        "pick-and-roll"
+      ],
+      "description": "NBA article identifies this as a pick-and-roll action and describes Murray making a read against Miami’s coverage.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Finals Film Room",
+        "url": "https://www.nba.com/news/finals-film-study-nuggets-game-4-2023"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-curry-transition-slam",
+      "title": "Stephen Curry transition slam vs Oklahoma City",
+      "publishedAt": "2017-03-20",
+      "season": "2016-17",
+      "players": [
+        "Stephen Curry"
+      ],
+      "teams": [
+        "Golden State Warriors",
+        "Oklahoma City Thunder"
+      ],
+      "game": "Golden State Warriors at Oklahoma City Thunder",
+      "actions": [
+        "transition"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "NBA game clip states Curry collects a loose ball and takes it the other way for a transition slam.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA game clip",
+        "url": "https://www.nba.com/watch/video/2017/03/20/0021601049-gsw-okc-play2"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "teams",
+          "game",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-duncan-transition-three",
+      "title": "Duncan Robinson hits a three in transition",
+      "publishedAt": "2026-05-07",
+      "season": "2025-26",
+      "players": [
+        "Duncan Robinson"
+      ],
+      "teams": [
+        "Detroit Pistons",
+        "Orlando Magic"
+      ],
+      "actions": [
+        "transition"
+      ],
+      "shotType": "three",
+      "result": "made",
+      "description": "NBA page describes Robinson receiving a pass and making a three in transition; clock and quarter are not listed.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/duncan-robinson-connects-from-deep-3?collection=2026-playoffs-east-semifinal-1-video&plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "teams",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-giannis-transition-dunk",
+      "title": "Giannis Antetokounmpo transition dunk",
+      "players": [
+        "Giannis Antetokounmpo"
+      ],
+      "team": "Milwaukee Bucks",
+      "teams": [
+        "Milwaukee Bucks"
+      ],
+      "actions": [
+        "transition"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Official Milwaukee Bucks video is titled Giannis Transition Dunk; opponent and game details are not specified in the listing.",
+      "source": {
+        "publisher": "Milwaukee Bucks",
+        "label": "Team video",
+        "url": "https://www.nba.com/bucks/videos/giannis-transition-dunk"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "team",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-bradley-backdoor",
+      "title": "Bradley Beal finishes a backdoor cut",
+      "publishedAt": "2025-01-07",
+      "season": "2024-25",
+      "players": [
+        "Bradley Beal"
+      ],
+      "team": "Phoenix Suns",
+      "teams": [
+        "Phoenix Suns"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Official NBA title says Beal gets open and jams the backdoor cut.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/bradley-beal-gets-open-and-jams-the-backdoor-cut"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-horford-backdoor",
+      "title": "Al Horford finishes off a backdoor cut",
+      "publishedAt": "2024-02-04",
+      "season": "2023-24",
+      "players": [
+        "Al Horford"
+      ],
+      "team": "Boston Celtics",
+      "teams": [
+        "Boston Celtics"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Official NBA title says Horford throws it down off the backdoor cut.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/al-horford-throws-it-down-off-the-back-door-cut"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-kelel-ware-backdoor",
+      "title": "Kel'el Ware hits the backdoor cutter",
+      "publishedAt": "2025-01-07",
+      "season": "2024-25",
+      "players": [
+        "Kel'el Ware"
+      ],
+      "team": "Miami Heat",
+      "teams": [
+        "Miami Heat"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "description": "Official NBA title identifies a backdoor cut and a pass to the cutter; exact shot outcome is not part of the title.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/kelel-ware-hits-the-backdoor-cutter"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-malik-beasley-backdoor",
+      "title": "Malik Beasley cuts backdoor for the dunk",
+      "publishedAt": "2025-04-04",
+      "season": "2024-25",
+      "players": [
+        "Malik Beasley"
+      ],
+      "team": "Detroit Pistons",
+      "teams": [
+        "Detroit Pistons"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Official NBA title explicitly identifies a backdoor cut ending in a dunk.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/malik-beasley-cuts-backdoor-for-the-dunk?plsrc=nba"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-brown-backdoor-transition",
+      "title": "Jaylen Brown backdoor cut and slam in transition",
+      "publishedAt": "2024-05-13",
+      "season": "2023-24",
+      "players": [
+        "Jaylen Brown"
+      ],
+      "teams": [
+        "Boston Celtics"
+      ],
+      "team": "Boston Celtics",
+      "actions": [
+        "cut",
+        "transition"
+      ],
+      "sequence": [
+        "transition",
+        "cut"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Official NBA title identifies a backdoor cut, a transition finish, and a slam.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/jaylen-brown-with-the-backdoor-cut-and-slam-in-transition"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions",
+          "sequence",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-kd-backdoor-cut",
+      "title": "Kevin Durant backdoor cut",
+      "players": [
+        "Kevin Durant"
+      ],
+      "team": "Brooklyn Nets",
+      "teams": [
+        "Brooklyn Nets"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "shotType": "layup",
+      "description": "Official Brooklyn Nets video is titled KD Backdoor Cut; no opponent or game is identified in the listing.",
+      "source": {
+        "publisher": "Brooklyn Nets",
+        "label": "Team video",
+        "url": "https://www.nba.com/nets/videos/kd-backdoor-cut"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-butler-backdoor-cut",
+      "title": "Jimmy Butler backdoor cut to the rim",
+      "players": [
+        "Jimmy Butler"
+      ],
+      "team": "Miami Heat",
+      "teams": [
+        "Miami Heat"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "shotType": "two",
+      "result": "made",
+      "description": "Official Miami Heat video title says Butler takes a backdoor cut to the rim and scores two.",
+      "source": {
+        "publisher": "Miami Heat",
+        "label": "Team video",
+        "url": "https://www.nba.com/heat/videos/butler-with-the-backdoor-cut-to-the-rim-for-2-2"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-milwaukee-backdoor-cut",
+      "title": "Zaza Pachulia finds Khris Middleton cutting backdoor",
+      "publishedAt": "2015-01-23",
+      "season": "2014-15",
+      "players": [
+        "Zaza Pachulia",
+        "Khris Middleton"
+      ],
+      "teams": [
+        "Milwaukee Bucks",
+        "Utah Jazz"
+      ],
+      "game": "Utah Jazz at Milwaukee Bucks",
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "NBA describes Pachulia finding Middleton on a backdoor cut for a two-hand dunk.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA game clip",
+        "url": "https://www.nba.com/watch/video/games/bucks/2015/01/22/0021400638-uta-mil-play2.nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "teams",
+          "game",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-give-go-walker-blanton",
+      "title": "Jabari Walker and Delano Banton give-and-go after a steal",
+      "publishedAt": "2025-03-09",
+      "season": "2024-25",
+      "players": [
+        "Jabari Walker",
+        "Delano Banton"
+      ],
+      "team": "Portland Trail Blazers",
+      "teams": [
+        "Portland Trail Blazers"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "description": "Official NBA title identifies a give-and-go following a steal. Team and sequence are verified; game context is not stated.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/jabari-walker-and-delano-blanton-play-give-and-go-after-the-steal"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-magic-give-go",
+      "title": "Anthony Black finds Tristan da Silva on a give-and-go",
+      "publishedAt": "2025-11-16",
+      "season": "2025-26",
+      "players": [
+        "Anthony Black",
+        "Tristan da Silva"
+      ],
+      "teams": [
+        "Orlando Magic",
+        "Houston Rockets"
+      ],
+      "team": "Orlando Magic",
+      "opponent": "Houston Rockets",
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Orlando Magic clip title and caption describe Black finding da Silva cutting for a slam against Houston.",
+      "source": {
+        "publisher": "Orlando Magic",
+        "label": "Team video",
+        "url": "https://www.nba.com/magic/videos/anthony-black-tristan-da-silva-orlando-magic-houston-rockets-highlights-pass-dunk-give-go-20251116"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "teams",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-rockets-alpi-give-go",
+      "title": "Alperen Sengun give-and-go",
+      "players": [
+        "Alperen Sengun"
+      ],
+      "team": "Houston Rockets",
+      "teams": [
+        "Houston Rockets"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "description": "Official Houston Rockets video titled Alpi Give and Go; the listed source does not specify opponent or shot type.",
+      "source": {
+        "publisher": "Houston Rockets",
+        "label": "Team video",
+        "url": "https://www.nba.com/rockets/videos/alpi-give-and-go"
+      },
+      "evidence": {
+        "kind": "official-video-title",
+        "verifiedFields": [
+          "title",
+          "players",
+          "team",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-embiid-fake-handoff-drive",
+      "title": "Joel Embiid fakes a handoff and drives",
+      "publishedAt": "2017-12-03",
+      "season": "2017-18",
+      "players": [
+        "Joel Embiid",
+        "Robert Covington"
+      ],
+      "team": "Philadelphia 76ers",
+      "teams": [
+        "Philadelphia 76ers"
+      ],
+      "actions": [
+        "handoff",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "handoff",
+        "drive-and-kick"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Official NBA title and description say Embiid fakes a handoff to Covington, drives, and finishes with a two-handed dunk.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA video",
+        "url": "https://www.nba.com/watch/video/2017/12/02/20171202-handle-night"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "players",
+          "team",
+          "actions",
+          "sequence",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-pistol-handoff",
+      "title": "Denver Nuggets pistol handoff action",
+      "players": [
+        "Nikola Jokic",
+        "Jamal Murray",
+        "Gary Harris"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "San Antonio Spurs"
+      ],
+      "actions": [
+        "handoff",
+        "pick-and-roll"
+      ],
+      "sequence": [
+        "handoff",
+        "pick-and-roll"
+      ],
+      "description": "NBA film analysis describes a pistol action starting with a handoff and followed by a ball screen. Opponent/game particulars are not assigned to this source item.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256000&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-pick-pop-role-reversal",
+      "title": "Nikola Jokic receives a pin-down for a flare three",
+      "players": [
+        "Nikola Jokic",
+        "Jamal Murray",
+        "Steven Adams"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Oklahoma City Thunder"
+      ],
+      "actions": [
+        "off-ball-screen"
+      ],
+      "sequence": [
+        "off-ball-screen",
+        "cut"
+      ],
+      "shotType": "three",
+      "description": "NBA film study describes Murray setting a pin-down for Jokic, who curls and draws help to open a three-point look.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1256000&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-nuggets-murray-screen-study",
+      "title": "Jamal Murray comes off an off-ball screen",
+      "players": [
+        "Jamal Murray",
+        "Mikal Bridges"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Phoenix Suns"
+      ],
+      "actions": [
+        "off-ball-screen"
+      ],
+      "sequence": [
+        "off-ball-screen"
+      ],
+      "shotType": "three",
+      "description": "Denver Nuggets film study describes Murray running around an off-ball screen to receive a pass and shoot from the arc.",
+      "source": {
+        "publisher": "Denver Nuggets",
+        "label": "Team Film Study",
+        "url": "https://www.nba.com/nuggets/news/nuggets-film-study-murray-021420a"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-murray-off-ball-then-pnr",
+      "title": "Jamal Murray curls off screen before attacking pick-and-roll",
+      "players": [
+        "Jamal Murray",
+        "Nikola Jokic",
+        "Mikal Bridges"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Phoenix Suns"
+      ],
+      "actions": [
+        "off-ball-screen",
+        "pick-and-roll"
+      ],
+      "sequence": [
+        "off-ball-screen",
+        "pick-and-roll"
+      ],
+      "shotType": "three",
+      "description": "Denver Nuggets film analysis says Murray first comes around an off-ball screen, then burns the defense from a pick-and-roll when the big is out of position.",
+      "source": {
+        "publisher": "Denver Nuggets",
+        "label": "Team Film Study",
+        "url": "https://www.nba.com/nuggets/news/nuggets-film-study-murray-021420a"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-cavs-2017-pnr-love-korver",
+      "title": "Cavaliers pick-and-roll creates a Kevin Love corner three",
+      "players": [
+        "LeBron James",
+        "Richard Jefferson",
+        "Kevin Love"
+      ],
+      "teams": [
+        "Cleveland Cavaliers",
+        "Golden State Warriors"
+      ],
+      "game": "2017 NBA Finals, Game 4",
+      "season": "2016-17",
+      "postseason": true,
+      "actions": [
+        "pick-and-roll",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "pick-and-roll",
+        "drive-and-kick"
+      ],
+      "shotType": "three",
+      "result": "made",
+      "description": "NBA film study describes Jefferson rolling after a James screen, drawing help, then finding Love in the corner for a made three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-cleveland-cavaliers-offense-golden-state-warriors"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions",
+          "sequence",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-cavs-screen-the-screener",
+      "title": "Cavaliers screen-the-screener action creates a drive",
+      "players": [
+        "LeBron James",
+        "Iman Shumpert",
+        "Kyrie Irving"
+      ],
+      "teams": [
+        "Cleveland Cavaliers",
+        "Golden State Warriors"
+      ],
+      "game": "2017 NBA Finals, Game 4",
+      "season": "2016-17",
+      "postseason": true,
+      "actions": [
+        "off-ball-screen",
+        "pick-and-roll"
+      ],
+      "sequence": [
+        "off-ball-screen",
+        "pick-and-roll"
+      ],
+      "shotType": "layup",
+      "result": "foul",
+      "description": "NBA film study describes James screening Curry, followed by Shumpert screening Livingston to create Irving’s drive and an and-one finish.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-cleveland-cavaliers-offense-golden-state-warriors"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions",
+          "sequence",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-celtics-iso-tatum-clarkson",
+      "title": "Jayson Tatum attacks Jordan Clarkson one-on-one",
+      "players": [
+        "Jayson Tatum",
+        "Jordan Clarkson"
+      ],
+      "teams": [
+        "Boston Celtics",
+        "Utah Jazz"
+      ],
+      "actions": [
+        "isolation"
+      ],
+      "shotType": "two",
+      "description": "NBA film study says Smart sets a screen, clears out after a switch, and Tatum attacks Clarkson one-on-one for a floater.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-boston-celtics"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-celtics-iso-tatum-ad",
+      "title": "Jayson Tatum step-side three after a screen switch",
+      "players": [
+        "Jayson Tatum",
+        "Anthony Davis"
+      ],
+      "teams": [
+        "Boston Celtics",
+        "Los Angeles Lakers"
+      ],
+      "actions": [
+        "isolation"
+      ],
+      "shotType": "three",
+      "result": "made",
+      "description": "NBA film study describes Tatum receiving a screen, switching onto Davis, and making a side-step three in isolation.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-boston-celtics"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-cavs-korver-pnr-kickout",
+      "title": "Cavaliers rotate the ball after a pick-and-roll",
+      "players": [
+        "LeBron James",
+        "Richard Jefferson",
+        "Kyle Korver"
+      ],
+      "teams": [
+        "Cleveland Cavaliers",
+        "Golden State Warriors"
+      ],
+      "actions": [
+        "pick-and-roll",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "pick-and-roll",
+        "drive-and-kick"
+      ],
+      "shotType": "three",
+      "description": "NBA film study says James uses Jefferson’s screen, draws help, then the ball moves across court to Korver for a three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-cleveland-cavaliers-offense-golden-state-warriors"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-murray-backdoor-nuggets",
+      "title": "Nuggets backdoor cut off handoff denial",
+      "players": [
+        "Jamal Murray",
+        "Nikola Jokic",
+        "Dejounte Murray"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "San Antonio Spurs"
+      ],
+      "actions": [
+        "handoff",
+        "cut"
+      ],
+      "sequence": [
+        "handoff",
+        "cut"
+      ],
+      "description": "NBA film study describes the Nuggets using a backdoor cut as a counter when defenders deny a middle handoff.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1255998&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence"
+        ]
+      }
+    },
+    {
+      "id": "nba-jokic-handbackdoor-3",
+      "title": "Barton backdoor cut counters handoff denial",
+      "players": [
+        "Will Barton",
+        "Nikola Jokic",
+        "Alfonzo McKinnie"
+      ],
+      "teams": [
+        "Denver Nuggets",
+        "Golden State Warriors"
+      ],
+      "actions": [
+        "handoff",
+        "cut"
+      ],
+      "sequence": [
+        "handoff",
+        "cut"
+      ],
+      "description": "NBA analysis describes Barton getting the defender to lean toward the handoff before Jokic throws the pass over him.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-denver-nuggets",
+        "embedUrl": "https://watch.nba.com/embed?autostart=false&id=1255998&mute=true"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence"
+        ]
+      }
+    },
+    {
+      "id": "nba-heat-transition-game1-herro-kick",
+      "title": "Heat push transition into an open corner three",
+      "players": [
+        "Tyler Herro",
+        "Goran Dragic",
+        "Andre Iguodala",
+        "Brad Wanamaker"
+      ],
+      "teams": [
+        "Miami Heat",
+        "Boston Celtics"
+      ],
+      "game": "2020 Eastern Conference Finals, Game 1",
+      "season": "2019-20",
+      "postseason": true,
+      "actions": [
+        "transition",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "transition",
+        "drive-and-kick"
+      ],
+      "shotType": "three",
+      "description": "NBA film study describes Dragic pushing the rebound ahead to Herro, who attacks and passes to Iguodala for an open corner three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-celtics-heat-game-1"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-heat-transition-dragic",
+      "title": "Goran Dragic beats Boston back in transition",
+      "players": [
+        "Goran Dragic",
+        "Jayson Tatum",
+        "Brad Wanamaker"
+      ],
+      "teams": [
+        "Miami Heat",
+        "Boston Celtics"
+      ],
+      "game": "2020 Eastern Conference Finals, Game 1",
+      "season": "2019-20",
+      "postseason": true,
+      "actions": [
+        "transition"
+      ],
+      "sequence": [
+        "transition"
+      ],
+      "description": "NBA film analysis describes Dragic reacting quickly after a loose ball and getting ahead of Wanamaker on the break.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-celtics-heat-game-1"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-heat-transition-crowder-trail",
+      "title": "Jae Crowder trails the break for a three",
+      "players": [
+        "Jae Crowder",
+        "Duncan Robinson",
+        "Daniel Theis"
+      ],
+      "teams": [
+        "Miami Heat",
+        "Boston Celtics"
+      ],
+      "game": "2020 Eastern Conference Finals, Game 1",
+      "season": "2019-20",
+      "postseason": true,
+      "actions": [
+        "transition"
+      ],
+      "shotType": "three",
+      "description": "NBA film study describes Robinson trailing Crowder in transition while the defender is late to meet the trail three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-celtics-heat-game-1"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-heat-transition-butler-herro",
+      "title": "Jimmy Butler runs the floor for a transition and-one",
+      "players": [
+        "Jimmy Butler",
+        "Jayson Tatum",
+        "Tyler Herro"
+      ],
+      "teams": [
+        "Miami Heat",
+        "Boston Celtics"
+      ],
+      "game": "2020 Eastern Conference Finals, Game 1",
+      "season": "2019-20",
+      "postseason": true,
+      "actions": [
+        "transition",
+        "cut"
+      ],
+      "sequence": [
+        "transition",
+        "cut"
+      ],
+      "shotType": "layup",
+      "result": "foul",
+      "description": "NBA film study describes Butler running into the lane during a numbers break and Herro finding him for an and-one finish.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-celtics-heat-game-1"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions",
+          "sequence",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-heat-transition-adebayo-leak",
+      "title": "Bam Adebayo leaks out after a contest",
+      "players": [
+        "Bam Adebayo",
+        "Jayson Tatum",
+        "Kemba Walker"
+      ],
+      "teams": [
+        "Miami Heat",
+        "Boston Celtics"
+      ],
+      "game": "2020 Eastern Conference Finals, Game 1 overtime",
+      "season": "2019-20",
+      "postseason": true,
+      "actions": [
+        "transition"
+      ],
+      "shotType": "dunk",
+      "description": "NBA film study describes Adebayo leaking out after contesting Tatum’s shot and finishing a lob in overtime.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-celtics-heat-game-1"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-kyrie-drive-and-kick-cavs",
+      "title": "Cavaliers screen-the-screener action ends with an Irving drive",
+      "players": [
+        "LeBron James",
+        "Iman Shumpert",
+        "Kyrie Irving"
+      ],
+      "teams": [
+        "Cleveland Cavaliers",
+        "Golden State Warriors"
+      ],
+      "actions": [
+        "off-ball-screen",
+        "pick-and-roll",
+        "drive-and-kick"
+      ],
+      "sequence": [
+        "off-ball-screen",
+        "pick-and-roll"
+      ],
+      "shotType": "layup",
+      "result": "foul",
+      "description": "NBA film study says James screens Curry, Shumpert then screens Livingston, and Irving turns the corner for an and-one at the rim.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-cleveland-cavaliers-offense-golden-state-warriors"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-james-shumpert-offball",
+      "title": "James and Shumpert off-ball exchange",
+      "players": [
+        "LeBron James",
+        "Iman Shumpert",
+        "Stephen Curry"
+      ],
+      "teams": [
+        "Cleveland Cavaliers",
+        "Golden State Warriors"
+      ],
+      "actions": [
+        "off-ball-screen"
+      ],
+      "description": "NBA film analysis describes an off-ball exchange with James screening for Shumpert to shift the defense.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/film-study-cleveland-cavaliers-offense-golden-state-warriors"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions"
+        ]
+      }
+    },
+    {
+      "id": "nba-walker-screen-three",
+      "title": "Kemba Walker pulls up after two screens",
+      "players": [
+        "Kemba Walker",
+        "Gordon Hayward",
+        "Daniel Theis",
+        "Fred VanVleet"
+      ],
+      "teams": [
+        "Boston Celtics",
+        "Toronto Raptors"
+      ],
+      "actions": [
+        "off-ball-screen"
+      ],
+      "sequence": [
+        "off-ball-screen"
+      ],
+      "shotType": "three",
+      "description": "NBA film study describes Hayward screening at distance before a Theis second screen; Walker rises for a pull-up three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/schuhmann-film-study-boston-celtics"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-redick-handoff-pindown",
+      "title": "JJ Redick handoff after a screen and back-screen fake",
+      "players": [
+        "JJ Redick",
+        "Jaxson Hayes",
+        "Brandon Ingram",
+        "Paul George",
+        "Patrick Beverley",
+        "Ivica Zubac"
+      ],
+      "teams": [
+        "New Orleans Pelicans",
+        "LA Clippers"
+      ],
+      "actions": [
+        "off-ball-screen",
+        "handoff",
+        "cut"
+      ],
+      "sequence": [
+        "off-ball-screen",
+        "cut",
+        "handoff"
+      ],
+      "shotType": "three",
+      "description": "NBA describes Hayes screening for Redick, who feints a back-screen before taking a handoff and making a three.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/power-rankings-notebook-week-5"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "sequence",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-pick-pop-redick",
+      "title": "JJ Redick makes a three after a handoff",
+      "players": [
+        "JJ Redick",
+        "Jaxson Hayes"
+      ],
+      "teams": [
+        "New Orleans Pelicans",
+        "LA Clippers"
+      ],
+      "actions": [
+        "handoff",
+        "pick-and-pop"
+      ],
+      "sequence": [
+        "handoff"
+      ],
+      "shotType": "three",
+      "result": "made",
+      "description": "The NBA breakdown describes Redick taking a handoff from Hayes and making a three after a screen action; the clip’s short summary does not identify a pop by the screener.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/news/power-rankings-notebook-week-5"
+      },
+      "evidence": {
+        "kind": "official-film-analysis",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-giannis-backdoor-cut",
+      "title": "Khris Middleton backdoor cut in Bucks–Jazz game",
+      "players": [
+        "Zaza Pachulia",
+        "Khris Middleton"
+      ],
+      "teams": [
+        "Milwaukee Bucks",
+        "Utah Jazz"
+      ],
+      "actions": [
+        "cut"
+      ],
+      "shotType": "dunk",
+      "result": "made",
+      "description": "Official game clip description identifies a pass from Pachulia to Middleton cutting backdoor for a two-hand dunk.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA game clip",
+        "url": "https://www.nba.com/watch/video/games/bucks/2015/01/22/0021400638-uta-mil-play2.nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "actions",
+          "shotType",
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "nba-jr-curry-backdoor-kuzma",
+      "title": "LeBron James finds Kyle Kuzma on a backdoor cut",
+      "players": [
+        "LeBron James",
+        "Kyle Kuzma"
+      ],
+      "teams": [
+        "Los Angeles Lakers",
+        "Golden State Warriors"
+      ],
+      "game": "2021 Play-In Tournament",
+      "season": "2020-21",
+      "postseason": true,
+      "actions": [
+        "cut"
+      ],
+      "sequence": [
+        "cut"
+      ],
+      "shotType": "layup",
+      "description": "Official NBA video collection describes LeBron finding the cutter Kuzma for a layup in the Lakers–Warriors Play-In game.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Play-In video",
+        "url": "https://www.nba.com/watch/list/collection/2021-play-in-lakers-7-vs-warriors-8"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "players",
+          "teams",
+          "game",
+          "season",
+          "postseason",
+          "actions",
+          "shotType"
+        ]
+      }
+    },
+    {
+      "id": "nba-finals-curry-three-compilation-2022",
+      "title": "Stephen Curry's best 3-pointers from the 2022 NBA Finals",
+      "publishedAt": "2022-06-18",
+      "season": "2021-22",
+      "game": "2022 NBA Finals compilation",
+      "team": "Golden State Warriors",
+      "opponent": "Boston Celtics",
+      "teams": [
+        "Golden State Warriors",
+        "Boston Celtics"
+      ],
+      "players": [
+        "Stephen Curry"
+      ],
+      "actions": [],
+      "shotType": "three",
+      "postseason": true,
+      "description": "Official NBA video compilation of Stephen Curry's three-pointers from the 2022 NBA Finals against Boston; individual possession clock, score, and outcomes are not assigned.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Finals video",
+        "url": "https://www.nba.com/watch/video/best-of-stephen-currys-top-3-pointers-from-the-2022-nba-finals"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "season",
+          "game",
+          "team",
+          "opponent",
+          "teams",
+          "players",
+          "shotType",
+          "postseason"
+        ]
+      }
+    },
+    {
+      "id": "nba-spurs-pnr-turnover-2013-finals",
+      "title": "Film Study: Spurs turnover after the pick-and-roll",
+      "publishedAt": "2013-06-19",
+      "season": "2012-13",
+      "game": "2013 NBA Finals",
+      "team": "San Antonio Spurs",
+      "opponent": "Miami Heat",
+      "teams": [
+        "San Antonio Spurs",
+        "Miami Heat"
+      ],
+      "players": [
+        "Tony Parker",
+        "Tim Duncan",
+        "Manu Ginobili"
+      ],
+      "actions": [
+        "pick-and-roll"
+      ],
+      "sequence": [
+        "pick-and-roll"
+      ],
+      "result": "turnover",
+      "postseason": true,
+      "description": "NBA's film study describes Tony Parker and Tim Duncan running a pick-and-roll before Manu Ginobili drives baseline and commits a turnover; the official page is dated June 19, 2013.",
+      "source": {
+        "publisher": "NBA",
+        "label": "NBA Film Study",
+        "url": "https://www.nba.com/watch/video/channels/playoffs/2013/06/19/film-study-play5.nba"
+      },
+      "evidence": {
+        "kind": "official-video-description",
+        "verifiedFields": [
+          "title",
+          "publishedAt",
+          "season",
+          "game",
+          "team",
+          "opponent",
+          "teams",
+          "players",
+          "actions",
+          "sequence",
+          "result",
+          "postseason"
+        ]
+      }
+    }
+  ]
+}

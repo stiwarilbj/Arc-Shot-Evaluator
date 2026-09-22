@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { BarChart3, CircleDot, Waypoints } from "lucide-react";
 import { CoachNotes } from "../features/analysis/CoachNotes";
 import { ShotDataPanel } from "../features/analysis/ShotDataPanel";
@@ -29,6 +29,8 @@ import type {
   VideoMode,
   WorkspaceTab,
 } from "../domain/analysisTypes";
+
+const PlayFinder = lazy(() => import("../features/playFinder/PlayFinder").then((module) => ({ default: module.PlayFinder })));
 
 const WAIT_MS = 750;
 const MAX_CONCURRENT_ANALYSES = 1;
@@ -106,6 +108,11 @@ export function ArcShotEvaluatorApp() {
   // captured into each queue item so changing it never mutates an active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
   const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
+  const [playFinderOpened, setPlayFinderOpened] = useState(false);
+  const changeWorkspace = (next: AppWorkspace) => {
+    if (next === "play-finder") setPlayFinderOpened(true);
+    setWorkspace(next);
+  };
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
     return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark";
@@ -491,14 +498,17 @@ export function ArcShotEvaluatorApp() {
   );
 
   return (
-    <div className={`app-shell ${workspace === "playbook" ? "playbook-app-shell" : session ? "analysis-session-shell" : ""}`}>
-      <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={setWorkspace} />
+    <div className={`app-shell ${workspace === "playbook" ? "playbook-app-shell" : workspace === "play-finder" ? "play-finder-app-shell" : session ? "analysis-session-shell" : ""}`}>
+      <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={changeWorkspace} />
       <div className={workspace === "playbook" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "playbook"}>
         <PlaybookBoard />
       </div>
       <div className={workspace === "analyzer" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "analyzer"}>
         {analyzerView}
       </div>
+      {playFinderOpened ? <div className={workspace === "play-finder" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "play-finder"}>
+        <Suspense fallback={<div className="finder-loading" role="status">Loading Play Finder…</div>}><PlayFinder active={workspace === "play-finder"} /></Suspense>
+      </div> : null}
     </div>
   );
 }

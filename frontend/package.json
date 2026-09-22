@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "npm run validate:play-finder && tsc -b && vite build",
+    "preview": "vite preview",
+    "validate:play-finder": "node ../scripts/validate-play-finder-catalog.mjs",
+    "test:play-finder": "node --experimental-strip-types ../scripts/test-play-finder.mjs",
+    "test": "npm run test:play-finder"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",
