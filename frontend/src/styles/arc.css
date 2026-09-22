@@ -609,7 +609,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .tool-button:disabled { cursor: default; opacity: .35; }
 .toolbar-spacer { flex: 1 1 auto; min-width: 8px; }
 .court-frame { position: relative; padding: 12px; border: 1px solid var(--line); border-top: 0; background: var(--media-bg); box-shadow: var(--shadow); }
-.court-svg { display: block; width: 100%; aspect-ratio: 1000 / 720; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 5px; cursor: crosshair; touch-action: none; }
+.court-svg { display: block; width: 100%; aspect-ratio: 1000 / 940; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 5px; cursor: crosshair; touch-action: none; }
 .court-floor { fill: var(--surface); }
 .court-line { fill: none; stroke: color-mix(in srgb, var(--text) 75%, transparent); stroke-width: 3; vector-effect: non-scaling-stroke; }
 .court-dash { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 9 10; vector-effect: non-scaling-stroke; }
@@ -682,7 +682,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .saved-play-actions button { display: grid; place-items: center; width: 25px; height: 24px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--dim); cursor: pointer; }
 .saved-play-actions button:hover { border-color: var(--line-strong); color: var(--orange); }
 .saved-play-actions button:disabled { opacity: .4; }
-.mini-court { display: block; width: 100%; aspect-ratio: 1000 / 720; border: 1px solid var(--line); border-radius: 4px; }
+.mini-court { display: block; width: 100%; aspect-ratio: 1000 / 940; border: 1px solid var(--line); border-radius: 4px; }
 .mini-floor { fill: var(--media-bg); }
 .mini-line, .mini-dash { fill: none; stroke: var(--muted); stroke-width: 3; vector-effect: non-scaling-stroke; }
 .mini-dash { stroke-dasharray: 9 10; }
@@ -801,7 +801,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .playbook-simulation-bar { flex: 0 0 auto; min-height: 39px; }
   .simulation-settings-panel { flex: 0 0 auto; }
   .court-frame { display: flex; flex: 1 1 auto; justify-content: center; align-items: center; min-height: 0; overflow: hidden; padding: 8px; }
-  .court-svg { width: auto; height: 88%; max-width: 100%; max-height: 88%; aspect-ratio: 1000 / 720; }
+  .court-svg { width: auto; height: 88%; max-width: 100%; max-height: 88%; aspect-ratio: 1000 / 940; }
   .playbook-statusbar { flex: 0 0 auto; min-height: 30px; }
   .saved-plays-panel { position: relative; top: auto; display: flex; flex-direction: column; height: 100%; min-height: 0; max-height: none; }
   .saved-play-list { flex: 1 1 auto; min-height: 0; }

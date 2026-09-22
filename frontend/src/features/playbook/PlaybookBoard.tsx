@@ -27,9 +27,11 @@ import {
   X,
 } from "lucide-react";
 import { createPlaybook, deletePlaybook, fetchPlaybooks, updatePlaybook } from "./api";
+import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAYS, withDefenders } from "./data";
 import type { ArrowKind, CourtPoint, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
+import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
 type DragState = { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-control"; id: number | string; before: PlaybookDraft };
@@ -77,16 +79,14 @@ function clamp(value: number, min = 2, max = 98) {
 
 function pointFromPointer(event: ReactPointerEvent<SVGSVGElement>, svg: SVGSVGElement | null): CourtPoint | null {
   if (!svg) return null;
-  const rect = svg.getBoundingClientRect();
-  if (!rect.width || !rect.height) return null;
-  return {
-    x: clamp(((event.clientX - rect.left) / rect.width) * 100),
-    y: clamp(((event.clientY - rect.top) / rect.height) * 100),
-  };
+  const transform = svg.getScreenCTM();
+  if (!transform) return null;
+  const point = clientPointToCourt(event.clientX, event.clientY, transform);
+  return point ? { x: clamp(point.x), y: clamp(point.y) } : null;
 }
 
 function markerPoint(marker: CourtPoint) {
-  return { x: marker.x * 10, y: marker.y * 7.2 };
+  return courtPointToSvg(marker);
 }
 
 function arrowId() {
@@ -132,7 +132,7 @@ function isSameDraft(a: PlaybookDraft, b: PlaybookDraft) {
 const SIMULATION_STEP_MS = 1200;
 const PASS_PREP_MS = 440;
 const SHOT_PHASE_MS = 1500;
-const HOOP_POINT: CourtPoint = { x: 50, y: 18.75 };
+const HOOP_POINT = courtSvgToPoint(NBA_COURT_GEOMETRY.basket.center);
 
 function arrowSequence(arrow: PlaybookArrow, index: number) {
   return Number.isInteger(arrow.sequence) && (arrow.sequence ?? 0) > 0 ? arrow.sequence as number : index + 1;
@@ -173,8 +173,9 @@ function easeInOut(amount: number) {
 
 function parabolicPoint(start: CourtPoint, end: CourtPoint, amount: number) {
   const progress = Math.max(0, Math.min(1, amount));
-  const point = lerpPoint(start, end, progress);
-  return { x: point.x, y: clamp(point.y - Math.sin(Math.PI * progress) * 14) };
+  const point = courtPointToSvg(lerpPoint(start, end, progress));
+  const result = courtSvgToPoint({ x: point.x, y: point.y - Math.sin(Math.PI * progress) * 105 });
+  return { x: clamp(result.x), y: clamp(result.y) };
 }
 
 function shotArcPath(start: CourtPoint, end: CourtPoint) {
@@ -185,11 +186,18 @@ function shotArcPath(start: CourtPoint, end: CourtPoint) {
 }
 
 function defaultArrowControl(start: CourtPoint, end: CourtPoint): CourtPoint {
-  const midpoint = lerpPoint(start, end, 0.5);
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const offset = Math.max(6, Math.min(14, Math.hypot(dx, dy) * 0.22));
-  return { x: clamp(midpoint.x + dy * offset / Math.max(1, Math.hypot(dx, dy))), y: clamp(midpoint.y - dx * offset / Math.max(1, Math.hypot(dx, dy))) };
+  const from = courtPointToSvg(start);
+  const to = courtPointToSvg(end);
+  const midpoint = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const distance = Math.hypot(dx, dy);
+  const offset = Math.max(60, Math.min(140, distance * 0.22));
+  const control = courtSvgToPoint({
+    x: midpoint.x + dy * offset / Math.max(1, distance),
+    y: midpoint.y - dx * offset / Math.max(1, distance),
+  });
+  return { x: clamp(control.x), y: clamp(control.y) };
 }
 
 function arrowControl(arrow: PlaybookArrow) {
@@ -1176,19 +1184,14 @@ export function PlaybookBoard() {
             <span className="simulation-settings-note">Receivers arrive before passes; screens and handoffs pull defenders into the action; the final action ends with a contested shot.</span>
           </div> : null}
           <div className="court-frame">
-            <svg ref={svgRef} className="court-svg" viewBox="0 0 1000 720" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable half court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+            <svg ref={svgRef} className="court-svg" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
               <defs>
                 <pattern id="court-boards" width="80" height="80" patternUnits="userSpaceOnUse"><rect width="80" height="80" fill="var(--surface)" /><path d="M0 0h80M0 40h80" stroke="rgba(255,255,255,.022)" strokeWidth="1" /><path d="M40 0v80" stroke="rgba(255,255,255,.014)" strokeWidth="1" /></pattern>
                 <marker id="movement-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--text)" /></marker>
                 <marker id="pass-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--orange)" /></marker>
               </defs>
-              <rect x="0" y="0" width="1000" height="720" rx="8" className="court-floor" fill="url(#court-boards)" />
-              <rect x="24" y="24" width="952" height="672" rx="3" className="court-line" />
-              <path d="M330 24v208h340V24M330 232h340M405 24v208M595 24v208" className="court-line" />
-              <path d="M405 232a95 95 0 0 0 190 0M405 232a95 95 0 0 1 190 0" className="court-dash" />
-              <path d="M285 24v318a215 215 0 0 0 430 0V24" className="court-line" />
-              <path d="M285 342a215 215 0 0 0 430 0" className="court-line" />
-              <path d="M430 111h140v10H430z" className="basket-mark" /><circle cx="500" cy="135" r="18" className="basket-mark" /><path d="M482 140q18 28 36 0" className="court-line" />
+              <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} rx="8" className="court-floor" fill="url(#court-boards)" />
+              <CourtMarkings />
               {simulationFrame.shotPhase !== "idle" && simulationFrame.shotStart && simulationFrame.shotTarget ? <path d={shotArcPath(simulationFrame.shotStart, simulationFrame.shotTarget)} className="shot-arc" /> : null}
               {visibleArrows.map((arrow, arrowIndex) => {
                 const start = markerPoint(arrow.start);
@@ -1258,5 +1261,18 @@ function SavedPlayCard({ play, active, deletePending, onOpen, onDuplicate, onDel
 }
 
 function MiniCourt({ play }: { play: PlaybookDocument | PlaybookDraft }) {
-  return <svg className="mini-court" viewBox="0 0 1000 720" aria-hidden="true"><rect x="0" y="0" width="1000" height="720" rx="5" className="mini-floor" /><rect x="24" y="24" width="952" height="672" className="mini-line" /><path d="M330 24v208h340V24M285 24v318a215 215 0 0 0 430 0V24" className="mini-line" /><path d="M405 232a95 95 0 0 0 190 0" className="mini-dash" /><path d="M430 111h140v10M482 140q18 28 36 0" className="mini-basket" />{play.arrows.map((arrow) => <path key={arrow.id} d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" ? "mini-screen" : arrow.kind === "pick-roll" ? "mini-pick-roll" : "mini-move"} />)}{play.defenders_visible ? play.defenders.map((marker) => <path key={`d-${marker.id}`} d={`M${marker.x * 10 - 7} ${marker.y * 7.2 - 7}l14 14M${marker.x * 10 + 7} ${marker.y * 7.2 - 7}l-14 14`} className="mini-defense" />) : null}{play.players.map((marker) => <circle key={`p-${marker.id}`} cx={marker.x * 10} cy={marker.y * 7.2} r="16" className="mini-player" />)}{play.ball ? <circle cx={play.ball.x * 10} cy={play.ball.y * 7.2} r="9" className="mini-ball" /> : null}</svg>;
+  return <svg className="mini-court" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} aria-hidden="true">
+    <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} rx="5" className="mini-floor" />
+    <CourtMarkings mini />
+    {play.arrows.map((arrow) => <path key={arrow.id} d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" ? "mini-screen" : arrow.kind === "pick-roll" ? "mini-pick-roll" : "mini-move"} />)}
+    {play.defenders_visible ? play.defenders.map((marker) => {
+      const point = markerPoint(marker);
+      return <path key={`d-${marker.id}`} d={`M${point.x - 7} ${point.y - 7}l14 14M${point.x + 7} ${point.y - 7}l-14 14`} className="mini-defense" />;
+    }) : null}
+    {play.players.map((marker) => {
+      const point = markerPoint(marker);
+      return <circle key={`p-${marker.id}`} cx={point.x} cy={point.y} r="16" className="mini-player" />;
+    })}
+    {play.ball ? <circle cx={markerPoint(play.ball).x} cy={markerPoint(play.ball).y} r="9" className="mini-ball" /> : null}
+  </svg>;
 }

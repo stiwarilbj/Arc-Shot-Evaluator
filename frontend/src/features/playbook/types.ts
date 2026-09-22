@@ -59,13 +59,13 @@ export type PlaybookDraft = Omit<PlaybookDocument, "id" | "created_at" | "update
   updated_at?: string;
 };
 
-export const COURT_WIDTH = 1000;
-export const COURT_HEIGHT = 720;
+export { COURT_HEIGHT, COURT_WIDTH } from "./courtGeometry";
+import { COURT_HEIGHT, COURT_WIDTH } from "./courtGeometry";
 
 export function clonePlaybook(playbook: PlaybookDocument | PlaybookDraft): PlaybookDraft {
   return structuredClone(playbook);
 }
 
 export function pointDistance(a: CourtPoint, b: CourtPoint) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+  return Math.hypot(a.x - b.x, ((a.y - b.y) * COURT_HEIGHT) / COURT_WIDTH);
 }

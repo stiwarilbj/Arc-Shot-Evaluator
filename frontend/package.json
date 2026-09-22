@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "validate:play-finder": "node ../scripts/validate-play-finder-catalog.mjs",
     "test:play-finder": "node --experimental-strip-types ../scripts/test-play-finder.mjs",
-    "test": "npm run test:play-finder"
+    "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
+    "test": "npm run test:play-finder && npm run test:playbook-geometry"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",
