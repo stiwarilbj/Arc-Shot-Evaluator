@@ -768,3 +768,30 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .starter-card { grid-template-columns: 110px minmax(0, 1fr); align-items: center; }
   .starter-card span { grid-column: 2; grid-row: 1; align-self: end; }
 }
+
+/* Keep the playbook fully visible in tall desktop and fullscreen windows. */
+@media (min-width: 861px) and (min-height: 680px) {
+  .playbook-app-shell { height: 100dvh; min-height: 0; overflow: hidden; }
+  .playbook-app-shell > .workspace-view-active { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .playbook-page { display: flex; flex-direction: column; width: min(1500px, calc(100% - 40px)); height: 100%; min-height: 0; padding: 10px 0 8px; }
+  .playbook-header { flex: 0 0 auto; min-height: 52px; padding-bottom: 10px; }
+  .playbook-layout { flex: 1 1 auto; min-height: 0; margin-top: 10px; align-items: stretch; }
+  .playbook-editor { display: flex; flex-direction: column; min-height: 0; }
+  .playbook-toolbar { flex: 0 0 auto; flex-wrap: wrap; overflow: visible; }
+  .toolbar-spacer { display: none; }
+  .playbook-simulation-bar { flex: 0 0 auto; min-height: 39px; }
+  .simulation-settings-panel { flex: 0 0 auto; }
+  .court-frame { display: flex; flex: 1 1 auto; justify-content: center; align-items: center; min-height: 0; overflow: hidden; padding: 8px; }
+  .court-svg { width: auto; height: 88%; max-width: 100%; max-height: 88%; aspect-ratio: 1000 / 720; }
+  .playbook-statusbar { flex: 0 0 auto; min-height: 30px; }
+  .saved-plays-panel { position: relative; top: auto; display: flex; flex-direction: column; height: 100%; min-height: 0; max-height: none; }
+  .saved-play-list { flex: 1 1 auto; min-height: 0; }
+}
+
+@media (min-width: 861px) and (max-width: 1100px) and (min-height: 680px) {
+  .playbook-layout { grid-template-columns: 145px minmax(0, 1fr); }
+  .playbook-layout > .saved-plays-panel { position: fixed; z-index: 10; top: 76px; right: 12px; width: min(320px, calc(100% - 24px)); height: auto; max-height: calc(100dvh - 96px); transform: translateX(calc(100% + 24px)); transition: transform 180ms ease; }
+  .playbook-layout > .saved-plays-panel.is-open { transform: translateX(0); }
+  .playbook-layout > .saved-plays-panel .saved-play-list { max-height: calc(100dvh - 160px); }
+  .playbook-layout > .saved-plays-panel .saved-plays-heading .icon-button { display: grid; }
+}

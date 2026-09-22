@@ -13,7 +13,10 @@ def _payload(name: str = "Pick and roll") -> dict:
         "players": [{"id": 1, "x": 50, "y": 70}],
         "defenders": [{"id": 1, "x": 55, "y": 60}],
         "ball": {"x": 50, "y": 70},
-        "arrows": [{"id": "arrow-one", "kind": "movement", "path": "curve", "control": {"x": 54, "y": 62}, "timing": 1.7, "start": {"x": 50, "y": 70}, "end": {"x": 50, "y": 55}}],
+        "arrows": [
+            {"id": "arrow-one", "kind": "movement", "sequence": 2, "path": "curve", "control": {"x": 54, "y": 62}, "timing": 1.7, "start": {"x": 50, "y": 70}, "end": {"x": 50, "y": 55}},
+            {"id": "arrow-two", "kind": "handoff", "sequence": 1, "path": "straight", "timing": 0.9, "start": {"x": 50, "y": 70}, "end": {"x": 29, "y": 56}},
+        ],
     }
 
 
@@ -26,10 +29,18 @@ def test_playbook_crud_is_local_and_versioned(tmp_path, monkeypatch) -> None:
     value = created.json()
     assert value["version"] == 1
     assert value["id"].startswith("play-")
-    assert value["arrows"][0]["sequence"] == 1
+    assert value["arrows"][0]["sequence"] == 2
     assert value["arrows"][0]["path"] == "curve"
     assert value["arrows"][0]["timing"] == 1.7
+    assert value["arrows"][0]["control"] == {"x": 54.0, "y": 62.0}
+    assert value["arrows"][1]["kind"] == "handoff"
+    assert value["arrows"][1]["sequence"] == 1
+    assert value["arrows"][1]["timing"] == 0.9
     assert json.loads((tmp_path / f"{value['id']}.json").read_text())["name"] == "Pick and roll"
+
+    reopened = client.get(f"/api/playbooks/{value['id']}")
+    assert reopened.status_code == 200
+    assert reopened.json()["arrows"] == value["arrows"]
 
     listed = client.get("/api/playbooks")
     assert listed.status_code == 200

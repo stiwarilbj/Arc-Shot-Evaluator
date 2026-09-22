@@ -273,20 +273,91 @@ function buildSimulationActions(source: PlaybookDraft): SimulationAction[] {
   });
 }
 
-function offBallTarget(marker: PlaybookMarker, index: number, players: PlaybookMarker[], ball: CourtPoint | null, phase: number, settings: SimulationSettings) {
+const FIVE_OUT_SPOTS: CourtPoint[] = [
+  { x: 50, y: 51 },
+  { x: 29, y: 56 },
+  { x: 71, y: 56 },
+  { x: 14, y: 32 },
+  { x: 86, y: 32 },
+];
+
+function bestDefensiveMatchups(players: PlaybookMarker[], defenders: PlaybookMarker[]) {
+  if (!players.length || !defenders.length) return defenders.map(() => -1);
+  const defenderCount = Math.min(players.length, defenders.length);
+  if (defenderCount > 7) return defenders.map((_, index) => index % players.length);
+  let bestCost = Number.POSITIVE_INFINITY;
+  let best: number[] = [];
+  const visit = (defenderIndex: number, used: Set<number>, assignments: number[], cost: number) => {
+    if (defenderIndex === defenderCount) {
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = [...assignments];
+      }
+      return;
+    }
+    for (let playerIndex = 0; playerIndex < players.length; playerIndex += 1) {
+      if (used.has(playerIndex)) continue;
+      const nextCost = cost + pointDistance(defenders[defenderIndex], players[playerIndex]);
+      if (nextCost >= bestCost) continue;
+      used.add(playerIndex);
+      assignments.push(playerIndex);
+      visit(defenderIndex + 1, used, assignments, nextCost);
+      assignments.pop();
+      used.delete(playerIndex);
+    }
+  };
+  visit(0, new Set<number>(), [], 0);
+  return defenders.map((_, index) => best[index % Math.max(1, defenderCount)] ?? index % players.length);
+}
+
+function offBallTarget(
+  marker: PlaybookMarker,
+  index: number,
+  players: PlaybookMarker[],
+  ball: CourtPoint | null,
+  phase: number,
+  settings: SimulationSettings,
+  defenders: PlaybookMarker[],
+) {
   if (!ball || players.length < 2 || settings.offenseOffBall === "off") return marker;
   const handlerIndex = nearestPointIndex(players, ball);
   if (index === handlerIndex) return marker;
   const intensity = Math.max(0, Math.min(1, settings.offBallIntensity / 100));
-  const angle = (index - handlerIndex) * 1.2 + phase * 0.38;
-  const radius = 18 + intensity * 9;
-  const spacing = { x: clamp(ball.x + Math.cos(angle) * radius), y: clamp(ball.y + Math.sin(angle) * radius * 0.8) };
-  const rotatingCutter = (Math.floor(phase) + 1) % players.length;
-  const cutting = settings.offenseOffBall === "cuts" || (settings.offenseOffBall === "read-react" && Math.floor(phase) % 3 === 1);
-  const target = cutting && index === rotatingCutter
-    ? { x: clamp(50 + (index % 2 ? 1 : -1) * (13 + index * 2)), y: clamp(24 + (index % 3) * 11) }
-    : spacing;
-  const blend = easeInOut(Math.min(1, 0.16 + intensity * 0.5));
+  const handler = players[handlerIndex] ?? players[0];
+  const home = FIVE_OUT_SPOTS[(marker.id - 1) % FIVE_OUT_SPOTS.length];
+  const pressured = defenders.length > 0 && Math.min(...defenders.map((defender) => pointDistance(defender, handler))) < 18;
+  const drivingLane = ball.y > 43 && Math.abs(ball.x - 50) < 22;
+  let target = { ...home };
+
+  // If a teammate attacks the paint, fill the nearest open perimeter role
+  // instead of following the ball into the same lane.
+  if (ball.y < 41) target.y = Math.max(24, target.y - 5);
+  if (drivingLane && Math.abs(target.x - ball.x) < 18) target.x = target.x < 50 ? 14 : 86;
+
+  const offBallPlayers = players.filter((player) => player.id !== handler.id);
+  const cutterOffset = Math.floor(phase / 5.5) % Math.max(1, offBallPlayers.length);
+  const cutter = offBallPlayers[cutterOffset];
+  const shouldCut = settings.offenseOffBall === "cuts"
+    || (settings.offenseOffBall === "read-react" && (pressured || drivingLane));
+  if (shouldCut && cutter?.id === marker.id) {
+    const cutPhase = phase % 5.5;
+    const rimSide = marker.x < ball.x ? -1 : 1;
+    const rimCut = { x: clamp(50 + rimSide * 7), y: 25 };
+    const weakCorner = { x: rimSide < 0 ? 86 : 14, y: 31 };
+    if (cutPhase < 2.1) target = lerpPoint(home, rimCut, easeInOut(cutPhase / 2.1));
+    else if (cutPhase < 3.7) target = lerpPoint(rimCut, weakCorner, easeInOut((cutPhase - 2.1) / 1.6));
+    else target = lerpPoint(weakCorner, home, easeInOut((cutPhase - 3.7) / 1.8));
+  } else if (settings.offenseOffBall === "spacing") {
+    // Spacing-only players lift or sink along their home lane as the ball moves.
+    target.y = clamp(target.y + Math.max(-5, Math.min(5, (ball.y - 56) * 0.12)));
+  }
+
+  // Preserve a playable passing lane and stop off-ball routes from bunching up.
+  if (pointDistance(target, ball) < 17) {
+    const side = target.x < ball.x ? -1 : 1;
+    target = { x: clamp(target.x + side * 10), y: clamp(target.y + (target.y > ball.y ? 5 : -5)) };
+  }
+  const blend = easeInOut(Math.min(0.92, 0.12 + intensity * 0.66));
   return { ...marker, ...lerpPoint(marker, target, blend) };
 }
 
@@ -309,26 +380,62 @@ function offBallMovementQuality(players: PlaybookMarker[], ball: CourtPoint | nu
 function defensiveTargets(players: PlaybookMarker[], ball: CourtPoint | null, defenders: PlaybookMarker[], settings: SimulationSettings, elapsed: number, actions: SimulationAction[] = []) {
   if (!players.length || settings.defenseOffBall === "off") return defenders.map((defender) => ({ x: defender.x, y: defender.y }));
   const ballThreatIndex = ball ? nearestPointIndex(players, ball) : 0;
-  const phase = Math.floor(elapsed / SIMULATION_STEP_MS);
-  const helpSpot = ball ? lerpPoint(ball, HOOP_POINT, 0.34) : HOOP_POINT;
+  const ballHandler = players[ballThreatIndex] ?? players[0];
+  const matchups = bestDefensiveMatchups(players, defenders);
+  const assignmentIndexes = [...matchups];
   const liveAction = actions.find((action) => elapsed >= action.startTime && elapsed < action.startTime + action.durationMs);
-  const liveActionPoint = liveAction ? actionPointAt(liveAction.arrow, (elapsed - liveAction.startTime) / liveAction.durationMs) : null;
-  return defenders.map((defender, index) => {
-    const assignment = players[(index + (settings.defenseOffBall === "switch" ? phase : 0)) % players.length] ?? players[0];
-    let target: CourtPoint = assignment;
-    if (index === 0 || index === ballThreatIndex) target = ball ? lerpPoint(assignment, ball, 0.48) : assignment;
-    else if (settings.defenseOffBall === "help") target = lerpPoint(assignment, helpSpot, index === 1 ? 0.62 : 0.38);
-    else if (settings.defenseOffBall === "switch") target = lerpPoint(assignment, ball ?? assignment, 0.2);
-    else target = lerpPoint(assignment, ball ?? assignment, 0.16);
-    // Screens and handoffs create a second threat, so the closest defenders
-    // shade the action point while the remaining defenders stay home.
-    if (liveActionPoint && liveAction && (liveAction.arrow.kind === "screen" || liveAction.arrow.kind === "pick-roll")) {
-      if (index === 0 || index === ballThreatIndex) target = lerpPoint(target, liveActionPoint, liveAction.arrow.kind === "pick-roll" ? 0.4 : 0.28);
-      else if (index === 1 && liveAction.arrow.kind === "pick-roll") target = lerpPoint(target, liveActionPoint, 0.24);
+  const isScreenAction = liveAction?.arrow.kind === "screen" || liveAction?.arrow.kind === "pick-roll";
+
+  // Switch the two guards involved in a screen or handoff; keep the rest of
+  // the floor matched instead of rotating every defender on a timer.
+  if (settings.defenseOffBall === "switch" && liveAction && (isScreenAction || liveAction.arrow.kind === "handoff")) {
+    const firstId = liveAction.actorId;
+    const secondId = isScreenAction ? ballHandler.id : liveAction.recipientId;
+    const firstIndex = assignmentIndexes.findIndex((playerIndex) => players[playerIndex]?.id === firstId);
+    const secondIndex = assignmentIndexes.findIndex((playerIndex) => players[playerIndex]?.id === secondId);
+    if (firstIndex >= 0 && secondIndex >= 0 && firstIndex !== secondIndex) {
+      [assignmentIndexes[firstIndex], assignmentIndexes[secondIndex]] = [assignmentIndexes[secondIndex], assignmentIndexes[firstIndex]];
     }
-    if (liveActionPoint && liveAction?.arrow.kind === "handoff" && index === 0) target = lerpPoint(target, liveActionPoint, 0.38);
-    const lateral = ((index % 3) - 1) * 3.6;
-    return { x: clamp(target.x + lateral), y: clamp(target.y + (index % 2 ? 2.2 : -2.2)) };
+  }
+
+  const helpSpot = ball ? lerpPoint(ball, HOOP_POINT, 0.38) : HOOP_POINT;
+  const liveActionPoint = liveAction ? actionPointAt(liveAction.arrow, (elapsed - liveAction.startTime) / liveAction.durationMs) : null;
+  const handlerDefenderIndex = assignmentIndexes.findIndex((playerIndex) => players[playerIndex]?.id === ballHandler.id);
+  const helpDefenderIndex = assignmentIndexes.reduce((best, playerIndex, defenderIndex) => {
+    if (defenderIndex === handlerDefenderIndex || playerIndex < 0) return best;
+    if (best < 0) return defenderIndex;
+    const current = players[assignmentIndexes[best]];
+    const candidate = players[playerIndex];
+    return pointDistance(candidate, ball ?? ballHandler) > pointDistance(current, ball ?? ballHandler) ? defenderIndex : best;
+  }, -1);
+
+  return defenders.map((defender, index) => {
+    const assignedIndex = assignmentIndexes[index];
+    const assignment = players[assignedIndex] ?? ballHandler;
+    const isOnBall = assignment.id === ballHandler.id;
+    const rimSide = assignment.x < 50 ? -1 : 1;
+    let target: CourtPoint = isOnBall
+      ? { x: clamp((ball ?? ballHandler).x + rimSide * 3.5), y: clamp((ball ?? ballHandler).y - 5.5) }
+      : lerpPoint(assignment, HOOP_POINT, settings.defenseOffBall === "contain" ? 0.14 : 0.22);
+
+    // The help defender tags the drive lane, then the remaining guards stay
+    // goal-side and close enough to recover to their own matchup.
+    if (settings.defenseOffBall === "help" && index === helpDefenderIndex) {
+      target = lerpPoint(target, helpSpot, ball && ball.y > 42 ? 0.52 : 0.28);
+    } else if (!isOnBall && settings.defenseOffBall === "help" && ball) {
+      target = lerpPoint(target, ball, 0.12);
+    }
+
+    if (liveActionPoint && liveAction) {
+      if (isScreenAction && (isOnBall || index === helpDefenderIndex)) {
+        const response = liveAction.arrow.kind === "pick-roll" ? (isOnBall ? 0.48 : 0.32) : (isOnBall ? 0.32 : 0.18);
+        target = lerpPoint(target, liveActionPoint, response);
+      }
+      if (liveAction.arrow.kind === "handoff" && (isOnBall || assignment.id === liveAction.recipientId)) {
+        target = lerpPoint(target, liveActionPoint, isOnBall ? 0.38 : 0.24);
+      }
+    }
+    return { ...defender, ...lerpPoint(defender, target, 0.9) };
   });
 }
 
@@ -336,14 +443,20 @@ function defensiveQuality(players: PlaybookMarker[], defenders: PlaybookMarker[]
   if (!players.length || !defenders.length) return 0;
   const handlerIndex = ball ? nearestPointIndex(players, ball) : 0;
   const handler = players[handlerIndex] ?? players[0];
-  const onBallGap = Math.min(...defenders.map((defender) => pointDistance(defender, ball ?? handler)));
-  const onBallScore = 1 - Math.min(1, onBallGap / 36);
+  const matchups = bestDefensiveMatchups(players, defenders);
+  const handlerDefenderIndex = matchups.findIndex((playerIndex) => players[playerIndex]?.id === handler.id);
+  const onBallGap = handlerDefenderIndex >= 0
+    ? pointDistance(defenders[handlerDefenderIndex], ball ?? handler)
+    : Math.min(...defenders.map((defender) => pointDistance(defender, ball ?? handler)));
+  const onBallScore = 1 - Math.min(1, Math.max(0, onBallGap - 7) / 34);
   const assignmentScore = defenders.reduce((total, defender, index) => {
-    const assignment = players[(index + (settings.defenseOffBall === "switch" ? 1 : 0)) % players.length];
-    return total + (1 - Math.min(1, pointDistance(defender, assignment) / 48));
+    const assignment = players[matchups[index]] ?? handler;
+    const goalSide = assignment.id === handler.id ? (ball ?? handler) : lerpPoint(assignment, HOOP_POINT, 0.18);
+    return total + (1 - Math.min(1, pointDistance(defender, goalSide) / 42));
   }, 0) / defenders.length;
   const helpSpot = ball ? lerpPoint(ball, HOOP_POINT, 0.34) : HOOP_POINT;
-  const helpScore = defenders.length < 2 ? 0.5 : 1 - Math.min(1, Math.min(...defenders.slice(1).map((defender) => pointDistance(defender, helpSpot))) / 44);
+  const offBallDefenders = defenders.filter((_, index) => index !== handlerDefenderIndex);
+  const helpScore = offBallDefenders.length < 1 ? 0.5 : 1 - Math.min(1, Math.min(...offBallDefenders.map((defender) => pointDistance(defender, helpSpot))) / 44);
   const contestScore = ball ? 1 - Math.min(1, Math.min(...defenders.map((defender) => pointDistance(defender, ball))) / 46) : 0.5;
   const styleWeight = settings.defenseOffBall === "off" ? 0.65 : 1;
   return Math.round(Math.max(0, Math.min(100, (onBallScore * 0.38 + assignmentScore * 0.3 + helpScore * 0.17 + contestScore * 0.15) * 100 * styleWeight)));
@@ -392,9 +505,9 @@ function simulateDraft(source: PlaybookDraft, elapsed: number, settings: Simulat
     }
   });
 
-  const phase = elapsed / SIMULATION_STEP_MS;
+  const phase = elapsed / 1000;
   const shapedPlayers = elapsed <= actionDuration
-    ? players.map((marker, index) => explicitIds.has(marker.id) ? marker : offBallTarget(marker, index, players, ball, phase, settings))
+    ? players.map((marker, index) => explicitIds.has(marker.id) ? marker : offBallTarget(marker, index, players, ball, phase, settings, baseDefenders))
     : players;
   let shotPhase: SimulationFrame["shotPhase"] = "idle";
   let shotProgress = 0;
@@ -423,7 +536,7 @@ function simulateDraft(source: PlaybookDraft, elapsed: number, settings: Simulat
   defenders.forEach((defender, index) => {
     const target = targets[index];
     if (target) {
-      const point = lerpPoint(defender, target, defenderProgress);
+      const point = lerpPoint(baseDefenders[index], target, defenderProgress);
       defenders[index] = { ...defender, ...point };
     }
   });
@@ -904,7 +1017,7 @@ export function PlaybookBoard() {
   }
 
   const visibleArrows = useMemo(() => draft.arrows, [draft.arrows]);
-  const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? "Saved locally" : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
+  const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? `Saved · ${draft.arrows.length} actions` : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
 
   return (
     <div ref={rootRef} className="playbook-page" tabIndex={-1} onKeyDown={onKeyDown} onPointerDownCapture={(event) => {
@@ -981,7 +1094,7 @@ export function PlaybookBoard() {
             <span className="simulation-settings-note">Receivers arrive before passes; screens and handoffs pull defenders into the action; the final action ends with a contested shot.</span>
           </div> : null}
           <div className="court-frame">
-            <svg ref={svgRef} className="court-svg" viewBox="0 0 1000 720" preserveAspectRatio="none" role="img" aria-label="Editable half court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+            <svg ref={svgRef} className="court-svg" viewBox="0 0 1000 720" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable half court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
               <defs>
                 <pattern id="court-boards" width="80" height="80" patternUnits="userSpaceOnUse"><rect width="80" height="80" fill="var(--surface)" /><path d="M0 0h80M0 40h80" stroke="rgba(255,255,255,.022)" strokeWidth="1" /><path d="M40 0v80" stroke="rgba(255,255,255,.014)" strokeWidth="1" /></pattern>
                 <marker id="movement-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--text)" /></marker>
@@ -1057,7 +1170,7 @@ function ToolButton({ active = false, disabled = false, icon, label, title, onCl
 
 function SavedPlayCard({ play, active, deletePending, onOpen, onDuplicate, onDelete }: { play: PlaybookDocument; active: boolean; deletePending: boolean; onOpen: () => void; onDuplicate: () => void; onDelete: () => void }) {
   return <article className={`saved-play-card ${active ? "is-active" : ""}`}>
-    <button type="button" className="saved-play-open" onClick={onOpen}><MiniCourt play={play} /><strong>{play.name}</strong><span>{new Date(play.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></button>
+    <button type="button" className="saved-play-open" onClick={onOpen}><MiniCourt play={play} /><strong>{play.name}</strong><span className="saved-play-meta">{play.arrows.length} saved {play.arrows.length === 1 ? "action" : "actions"} · {new Date(play.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></button>
     <div className="saved-play-actions"><button type="button" aria-label={`Duplicate ${play.name}`} title="Duplicate" onClick={onDuplicate}><Copy size={14} /></button><button type="button" aria-label={`Delete ${play.name}`} title="Delete" disabled={deletePending} onClick={onDelete}><Trash2 size={14} /></button></div>
   </article>;
 }
