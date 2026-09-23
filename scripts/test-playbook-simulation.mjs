@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   advanceSimulationRun,
+  chooseDefenseScheme,
   createSimulationRun,
   DEFENDER_MAX_SPEED_FT_PER_SECOND,
   editPausedSimulationMarker,
@@ -11,9 +12,10 @@ import {
   SIMULATION_STEP_MS,
 } from '../frontend/src/features/playbook/simulation.ts';
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
+import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { courtSvgToPoint, COURT_SCALE, COURT_VIEWBOX, NBA_COURT_GEOMETRY } from '../frontend/src/features/playbook/courtGeometry.ts';
 
-const settings = { offenseOffBall: 'read-react', defenseStrategy: 'help', offBallIntensity: 70, automaticActions: { screen: false, handoff: false, pickRoll: false, offBallScreen: false } };
+const settings = { offenseOffBall: 'read-react', defenseScheme: 'man-to-man', defenseStrategy: 'help', offBallIntensity: 70, automaticActions: { screen: false, handoff: false, pickRoll: false, offBallScreen: false } };
 const hoop = courtSvgToPoint(NBA_COURT_GEOMETRY.basket.center);
 
 function makeDraft({ players, ball, arrows = [], defenders = [] }) {
@@ -736,6 +738,93 @@ const secondScreenStart = liveSwitchRun.actions.find((action) => action.arrow.id
 advance(liveSwitchRun, secondScreenStart - liveSwitchRun.elapsedMs + SIMULATION_STEP_MS);
 const defenderOnScreener = liveSwitchRun.defenders.find((defender) => baselineAssignments.get(defender.id) === 3);
 assert.equal(liveSwitchRun.assignments.get(defenderOnScreener.id), 1, 'the next screen uses the newly selected switching strategy');
+
+// Defensive schemes select once per run, retain stable zone roles, and preserve motion limits.
+assert.equal(DEFAULT_SIMULATION_SETTINGS.defenseScheme, 'auto', 'new Playbook sessions use Auto defense schemes by default');
+const schemeNames = ['man-to-man', 'pack-line', 'zone-2-3', 'zone-3-2', 'zone-1-3-1', 'zone-2-1-2', 'zone-1-2-2', 'matchup-1-1-3', 'box-and-one', 'triangle-and-two'];
+const autoPicks = schemeNames.map((_, index) => chooseDefenseScheme('auto', 5, 5, () => index / schemeNames.length).scheme);
+assert.deepEqual(autoPicks, schemeNames, 'Auto gives every eligible scheme the same random interval');
+assert.equal(chooseDefenseScheme('auto', 4, 5, () => 0.2).scheme, 'man-to-man', 'Auto with fewer than five defenders considers only man schemes');
+assert.equal(chooseDefenseScheme('auto', 4, 5, () => 0.8).scheme, 'pack-line', 'both man schemes remain reachable in Auto with fewer than five defenders');
+const invalidScheme = chooseDefenseScheme('zone-2-3', 4, 5);
+assert.equal(invalidScheme.scheme, 'man-to-man');
+assert.match(invalidScheme.notice, /needs five defenders/);
+assert.equal(chooseDefenseScheme('triangle-and-two', 5, 1).scheme, 'man-to-man', 'triangle-and-two requires two offensive threats to mark');
+
+const schemeDraft = makeDraft({
+  players: [[50, 76], [22, 68], [78, 68], [34, 56], [66, 56]],
+  ball: [50, 76],
+  defenders: [[48, 72], [28, 64], [72, 64], [39, 59], [61, 59]],
+});
+const schemeSettings = { ...settings, offenseOffBall: 'off', defenseStrategy: 'contain' };
+const zoneSchemes = ['zone-2-3', 'zone-3-2', 'zone-1-3-1', 'zone-2-1-2', 'zone-1-2-2', 'matchup-1-1-3', 'box-and-one', 'triangle-and-two'];
+const zoneRuns = zoneSchemes.map((defenseScheme) => {
+  const run = createSimulationRun(schemeDraft, { ...schemeSettings, defenseScheme });
+  assert.equal(run.activeDefenseScheme, defenseScheme, `${defenseScheme} is selected for the run`);
+  assert.equal(run.defenseSchemeWasAutomatic, false, 'manual scheme choice is shown as a fixed selection');
+  assert.equal(run.frame.activeDefenseScheme, defenseScheme, 'the active scheme is exposed in playback frames');
+  assert.equal(run.zoneAssignments.size + run.zoneChaserAssignments.size, 5, `${defenseScheme} gives every defender a zone or chaser role`);
+  assert.deepEqual(run.assignments, run.initialAssignments, 'zone setup preserves the original matchup map');
+  let previous = run.defenders.map((defender) => ({ ...defender }));
+  let moved = 0;
+  for (let frame = 0; frame < 21; frame += 1) {
+    advance(run, SIMULATION_STEP_MS);
+    run.defenders.forEach((defender, index) => {
+      const distance = pointDistanceFeet(previous[index], defender);
+      assert.ok(distance <= DEFENDER_MAX_SPEED_FT_PER_SECOND * SIMULATION_STEP_MS / 1000 + 0.002, `${defenseScheme} respects the defender speed limit`);
+      moved += distance;
+    });
+    previous = run.defenders.map((defender) => ({ ...defender }));
+  }
+  assert.ok(moved > 0.1, `${defenseScheme} defenders slide toward their ball-side and area responsibilities`);
+  return run;
+});
+const zone2Positions = zoneRuns[0].defenders;
+zoneRuns.slice(1, 6).forEach((run) => {
+  const separation = run.defenders.reduce((total, defender, index) => total + pointDistanceFeet(defender, zone2Positions[index]), 0);
+  assert.ok(separation > 0.5, `${run.activeDefenseScheme} has a distinct formation from the 2–3 zone`);
+});
+
+const ratedSchemeDraft = structuredClone(schemeDraft);
+for (const player of ratedSchemeDraft.players) player.ratings = { threePoint: 3, midrange: 3, finishing: 3 };
+ratedSchemeDraft.players.find((player) => player.id === 2).ratings = { threePoint: 5, midrange: 5, finishing: 5 };
+ratedSchemeDraft.players.find((player) => player.id === 4).ratings = { threePoint: 5, midrange: 5, finishing: 5 };
+const boxRun = createSimulationRun(ratedSchemeDraft, { ...schemeSettings, defenseScheme: 'box-and-one' });
+assert.deepEqual([...boxRun.zoneChaserAssignments.values()], [2], 'Box-and-one assigns its chaser to the highest-rated threat, with player ID as the tie break');
+assert.equal(boxRun.zoneAssignments.size, 4, 'four Box-and-one defenders retain zone slots');
+const triangleRun = createSimulationRun(ratedSchemeDraft, { ...schemeSettings, defenseScheme: 'triangle-and-two' });
+assert.deepEqual([...triangleRun.zoneChaserAssignments.values()], [2, 4], 'Triangle-and-two assigns its chasers to the two highest-rated threats in ID order');
+assert.equal(triangleRun.zoneAssignments.size, 3, 'three Triangle-and-two defenders retain triangle slots');
+
+const shortZoneRun = createSimulationRun({ ...schemeDraft, defenders: schemeDraft.defenders.slice(0, 4) }, { ...schemeSettings, defenseScheme: 'zone-3-2' });
+assert.equal(shortZoneRun.activeDefenseScheme, 'man-to-man', 'manual five-defender schemes fall back when defenders are missing');
+assert.match(shortZoneRun.frame.defenseSchemeNotice ?? '', /needs five defenders/);
+const autoShortRun = createSimulationRun({ ...schemeDraft, defenders: schemeDraft.defenders.slice(0, 4) }, { ...schemeSettings, defenseScheme: 'auto' });
+assert.ok(['man-to-man', 'pack-line'].includes(autoShortRun.activeDefenseScheme), 'Auto excludes formations that cannot fill their five roles');
+
+const fixedAutoRun = createSimulationRun(schemeDraft, { ...schemeSettings, defenseScheme: 'auto' });
+const firstAutoPick = fixedAutoRun.activeDefenseScheme;
+assert.equal(fixedAutoRun.defenseSchemeWasAutomatic, true, 'playback identifies a randomized scheme selection');
+setSimulationRunSettings(fixedAutoRun, { ...schemeSettings, defenseScheme: 'zone-3-2' });
+advance(fixedAutoRun, SIMULATION_STEP_MS * 3);
+assert.equal(fixedAutoRun.activeDefenseScheme, firstAutoPick, 'Auto selects once and keeps the same scheme through the possession');
+assert.equal(fixedAutoRun.frame.activeDefenseScheme, firstAutoPick, 'the displayed scheme remains the original Auto selection for the whole run');
+
+const zoneScreenRun = createSimulationRun({ ...schemeDraft, arrows: [{ id: 'zone-screen', kind: 'screen', screener_id: 2, start: { x: 22, y: 68 }, end: { x: 45, y: 70 }, sequence: 1, timing: 1.2 }] }, { ...schemeSettings, defenseScheme: 'zone-2-3', defenseStrategy: 'switch' });
+const zoneAssignmentsBeforeScreen = new Map(zoneScreenRun.assignments);
+advance(zoneScreenRun, SIMULATION_STEP_MS * 4);
+assert.deepEqual(zoneScreenRun.assignments, zoneAssignmentsBeforeScreen, 'zone switching handles a screen temporarily without converting the zone into permanent matchups');
+assert.equal(zoneScreenRun.frame.activeDefenseScheme, 'zone-2-3', 'the chosen scheme remains fixed while its screen coverage adapts');
+
+const immutableSchemeRun = createSimulationRun(schemeDraft, { ...schemeSettings, defenseScheme: 'zone-2-3' });
+setSimulationRunSettings(immutableSchemeRun, { ...schemeSettings, defenseScheme: 'zone-3-2', defenseStrategy: 'fight-over' });
+assert.equal(immutableSchemeRun.activeDefenseScheme, 'zone-2-3', 'changing the selected scheme during playback only affects the next run');
+const nextSchemeRun = createSimulationRun(schemeDraft, { ...schemeSettings, defenseScheme: 'zone-3-2' });
+assert.equal(nextSchemeRun.activeDefenseScheme, 'zone-3-2', 'the next run uses the newly selected scheme');
+const holdZoneRun = createSimulationRun(schemeDraft, { ...schemeSettings, defenseScheme: 'zone-2-3', defenseStrategy: 'off' });
+const holdZonePositions = holdZoneRun.defenders.map((defender) => ({ ...defender }));
+advance(holdZoneRun, 300);
+assert.deepEqual(holdZoneRun.defenders, holdZonePositions, 'Hold positions freezes defenders even when a zone scheme is selected');
 
 // Auto controls are independent. Contextual events are added only when enabled and only to the simulation timeline.
 const autoSettings = (overrides) => ({ ...settings, automaticActions: { ...settings.automaticActions, ...overrides } });

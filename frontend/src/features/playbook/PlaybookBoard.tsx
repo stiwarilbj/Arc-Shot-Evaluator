@@ -32,7 +32,7 @@ import { createPlaybook, deletePlaybook, fetchPlaybooks, updatePlaybook } from "
 import { ArcSelect } from "../../components/ArcSelect";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, PlayerSkillRatings, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, PlayerSkillRatings, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -44,6 +44,8 @@ import {
   rebasePausedSimulation,
   setSimulationRunSettings,
   SIMULATION_SHOT_MS,
+  DEFENSE_SCHEME_DESCRIPTIONS,
+  DEFENSE_SCHEME_LABELS,
   simulationTimelineDuration,
 } from "./simulation";
 import type { SimulationFrame, SimulationRun } from "./simulation";
@@ -67,6 +69,14 @@ const TOOL_LABELS: Record<PlaybookTool, string> = {
 };
 
 const HOOP_POINT = courtSvgToPoint(NBA_COURT_GEOMETRY.basket.center);
+const DEFENSE_SCHEME_OPTIONS: Array<{ value: DefenseScheme; label: string; description: string }> = [
+  { value: "auto", label: "Auto", description: DEFENSE_SCHEME_DESCRIPTIONS.auto },
+  ...Object.entries(DEFENSE_SCHEME_LABELS).map(([value, label]) => ({
+    value: value as Exclude<DefenseScheme, "auto">,
+    label,
+    description: DEFENSE_SCHEME_DESCRIPTIONS[value as Exclude<DefenseScheme, "auto">],
+  })),
+];
 
 function clamp(value: number, min = 2, max = 98) {
   return Math.max(min, Math.min(max, value));
@@ -286,6 +296,9 @@ const EMPTY_SIMULATION_FRAME: SimulationFrame = {
   adaptiveReadLabel: null,
   adaptiveReadReason: null,
   adaptiveReadRoute: null,
+  activeDefenseScheme: null,
+  defenseSchemeWasAutomatic: false,
+  defenseSchemeNotice: null,
   defensiveQuality: 0,
   offBallQuality: 0,
   shotPhase: "idle",
@@ -313,6 +326,7 @@ export function PlaybookBoard() {
   const [pickPopSelection, setPickPopSelection] = useState<{ screenerId: number | null; handlerId: number | null; screenPoint: CourtPoint | null }>({ screenerId: null, handlerId: null, screenPoint: null });
   const [backdoorCutterId, setBackdoorCutterId] = useState<number | null>(null);
   const [autoActionsOpen, setAutoActionsOpen] = useState(false);
+  const [defenseSchemesOpen, setDefenseSchemesOpen] = useState(false);
   const [ratingsOpen, setRatingsOpen] = useState(false);
   const [ratingPlayerId, setRatingPlayerId] = useState<number | null>(null);
   const [saved, setSaved] = useState<PlaybookDocument[]>([]);
@@ -1003,6 +1017,9 @@ export function PlaybookBoard() {
   }
 
   const visibleArrows = useMemo(() => draft.arrows, [draft.arrows]);
+  const currentDefenseSchemeLabel = simulationFrame.activeDefenseScheme
+    ? `${simulationFrame.defenseSchemeWasAutomatic ? "Auto · " : ""}${DEFENSE_SCHEME_LABELS[simulationFrame.activeDefenseScheme]}`
+    : "No possession running";
   const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? `Saved · ${draft.arrows.length} actions` : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
 
   return (
@@ -1046,6 +1063,15 @@ export function PlaybookBoard() {
           }}>
             <UserRound size={17} /> <span>Defenders</span><i className={`toggle-dot ${draft.defenders_visible ? "is-on" : ""}`} />
           </button>
+          <button type="button" className={`preset-button ${defenseSchemesOpen ? "is-active" : ""}`} aria-expanded={defenseSchemesOpen} aria-controls="defense-schemes-panel" onClick={() => setDefenseSchemesOpen((open) => !open)}>
+            <ShieldCheck size={17} /><span>Defense schemes</span><i className={`toggle-dot ${simulationSettings.defenseScheme !== "auto" ? "is-on" : ""}`} />
+          </button>
+          {defenseSchemesOpen ? <div id="defense-schemes-panel" className="defense-schemes-panel" role="group" aria-label="Defensive scheme for the next possession">
+            <label><span>Scheme</span><ArcSelect ariaLabel="Defensive scheme" className="arc-select--compact arc-select--full defense-scheme-select" value={simulationSettings.defenseScheme} options={DEFENSE_SCHEME_OPTIONS} onValueChange={(value) => changeSimulationSetting("defenseScheme", value as DefenseScheme)} /></label>
+            <small>{simulationSettings.defenseScheme === "auto" ? "Auto draws an eligible scheme at random when a run starts." : `${DEFENSE_SCHEME_LABELS[simulationSettings.defenseScheme]} is set for the next run.`}</small>
+            {simulationActive ? <small className="defense-scheme-active">Current: {currentDefenseSchemeLabel}</small> : null}
+            {simulationActive && simulationFrame.defenseSchemeNotice ? <small className="defense-scheme-notice" role="status">{simulationFrame.defenseSchemeNotice}</small> : null}
+          </div> : null}
           <button type="button" className={`preset-button ${autoActionsOpen ? "is-active" : ""}`} aria-expanded={autoActionsOpen} aria-controls="automatic-actions-panel" onClick={() => setAutoActionsOpen((open) => !open)}>
             <BrainCircuit size={17} /><span>Auto actions</span><i className={`toggle-dot ${Object.values(simulationSettings.automaticActions).every(Boolean) ? "is-on" : ""}`} />
           </button>
@@ -1127,8 +1153,10 @@ export function PlaybookBoard() {
           </div>
           <div className="playbook-simulation-bar" role="region" aria-label="Play simulation controls">
             <span className="simulation-ai-label"><ShieldCheck size={14} /> ARC defensive AI</span>
+            {simulationActive && simulationFrame.activeDefenseScheme ? <span className="simulation-scheme-label" role="status"><ShieldCheck size={13} />{currentDefenseSchemeLabel}</span> : null}
             <span className="simulation-copy">{simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeActionLabel ? `${simulationFrame.activeActionLabel} in progress` : simulationFrame.adaptiveReadLabel ? `Read: ${simulationFrame.adaptiveReadLabel}` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
             {simulationActive && simulationFrame.adaptiveReadReason ? <span className="simulation-read-copy" role="status">{simulationFrame.adaptiveReadReason}</span> : null}
+            {simulationActive && simulationFrame.defenseSchemeNotice ? <span className="simulation-scheme-notice" role="status">{simulationFrame.defenseSchemeNotice}</span> : null}
             <span className="simulation-quality" role="status">Off-ball quality <strong>{offBallQualityDisplay}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
@@ -1140,7 +1168,7 @@ export function PlaybookBoard() {
           </div>
           {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
             <div className="simulation-setting"><span>Offense off-ball</span><ArcSelect ariaLabel="Offense off-ball style" className="arc-select--compact playbook-offense-select" value={simulationSettings.offenseOffBall} options={[{ value: "read-react", label: "Read & react" }, { value: "cuts", label: "Structured cuts" }, { value: "spacing", label: "Spacing only" }, { value: "off", label: "Off" }]} onValueChange={(value) => changeSimulationSetting("offenseOffBall", value as SimulationSettings["offenseOffBall"])} /></div>
-            <div className="simulation-setting simulation-defense-setting"><span>Defense strategy</span><ArcSelect ariaLabel="Defense strategy" className="arc-select--compact playbook-defense-select" value={simulationSettings.defenseStrategy} options={[
+            <div className="simulation-setting simulation-defense-setting"><span>Coverage & emphasis</span><ArcSelect ariaLabel="Coverage and defensive emphasis" className="arc-select--compact playbook-defense-select" value={simulationSettings.defenseStrategy} options={[
               { value: "help", label: "Help & recover", description: "Send weak-side help to drives, then recover." },
               { value: "contain", label: "Contain & deny", description: "Contain the handler and stay close to each assignment." },
               { value: "switch", label: "Switch screens", description: "Exchange matchups when a screen or handoff starts." },
@@ -1154,7 +1182,7 @@ export function PlaybookBoard() {
               { value: "off", label: "Hold positions", description: "Keep defenders where they are drawn." },
             ]} onValueChange={(value) => changeSimulationSetting("defenseStrategy", value as SimulationSettings["defenseStrategy"])} /></div>
             <label className="simulation-setting simulation-setting-range"><span>Off-ball intensity <output>{simulationSettings.offBallIntensity}%</output></span><input aria-label="Off-ball intensity" type="range" min={0} max={100} step={1} value={simulationSettings.offBallIntensity} onChange={(event) => changeSimulationSetting("offBallIntensity", Number(event.currentTarget.value))} /></label>
-            <span className="simulation-settings-note">Receivers arrive before passes; screens and handoffs pull defenders into the action; the final action ends with a contested shot.</span>
+            <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior.</span>
           </div> : null}
           <div className="court-frame">
             <svg ref={svgRef} className="court-svg" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>

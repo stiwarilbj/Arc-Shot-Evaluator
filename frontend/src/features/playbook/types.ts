@@ -3,6 +3,7 @@ export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll"
 export type ArrowPath = "straight" | "curve";
 export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
 export type DefenseStrategy = "off" | "contain" | "help" | "switch" | "trap-rotate" | "fight-over" | "go-under" | "drop" | "hedge" | "deny-lanes" | "protect-paint";
+export type DefenseScheme = "auto" | "man-to-man" | "pack-line" | "zone-2-3" | "zone-3-2" | "zone-1-3-1" | "zone-2-1-2" | "zone-1-2-2" | "matchup-1-1-3" | "box-and-one" | "triangle-and-two";
 
 export interface AutomaticActionSettings {
   screen: boolean;
@@ -13,6 +14,7 @@ export interface AutomaticActionSettings {
 
 export interface SimulationSettings {
   offenseOffBall: OffenseOffBallStyle;
+  defenseScheme: DefenseScheme;
   defenseStrategy: DefenseStrategy;
   offBallIntensity: number;
   automaticActions: AutomaticActionSettings;
@@ -20,6 +22,7 @@ export interface SimulationSettings {
 
 export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = {
   offenseOffBall: "read-react",
+  defenseScheme: "auto",
   defenseStrategy: "help",
   offBallIntensity: 70,
   automaticActions: { screen: true, handoff: true, pickRoll: true, offBallScreen: true },
@@ -86,8 +89,8 @@ export type PlaybookDraft = Omit<PlaybookDocument, "id" | "created_at" | "update
   updated_at?: string;
 };
 
-export { COURT_HEIGHT, COURT_WIDTH } from "./courtGeometry";
-import { COURT_HEIGHT, COURT_WIDTH } from "./courtGeometry";
+export { COURT_HEIGHT, COURT_WIDTH } from "./courtGeometry.ts";
+import { COURT_HEIGHT, COURT_WIDTH } from "./courtGeometry.ts";
 
 export function clonePlaybook(playbook: PlaybookDocument | PlaybookDraft): PlaybookDraft {
   return structuredClone(playbook);
