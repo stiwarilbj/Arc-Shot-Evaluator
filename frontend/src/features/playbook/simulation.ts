@@ -13,6 +13,9 @@ export type SimulationFrame = {
   ball: CourtPoint | null;
   activeSequence: number | null;
   activeActionLabel: string | null;
+  adaptiveReadLabel: string | null;
+  adaptiveReadReason: string | null;
+  adaptiveReadRoute: { start: CourtPoint; end: CourtPoint; kind: "movement" | "pass" } | null;
   defensiveQuality: number;
   offBallQuality: number;
   shotPhase: "idle" | "setup" | "air" | "result";
@@ -35,6 +38,7 @@ type BoundAction = {
   plannedStart: CourtPoint | null;
   controlOffset: CourtPoint | null;
   automatic?: boolean;
+  adaptiveReadLabel?: string;
   partnerId?: number | null;
   partnerStart?: CourtPoint | null;
 };
@@ -43,9 +47,9 @@ type Velocity = { x: number; y: number };
 type PositionOverride = { atMs: number; point: CourtPoint };
 
 export type SimulationRun = {
-  readonly actions: BoundAction[];
-  readonly actionDurationMs: number;
-  readonly durationMs: number;
+  actions: BoundAction[];
+  actionDurationMs: number;
+  durationMs: number;
   readonly assignments: Map<number, number>;
   readonly initialAssignments: Map<number, number>;
   readonly ephemeralDefenders: boolean;
@@ -57,6 +61,11 @@ export type SimulationRun = {
   readonly velocities: Map<string, Velocity>;
   readonly recipientStartOverrides: Map<string, PositionOverride>;
   readonly shotDurationMs: number;
+  readonly plannedActionDurationMs: number;
+  adaptiveReadResolved: boolean;
+  adaptiveReadLabel: string | null;
+  adaptiveReadReason: string | null;
+  adaptiveReadRoute: SimulationFrame["adaptiveReadRoute"];
   source: PlaybookDraft;
   settings: SimulationSettings;
   players: PlaybookMarker[];
@@ -419,6 +428,7 @@ function automaticOnBallArrow(players: PlaybookMarker[], defenders: PlaybookMark
 }
 
 function autoActionLabel(action: BoundAction) {
+  if (action.adaptiveReadLabel) return action.adaptiveReadLabel;
   const prefix = action.automatic ? "Auto " : "";
   if (action.arrow.kind === "pass") return `${prefix}pass`;
   if (action.arrow.kind === "screen") return `${prefix}screen`;
@@ -429,6 +439,167 @@ function autoActionLabel(action: BoundAction) {
   if (action.arrow.kind === "pin-down") return `${prefix}pin-down screen`;
   if (action.arrow.kind === "backdoor-cut") return `${prefix}backdoor cut`;
   return `${prefix}movement`;
+}
+
+type AdaptiveTargetRole = "roller" | "popping screener" | "cutter" | "post" | "perimeter";
+
+function segmentClearanceFeet(start: CourtPoint, end: CourtPoint, markers: PlaybookMarker[]) {
+  if (!markers.length) return 20;
+  const from = toCourtFeet(start);
+  const to = toCourtFeet(end);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const lengthSquared = dx * dx + dy * dy;
+  return Math.min(...markers.map((marker) => {
+    const point = toCourtFeet(marker);
+    const progress = lengthSquared > 0
+      ? clamp(((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSquared, 0, 1)
+      : 0;
+    return Math.hypot(point.x - (from.x + dx * progress), point.y - (from.y + dy * progress));
+  }));
+}
+
+function nearestTeammateGap(player: PlaybookMarker, handlerId: number, players: PlaybookMarker[]) {
+  const teammates = players.filter((teammate) => teammate.id !== player.id && teammate.id !== handlerId);
+  if (!teammates.length) return 18;
+  return Math.min(...teammates.map((teammate) => pointDistanceFeet(player, teammate)));
+}
+
+function adaptiveTargetRole(run: SimulationRun, playerId: number, hoop: CourtPoint): AdaptiveTargetRole {
+  const targetActions = run.actions.filter((action) => action.actorId === playerId || action.recipientId === playerId);
+  if (targetActions.some((action) => action.arrow.kind === "pick-roll" && action.actorId === playerId)) return "roller";
+  if (targetActions.some((action) => action.arrow.kind === "pick-pop" && action.actorId === playerId)) return "popping screener";
+  if (targetActions.some((action) =>
+    action.arrow.kind === "backdoor-cut" && action.actorId === playerId
+    || (action.arrow.kind === "off-ball-screen" || action.arrow.kind === "pin-down") && action.recipientId === playerId
+    || action.arrow.kind === "movement" && action.actorId === playerId,
+  )) return "cutter";
+  const player = markerForId(run.players, playerId);
+  return player && pointDistanceFeet(player, hoop) <= 19 ? "post" : "perimeter";
+}
+
+function adaptiveRoleLabel(role: AdaptiveTargetRole) {
+  if (role === "roller") return "Feed the open roller";
+  if (role === "popping screener") return "Find the popping screener";
+  if (role === "cutter") return "Hit the open cutter";
+  if (role === "post") return "Feed the open post";
+  return "Kick out to the open player";
+}
+
+function adaptivePassDuration(start: CourtPoint, end: CourtPoint) {
+  return Math.max(550, pointDistanceFeet(start, end) * 1.5 / BALL_MAX_SPEED_FT_PER_SECOND * 1000);
+}
+
+function appendAdaptiveAction(
+  run: SimulationRun,
+  kind: "movement" | "pass",
+  handler: PlaybookMarker,
+  target: CourtPoint,
+  recipient: PlaybookMarker | null,
+  label: string,
+  routeStart: CourtPoint,
+) {
+  const sequence = Math.max(0, ...run.actions.map((action) => action.sequence)) + 1;
+  const movementDistance = pointDistanceFeet(handler, target);
+  const durationMs = kind === "pass"
+    ? adaptivePassDuration(routeStart, target)
+    : Math.max(
+        650,
+        movementDistance * 1.5 / OFFENSE_MAX_SPEED_FT_PER_SECOND * 1000,
+        2.4 * Math.sqrt(movementDistance / OFFENSE_ACCELERATION_FT_PER_SECOND) * 1000,
+      );
+  const arrow: PlaybookArrow = {
+    id: `adaptive-read-${kind}`,
+    kind,
+    sequence,
+    timing: durationMs / 1000,
+    start: { x: routeStart.x, y: routeStart.y },
+    end: { ...target },
+  };
+  const action: BoundAction = {
+    arrow,
+    sequence,
+    actorId: handler.id,
+    recipientId: recipient?.id ?? null,
+    recipientStart: recipient ? { x: recipient.x, y: recipient.y } : null,
+    startTime: run.actionDurationMs,
+    durationMs,
+    plannedStart: { x: routeStart.x, y: routeStart.y },
+    controlOffset: null,
+    adaptiveReadLabel: `Read: ${label.toLowerCase()}`,
+  };
+  run.actions.push(action);
+  run.actionDurationMs += durationMs;
+  run.durationMs = run.actionDurationMs + run.shotDurationMs;
+  run.adaptiveReadLabel = label;
+  run.adaptiveReadRoute = {
+    start: { x: routeStart.x, y: routeStart.y },
+    end: { x: target.x, y: target.y },
+    kind,
+  };
+}
+
+function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
+  if (run.adaptiveReadResolved) return;
+  run.adaptiveReadResolved = true;
+  const handler = markerForId(run.players, run.ballHandlerId);
+  if (!handler) {
+    run.adaptiveReadLabel = "No ball handler";
+    run.adaptiveReadReason = "The play has no player in possession to continue the action.";
+    return;
+  }
+
+  const ball = run.ball ?? handler;
+  const passCandidates = run.players
+    .filter((player) => player.id !== handler.id)
+    .map((player) => {
+      const role = adaptiveTargetRole(run, player.id, hoop);
+      const receiverGap = defenderGap(player, run.defenders);
+      const laneGap = segmentClearanceFeet(ball, player, run.defenders);
+      const teammateGap = nearestTeammateGap(player, handler.id, run.players);
+      const boundedReceiverGap = Number.isFinite(receiverGap) ? Math.min(receiverGap, 18) : 18;
+      const boundedLaneGap = Number.isFinite(laneGap) ? Math.min(laneGap, 12) : 12;
+      const boundedTeammateGap = Math.min(teammateGap, 18);
+      const roleValue = role === "roller" ? 5 : role === "popping screener" ? 4.5 : role === "cutter" ? 4 : role === "post" ? 3.5 : 0;
+      const score = boundedReceiverGap * 1.7 + boundedLaneGap * 1.2 + boundedTeammateGap * 0.45 + roleValue;
+      return { player, role, receiverGap, laneGap, teammateGap, score };
+    });
+  const specialPass = passCandidates
+    .filter((candidate) => candidate.role !== "perimeter" && candidate.receiverGap >= 3.5 && candidate.laneGap >= 2.25 && candidate.teammateGap >= 3)
+    .sort((a, b) => b.score - a.score || a.player.id - b.player.id)[0];
+  if (specialPass) {
+    const label = adaptiveRoleLabel(specialPass.role);
+    const space = Number.isFinite(specialPass.receiverGap) ? `${specialPass.receiverGap.toFixed(1)} ft of space` : "open space";
+    run.adaptiveReadReason = `Player ${specialPass.player.id} has ${space}, a clear passing lane, and floor spacing.`;
+    appendAdaptiveAction(run, "pass", handler, specialPass.player, specialPass.player, label, ball);
+    return;
+  }
+
+  const handlerGap = defenderGap(handler, run.defenders);
+  const hoopGap = pointDistanceFeet(handler, hoop);
+  if (hoopGap > 9 && hoopGap <= 30) {
+    const driveTarget = pointToward(handler, hoop, Math.min(10, hoopGap - 4));
+    const laneGap = segmentClearanceFeet(handler, driveTarget, run.defenders);
+    const teammateGap = segmentClearanceFeet(handler, driveTarget, run.players.filter((player) => player.id !== handler.id));
+    if (laneGap >= 3.5 && handlerGap >= 3.5 && teammateGap >= 2.25) {
+      run.adaptiveReadReason = "The direct route to the basket has room between defenders and teammates.";
+      appendAdaptiveAction(run, "movement", handler, driveTarget, null, "Attack the open lane", handler);
+      return;
+    }
+  }
+
+  const perimeterPass = passCandidates
+    .filter((candidate) => candidate.role === "perimeter" && candidate.receiverGap >= 4 && candidate.laneGap >= 2.5 && candidate.teammateGap >= 3.5)
+    .sort((a, b) => b.score - a.score || a.player.id - b.player.id)[0];
+  if (perimeterPass) {
+    const space = Number.isFinite(perimeterPass.receiverGap) ? `${perimeterPass.receiverGap.toFixed(1)} ft of space` : "open space";
+    run.adaptiveReadReason = `Player ${perimeterPass.player.id} is free on the perimeter with ${space} and good floor spacing.`;
+    appendAdaptiveAction(run, "pass", handler, perimeterPass.player, perimeterPass.player, "Kick to the open player", ball);
+    return;
+  }
+
+  run.adaptiveReadLabel = "No safe continuation";
+  run.adaptiveReadReason = "Defenders cover the passing lanes and drive, so the handler takes the shot.";
 }
 
 function actionOverlapsPlayers(action: BoundAction, start: number, end: number, playerIds: Set<number>) {
@@ -497,6 +668,11 @@ function copyFrame(frame: SimulationFrame): SimulationFrame {
     ball: frame.ball ? { ...frame.ball } : null,
     shotStart: frame.shotStart ? { ...frame.shotStart } : null,
     shotTarget: frame.shotTarget ? { ...frame.shotTarget } : null,
+    adaptiveReadRoute: frame.adaptiveReadRoute ? {
+      ...frame.adaptiveReadRoute,
+      start: { ...frame.adaptiveReadRoute.start },
+      end: { ...frame.adaptiveReadRoute.end },
+    } : null,
   };
 }
 
@@ -523,6 +699,13 @@ function frameFor(run: SimulationRun): SimulationFrame {
     ball: run.ball ? { ...run.ball } : null,
     activeSequence: activeAction?.sequence ?? null,
     activeActionLabel: actionLabels.length ? [...new Set(actionLabels)].join(" · ") : null,
+    adaptiveReadLabel: run.adaptiveReadLabel,
+    adaptiveReadReason: run.adaptiveReadReason,
+    adaptiveReadRoute: run.adaptiveReadRoute ? {
+      ...run.adaptiveReadRoute,
+      start: { ...run.adaptiveReadRoute.start },
+      end: { ...run.adaptiveReadRoute.end },
+    } : null,
     defensiveQuality: calculateDefensiveQuality(run.players, run.defenders, run.ballHandlerId, run.assignments, HOOP_POINT),
     offBallQuality: calculateOffBallQuality(run.players, run.ball, run.settings, run.defenders, run.ballHandlerId),
     shotPhase,
@@ -542,6 +725,9 @@ function createInitialFrame(): SimulationFrame {
     ball: null,
     activeSequence: null,
     activeActionLabel: null,
+    adaptiveReadLabel: null,
+    adaptiveReadReason: null,
+    adaptiveReadRoute: null,
     defensiveQuality: 0,
     offBallQuality: 0,
     shotPhase: "idle",
@@ -652,6 +838,11 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     shotShooterId: null,
     shotQualityAtRelease: 0,
     shotDurationMs: SIMULATION_SHOT_MS,
+    plannedActionDurationMs: actionDurationMs,
+    adaptiveReadResolved: false,
+    adaptiveReadLabel: null,
+    adaptiveReadReason: null,
+    adaptiveReadRoute: null,
     frame: createInitialFrame(),
   };
   run.frame = frameFor(run);
@@ -1321,7 +1512,7 @@ function nextTimeBoundary(run: SimulationRun, stepEnd: number) {
     stepEnd,
     run.durationMs,
     nextActionBoundary,
-    run.actionDurationMs > run.elapsedMs ? run.actionDurationMs : Number.POSITIVE_INFINITY,
+    run.actionDurationMs > run.elapsedMs + 1e-6 ? run.actionDurationMs : Number.POSITIVE_INFINITY,
   );
 }
 
@@ -1368,7 +1559,8 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   }
   if (startTime < run.actionDurationMs) updateDefense(run, sampleTime, dt, hoop);
   run.elapsedMs = endTime;
-  if (run.elapsedMs >= run.actionDurationMs && !run.shotStart) {
+  if (run.elapsedMs >= run.plannedActionDurationMs && !run.adaptiveReadResolved) resolveAdaptiveRead(run, hoop);
+  if (run.elapsedMs >= run.actionDurationMs && run.adaptiveReadResolved && !run.shotStart) {
     const shooter = markerForId(run.players, run.ballHandlerId) ?? run.players[nearestPointIndex(run.players, run.ball ?? hoop)] ?? null;
     if (shooter) {
       run.shotStart = run.ball ? { ...run.ball } : { x: shooter.x, y: shooter.y };

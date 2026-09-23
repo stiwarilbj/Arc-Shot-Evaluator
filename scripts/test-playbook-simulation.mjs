@@ -290,7 +290,8 @@ assert.deepEqual(STARTER_PLAYS.map((play) => play.name), [
   'Pick and roll', 'Give and go', 'Drive and kick', 'Horns', 'Flex', 'Pick and pop',
   'Inverted pick and roll', 'Spain pick and roll', 'Floppy', '5-out motion', 'Horns twist',
   'UCLA cut', 'Princeton backdoor', 'Pistol', 'Chicago', 'Elevator',
-], 'the starter library includes all sixteen requested plays');
+  '1-4 high', '4-out 1-in', '3-out 2-in', 'Shuffle', 'Triangle', 'Zipper', 'Box', 'High-low',
+], 'the starter library includes all twenty-four plays');
 const spainStarter = STARTER_PLAYS.find((play) => play.name === 'Spain pick and roll');
 assert.deepEqual(spainStarter.arrows.filter((item) => ['screen', 'pick-roll', 'pick-pop', 'off-ball-screen'].includes(item.kind)).map((item) => item.sequence), [1, 2], 'the Spain back screen follows the initial ball screen');
 for (const play of [READY_SETUP, ...STARTER_PLAYS, EMPTY_COURT]) {
@@ -298,11 +299,94 @@ for (const play of [READY_SETUP, ...STARTER_PLAYS, EMPTY_COURT]) {
   const snapshot = structuredClone(play);
   const run = createSimulationRun(play, settings);
   assert.deepEqual(play, snapshot, `${play.name} stays unchanged when it starts`);
-  advance(run, run.durationMs + SIMULATION_STEP_MS * 2);
+  advance(run, run.durationMs + 4000);
   assert.equal(run.elapsedMs, run.durationMs, `${play.name} reaches the end of its automatic-shot timeline`);
   assert.equal(run.frame.shotPhase, 'result', `${play.name} finishes with a shot result`);
+  assert.equal(run.adaptiveReadResolved, true, `${play.name} resolves its read from live defender positions`);
+  assert.ok(run.adaptiveReadLabel && run.adaptiveReadReason, `${play.name} explains its selected read or fallback`);
   assert.ok(run.players.every((player) => Number.isFinite(player.x) && Number.isFinite(player.y)));
 }
+
+// Adaptive reads inspect the completed action state, preserve the authored
+// diagram, and add a temporary route before the shot.
+const openRollReadDraft = makeDraft({
+  players: [[50, 76], [56, 68], [25, 33]],
+  ball: [50, 76],
+  defenders: [[8, 8], [91, 8], [8, 91]],
+  arrows: [{ id: 'read-roll-screen', kind: 'pick-roll', screener_id: 2, handler_id: 1, start: { x: 56, y: 68 }, end: { x: 53, y: 66 }, sequence: 1, timing: 1.2 }],
+});
+const openRollSnapshot = structuredClone(openRollReadDraft);
+const openRollRun = createSimulationRun(openRollReadDraft, { ...settings, defenseStrategy: 'off' });
+advance(openRollRun, openRollRun.plannedActionDurationMs);
+assert.equal(openRollRun.adaptiveReadResolved, true, 'the read is evaluated after the drawn and automatic actions end');
+assert.equal(openRollRun.actions.at(-1).arrow.kind, 'pass', 'an open roller receives the adaptive continuation');
+assert.equal(openRollRun.actions.at(-1).recipientId, 2, 'the open roll recipient is identified from the screen action');
+assert.match(openRollRun.adaptiveReadLabel, /roller/i);
+assert.match(openRollRun.adaptiveReadReason, /clear passing lane/i);
+assert.equal(openRollRun.frame.shotPhase, 'idle', 'a read continuation delays the shot until its route finishes');
+assert.equal(openRollRun.frame.adaptiveReadRoute.kind, 'pass', 'the live frame exposes the temporary pass route');
+assert.deepEqual(openRollReadDraft, openRollSnapshot, 'adaptive actions never enter the saved diagram');
+advance(openRollRun, openRollRun.actions.at(-1).durationMs + SIMULATION_STEP_MS);
+assert.equal(openRollRun.ballHandlerId, 2, 'an adaptive pass transfers possession at its completion boundary');
+assert.equal(openRollRun.frame.shotPhase, 'setup', 'the shot starts after the adaptive pass arrives');
+
+const openLaneReadDraft = makeDraft({
+  players: [[50, 70], [24, 55]],
+  ball: [50, 70],
+  defenders: [[8, 8], [92, 8]],
+});
+const openLaneRun = createSimulationRun(openLaneReadDraft, { ...settings, defenseStrategy: 'off' });
+advance(openLaneRun, openLaneRun.plannedActionDurationMs);
+assert.equal(openLaneRun.actions.at(-1).arrow.kind, 'movement', 'a clear lane triggers a drive when no special receiver is available');
+assert.equal(openLaneRun.actions.at(-1).actorId, 1, 'the current handler owns the adaptive drive');
+assert.match(openLaneRun.adaptiveReadLabel, /open lane/i);
+const adaptiveDrive = openLaneRun.actions.at(-1);
+let previousAdaptiveHandler = { ...openLaneRun.players.find((player) => player.id === 1) };
+while (openLaneRun.elapsedMs < openLaneRun.actionDurationMs - 0.001) {
+  advance(openLaneRun, SIMULATION_STEP_MS);
+  const currentHandler = openLaneRun.players.find((player) => player.id === 1);
+  assert.ok(pointDistanceFeet(previousAdaptiveHandler, currentHandler) <= 19 * SIMULATION_STEP_MS / 1000 + 0.002, 'the adaptive drive obeys the existing offensive speed limit');
+  previousAdaptiveHandler = { ...currentHandler };
+}
+assert.ok(pointDistanceFeet(previousAdaptiveHandler, adaptiveDrive.arrow.end) < 1, 'the handler completes the selected route before the shot');
+
+const perimeterPassDraft = makeDraft({
+  players: [[50, 76], [25, 59], [81, 56]],
+  ball: [50, 76],
+  defenders: [[50, 56], [81, 57], [9, 9]],
+});
+const perimeterPassRun = createSimulationRun(perimeterPassDraft, { ...settings, defenseStrategy: 'off' });
+advance(perimeterPassRun, perimeterPassRun.plannedActionDurationMs);
+assert.equal(perimeterPassRun.actions.at(-1).arrow.kind, 'pass', 'a clear perimeter teammate is the next read when the drive lane is covered');
+assert.equal(perimeterPassRun.actions.at(-1).recipientId, 2, 'the read chooses the open passing lane over the guarded wing');
+assert.match(perimeterPassRun.adaptiveReadLabel, /kick/i);
+
+const spacedReadDraft = makeDraft({
+  players: [[70, 75], [25, 25], [25.5, 25], [10, 55]],
+  ball: [70, 75],
+  defenders: [[69, 68], [8, 8], [90, 90]],
+});
+const spacedReadRun = createSimulationRun(spacedReadDraft, { ...settings, defenseStrategy: 'off' });
+advance(spacedReadRun, spacedReadRun.plannedActionDurationMs);
+assert.equal(spacedReadRun.actions.at(-1)?.recipientId, 4, 'a receiver crowded by a teammate is skipped in favor of a spaced perimeter option');
+assert.match(spacedReadRun.adaptiveReadReason, /good floor spacing/i);
+
+const coveredReadDraft = makeDraft({
+  players: [[50, 76], [25, 70]],
+  ball: [50, 76],
+  defenders: [[50, 57], [25, 70]],
+});
+const coveredReadRun = createSimulationRun(coveredReadDraft, { ...settings, defenseStrategy: 'off' });
+advance(coveredReadRun, coveredReadRun.plannedActionDurationMs);
+assert.equal(coveredReadRun.actions.length, 0, 'the read engine does not force a continuation through covered routes');
+assert.equal(coveredReadRun.adaptiveReadRoute, null, 'a shot fallback does not show a false route');
+assert.equal(coveredReadRun.adaptiveReadLabel, 'No safe continuation');
+assert.match(coveredReadRun.adaptiveReadReason, /takes the shot/i);
+
+const repeatReadRun = createSimulationRun(structuredClone(openRollReadDraft), { ...settings, defenseStrategy: 'off' });
+advance(repeatReadRun, repeatReadRun.plannedActionDurationMs);
+assert.equal(repeatReadRun.adaptiveReadLabel, openRollRun.adaptiveReadLabel, 'identical live reads resolve deterministically');
+assert.deepEqual(repeatReadRun.adaptiveReadRoute, openRollRun.adaptiveReadRoute, 'identical runs select the same temporary route');
 
 
 
@@ -610,4 +694,4 @@ const noOpportunityDraft = makeDraft({
 const noOpportunityRun = createSimulationRun(noOpportunityDraft, autoSettings({ screen: true, handoff: true, pickRoll: true, offBallScreen: true }));
 assert.equal(noOpportunityRun.actions.some((action) => action.automatic), false, 'the simulator does not invent an action when no matchup opportunity exists');
 
-console.log('Playbook simulation tests passed: timeline order, live possession, continuous shot boundary, bounded/stable defense, help and recovery, screen coverage, switching, paused edits, settings, draft isolation, and all presets');
+console.log('Playbook simulation tests passed: timeline order, live possession, continuous shot boundary, adaptive read selection and spacing, bounded/stable defense, help and recovery, screen coverage, switching, paused edits, settings, draft isolation, and all 24 starters');

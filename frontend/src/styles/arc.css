@@ -649,6 +649,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .playbook-simulation-bar { display: flex; align-items: center; gap: 10px; min-height: 43px; padding: 6px 9px; border: 1px solid var(--line); border-top: 0; background: var(--surface-2); color: var(--muted); font-size: 10px; flex-wrap: wrap; }
 .simulation-ai-label { display: inline-flex; align-items: center; gap: 5px; color: var(--orange); font-weight: 700; white-space: nowrap; }
 .simulation-copy { min-width: 120px; color: var(--dim); }
+.simulation-read-copy { flex: 1 1 210px; color: var(--text); font-size: 10px; line-height: 1.4; }
 .simulation-quality { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: var(--muted); white-space: nowrap; }
 .simulation-quality strong { color: var(--make); font-size: 13px; }
 .simulation-settings-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 27px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 650; white-space: nowrap; }
@@ -664,6 +665,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .simulation-setting-range output { color: var(--text); font-weight: 700; }
 .simulation-setting-range input { width: 100%; accent-color: var(--orange); }
 .simulation-settings-note { color: var(--dim); }
+.adaptive-read-route { fill: none; stroke: #a9dc8e; stroke-width: 3; stroke-dasharray: 8 6; stroke-linecap: round; opacity: .95; vector-effect: non-scaling-stroke; pointer-events: none; }
+.adaptive-read-pass { stroke: var(--orange); }
+.adaptive-read-movement { stroke: #a9dc8e; }
 .sequence-editor { display: inline-flex; align-items: center; gap: 5px; padding-left: 9px; border-left: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .sequence-editor input { width: 45px; min-height: 27px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--text); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
 .sequence-editor input:focus { border-color: var(--orange); outline: none; }

@@ -74,7 +74,7 @@ export function UsageGuide() {
               <li>Select a tool, then click or drag on the court; circles are offense, X markers are defenders, and the ball is its own marker</li>
               <li>For Pick and pop choose the screener and handler, then place the screen and pop destination; for Pin-down choose the screener and cutter, then place the screen and cutter destination</li>
               <li>For an off-ball screen choose the screener, cutter, and screen spot; for Backdoor cut select a cutter and draw the route to the basket</li>
-              <li>Open Starter plays to search sixteen editable sets, including Horns, Flex, Floppy, Spain, Pistol, Chicago, and Elevator</li>
+              <li>Open Starter plays to search 24 editable sets, including Horns, Flex, Shuffle, Triangle, Zipper, Box, and High-low</li>
               <li>Drag arrows to edit them even while another drawing tool is active; select an arrow to set its order, duration, or curved path</li>
               <li>Use Delete, Undo, and Redo to revise the diagram; touch dragging and arrow-key nudging are supported</li>
             </ul>
@@ -92,9 +92,10 @@ export function UsageGuide() {
           <article className="guide-card">
             <h3>Simulate and save</h3>
             <ul>
-              <li>Choose Play to run the sequence; ARC moves defenders, adjusts help and closeouts, and finishes with a shot</li>
+              <li>Choose Play to run the sequence; ARC moves defenders, adjusts help and closeouts, then reads the live defense for an open cut, roll, post, drive, or perimeter pass before the shot</li>
               <li>Use Auto actions in the left rail to choose which screens, handoffs, pick and rolls, and off-ball screens the simulator may add when a matchup allows</li>
               <li>Open Settings to tune offensive cuts or spacing, defensive reads, and movement intensity; pause to edit before resuming</li>
+              <li>The adaptive read and route are temporary playback overlays; saving or exporting still uses the drawn diagram</li>
               <li>Save play stores the diagram and actions; Saved plays lets you reopen, duplicate, or delete a play</li>
               <li>Export PNG downloads a clean court image; hosted plays are saved in this browser, while the local app uses its local server</li>
             </ul>

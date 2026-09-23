@@ -275,6 +275,9 @@ const EMPTY_SIMULATION_FRAME: SimulationFrame = {
   ball: null,
   activeSequence: null,
   activeActionLabel: null,
+  adaptiveReadLabel: null,
+  adaptiveReadReason: null,
+  adaptiveReadRoute: null,
   defensiveQuality: 0,
   offBallQuality: 0,
   shotPhase: "idle",
@@ -925,7 +928,7 @@ export function PlaybookBoard() {
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     clone.setAttribute("width", "1600");
     clone.setAttribute("height", "1152");
-    clone.querySelectorAll(".selection-handle, .drawing-preview").forEach((node) => node.remove());
+    clone.querySelectorAll(".selection-handle, .drawing-preview, .adaptive-read-route").forEach((node) => node.remove());
     const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
     style.textContent = `.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
     clone.prepend(style);
@@ -1044,7 +1047,8 @@ export function PlaybookBoard() {
           </div>
           <div className="playbook-simulation-bar" role="region" aria-label="Play simulation controls">
             <span className="simulation-ai-label"><ShieldCheck size={14} /> ARC defensive AI</span>
-            <span className="simulation-copy">{simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeActionLabel ? `${simulationFrame.activeActionLabel} in progress` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
+            <span className="simulation-copy">{simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeActionLabel ? `${simulationFrame.activeActionLabel} in progress` : simulationFrame.adaptiveReadLabel ? `Read: ${simulationFrame.adaptiveReadLabel}` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
+            {simulationActive && simulationFrame.adaptiveReadReason ? <span className="simulation-read-copy" role="status">{simulationFrame.adaptiveReadReason}</span> : null}
             <span className="simulation-quality" role="status">Off-ball quality <strong>{offBallQualityDisplay}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
@@ -1098,6 +1102,12 @@ export function PlaybookBoard() {
                   {active ? <><circle cx={start.x} cy={start.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "start")} /><circle cx={end.x} cy={end.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "end")} />{arrow.exit_target ? <circle cx={markerPoint(arrow.exit_target).x} cy={markerPoint(arrow.exit_target).y} r="8" className="selection-handle exit-target-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "exit")} /> : null}{arrow.path === "curve" ? <circle cx={control.x} cy={control.y} r="7" className="curve-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "control")} /> : null}</> : null}
                 </g>;
               })}
+              {simulationActive && simulationFrame.adaptiveReadRoute ? (() => {
+                const start = markerPoint(simulationFrame.adaptiveReadRoute.start);
+                const end = markerPoint(simulationFrame.adaptiveReadRoute.end);
+                const marker = simulationFrame.adaptiveReadRoute.kind === "pass" ? "pass-arrow" : "movement-arrow";
+                return <path className={`adaptive-read-route adaptive-read-${simulationFrame.adaptiveReadRoute.kind}`} d={`M${start.x} ${start.y} L${end.x} ${end.y}`} markerEnd={`url(#${marker})`}><title>{simulationFrame.adaptiveReadLabel}: {simulationFrame.adaptiveReadReason}</title></path>;
+              })() : null}
               {drawStart && drawEnd ? <path d={actionPath({ id: "preview", kind: tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement", start: drawStart, end: drawEnd, path: "straight" })} className={`drawing-preview ${actionClass(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")}`} markerEnd={`url(#${actionMarker(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")})`} /> : null}
               {(draft.defenders_visible || simulationActive) ? (simulationActive ? simulationFrame.defenders : draft.defenders).map((marker) => {
                 const point = markerPoint(marker);

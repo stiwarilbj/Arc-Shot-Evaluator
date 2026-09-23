@@ -113,6 +113,50 @@ export const STARTER_PLAYS: PlaybookDraft[] = [
     offBall("elevator-right", "pin-down", [[50, 78], [50, 38], [25, 31], [40, 39], [60, 39]], 5, 2, [55, 50], 1, [50, 61]),
     arrow("elevator-shot-pass", "pass", [50, 78], [50, 61], 0.9, { sequence: 2 }),
   ], [[48, 69], [50, 41], [30, 35], [42, 42], [58, 42]]),
+  draft("1-4 high", [[50, 78], [25, 56], [75, 56], [42, 65], [58, 65]], [50, 78], [
+    arrow("one-four-entry", "pass", [50, 78], [25, 56], 0.9, { sequence: 1 }),
+    offBall("one-four-back-screen", "off-ball-screen", [[50, 78], [25, 56], [75, 56], [42, 65], [58, 65]], 4, 3, [66, 57], 2, [74, 42]),
+    arrow("one-four-feed", "pass", [25, 56], [74, 42], 0.9, { sequence: 3 }),
+  ], [[48, 68], [31, 58], [69, 58], [42, 60], [58, 60]]),
+  draft("4-out 1-in", [[50, 78], [27, 57], [73, 57], [25, 31], [50, 43]], [50, 78], [
+    arrow("four-out-entry", "pass", [50, 78], [27, 57], 0.9, { sequence: 1 }),
+    arrow("four-out-flash", "movement", [50, 43], [48, 55], 1, { sequence: 1 }),
+    arrow("four-out-post-feed", "pass", [27, 57], [48, 55], 0.9, { sequence: 2 }),
+    arrow("four-out-space", "movement", [73, 57], [80, 48], 1, { sequence: 2 }),
+  ], [[48, 68], [32, 58], [68, 58], [30, 34], [50, 47]]),
+  draft("3-out 2-in", [[50, 78], [25, 57], [75, 57], [43, 52], [55, 37]], [50, 78], [
+    arrow("three-out-entry", "pass", [50, 78], [43, 52], 0.9, { sequence: 1 }),
+    arrow("three-out-seal", "movement", [55, 37], [50, 27], 1, { sequence: 1 }),
+    arrow("three-out-high-low", "pass", [43, 52], [50, 27], 0.9, { sequence: 2 }),
+    arrow("three-out-lift", "movement", [25, 57], [31, 46], 1, { sequence: 2 }),
+  ], [[48, 68], [31, 58], [69, 58], [42, 49], [57, 39]]),
+  draft("Shuffle", [[50, 78], [75, 57], [25, 34], [50, 58], [58, 39]], [50, 78], [
+    arrow("shuffle-reversal", "pass", [50, 78], [75, 57], 0.9, { sequence: 1 }),
+    offBall("shuffle-cut", "off-ball-screen", [[50, 78], [75, 57], [25, 34], [50, 58], [58, 39]], 4, 3, [42, 53], 2, [49, 30]),
+    arrow("shuffle-feed", "pass", [75, 57], [49, 30], 0.9, { sequence: 3 }),
+  ], [[48, 68], [68, 58], [31, 37], [51, 55], [58, 42]]),
+  draft("Triangle", [[50, 78], [73, 56], [78, 30], [61, 44], [27, 56]], [50, 78], [
+    arrow("triangle-entry", "pass", [50, 78], [73, 56], 0.9, { sequence: 1 }),
+    arrow("triangle-post-entry", "pass", [73, 56], [61, 44], 0.9, { sequence: 2 }),
+    offBall("triangle-corner-cut", "off-ball-screen", [[50, 78], [73, 56], [78, 30], [61, 44], [27, 56]], 4, 3, [67, 38], 3, [52, 25]),
+    arrow("triangle-post-feed", "pass", [61, 44], [52, 25], 0.9, { sequence: 4 }),
+  ], [[48, 68], [69, 56], [73, 33], [58, 47], [31, 57]]),
+  draft("Zipper", [[50, 78], [25, 32], [75, 56], [37, 59], [63, 59]], [50, 78], [
+    arrow("zipper-drift", "movement", [50, 78], [72, 70], 1, { sequence: 1 }),
+    offBall("zipper-cut", "pin-down", [[50, 78], [25, 32], [75, 56], [37, 59], [63, 59]], 5, 2, [50, 48], 1, [50, 64]),
+    arrow("zipper-entry", "pass", [72, 70], [50, 64], 0.9, { sequence: 2 }),
+  ], [[48, 68], [30, 35], [69, 56], [39, 57], [61, 57]]),
+  draft("Box", [[50, 78], [34, 40], [66, 40], [39, 57], [61, 57]], [50, 78], [
+    offBall("box-left-stagger", "pin-down", [[50, 78], [34, 40], [66, 40], [39, 57], [61, 57]], 4, 2, [37, 49], 1, [26, 60]),
+    offBall("box-right-stagger", "pin-down", [[50, 78], [34, 40], [66, 40], [39, 57], [61, 57]], 5, 3, [63, 49], 1, [74, 60]),
+    arrow("box-entry", "pass", [50, 78], [26, 60], 0.9, { sequence: 2 }),
+  ], [[48, 68], [37, 43], [63, 43], [40, 55], [60, 55]]),
+  draft("High-low", [[50, 78], [25, 57], [75, 57], [43, 34], [56, 56]], [50, 78], [
+    arrow("high-low-entry", "pass", [50, 78], [56, 56], 0.9, { sequence: 1 }),
+    arrow("high-low-seal", "movement", [43, 34], [47, 26], 1, { sequence: 1 }),
+    arrow("high-low-feed", "pass", [56, 56], [47, 26], 0.9, { sequence: 2 }),
+    arrow("high-low-lift", "movement", [25, 57], [33, 47], 1, { sequence: 2 }),
+  ], [[48, 68], [31, 58], [69, 58], [44, 37], [54, 53]]),
 ];
 
 export const STARTER_PLAY_DETAILS: Record<string, { category: string; description: string }> = {
@@ -132,6 +176,14 @@ export const STARTER_PLAY_DETAILS: Record<string, { category: string; descriptio
   Pistol: { category: "Ball screens", description: "Wing entry, handoff, and a quick ball screen." },
   Chicago: { category: "Off-ball screens", description: "Pin-down flows into a wing handoff and drive." },
   Elevator: { category: "Off-ball screens", description: "Two screeners close a gate as the shooter cuts through." },
+  "1-4 high": { category: "Classic sets", description: "Elbow alignment opens a back screen and a cut to the rim." },
+  "4-out 1-in": { category: "Classic sets", description: "Four perimeter spots open a flash and post-entry option." },
+  "3-out 2-in": { category: "Classic sets", description: "A high-post touch sets up a low-post seal and high-low feed." },
+  Shuffle: { category: "Classic sets", description: "Reverse the ball, then send a cutter off the high-post screen." },
+  Triangle: { category: "Classic sets", description: "Build a strong-side triangle around a post entry and corner cut." },
+  Zipper: { category: "Classic sets", description: "A wing drift opens the lane for a screened zipper cut." },
+  Box: { category: "Classic sets", description: "Two staggered screens free either side from a box alignment." },
+  "High-low": { category: "Classic sets", description: "Feed the high post, seal inside, and look for the low-post pass." },
 };
 
 export const EMPTY_COURT: PlaybookDraft = draft("Empty court", [], null);
