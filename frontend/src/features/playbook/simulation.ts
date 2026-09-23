@@ -12,6 +12,7 @@ export type SimulationFrame = {
   defenders: PlaybookMarker[];
   ball: CourtPoint | null;
   activeSequence: number | null;
+  activeActionLabel: string | null;
   defensiveQuality: number;
   offBallQuality: number;
   shotPhase: "idle" | "setup" | "air" | "result";
@@ -33,6 +34,9 @@ type BoundAction = {
   durationMs: number;
   plannedStart: CourtPoint | null;
   controlOffset: CourtPoint | null;
+  automatic?: boolean;
+  partnerId?: number | null;
+  partnerStart?: CourtPoint | null;
 };
 
 type Velocity = { x: number; y: number };
@@ -233,27 +237,42 @@ function routeLength(action: PlaybookArrow, start: CourtPoint) {
   return length;
 }
 
-function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDurationMs: number } {
+function offBallCutterTarget(screenPoint: CourtPoint, hoop = HOOP_POINT) {
+  return pointToward(screenPoint, hoop, 8);
+}
+
+function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDurationMs: number; ballHandlerId: number | null; finalPositions: PlaybookMarker[] } {
   const positions = source.players.map((player) => ({ ...player }));
   let ballHandlerId = source.players[nearestPointIndex(source.players, source.ball ?? source.players[0] ?? HOOP_POINT)]?.id ?? null;
   let cursor = 0;
   const actions = orderedArrows(source.arrows).map(({ arrow, sequence }) => {
     const isTransfer = arrow.kind === "pass" || arrow.kind === "handoff";
-    const actorIndex = isTransfer && ballHandlerId != null
-      ? positions.findIndex((player) => player.id === ballHandlerId)
-      : nearestPointIndex(positions, arrow.start);
+    const isOffBallScreen = arrow.kind === "off-ball-screen";
+    const usesNamedScreener = arrow.screener_id != null && (isOffBallScreen || arrow.kind === "screen" || arrow.kind === "pick-roll");
+    const actorIndex = usesNamedScreener
+      ? positions.findIndex((player) => player.id === arrow.screener_id)
+      : isTransfer && ballHandlerId != null
+        ? positions.findIndex((player) => player.id === ballHandlerId)
+        : nearestPointIndex(positions, arrow.start);
     const actor = positions[actorIndex] ?? null;
-    const recipientIndex = isTransfer ? nearestPointIndex(positions, arrow.end, actor?.id) : -1;
+    const recipientIndex = isOffBallScreen && arrow.cutter_id != null
+      ? positions.findIndex((player) => player.id === arrow.cutter_id)
+      : isTransfer ? nearestPointIndex(positions, arrow.end, actor?.id) : -1;
     const recipient = positions[recipientIndex] ?? null;
     const plannedStart = actor ? { x: actor.x, y: actor.y } : { ...arrow.start };
     const controlOffset = arrow.control
       ? { x: arrow.control.x - arrow.start.x, y: arrow.control.y - arrow.start.y }
       : null;
     const pathFeet = routeLength(arrow, plannedStart);
-    const receiverFeet = recipient ? pointDistanceFeet(recipient, arrow.end) : 0;
+    const receiverFeet = recipient
+      ? isOffBallScreen
+        ? pointDistanceFeet(recipient, arrow.end) + pointDistanceFeet(arrow.end, offBallCutterTarget(arrow.end))
+        : pointDistanceFeet(recipient, arrow.end)
+      : 0;
     const authoredDuration = clamp(arrow.timing ?? 1.2, 0.5, 4) * 1000;
-    const minimumMovementDuration = arrow.kind === "movement" || arrow.kind === "screen" || arrow.kind === "pick-roll"
-      ? (pathFeet * 1.5 / OFFENSE_MAX_SPEED_FT_PER_SECOND) * 1000
+    const movesOnCourt = arrow.kind === "movement" || arrow.kind === "screen" || arrow.kind === "pick-roll" || isOffBallScreen;
+    const minimumMovementDuration = movesOnCourt
+      ? Math.max(pathFeet, isOffBallScreen ? receiverFeet : 0) * 1.5 / OFFENSE_MAX_SPEED_FT_PER_SECOND * 1000
       : 0;
     const minimumTransferDuration = isTransfer
       ? Math.max(
@@ -274,16 +293,93 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
       controlOffset,
     };
     cursor += durationMs;
-    if ((arrow.kind === "movement" || arrow.kind === "screen" || arrow.kind === "pick-roll") && actorIndex >= 0) {
+    if (movesOnCourt && actorIndex >= 0) {
       positions[actorIndex] = { ...positions[actorIndex], ...arrow.end };
     }
-    if (isTransfer && recipientIndex >= 0) {
+    if (isOffBallScreen && recipientIndex >= 0) {
+      positions[recipientIndex] = { ...positions[recipientIndex], ...offBallCutterTarget(arrow.end) };
+    } else if (isTransfer && recipientIndex >= 0) {
       positions[recipientIndex] = { ...positions[recipientIndex], ...arrow.end };
       ballHandlerId = recipient?.id ?? ballHandlerId;
     }
     return boundAction;
   });
-  return { actions, actionDurationMs: Math.max(MIN_PLAY_DURATION_MS, cursor) };
+  return { actions, actionDurationMs: Math.max(MIN_PLAY_DURATION_MS, cursor), ballHandlerId, finalPositions: positions };
+}
+
+
+function normalizeSettings(settings: SimulationSettings): SimulationSettings {
+  return {
+    offenseOffBall: settings.offenseOffBall,
+    defenseOffBall: settings.defenseOffBall,
+    offBallIntensity: settings.offBallIntensity,
+    automaticActions: { ...settings.automaticActions },
+  };
+}
+
+function defenderGap(player: PlaybookMarker, defenders: PlaybookMarker[]) {
+  return defenders.length ? Math.min(...defenders.map((defender) => pointDistanceFeet(player, defender))) : Number.POSITIVE_INFINITY;
+}
+
+function automaticOffBallArrow(players: PlaybookMarker[], defenders: PlaybookMarker[], handlerId: number | null, sequence: number): PlaybookArrow | null {
+  if (players.length < 3 || handlerId == null) return null;
+  const cutters = players.filter((player) => player.id !== handlerId && defenderGap(player, defenders) <= 8)
+    .sort((a, b) => defenderGap(a, defenders) - defenderGap(b, defenders) || a.id - b.id);
+  for (const cutter of cutters) {
+    const cutterDefender = defenders.slice().sort((a, b) => pointDistanceFeet(a, cutter) - pointDistanceFeet(b, cutter) || a.id - b.id)[0];
+    if (!cutterDefender) continue;
+    const screener = players.filter((player) => player.id !== handlerId && player.id !== cutter.id)
+      .filter((player) => pointDistanceFeet(player, cutter) >= 4 && pointDistanceFeet(player, cutter) <= 16 && defenderGap(player, defenders) >= 4)
+      .sort((a, b) => pointDistanceFeet(a, cutter) - pointDistanceFeet(b, cutter) || a.id - b.id)[0];
+    if (!screener) continue;
+    const screenPoint = pointToward(cutter, cutterDefender, 3.25);
+    if (pointDistanceFeet(offBallCutterTarget(screenPoint), cutterDefender) < 3) continue;
+    return { id: `auto-offball-${sequence}`, kind: "off-ball-screen", sequence, timing: 1.25, start: { x: screener.x, y: screener.y }, end: screenPoint, screener_id: screener.id, cutter_id: cutter.id };
+  }
+  return null;
+}
+
+function automaticOnBallArrow(players: PlaybookMarker[], defenders: PlaybookMarker[], handlerId: number | null, hoop: CourtPoint, settings: SimulationSettings, excluded: Set<number>, sequence: number): PlaybookArrow | null {
+  if (players.length < 2 || handlerId == null) return null;
+  const handler = markerForId(players, handlerId);
+  if (!handler) return null;
+  const pressure = defenderGap(handler, defenders);
+  if (pressure > 12) return null;
+  const teammates = players.filter((player) => player.id !== handlerId && !excluded.has(player.id));
+  const receiver = teammates.filter((player) => pointDistanceFeet(player, handler) >= 3.5 && pointDistanceFeet(player, handler) <= 9 && defenderGap(player, defenders) >= 5.5)
+    .sort((a, b) => pointDistanceFeet(a, handler) - pointDistanceFeet(b, handler) || a.id - b.id)[0];
+  if (settings.automaticActions.handoff && pressure <= 7 && receiver) {
+    return { id: `auto-handoff-${sequence}`, kind: "handoff", sequence, timing: 1.15, start: { x: handler.x, y: handler.y }, end: { x: receiver.x, y: receiver.y } };
+  }
+  const screeners = teammates.filter((player) => pointDistanceFeet(player, handler) >= 4 && pointDistanceFeet(player, handler) <= 16)
+    .sort((a, b) => pointDistanceFeet(a, handler) - pointDistanceFeet(b, handler) || a.id - b.id);
+  for (const screener of screeners) {
+    const screenPoint = pointToward(handler, screener, Math.min(3.5, pointDistanceFeet(handler, screener) * 0.45));
+    const rollPoint = pointToward(screenPoint, hoop, 8);
+    const rollClearance = defenderGap({ ...screener, ...rollPoint }, defenders);
+    if (settings.automaticActions.pickRoll && pressure >= 3 && pressure <= 10 && pointDistanceFeet(handler, hoop) > 12 && rollClearance >= 3.5) {
+      return { id: `auto-pick-roll-${sequence}`, kind: "pick-roll", sequence, timing: 1.3, start: { x: screener.x, y: screener.y }, end: screenPoint, screener_id: screener.id };
+    }
+    if (settings.automaticActions.screen && pressure <= 12) {
+      return { id: `auto-screen-${sequence}`, kind: "screen", sequence, timing: 1.2, start: { x: screener.x, y: screener.y }, end: screenPoint, screener_id: screener.id };
+    }
+  }
+  return null;
+}
+
+function autoActionLabel(action: BoundAction) {
+  const prefix = action.automatic ? "Auto " : "";
+  if (action.arrow.kind === "pass") return `${prefix}pass`;
+  if (action.arrow.kind === "screen") return `${prefix}screen`;
+  if (action.arrow.kind === "off-ball-screen") return `${prefix}off-ball screen`;
+  if (action.arrow.kind === "handoff") return `${prefix}handoff`;
+  if (action.arrow.kind === "pick-roll") return `${prefix}pick and roll`;
+  return `${prefix}movement`;
+}
+
+function actionOverlapsPlayers(action: BoundAction, start: number, end: number, playerIds: Set<number>) {
+  return action.startTime < end && action.startTime + action.durationMs > start
+    && (playerIds.has(action.actorId ?? -1) || playerIds.has(action.recipientId ?? -1));
 }
 
 function bestDefensiveMatchups(players: PlaybookMarker[], defenders: PlaybookMarker[]) {
@@ -351,7 +447,9 @@ function copyFrame(frame: SimulationFrame): SimulationFrame {
 }
 
 function frameFor(run: SimulationRun): SimulationFrame {
-  const activeAction = run.actions.find((action) => run.elapsedMs >= action.startTime && run.elapsedMs < action.startTime + action.durationMs);
+  const activeActions = run.actions.filter((action) => run.elapsedMs >= action.startTime && run.elapsedMs < action.startTime + action.durationMs);
+  const activeAction = activeActions.find((action) => !action.automatic) ?? activeActions[0];
+  const actionLabels = activeActions.map(autoActionLabel);
   const shotElapsed = run.elapsedMs - run.actionDurationMs;
   const shotProgress = run.shotStart
     ? clamp(shotElapsed / run.shotDurationMs, 0, 1)
@@ -370,6 +468,7 @@ function frameFor(run: SimulationRun): SimulationFrame {
     defenders: run.defenders.map((defender) => ({ ...defender })),
     ball: run.ball ? { ...run.ball } : null,
     activeSequence: activeAction?.sequence ?? null,
+    activeActionLabel: actionLabels.length ? [...new Set(actionLabels)].join(" · ") : null,
     defensiveQuality: calculateDefensiveQuality(run.players, run.defenders, run.ballHandlerId, run.assignments, HOOP_POINT),
     offBallQuality: calculateOffBallQuality(run.players, run.ball, run.settings, run.defenders, run.ballHandlerId),
     shotPhase,
@@ -388,6 +487,7 @@ function createInitialFrame(): SimulationFrame {
     defenders: [],
     ball: null,
     activeSequence: null,
+    activeActionLabel: null,
     defensiveQuality: 0,
     offBallQuality: 0,
     shotPhase: "idle",
@@ -402,12 +502,66 @@ function createInitialFrame(): SimulationFrame {
 
 export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT): SimulationRun {
   const sourceCopy = structuredClone(source);
+  const runSettings = normalizeSettings(settings);
   const players = sourceCopy.players.map((player) => ({ ...player }));
   const ephemeralDefenders = sourceCopy.defenders.length === 0;
   const defenders = createGoalSideDefenders(players, sourceCopy.defenders, hoop);
   const assignments = new Map<number, number>();
   bestDefensiveMatchups(players, defenders).forEach((playerId, index) => assignments.set(defenders[index].id, playerId));
-  const { actions, actionDurationMs } = buildActions(sourceCopy);
+  const manual = buildActions(sourceCopy);
+  const actions = [...manual.actions];
+  let actionDurationMs = manual.actionDurationMs;
+  const projectedPlayers = manual.finalPositions.map((player) => ({ ...player }));
+  const projectedHandlerId = manual.ballHandlerId;
+  const projectedHandler = markerForId(projectedPlayers, projectedHandlerId);
+  const projectedBall = projectedHandler ? { x: projectedHandler.x, y: projectedHandler.y } : sourceCopy.ball;
+  const excludedForOnBall = new Set<number>();
+  let nextSequence = Math.max(0, ...actions.map((action) => action.sequence)) + 1;
+
+  if (runSettings.automaticActions.offBallScreen) {
+    const arrow = automaticOffBallArrow(projectedPlayers, defenders, projectedHandlerId, nextSequence++);
+    if (arrow) {
+      const single = buildActions({ ...sourceCopy, players: projectedPlayers, ball: projectedBall, arrows: [arrow] }).actions[0];
+      if (single) {
+        let startTime = manual.actionDurationMs;
+        const participants = new Set([single.actorId ?? -1, single.recipientId ?? -1]);
+        for (let candidate = 0; candidate + single.durationMs <= manual.actionDurationMs; candidate += 100) {
+          if (!manual.actions.some((action) => actionOverlapsPlayers(action, candidate, candidate + single.durationMs, participants))) {
+            startTime = candidate;
+            break;
+          }
+        }
+        const automatic = { ...single, startTime, automatic: true };
+        actions.push(automatic);
+        actionDurationMs = Math.max(actionDurationMs, startTime + automatic.durationMs);
+        if (automatic.actorId != null) excludedForOnBall.add(automatic.actorId);
+        if (automatic.recipientId != null) excludedForOnBall.add(automatic.recipientId);
+      }
+    }
+  }
+
+  if (runSettings.automaticActions.screen || runSettings.automaticActions.handoff || runSettings.automaticActions.pickRoll) {
+    const arrow = automaticOnBallArrow(projectedPlayers, defenders, projectedHandlerId, hoop, runSettings, excludedForOnBall, nextSequence++);
+    if (arrow) {
+      const single = buildActions({ ...sourceCopy, players: projectedPlayers, ball: projectedBall, arrows: [arrow] }).actions[0];
+      if (single) {
+        const endOfOtherAuto = actions.filter((action) => action.automatic).reduce((end, action) => Math.max(end, action.startTime + action.durationMs), manual.actionDurationMs);
+        const startTime = Math.max(manual.actionDurationMs, endOfOtherAuto);
+        const partnerId = arrow.kind === "screen" || arrow.kind === "pick-roll" ? projectedHandlerId : null;
+        const partner = markerForId(projectedPlayers, partnerId);
+        const automatic: BoundAction = {
+          ...single,
+          startTime,
+          automatic: true,
+          partnerId,
+          partnerStart: partner ? { x: partner.x, y: partner.y } : null,
+        };
+        actions.push(automatic);
+        actionDurationMs = Math.max(actionDurationMs, startTime + automatic.durationMs);
+      }
+    }
+  }
+
   const ball = sourceCopy.ball
     ? { ...sourceCopy.ball }
     : players[0]
@@ -428,7 +582,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     velocities: new Map(),
     recipientStartOverrides: new Map(),
     source: sourceCopy,
-    settings: { ...settings },
+    settings: runSettings,
     players,
     defenders,
     ball,
@@ -453,7 +607,7 @@ export function getSimulationFrame(run: SimulationRun) {
 }
 
 export function setSimulationRunSettings(run: SimulationRun, settings: SimulationSettings) {
-  run.settings = { ...settings };
+  run.settings = normalizeSettings(settings);
   run.frame = frameFor(run);
 }
 
@@ -524,8 +678,10 @@ function processActionStart(run: SimulationRun, action: BoundAction) {
   run.switchedActions.add(action.arrow.id);
   if (run.settings.defenseOffBall !== "switch") return;
   if (action.arrow.kind === "screen" || action.arrow.kind === "pick-roll") {
-    swapAssignments(run, action.actorId, run.ballHandlerId);
+    swapAssignments(run, action.actorId, action.partnerId ?? run.ballHandlerId);
   } else if (action.arrow.kind === "handoff") {
+    swapAssignments(run, action.actorId, action.recipientId);
+  } else if (action.arrow.kind === "off-ball-screen") {
     swapAssignments(run, action.actorId, action.recipientId);
   }
 }
@@ -693,7 +849,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       target = lerpPoint(target, assignment, 0.3 + progress * 0.4);
     }
     if (activeAction && (activeAction.arrow.kind === "screen" || activeAction.arrow.kind === "pick-roll")
-      && run.settings.defenseOffBall === "contain" && isOnBall) {
+      && run.settings.defenseOffBall === "contain" && (isOnBall || activeAction.partnerId === assignment.id)) {
       const start = activeAction.plannedStart ?? activeAction.arrow.start;
       const end = activeAction.arrow.end;
       const progress = clamp((timeMs - activeAction.startTime) / activeAction.durationMs, 0, 1);
@@ -751,7 +907,25 @@ function sampleMovementTarget(run: SimulationRun, action: BoundAction, timeMs: n
   const progress = effectiveStart
     ? clamp((timeMs - effectiveStart.atMs) / (action.startTime + action.durationMs - effectiveStart.atMs), 0, 1)
     : clamp((timeMs - action.startTime) / action.durationMs, 0, 1);
-  return routePoint(action, effectiveStart?.point ?? start, easeInOut(progress));
+  const easedProgress = easeInOut(progress);
+  if (action.automatic && action.arrow.kind === "pick-roll") {
+    const screen = action.arrow.end;
+    const roll = pointToward(screen, HOOP_POINT, 8);
+    return easedProgress < 0.45
+      ? lerpPoint(effectiveStart?.point ?? start, screen, easedProgress / 0.45)
+      : lerpPoint(screen, roll, (easedProgress - 0.45) / 0.55);
+  }
+  return routePoint(action, effectiveStart?.point ?? start, easedProgress);
+}
+
+function sampleCutterTarget(action: BoundAction, timeMs: number) {
+  const progress = easeInOut(clamp((timeMs - action.startTime) / action.durationMs, 0, 1));
+  const start = action.recipientStart ?? action.arrow.start;
+  const screen = action.arrow.end;
+  const finish = offBallCutterTarget(screen);
+  return progress < 0.5
+    ? lerpPoint(start, screen, progress * 2)
+    : lerpPoint(screen, finish, (progress - 0.5) * 2);
 }
 
 function actionActorTarget(run: SimulationRun, timeMs: number) {
@@ -764,15 +938,30 @@ function actionActorTarget(run: SimulationRun, timeMs: number) {
 function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: CourtPoint) {
   const transfer = currentTransferAt(run, timeMs);
   const prep = currentPrepAt(run, timeMs);
-  const movement = actionActorTarget(run, timeMs);
+  const activeActions = run.actions.filter((action) => timeMs >= action.startTime && timeMs < action.startTime + action.durationMs);
   const handler = markerForId(run.players, run.ballHandlerId);
   const ball = run.ball ?? handler ?? HOOP_POINT;
   const drive = driveThreat(run, hoop);
   run.players = run.players.map((player) => {
     let target: CourtPoint | null = null;
     let maxSpeed = OFF_BALL_MAX_SPEED_FT_PER_SECOND;
-    if (movement?.action.actorId === player.id) {
-      target = movement.target;
+    const movement = activeActions.find((action) => action.actorId === player.id
+      && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff");
+    const screen = activeActions.find((action) => action.arrow.kind === "off-ball-screen"
+      && (action.actorId === player.id || action.recipientId === player.id));
+    const partner = activeActions.find((action) => action.automatic && action.partnerId === player.id
+      && (action.arrow.kind === "screen" || action.arrow.kind === "pick-roll"));
+    if (movement) {
+      target = sampleMovementTarget(run, movement, timeMs);
+      maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
+    } else if (screen?.recipientId === player.id) {
+      target = sampleCutterTarget(screen, timeMs);
+      maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
+    } else if (partner?.partnerId === player.id) {
+      const start = partner.partnerStart ?? player;
+      const finish = pointToward(partner.arrow.end, hoop, partner.arrow.kind === "pick-roll" ? 10 : 8);
+      const progress = easeInOut(clamp((timeMs - partner.startTime) / partner.durationMs, 0, 1));
+      target = lerpPoint(start, finish, progress);
       maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
     } else if (prep?.recipientId === player.id) {
       const prepWindow = Math.min(PASS_PREP_MS, Math.max(180, prep.durationMs * 0.42));
@@ -790,9 +979,9 @@ function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
     }
     if (!target) return coastMarker(run, "player", player, dt, OFFENSE_ACCELERATION_FT_PER_SECOND);
     const moved = integrateMarker(run, "player", player, target, dt, maxSpeed, OFFENSE_ACCELERATION_FT_PER_SECOND);
-    if (movement?.action.actorId === player.id && timeMs >= movement.action.startTime + movement.action.durationMs) {
-      run.offBallAnchors.set(player.id, { x: moved.x, y: moved.y });
-    }
+    const completedMovement = movement && timeMs >= movement.startTime + movement.durationMs;
+    const completedScreen = screen && timeMs >= screen.startTime + screen.durationMs;
+    if (completedMovement || completedScreen) run.offBallAnchors.set(player.id, { x: moved.x, y: moved.y });
     return moved;
   });
 }

@@ -72,6 +72,7 @@ export function UsageGuide() {
             <ul>
               <li>Start with Ready setup, choose a Starter play, or begin on Empty court; turn Defenders on or off as needed</li>
               <li>Select a tool, then click or drag on the court; circles are offense, X markers are defenders, and the ball is its own marker</li>
+              <li>For a manual off-ball screen choose the screener, cutter, and screen spot</li>
               <li>Drag arrows to edit them even while another drawing tool is active; select an arrow to set its order, duration, or curved path</li>
               <li>Use Delete, Undo, and Redo to revise the diagram; touch dragging and arrow-key nudging are supported</li>
             </ul>
@@ -90,6 +91,7 @@ export function UsageGuide() {
             <h3>Simulate and save</h3>
             <ul>
               <li>Choose Play to run the sequence; ARC moves defenders, adjusts help and closeouts, and finishes with a shot</li>
+              <li>Use Auto actions in the left rail to choose which screens, handoffs, pick and rolls, and off-ball screens the simulator may add when a matchup allows</li>
               <li>Open Settings to tune offensive cuts or spacing, defensive reads, and movement intensity; pause to edit before resuming</li>
               <li>Save play stores the diagram and actions; Saved plays lets you reopen, duplicate, or delete a play</li>
               <li>Export PNG downloads a clean court image; hosted plays are saved in this browser, while the local app uses its local server</li>

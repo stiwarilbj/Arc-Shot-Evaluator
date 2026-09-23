@@ -13,7 +13,7 @@ import {
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 import { courtSvgToPoint, COURT_SCALE, COURT_VIEWBOX, NBA_COURT_GEOMETRY } from '../frontend/src/features/playbook/courtGeometry.ts';
 
-const settings = { offenseOffBall: 'read-react', defenseOffBall: 'help', offBallIntensity: 70 };
+const settings = { offenseOffBall: 'read-react', defenseOffBall: 'help', offBallIntensity: 70, automaticActions: { screen: false, handoff: false, pickRoll: false, offBallScreen: false } };
 const hoop = courtSvgToPoint(NBA_COURT_GEOMETRY.basket.center);
 
 function makeDraft({ players, ball, arrows = [], defenders = [] }) {
@@ -220,5 +220,86 @@ for (const play of [READY_SETUP, ...STARTER_PLAYS, EMPTY_COURT]) {
   assert.equal(run.frame.shotPhase, 'result', `${play.name} finishes with a shot result`);
   assert.ok(run.players.every((player) => Number.isFinite(player.x) && Number.isFinite(player.y)));
 }
+
+
+
+// Manual off-ball screens bind to their chosen screener and cutter, move both without transferring possession, and stay out of the saved draft.
+const offBallDraft = makeDraft({
+  players: [[50, 76], [37, 64], [26, 59]],
+  ball: [50, 76],
+  arrows: [{ id: 'manual-offball', kind: 'off-ball-screen', screener_id: 2, cutter_id: 3, start: { x: 37, y: 64 }, end: { x: 31, y: 58 }, sequence: 1, timing: 1.2 }],
+});
+const offBallSnapshot = structuredClone(offBallDraft);
+const offBallRun = createSimulationRun(offBallDraft, settings);
+const manualOffBall = offBallRun.actions[0];
+assert.equal(manualOffBall.actorId, 2);
+assert.equal(manualOffBall.recipientId, 3);
+advance(offBallRun, 650);
+assert.ok(pointDistanceFeet(offBallRun.players.find((player) => player.id === 2), offBallSnapshot.players[1]) > 0.3, 'the selected screener moves to the screen spot');
+assert.ok(pointDistanceFeet(offBallRun.players.find((player) => player.id === 3), offBallSnapshot.players[2]) > 0.3, 'the selected cutter runs around the screen');
+assert.equal(offBallRun.ballHandlerId, 1, 'an off-ball screen keeps possession with the handler');
+assert.deepEqual(offBallDraft, offBallSnapshot, 'simulation actions do not mutate the saved draft');
+
+// Auto controls are independent. Contextual events are added only when enabled and only to the simulation timeline.
+const autoSettings = (overrides) => ({ ...settings, automaticActions: { ...settings.automaticActions, ...overrides } });
+const autoHandoffDraft = makeDraft({
+  players: [[50, 70], [59, 70], [18, 31]],
+  ball: [50, 70],
+  defenders: [[50, 64], [89, 89], [10, 90]],
+});
+const handoffOffRun = createSimulationRun(autoHandoffDraft, autoSettings({ screen: false, handoff: false, pickRoll: false, offBallScreen: false }));
+assert.equal(handoffOffRun.actions.some((action) => action.automatic), false, 'disabled controls do not create automatic actions');
+const handoffRun = createSimulationRun(autoHandoffDraft, autoSettings({ handoff: true }));
+assert.ok(handoffRun.actions.some((action) => action.automatic && action.arrow.kind === 'handoff'), 'a pressured handler with an open nearby receiver triggers an automatic handoff');
+assert.equal(handoffRun.source.arrows.length, 0, 'automatic actions never enter the source diagram');
+const handoffEnd = handoffRun.actions.find((action) => action.arrow.kind === 'handoff' && action.automatic).startTime + handoffRun.actions.find((action) => action.arrow.kind === 'handoff' && action.automatic).durationMs;
+advance(handoffRun, handoffEnd + SIMULATION_STEP_MS);
+assert.notEqual(handoffRun.ballHandlerId, 1, 'automatic handoffs transfer possession at the end of their action');
+
+const autoOffBallDraft = makeDraft({
+  players: [[50, 76], [45, 58], [28, 58]],
+  ball: [50, 76],
+  defenders: [[28, 53], [90, 90], [10, 90]],
+});
+const autoOffBallRun = createSimulationRun(autoOffBallDraft, autoSettings({ screen: false, handoff: false, pickRoll: false, offBallScreen: true }));
+assert.ok(autoOffBallRun.actions.some((action) => action.automatic && action.arrow.kind === 'off-ball-screen'), 'a guarded cutter and free screener trigger an automatic off-ball screen');
+
+const autoPickRollDraft = makeDraft({
+  players: [[50, 70], [40, 70], [17, 35]],
+  ball: [50, 70],
+  defenders: [[50, 62], [90, 90], [10, 90]],
+});
+const autoPickRollRun = createSimulationRun(autoPickRollDraft, autoSettings({ screen: false, handoff: false, pickRoll: true, offBallScreen: false }));
+const autoPickRoll = autoPickRollRun.actions.find((action) => action.automatic);
+assert.equal(autoPickRoll?.arrow.kind, 'pick-roll', 'an open roll lane and on-ball pressure trigger a pick and roll');
+assert.equal(autoPickRoll?.actorId, 2, 'the automatic screener is the player nearest the handler');
+assert.equal(autoPickRoll?.partnerId, 1, 'the handler runs the pick and roll while keeping the ball');
+assert.ok(autoPickRollRun.frame.activeActionLabel == null, 'temporary action labels appear when the action starts');
+advance(autoPickRollRun, autoPickRoll.startTime + SIMULATION_STEP_MS);
+assert.match(autoPickRollRun.frame.activeActionLabel ?? '', /Auto pick and roll/);
+assert.equal(autoPickRollRun.ballHandlerId, 1, 'a pick and roll keeps possession with the handler');
+
+const autoScreenRun = createSimulationRun(autoPickRollDraft, autoSettings({ screen: true, handoff: false, pickRoll: false, offBallScreen: false }));
+assert.ok(autoScreenRun.actions.some((action) => action.automatic && action.arrow.kind === 'screen'), 'screen toggle creates a screen when the lane does not warrant a roll');
+
+const manualPriorityDraft = makeDraft({
+  players: [[50, 76], [37, 64], [26, 59], [78, 40]],
+  ball: [50, 76],
+  defenders: [[50, 67], [25, 54], [90, 90], [10, 90]],
+  arrows: [{ id: 'authored-move', kind: 'movement', start: { x: 50, y: 76 }, end: { x: 50, y: 70 }, sequence: 1, timing: 1.5 }],
+});
+const manualPriorityRun = createSimulationRun(manualPriorityDraft, autoSettings({ handoff: true }));
+const authoredAction = manualPriorityRun.actions.find((action) => action.arrow.id === 'authored-move');
+const laterAutoAction = manualPriorityRun.actions.find((action) => action.automatic && action.arrow.kind !== 'off-ball-screen');
+if (laterAutoAction) assert.ok(laterAutoAction.startTime >= authoredAction.startTime + authoredAction.durationMs, 'on-ball auto actions happen after authored actions');
+assert.deepEqual(manualPriorityRun.source.arrows, manualPriorityDraft.arrows, 'temporary automatic events leave every authored arrow unchanged');
+
+const noOpportunityDraft = makeDraft({
+  players: [[50, 70], [20, 35], [80, 35]],
+  ball: [50, 70],
+  defenders: [[10, 90], [90, 90], [50, 15]],
+});
+const noOpportunityRun = createSimulationRun(noOpportunityDraft, autoSettings({ screen: true, handoff: true, pickRoll: true, offBallScreen: true }));
+assert.equal(noOpportunityRun.actions.some((action) => action.automatic), false, 'the simulator does not invent an action when no matchup opportunity exists');
 
 console.log('Playbook simulation tests passed: timeline order, live possession, continuous shot boundary, bounded/stable defense, help and recovery, paused edits, settings, draft isolation, and all presets');

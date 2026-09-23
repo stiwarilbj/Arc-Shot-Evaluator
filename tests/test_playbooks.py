@@ -73,6 +73,33 @@ def test_playbook_rejects_out_of_bounds_or_duplicate_markers(tmp_path, monkeypat
     assert client.post("/api/playbooks", json=invalid_sequence).status_code == 400
 
 
+def test_off_ball_screen_stores_distinct_player_references(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    payload = _payload()
+    payload["players"] = [{"id": 1, "x": 50, "y": 70}, {"id": 2, "x": 34, "y": 58}]
+    payload["arrows"] = [{
+        "id": "offball-screen",
+        "kind": "off-ball-screen",
+        "sequence": 1,
+        "start": {"x": 34, "y": 58},
+        "end": {"x": 42, "y": 54},
+        "screener_id": 2,
+        "cutter_id": 1,
+    }]
+    client = TestClient(app)
+    created = client.post("/api/playbooks", json=payload)
+    assert created.status_code == 200
+    arrow = created.json()["arrows"][0]
+    assert arrow["kind"] == "off-ball-screen"
+    assert arrow["screener_id"] == 2
+    assert arrow["cutter_id"] == 1
+
+    payload["arrows"][0]["cutter_id"] = 99
+    assert client.post("/api/playbooks", json=payload).status_code == 400
+    payload["arrows"][0]["cutter_id"] = 2
+    assert client.post("/api/playbooks", json=payload).status_code == 400
+
+
 def test_corrupt_saved_play_is_skipped_from_library(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     (tmp_path / "broken.json").write_text("not json")

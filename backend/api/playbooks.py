@@ -21,7 +21,7 @@ MAX_NAME_LENGTH = 80
 MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
-ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "handoff", "pick-roll"}
+ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "handoff", "pick-roll", "off-ball-screen"}
 ALLOWED_ARROW_PATHS = {"straight", "curve"}
 
 
@@ -93,7 +93,17 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             raise HTTPException(400, "Arrow timing must be between 0.5 and 4 seconds")
         control_value = arrow.get("control")
         control = None if control_value is None else _point(control_value, "Arrow control")
-        arrows.append({"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "path": path, "timing": round(float(timing), 2), "control": control, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")})
+        clean_arrow = {"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "path": path, "timing": round(float(timing), 2), "control": control, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")}
+        if arrow["kind"] == "off-ball-screen":
+            screener_id, cutter_id = arrow.get("screener_id"), arrow.get("cutter_id")
+            player_ids = {marker["id"] for marker in players}
+            if not isinstance(screener_id, int) or isinstance(screener_id, bool) or not isinstance(cutter_id, int) or isinstance(cutter_id, bool):
+                raise HTTPException(400, "Off-ball screens need screener_id and cutter_id")
+            if screener_id == cutter_id or screener_id not in player_ids or cutter_id not in player_ids:
+                raise HTTPException(400, "Off-ball screen players must be distinct offensive players")
+            clean_arrow["screener_id"] = screener_id
+            clean_arrow["cutter_id"] = cutter_id
+        arrows.append(clean_arrow)
     defenders_visible = payload.get("defenders_visible", False)
     if not isinstance(defenders_visible, bool):
         raise HTTPException(400, "defenders_visible must be boolean")

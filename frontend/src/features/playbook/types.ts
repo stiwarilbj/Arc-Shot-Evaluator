@@ -1,19 +1,28 @@
-export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "delete";
-export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll";
+export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "off-ball-screen" | "delete";
+export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "off-ball-screen";
 export type ArrowPath = "straight" | "curve";
 export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
 export type DefenseOffBallStyle = "off" | "contain" | "help" | "switch" | "trap-rotate";
+
+export interface AutomaticActionSettings {
+  screen: boolean;
+  handoff: boolean;
+  pickRoll: boolean;
+  offBallScreen: boolean;
+}
 
 export interface SimulationSettings {
   offenseOffBall: OffenseOffBallStyle;
   defenseOffBall: DefenseOffBallStyle;
   offBallIntensity: number;
+  automaticActions: AutomaticActionSettings;
 }
 
 export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = {
   offenseOffBall: "read-react",
   defenseOffBall: "help",
   offBallIntensity: 70,
+  automaticActions: { screen: true, handoff: true, pickRoll: true, offBallScreen: true },
 };
 
 export interface CourtPoint {
@@ -38,6 +47,10 @@ export interface PlaybookArrow {
   control?: CourtPoint;
   /** Time in seconds reserved for this action. */
   timing?: number;
+  /** Player who sets an off-ball screen. */
+  screener_id?: number;
+  /** Player who uses an off-ball screen. */
+  cutter_id?: number;
 }
 
 export interface PlaybookDocument {
