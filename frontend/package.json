@@ -10,7 +10,8 @@
     "validate:play-finder": "node ../scripts/validate-play-finder-catalog.mjs",
     "test:play-finder": "node --experimental-strip-types ../scripts/test-play-finder.mjs",
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
-    "test": "npm run test:play-finder && npm run test:playbook-geometry"
+    "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
+    "test": "npm run test:play-finder && npm run test:playbook-geometry && npm run test:playbook-simulation"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",
