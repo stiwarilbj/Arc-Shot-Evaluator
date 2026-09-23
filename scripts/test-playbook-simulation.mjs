@@ -38,6 +38,15 @@ function advance(run, milliseconds, runSettings = run.settings) {
   }
 }
 
+function advanceUntil(run, predicate, maxMilliseconds = 6000, runSettings = run.settings) {
+  let elapsed = 0;
+  while (!predicate() && elapsed < maxMilliseconds && run.elapsedMs < run.durationMs) {
+    advance(run, SIMULATION_STEP_MS, runSettings);
+    elapsed += SIMULATION_STEP_MS;
+  }
+  assert.ok(predicate(), `simulation reaches the expected state within ${maxMilliseconds}ms`);
+}
+
 function assertNear(actual, expected, tolerance = 1e-5, message = 'values should be near') {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: expected ${actual} to be within ${tolerance} of ${expected}`);
 }
@@ -219,7 +228,7 @@ const shooterChoiceDraft = makeDraft({ players: [[50, 75], [23, 69], [77, 69]], 
 shooterChoiceDraft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 1 };
 shooterChoiceDraft.players[1].ratings = { threePoint: 1, midrange: 3, finishing: 3 };
 shooterChoiceDraft.players[2].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
-const shooterChoiceRun = createSimulationRun(shooterChoiceDraft, { ...settings, defenseStrategy: 'off' });
+const shooterChoiceRun = createSimulationRun(shooterChoiceDraft, { ...settings, offenseOffBall: 'off', defenseStrategy: 'off' });
 advance(shooterChoiceRun, shooterChoiceRun.plannedActionDurationMs);
 assert.ok(shooterChoiceRun.actions.some((action) => action.adaptiveReadLabel && action.recipientId === 3), 'adaptive reads pass to the higher-rated open shooter');
 
@@ -240,6 +249,52 @@ assert.ok(lowFinishQuality <= 40 && highFinishQuality > lowFinishQuality, 'finis
 const lowMidrangeQuality = shotQualityAtRating({ midrange: 1 }, [50, 45]);
 const highMidrangeQuality = shotQualityAtRating({ midrange: 5 }, [50, 45]);
 assert.ok(lowMidrangeQuality <= 40 && highMidrangeQuality > lowMidrangeQuality, 'midrange rating changes quality inside the three-point line');
+
+// Free players move toward a strong shooting role and away from a zone rated 1, while Hold positions keeps them still.
+const skillSpacingDraft = (threePoint, midrange = 3) => {
+  const draft = makeDraft({
+    players: [[50, 76], [26, 62], [74, 62], [40, 48], [60, 48]],
+    ball: [50, 76],
+    defenders: [[5, 5], [95, 5], [5, 95], [95, 95], [50, 95]],
+  });
+  draft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+  draft.players[1].ratings = { threePoint, midrange, finishing: 1 };
+  return draft;
+};
+const spacingSettings = { ...settings, defenseStrategy: 'off' };
+const baselineSpacingRun = createSimulationRun(skillSpacingDraft(3), spacingSettings);
+const strongShooterSpacingRun = createSimulationRun(skillSpacingDraft(5), spacingSettings);
+const weakThreeSpacingRun = createSimulationRun(skillSpacingDraft(1, 5), spacingSettings);
+advance(baselineSpacingRun, 300);
+advance(strongShooterSpacingRun, 300);
+advance(weakThreeSpacingRun, 300);
+assert.ok(pointDistanceFeet(baselineSpacingRun.players[1], strongShooterSpacingRun.players[1]) > 0.6, 'a high three-point rating changes a free player’s spot');
+assert.ok(pointDistanceFeet(weakThreeSpacingRun.players[1], hoop) < pointDistanceFeet(baselineSpacingRun.players[1], hoop), 'a player rated 1 from three shifts toward their better midrange area');
+const holdSpacingRun = createSimulationRun(skillSpacingDraft(5), { ...settings, offenseOffBall: 'off' });
+advance(holdSpacingRun, 300);
+assert.deepEqual(holdSpacingRun.players[1], skillSpacingDraft(5).players[1], 'the off-ball setting can still keep free players in place');
+
+// A clear, high-value three can interrupt a drawn sequence; weak ratings keep ordinary looks in the play.
+const earlyShotDraft = makeDraft({
+  players: [[50, 63], [18, 68], [82, 68], [34, 54], [66, 54]],
+  ball: [50, 63],
+  defenders: [[5, 5], [95, 5], [5, 95], [95, 95], [50, 95]],
+  arrows: [{ id: 'authored-lift', kind: 'movement', actor_id: 4, start: { x: 34, y: 54 }, end: { x: 35, y: 53 }, sequence: 1, timing: 3 }],
+});
+earlyShotDraft.players[0].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
+const earlyShotSnapshot = structuredClone(earlyShotDraft);
+const earlyShotRun = createSimulationRun(earlyShotDraft, { ...settings, defenseStrategy: 'off' });
+advance(earlyShotRun, 600);
+assert.equal(earlyShotRun.earlyReadInterrupted, true, 'a high-value early shot can end the remaining authored route');
+assert.equal(earlyShotRun.adaptiveReadLabel, 'Early shot');
+assert.ok(earlyShotRun.frame.shotQuality >= 72 && earlyShotRun.frame.shotPhase !== 'idle');
+assert.ok(earlyShotRun.actionDurationMs < earlyShotRun.plannedActionDurationMs, 'the early shot shortens only the simulation timeline');
+assert.deepEqual(earlyShotDraft, earlyShotSnapshot, 'an early shot leaves the saved diagram unchanged');
+const poorEarlyShotDraft = structuredClone(earlyShotDraft);
+poorEarlyShotDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+const poorEarlyShotRun = createSimulationRun(poorEarlyShotDraft, { ...settings, defenseStrategy: 'off' });
+advance(poorEarlyShotRun, 600);
+assert.equal(poorEarlyShotRun.earlyReadInterrupted, false, 'a rating-1 shot does not interrupt the authored sequence');
 
 // A drive triggers a consistent helper; once the drive ends, that defender recovers to the original matchup.
 const driveDraft = makeDraft({
@@ -337,20 +392,21 @@ setSimulationRunSettings(pausedRun, { ...settings, defenseStrategy: 'contain', o
 assert.equal(pausedRun.elapsedMs, elapsedBeforeSettings);
 assert.deepEqual(pausedRun.defenders, defendersBeforeSettings, 'changing settings does not teleport defenders');
 
-// Automatic shots begin from the final live positions, including a play without arrows.
+// A play without arrows can use live reads before releasing its shot.
 const noArrowRun = createSimulationRun(noDefenderDraft, settings);
-const noArrowInitial = structuredClone(noArrowRun.players);
-advance(noArrowRun, noArrowRun.actionDurationMs - noArrowRun.elapsedMs);
+advance(noArrowRun, noArrowRun.plannedActionDurationMs - noArrowRun.elapsedMs);
+assert.equal(noArrowRun.frame.shotPhase, 'idle', 'a useful pass can extend a play before the shot');
+assert.equal(noArrowRun.adaptiveReadResolved, true);
+advanceUntil(noArrowRun, () => noArrowRun.frame.shotPhase === 'setup');
 const playersBeforeShot = noArrowRun.players.map((player) => ({ ...player }));
-assert.equal(noArrowRun.frame.shotPhase, 'setup');
-assertNear(pointDistanceFeet(noArrowRun.frame.shotStart, noArrowRun.ball), 0, 0.02, 'the shot starts where the live ball was at the action/shot boundary');
+assertNear(pointDistanceFeet(noArrowRun.frame.shotStart, noArrowRun.ball), 0, 1.5, 'the live ball moves continuously away from the shot start');
 advance(noArrowRun, SIMULATION_STEP_MS * 3);
 assert.equal(noArrowRun.frame.shotPhase, 'setup');
 assert.equal(noArrowRun.frame.shooterId, noArrowRun.ballHandlerId);
 noArrowRun.players.forEach((player, index) => {
   assert.ok(pointDistanceFeet(playersBeforeShot[index], player) < 1, 'the shot boundary carries forward every player’s final position');
 });
-assert.ok(noArrowInitial.every((player, index) => pointDistanceFeet(player, noArrowRun.players[index]) < 7), 'off-ball players remain near their drawn roles through the shot boundary');
+assert.ok(noArrowRun.players.every((player) => player.x >= 0 && player.x <= 100 && player.y >= 0 && player.y <= 100), 'rating-aware spacing and live reads keep players inside the court');
 const editedShotBall = { x: 49, y: 75 };
 const shotEditFrame = editPausedSimulationMarker(noArrowRun, 'ball', 'ball', editedShotBall);
 assert.deepEqual(shotEditFrame.ball, editedShotBall, 'a paused shot ball edit is reflected at the current frame');
@@ -375,6 +431,10 @@ for (const play of [READY_SETUP, ...STARTER_PLAYS, EMPTY_COURT]) {
   assert.equal(run.frame.shotPhase, 'result', `${play.name} finishes with a shot result`);
   assert.equal(run.adaptiveReadResolved, true, `${play.name} resolves its read from live defender positions`);
   assert.ok(run.adaptiveReadLabel && run.adaptiveReadReason, `${play.name} explains its selected read or fallback`);
+  assert.ok(run.adaptiveActionsTaken <= 3, `${play.name} stays within the three live-action limit`);
+  if (run.adaptiveContinuationStartedAtMs != null) {
+    assert.ok(run.actionDurationMs - run.adaptiveContinuationStartedAtMs <= 4000 + SIMULATION_STEP_MS, `${play.name} keeps live actions inside the four-second window`);
+  }
   assert.ok(run.players.every((player) => Number.isFinite(player.x) && Number.isFinite(player.y)));
 }
 
@@ -396,15 +456,41 @@ assert.match(openRollRun.adaptiveReadLabel, /roller/i);
 assert.match(openRollRun.adaptiveReadReason, /clear passing lane/i);
 assert.equal(openRollRun.frame.shotPhase, 'idle', 'a read continuation delays the shot until its route finishes');
 assert.equal(openRollRun.frame.adaptiveReadRoute.kind, 'pass', 'the live frame exposes the temporary pass route');
+const initialOpenRollReadLabel = openRollRun.adaptiveReadLabel;
+const initialOpenRollReadRoute = structuredClone(openRollRun.adaptiveReadRoute);
 assert.deepEqual(openRollReadDraft, openRollSnapshot, 'adaptive actions never enter the saved diagram');
 advance(openRollRun, openRollRun.actions.at(-1).durationMs + SIMULATION_STEP_MS);
 assert.equal(openRollRun.ballHandlerId, 2, 'an adaptive pass transfers possession at its completion boundary');
+assert.equal(openRollRun.frame.shotPhase, 'idle', 'the offense reevaluates its next option after the catch');
+advanceUntil(openRollRun, () => openRollRun.frame.shotPhase === 'setup');
 assert.equal(openRollRun.frame.shotPhase, 'setup', 'the shot starts after the adaptive pass arrives');
+
+// A pass chosen for a high-rated open shooter is re-evaluated after the defense closes out.
+const earlyCloseoutDraft = makeDraft({
+  players: [[50, 75], [50, 63], [18, 63], [82, 63], [30, 50]],
+  ball: [50, 75],
+  defenders: [[90, 63], [5, 5], [95, 5], [5, 95], [95, 95]],
+  arrows: [{ id: 'closeout-lift', kind: 'movement', actor_id: 4, start: { x: 82, y: 63 }, end: { x: 83, y: 62 }, sequence: 1, timing: 3 }],
+});
+earlyCloseoutDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+earlyCloseoutDraft.players[1].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
+const closeoutSettings = { ...settings, offenseOffBall: 'off', defenseStrategy: 'contain' };
+const closeoutRun = createSimulationRun(earlyCloseoutDraft, closeoutSettings);
+const initialShooterGap = Math.min(...closeoutRun.defenders.map((defender) => pointDistanceFeet(defender, closeoutRun.players[1])));
+advance(closeoutRun, 600);
+assert.match(closeoutRun.adaptiveReadLabel ?? '', /early read/i);
+assert.equal(closeoutRun.actions.at(-1).arrow.kind, 'pass', 'the first read sends the ball to the high-rated shooter');
+assert.equal(closeoutRun.actions.at(-1).recipientId, 2);
+advanceUntil(closeoutRun, () => closeoutRun.ballHandlerId === 2);
+assert.ok(Math.min(...closeoutRun.defenders.map((defender) => pointDistanceFeet(defender, closeoutRun.players[1]))) < initialShooterGap, 'the defender closes toward the receiver during the pass');
+advanceUntil(closeoutRun, () => closeoutRun.frame.shotPhase === 'setup');
+assert.notEqual(closeoutRun.adaptiveReadLabel, 'Early shot', 'a shot that lost its clear advantage is re-evaluated after the catch');
+assert.ok(closeoutRun.frame.shotQuality < 72, 'the closeout lowers the live shot quality below the early-shot gate');
 
 const openLaneReadDraft = makeDraft({
   players: [[50, 70], [24, 55]],
   ball: [50, 70],
-  defenders: [[8, 8], [92, 8]],
+  defenders: [[8, 8], [24, 55]],
 });
 const openLaneRun = createSimulationRun(openLaneReadDraft, { ...settings, defenseStrategy: 'off' });
 advance(openLaneRun, openLaneRun.plannedActionDurationMs);
@@ -419,7 +505,7 @@ while (openLaneRun.elapsedMs < openLaneRun.actionDurationMs - 0.001) {
   assert.ok(pointDistanceFeet(previousAdaptiveHandler, currentHandler) <= 19 * SIMULATION_STEP_MS / 1000 + 0.002, 'the adaptive drive obeys the existing offensive speed limit');
   previousAdaptiveHandler = { ...currentHandler };
 }
-assert.ok(pointDistanceFeet(previousAdaptiveHandler, adaptiveDrive.arrow.end) < 1, 'the handler completes the selected route before the shot');
+assert.ok(pointDistanceFeet(previousAdaptiveHandler, adaptiveDrive.arrow.end) < pointDistanceFeet(openLaneReadDraft.players[0], adaptiveDrive.arrow.end), 'the handler advances along the drive before taking the newly opened shot');
 
 const perimeterPassDraft = makeDraft({
   players: [[50, 76], [25, 59], [81, 56]],
@@ -456,8 +542,8 @@ assert.match(coveredReadRun.adaptiveReadReason, /takes the shot/i);
 
 const repeatReadRun = createSimulationRun(structuredClone(openRollReadDraft), { ...settings, defenseStrategy: 'off' });
 advance(repeatReadRun, repeatReadRun.plannedActionDurationMs);
-assert.equal(repeatReadRun.adaptiveReadLabel, openRollRun.adaptiveReadLabel, 'identical live reads resolve deterministically');
-assert.deepEqual(repeatReadRun.adaptiveReadRoute, openRollRun.adaptiveReadRoute, 'identical runs select the same temporary route');
+assert.equal(repeatReadRun.adaptiveReadLabel, initialOpenRollReadLabel, 'identical live reads resolve deterministically');
+assert.deepEqual(repeatReadRun.adaptiveReadRoute, initialOpenRollReadRoute, 'identical runs select the same temporary route');
 
 
 
@@ -658,11 +744,22 @@ const autoHandoffDraft = makeDraft({
   ball: [50, 70],
   defenders: [[50, 64], [89, 89], [10, 90]],
 });
+autoHandoffDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
 const handoffOffRun = createSimulationRun(autoHandoffDraft, autoSettings({ screen: false, handoff: false, pickRoll: false, offBallScreen: false }));
 assert.equal(handoffOffRun.actions.some((action) => action.automatic), false, 'disabled controls do not create automatic actions');
 const handoffRun = createSimulationRun(autoHandoffDraft, autoSettings({ handoff: true }));
 assert.ok(handoffRun.actions.some((action) => action.automatic && action.arrow.kind === 'handoff'), 'a pressured handler with an open nearby receiver triggers an automatic handoff');
 assert.equal(handoffRun.source.arrows.length, 0, 'automatic actions never enter the source diagram');
+const ratingHandoffDraft = makeDraft({
+  players: [[50, 70], [58, 70], [42, 70], [18, 31]],
+  ball: [50, 70],
+  defenders: [[50, 61], [89, 89], [10, 90], [30, 15]],
+});
+ratingHandoffDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+ratingHandoffDraft.players[1].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+ratingHandoffDraft.players[2].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
+const ratingHandoffRun = createSimulationRun(ratingHandoffDraft, autoSettings({ handoff: true }));
+assert.equal(ratingHandoffRun.actions.find((action) => action.automatic && action.arrow.kind === 'handoff')?.recipientId, 3, 'automatic handoffs choose the stronger open shooter');
 const handoffEnd = handoffRun.actions.find((action) => action.arrow.kind === 'handoff' && action.automatic).startTime + handoffRun.actions.find((action) => action.arrow.kind === 'handoff' && action.automatic).durationMs;
 advance(handoffRun, handoffEnd + SIMULATION_STEP_MS);
 assert.notEqual(handoffRun.ballHandlerId, 1, 'automatic handoffs transfer possession at the end of their action');
@@ -678,6 +775,7 @@ const autoOffBallDraft = makeDraft({
   ball: [50, 76],
   defenders: [[28, 53], [90, 90], [10, 90]],
 });
+autoOffBallDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
 const autoOffBallRun = createSimulationRun(autoOffBallDraft, autoSettings({ screen: false, handoff: false, pickRoll: false, offBallScreen: true }));
 assert.ok(autoOffBallRun.actions.some((action) => action.automatic && action.arrow.kind === 'off-ball-screen'), 'a guarded cutter and free screener trigger an automatic off-ball screen');
 const autoOffBallSwitchRun = createSimulationRun(autoOffBallDraft, { ...autoSettings({ screen: false, handoff: false, pickRoll: false, offBallScreen: true }), defenseStrategy: 'switch' });
@@ -692,6 +790,7 @@ const autoPickRollDraft = makeDraft({
   ball: [50, 70],
   defenders: [[50, 62], [90, 90], [10, 90]],
 });
+autoPickRollDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
 const autoPickRollRun = createSimulationRun(autoPickRollDraft, autoSettings({ screen: false, handoff: false, pickRoll: true, offBallScreen: false }));
 const autoPickRoll = autoPickRollRun.actions.find((action) => action.automatic);
 assert.equal(autoPickRoll?.arrow.kind, 'pick-roll', 'an open roll lane and on-ball pressure trigger a pick and roll');
@@ -701,6 +800,16 @@ assert.ok(autoPickRollRun.frame.activeActionLabel == null, 'temporary action lab
 advance(autoPickRollRun, autoPickRoll.startTime + SIMULATION_STEP_MS);
 assert.match(autoPickRollRun.frame.activeActionLabel ?? '', /Auto pick and roll/);
 assert.equal(autoPickRollRun.ballHandlerId, 1, 'a pick and roll keeps possession with the handler');
+const ratingPickRollDraft = makeDraft({
+  players: [[50, 70], [40, 70], [60, 70], [17, 35]],
+  ball: [50, 70],
+  defenders: [[50, 62], [90, 90], [10, 90], [30, 15]],
+});
+ratingPickRollDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+ratingPickRollDraft.players[1].ratings = { threePoint: 5, midrange: 3, finishing: 2 };
+ratingPickRollDraft.players[2].ratings = { threePoint: 1, midrange: 3, finishing: 5 };
+const ratingPickRollRun = createSimulationRun(ratingPickRollDraft, autoSettings({ screen: false, handoff: false, pickRoll: true, offBallScreen: false }));
+assert.equal(ratingPickRollRun.actions.find((action) => action.automatic && action.arrow.kind === 'pick-roll')?.actorId, 3, 'automatic rolls use the available player with the strongest finishing rating');
 const autoPickRollSwitchRun = createSimulationRun(autoPickRollDraft, { ...autoSettings({ screen: false, handoff: false, pickRoll: true, offBallScreen: false }), defenseStrategy: 'switch' });
 const autoPickRollAction = autoPickRollSwitchRun.actions.find((action) => action.automatic && action.arrow.kind === 'pick-roll');
 const autoPickRollBaseline = new Map(autoPickRollSwitchRun.initialAssignments);

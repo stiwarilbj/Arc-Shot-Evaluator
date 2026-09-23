@@ -60,8 +60,14 @@ export type SimulationRun = {
   readonly offBallAnchors: Map<number, CourtPoint>;
   readonly velocities: Map<string, Velocity>;
   readonly recipientStartOverrides: Map<string, PositionOverride>;
+  readonly offBallTargetSkills: Map<number, keyof PlayerSkillRatings | null>;
   readonly shotDurationMs: number;
   readonly plannedActionDurationMs: number;
+  nextEarlyReadMs: number;
+  adaptiveActionsTaken: number;
+  adaptiveContinuationStartedAtMs: number | null;
+  adaptivePassPairs: Set<string>;
+  earlyReadInterrupted: boolean;
   adaptiveReadResolved: boolean;
   adaptiveReadLabel: string | null;
   adaptiveReadReason: string | null;
@@ -98,6 +104,12 @@ const BALL_MAX_SPEED_FT_PER_SECOND = 42;
 const BALL_ACCELERATION_FT_PER_SECOND = 90;
 const PASS_PREP_MS = 440;
 const MIN_PLAY_DURATION_MS = 1200;
+const EARLY_READ_INTERVAL_MS = 250;
+const EARLY_READ_START_MS = 400;
+const EARLY_SHOT_MIN_QUALITY = 72;
+const EARLY_SHOT_MIN_EXPECTED_POINTS = 1.6;
+const MAX_ADAPTIVE_ACTIONS = 3;
+const MAX_ADAPTIVE_WINDOW_MS = 4000;
 const MAX_COURT_PLAYERS = 5;
 const HOOP_POINT = courtSvgToPoint(NBA_COURT_GEOMETRY.basket.center);
 
@@ -377,7 +389,7 @@ function normalizeSettings(settings: SimulationSettings): SimulationSettings {
   };
 }
 
-function defenderGap(player: PlaybookMarker, defenders: PlaybookMarker[]) {
+function defenderGap(player: CourtPoint, defenders: PlaybookMarker[]) {
   return defenders.length ? Math.min(...defenders.map((defender) => pointDistanceFeet(player, defender))) : Number.POSITIVE_INFINITY;
 }
 
@@ -400,6 +412,26 @@ function shotSkillRating(player: PlaybookMarker, hoop: CourtPoint) {
   return playerRating(player, shotSkillFor(player, hoop));
 }
 
+function offBallTargetSkill(player: PlaybookMarker, hoop: CourtPoint): keyof PlayerSkillRatings | null {
+  const currentSkill = shotSkillFor(player, hoop);
+  const skills: Array<keyof PlayerSkillRatings> = ["threePoint", "midrange", "finishing"];
+  const currentRating = playerRating(player, currentSkill);
+  const bestRating = Math.max(...skills.map((skill) => playerRating(player, skill)));
+  if (bestRating >= 4) {
+    return skills
+      .slice()
+      .sort((a, b) => playerRating(player, b) - playerRating(player, a)
+        || Number(b === currentSkill) - Number(a === currentSkill)
+        || skills.indexOf(a) - skills.indexOf(b))[0];
+  }
+  if (currentRating === 1) {
+    return skills
+      .filter((skill) => skill !== currentSkill && playerRating(player, skill) > 1)
+      .sort((a, b) => playerRating(player, b) - playerRating(player, a) || skills.indexOf(a) - skills.indexOf(b))[0] ?? null;
+  }
+  return null;
+}
+
 function goalSideGapFor(player: PlaybookMarker, hoop: CourtPoint, baseGap: number) {
   const skill = shotSkillFor(player, hoop);
   const rating = playerRating(player, skill);
@@ -409,14 +441,24 @@ function goalSideGapFor(player: PlaybookMarker, hoop: CourtPoint, baseGap: numbe
 
 function automaticOffBallArrow(players: PlaybookMarker[], defenders: PlaybookMarker[], handlerId: number | null, sequence: number): PlaybookArrow | null {
   if (players.length < 3 || handlerId == null) return null;
-  const cutters = players.filter((player) => player.id !== handlerId && defenderGap(player, defenders) <= 8)
-    .sort((a, b) => defenderGap(a, defenders) - defenderGap(b, defenders) || a.id - b.id);
+  const cutters = players.filter((player) => player.id !== handlerId
+      && playerRating(player, "finishing") >= 2
+      && defenderGap(player, defenders) <= 8)
+    .sort((a, b) => playerRating(b, "finishing") - playerRating(a, "finishing")
+      || defenderGap(b, defenders) - defenderGap(a, defenders)
+      || a.id - b.id);
   for (const cutter of cutters) {
     const cutterDefender = defenders.slice().sort((a, b) => pointDistanceFeet(a, cutter) - pointDistanceFeet(b, cutter) || a.id - b.id)[0];
     if (!cutterDefender) continue;
     const screener = players.filter((player) => player.id !== handlerId && player.id !== cutter.id)
       .filter((player) => pointDistanceFeet(player, cutter) >= 4 && pointDistanceFeet(player, cutter) <= 16 && defenderGap(player, defenders) >= 4)
-      .sort((a, b) => pointDistanceFeet(a, cutter) - pointDistanceFeet(b, cutter) || a.id - b.id)[0];
+      .sort((a, b) => {
+        const aTopSkill = Math.max(playerRating(a, "threePoint"), playerRating(a, "midrange"), playerRating(a, "finishing"));
+        const bTopSkill = Math.max(playerRating(b, "threePoint"), playerRating(b, "midrange"), playerRating(b, "finishing"));
+        return aTopSkill - bTopSkill
+          || pointDistanceFeet(a, cutter) - pointDistanceFeet(b, cutter)
+          || a.id - b.id;
+      })[0];
     if (!screener) continue;
     const screenPoint = pointToward(cutter, cutterDefender, 3.25);
     if (pointDistanceFeet(offBallCutterTarget(screenPoint), cutterDefender) < 3) continue;
@@ -433,17 +475,27 @@ function automaticOnBallArrow(players: PlaybookMarker[], defenders: PlaybookMark
   if (pressure > 12) return null;
   const teammates = players.filter((player) => player.id !== handlerId && !excluded.has(player.id));
   const receiver = teammates.filter((player) => pointDistanceFeet(player, handler) >= 3.5 && pointDistanceFeet(player, handler) <= 9 && defenderGap(player, defenders) >= 5.5)
-    .sort((a, b) => pointDistanceFeet(a, handler) - pointDistanceFeet(b, handler) || a.id - b.id)[0];
+    .sort((a, b) => {
+      const aValue = calculateShotQuality(players, defenders, a, 70) * (shotSkillFor(a, hoop) === "threePoint" ? 3 : 2) / 100
+        + playerRating(a, "finishing") * 0.035
+        + Math.min(12, defenderGap(a, defenders)) * 0.004;
+      const bValue = calculateShotQuality(players, defenders, b, 70) * (shotSkillFor(b, hoop) === "threePoint" ? 3 : 2) / 100
+        + playerRating(b, "finishing") * 0.035
+        + Math.min(12, defenderGap(b, defenders)) * 0.004;
+      return bValue - aValue || a.id - b.id;
+    })[0];
   if (settings.automaticActions.handoff && pressure <= 7 && receiver) {
     return { id: `auto-handoff-${sequence}`, kind: "handoff", sequence, timing: 1.15, start: { x: handler.x, y: handler.y }, end: { x: receiver.x, y: receiver.y } };
   }
   const screeners = teammates.filter((player) => pointDistanceFeet(player, handler) >= 4 && pointDistanceFeet(player, handler) <= 16)
-    .sort((a, b) => pointDistanceFeet(a, handler) - pointDistanceFeet(b, handler) || a.id - b.id);
+    .sort((a, b) => playerRating(b, "finishing") - playerRating(a, "finishing")
+      || pointDistanceFeet(a, handler) - pointDistanceFeet(b, handler)
+      || a.id - b.id);
   for (const screener of screeners) {
     const screenPoint = pointToward(handler, screener, Math.min(3.5, pointDistanceFeet(handler, screener) * 0.45));
     const rollPoint = pointToward(screenPoint, hoop, 8);
     const rollClearance = defenderGap({ ...screener, ...rollPoint }, defenders);
-    if (settings.automaticActions.pickRoll && pressure >= 3 && pressure <= 10 && pointDistanceFeet(handler, hoop) > 12 && rollClearance >= 3.5) {
+    if (settings.automaticActions.pickRoll && playerRating(screener, "finishing") >= 2 && pressure >= 3 && pressure <= 10 && pointDistanceFeet(handler, hoop) > 12 && rollClearance >= 3.5) {
       return { id: `auto-pick-roll-${sequence}`, kind: "pick-roll", sequence, timing: 1.3, start: { x: screener.x, y: screener.y }, end: screenPoint, screener_id: screener.id };
     }
     if (settings.automaticActions.screen && pressure <= 12) {
@@ -552,11 +604,13 @@ function appendAdaptiveAction(
     durationMs,
     plannedStart: { x: routeStart.x, y: routeStart.y },
     controlOffset: null,
-    adaptiveReadLabel: `Read: ${label.toLowerCase()}`,
+    adaptiveReadLabel: label.toLowerCase().startsWith("early read:") ? label : `Read: ${label.toLowerCase()}`,
   };
   run.actions.push(action);
   run.actionDurationMs += durationMs;
   run.durationMs = run.actionDurationMs + run.shotDurationMs;
+  run.adaptiveActionsTaken += 1;
+  if (kind === "pass" && recipient) run.adaptivePassPairs.add(`${handler.id}>${recipient.id}`);
   run.adaptiveReadLabel = label;
   run.adaptiveReadRoute = {
     start: { x: routeStart.x, y: routeStart.y },
@@ -565,9 +619,174 @@ function appendAdaptiveAction(
   };
 }
 
-function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
-  if (run.adaptiveReadResolved) return;
+type LiveReadChoice = {
+  kind: "shot" | "pass" | "drive";
+  player: PlaybookMarker;
+  target: CourtPoint;
+  role: AdaptiveTargetRole;
+  quality: number;
+  expectedPoints: number;
+  score: number;
+  receiverGap: number;
+  laneGap: number;
+};
+
+function roleValue(role: AdaptiveTargetRole) {
+  return role === "roller" || role === "cutter" ? 0.08 : role === "popping screener" || role === "post" ? 0.04 : 0;
+}
+
+function estimatedShot(run: SimulationRun, player: PlaybookMarker, position: CourtPoint, hoop: CourtPoint) {
+  const candidatePlayers = run.players.map((candidate) => candidate.id === player.id ? { ...candidate, ...position } : candidate);
+  const offBall = calculateOffBallQuality(candidatePlayers, position, run.settings, run.defenders, player.id);
+  const candidate = { ...player, ...position };
+  const quality = calculateShotQuality(candidatePlayers, run.defenders, candidate, offBall, hoop);
+  const points = shotSkillFor(candidate, hoop) === "threePoint" ? 3 : 2;
+  return { quality, expectedPoints: quality * points / 100 };
+}
+
+function liveReadChoices(run: SimulationRun, hoop: CourtPoint) {
+  const handler = markerForId(run.players, run.ballHandlerId);
+  if (!handler) return { handler: null, choices: [] as LiveReadChoice[] };
+  const ball = run.ball ?? handler;
+  const handlerShot = estimatedShot(run, handler, handler, hoop);
+  const choices: LiveReadChoice[] = [{
+    kind: "shot",
+    player: handler,
+    target: { x: handler.x, y: handler.y },
+    role: "perimeter",
+    ...handlerShot,
+    score: handlerShot.expectedPoints,
+    receiverGap: defenderGap(handler, run.defenders),
+    laneGap: Number.POSITIVE_INFINITY,
+  }];
+
+  for (const player of run.players) {
+    if (player.id === handler.id || playerRating(player, shotSkillFor(player, hoop)) <= 1) continue;
+    const receiverGap = defenderGap(player, run.defenders);
+    const laneGap = segmentClearanceFeet(ball, player, run.defenders);
+    const teammateGap = nearestTeammateGap(player, handler.id, run.players);
+    if (receiverGap < 3.5 || laneGap < 2.5 || teammateGap < 3) continue;
+    if (run.adaptivePassPairs.has(`${handler.id}>${player.id}`)) continue;
+    const shot = estimatedShot(run, player, player, hoop);
+    const role = adaptiveTargetRole(run, player.id, hoop);
+    const spacingBonus = clamp((teammateGap - 3) / 24, 0, 0.06);
+    const score = shot.expectedPoints + roleValue(role) + spacingBonus;
+    choices.push({ kind: "pass", player, target: { x: player.x, y: player.y }, role, ...shot, score, receiverGap, laneGap });
+  }
+
+  const hoopGap = pointDistanceFeet(handler, hoop);
+  if (playerRating(handler, "finishing") >= 2 && hoopGap > 8 && hoopGap <= 30) {
+    const driveTarget = pointToward(handler, hoop, Math.min(22, hoopGap - 6));
+    const laneGap = segmentClearanceFeet(handler, driveTarget, run.defenders);
+    const teammateGap = segmentClearanceFeet(handler, driveTarget, run.players.filter((player) => player.id !== handler.id));
+    const pressureGap = defenderGap(handler, run.defenders);
+    if (laneGap >= 3.5 && teammateGap >= 2.25 && (pressureGap >= 3 || playerRating(handler, "finishing") >= 4)) {
+      const shot = estimatedShot(run, handler, driveTarget, hoop);
+      const driveCost = Math.min(0.14, pointDistanceFeet(handler, driveTarget) * 0.006);
+      choices.push({
+        kind: "drive",
+        player: handler,
+        target: driveTarget,
+        role: "cutter",
+        ...shot,
+        score: shot.expectedPoints - driveCost,
+        receiverGap: pressureGap,
+        laneGap,
+      });
+    }
+  }
+
+  choices.sort((a, b) => b.score - a.score || a.player.id - b.player.id
+    || (a.kind === "shot" ? -1 : b.kind === "shot" ? 1 : a.kind.localeCompare(b.kind)));
+  return { handler, choices };
+}
+
+function stopAuthoredActionsAt(run: SimulationRun, timeMs: number) {
+  const hasContinuation = run.adaptiveContinuationStartedAtMs != null;
+  run.actions = run.actions.flatMap((action) => {
+    if (action.startTime >= timeMs - 1e-6) return [];
+    const endTime = action.startTime + action.durationMs;
+    if (endTime <= timeMs) return [action];
+    return [{ ...action, durationMs: Math.max(0, timeMs - action.startTime) }];
+  });
+  run.offBallAnchors.clear();
+  run.players.forEach((player) => run.offBallAnchors.set(player.id, { x: player.x, y: player.y }));
+  run.actionDurationMs = timeMs;
+  run.durationMs = timeMs + run.shotDurationMs;
+  run.earlyReadInterrupted = true;
+  if (!hasContinuation) {
+    run.adaptiveContinuationStartedAtMs = timeMs;
+    run.adaptiveActionsTaken = 0;
+    run.adaptivePassPairs.clear();
+  }
+  run.nextEarlyReadMs = timeMs + EARLY_READ_INTERVAL_MS;
+}
+
+function beginShot(run: SimulationRun, player: PlaybookMarker, hoop: CourtPoint) {
+  run.actionDurationMs = run.elapsedMs;
+  run.durationMs = run.actionDurationMs + run.shotDurationMs;
+  run.ballHandlerId = player.id;
+  run.ball = { x: player.x, y: player.y };
+  run.shotStart = { x: player.x, y: player.y };
+  run.shotShooterId = player.id;
+  const offBall = calculateOffBallQuality(run.players, run.shotStart, run.settings, run.defenders, player.id);
+  run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, player, offBall, hoop);
+}
+
+function readReason(choice: LiveReadChoice, handler: PlaybookMarker, hoop: CourtPoint) {
+  if (choice.kind === "pass") {
+    const space = Number.isFinite(choice.receiverGap) ? `${choice.receiverGap.toFixed(1)} ft of space` : "open space";
+    const rating = shotSkillRating(choice.player, hoop);
+    return `Player ${choice.player.id} has ${space}, a clear passing lane, good floor spacing, and a ${rating}/5 shot rating for ${choice.expectedPoints.toFixed(2)} estimated points.`;
+  }
+  if (choice.kind === "drive") {
+    return `Player ${handler.id} has a clear lane and a ${playerRating(handler, "finishing")}/5 finishing rating; the route projects ${choice.expectedPoints.toFixed(2)} points.`;
+  }
+  return `Player ${choice.player.id} has the best available shot at ${choice.expectedPoints.toFixed(2)} estimated points with ${choice.quality}% quality.`;
+}
+
+function startAdaptiveChoice(run: SimulationRun, choice: LiveReadChoice, hoop: CourtPoint, early = false) {
+  const handler = markerForId(run.players, run.ballHandlerId);
+  if (!handler) return false;
+  const routeStart = run.ball ?? handler;
+  if (choice.kind === "pass") {
+    run.adaptiveReadReason = readReason(choice, handler, hoop);
+    const label = adaptiveRoleLabel(choice.role);
+    appendAdaptiveAction(run, "pass", handler, choice.target, choice.player, early ? `Early read: ${label.toLowerCase()}` : label, routeStart);
+    return true;
+  }
+  if (choice.kind === "drive") {
+    run.adaptiveReadReason = readReason(choice, handler, hoop);
+    appendAdaptiveAction(run, "movement", handler, choice.target, null, early ? "Early read: attack the open lane" : "Attack the open lane", handler);
+    return true;
+  }
+  const earlyLabel = early ? "Early shot" : run.adaptiveActionsTaken >= MAX_ADAPTIVE_ACTIONS ? "Best shot after live reads" : "Take the best available shot";
+  run.adaptiveReadLabel = earlyLabel;
+  run.adaptiveReadRoute = null;
+  run.adaptiveReadReason = readReason(choice, handler, hoop);
+  beginShot(run, choice.player, hoop);
+  return true;
+}
+
+function startEarlyRead(run: SimulationRun, hoop: CourtPoint) {
+  if (!markerForId(run.players, run.ballHandlerId) || currentTransferAt(run, run.elapsedMs)) return;
+  const { choices } = liveReadChoices(run, hoop);
+  const best = choices[0];
+  if (!best || best.quality < EARLY_SHOT_MIN_QUALITY || best.expectedPoints < EARLY_SHOT_MIN_EXPECTED_POINTS) return;
+  if (run.adaptiveContinuationStartedAtMs != null && best.kind !== "shot") return;
+
+  stopAuthoredActionsAt(run, run.elapsedMs);
   run.adaptiveReadResolved = true;
+  if (best.kind === "shot") {
+    startAdaptiveChoice(run, best, hoop, true);
+    return;
+  }
+  startAdaptiveChoice(run, best, hoop, true);
+}
+
+function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
+  run.adaptiveReadResolved = true;
+  if (run.adaptiveContinuationStartedAtMs == null) run.adaptiveContinuationStartedAtMs = run.elapsedMs;
   const handler = markerForId(run.players, run.ballHandlerId);
   if (!handler) {
     run.adaptiveReadLabel = "No ball handler";
@@ -575,58 +794,43 @@ function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
     return;
   }
 
-  const ball = run.ball ?? handler;
-  const passCandidates = run.players
-    .filter((player) => player.id !== handler.id)
-    .map((player) => {
-      const role = adaptiveTargetRole(run, player.id, hoop);
-      const receiverGap = defenderGap(player, run.defenders);
-      const laneGap = segmentClearanceFeet(ball, player, run.defenders);
-      const teammateGap = nearestTeammateGap(player, handler.id, run.players);
-      const boundedReceiverGap = Number.isFinite(receiverGap) ? Math.min(receiverGap, 18) : 18;
-      const boundedLaneGap = Number.isFinite(laneGap) ? Math.min(laneGap, 12) : 12;
-      const boundedTeammateGap = Math.min(teammateGap, 18);
-      const shotRating = shotSkillRating(player, hoop);
-      const roleValue = role === "roller" ? 5 : role === "popping screener" ? 4.5 : role === "cutter" ? 4 : role === "post" ? 3.5 : 0;
-      const score = boundedReceiverGap * 1.7 + boundedLaneGap * 1.2 + boundedTeammateGap * 0.45 + roleValue + (shotRating - 3) * 2.25;
-      return { player, role, receiverGap, laneGap, teammateGap, shotRating, score };
-    });
-  const specialPass = passCandidates
-    .filter((candidate) => candidate.role !== "perimeter" && candidate.receiverGap >= 3.5 && candidate.laneGap >= 2.25 && candidate.teammateGap >= 3)
-    .sort((a, b) => b.score - a.score || a.player.id - b.player.id)[0];
-  if (specialPass) {
-    const label = adaptiveRoleLabel(specialPass.role);
-    const space = Number.isFinite(specialPass.receiverGap) ? `${specialPass.receiverGap.toFixed(1)} ft of space` : "open space";
-    run.adaptiveReadReason = `Player ${specialPass.player.id} has ${space}, a clear passing lane, and floor spacing.`;
-    appendAdaptiveAction(run, "pass", handler, specialPass.player, specialPass.player, label, ball);
+  const { choices } = liveReadChoices(run, hoop);
+  const best = choices[0];
+  const handlerShot = choices.find((choice) => choice.kind === "shot");
+  const bestRoute = choices.find((choice) => choice.kind !== "shot");
+  const timeInContinuation = run.elapsedMs - run.adaptiveContinuationStartedAtMs;
+  const continueWith = best && best.kind !== "shot"
+    ? best
+    : (handlerShot?.quality ?? 0) < EARLY_SHOT_MIN_QUALITY ? bestRoute : null;
+  const canContinue = continueWith
+    && run.adaptiveActionsTaken < MAX_ADAPTIVE_ACTIONS
+    && timeInContinuation < MAX_ADAPTIVE_WINDOW_MS
+    && timeInContinuation + (continueWith.kind === "pass"
+      ? adaptivePassDuration(run.ball ?? handler, continueWith.target)
+      : Math.max(
+          650,
+          pointDistanceFeet(handler, continueWith.target) * 1.5 / OFFENSE_MAX_SPEED_FT_PER_SECOND * 1000,
+          2.4 * Math.sqrt(pointDistanceFeet(handler, continueWith.target) / OFFENSE_ACCELERATION_FT_PER_SECOND) * 1000,
+        )) <= MAX_ADAPTIVE_WINDOW_MS
+    && (continueWith.score > (handlerShot?.score ?? 0) + 0.05
+      || (handlerShot?.quality ?? 0) < EARLY_SHOT_MIN_QUALITY);
+  if (canContinue && continueWith) {
+    startAdaptiveChoice(run, continueWith, hoop);
     return;
   }
 
-  const handlerGap = defenderGap(handler, run.defenders);
-  const hoopGap = pointDistanceFeet(handler, hoop);
-  if (playerRating(handler, "finishing") > 1 && hoopGap > 9 && hoopGap <= 30) {
-    const driveTarget = pointToward(handler, hoop, Math.min(10, hoopGap - 4));
-    const laneGap = segmentClearanceFeet(handler, driveTarget, run.defenders);
-    const teammateGap = segmentClearanceFeet(handler, driveTarget, run.players.filter((player) => player.id !== handler.id));
-    if (laneGap >= 3.5 && handlerGap >= 3.5 && teammateGap >= 2.25) {
-      run.adaptiveReadReason = "The direct route to the basket has room between defenders and teammates.";
-      appendAdaptiveAction(run, "movement", handler, driveTarget, null, "Attack the open lane", handler);
-      return;
-    }
-  }
-
-  const perimeterPass = passCandidates
-    .filter((candidate) => candidate.role === "perimeter" && candidate.receiverGap >= 4 && candidate.laneGap >= 2.5 && candidate.teammateGap >= 3.5)
-    .sort((a, b) => b.score - a.score || a.player.id - b.player.id)[0];
-  if (perimeterPass) {
-    const space = Number.isFinite(perimeterPass.receiverGap) ? `${perimeterPass.receiverGap.toFixed(1)} ft of space` : "open space";
-    run.adaptiveReadReason = `Player ${perimeterPass.player.id} is free on the perimeter with ${space}, good floor spacing, and a ${perimeterPass.shotRating}/5 shot rating.`;
-    appendAdaptiveAction(run, "pass", handler, perimeterPass.player, perimeterPass.player, "Kick to the open player", ball);
+  const shotChoice = (best?.kind === "shot" ? best : handlerShot) ?? choices.find((choice) => choice.kind === "shot");
+  if (!shotChoice) {
+    run.adaptiveReadLabel = "No safe continuation";
+    run.adaptiveReadReason = "No player is available to finish the play.";
     return;
   }
-
-  run.adaptiveReadLabel = "No safe continuation";
-  run.adaptiveReadReason = "Defenders cover the passing lanes and drive, so the handler takes the shot.";
+  run.adaptiveReadLabel = run.adaptiveActionsTaken > 0 ? "Best shot after live reads" : "No safe continuation";
+  run.adaptiveReadRoute = null;
+  run.adaptiveReadReason = run.adaptiveActionsTaken > 0
+    ? readReason(shotChoice, handler, hoop)
+    : `Defenders cover the best passing and driving routes, so player ${shotChoice.player.id} takes the shot with the best available expected value.`;
+  beginShot(run, shotChoice.player, hoop);
 }
 
 function actionOverlapsPlayers(action: BoundAction, start: number, end: number, playerIds: Set<number>) {
@@ -850,6 +1054,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     offBallAnchors: new Map(players.map((player) => [player.id, { x: player.x, y: player.y }])),
     velocities: new Map(),
     recipientStartOverrides: new Map(),
+    offBallTargetSkills: new Map(players.map((player) => [player.id, offBallTargetSkill(player, hoop)])),
     source: sourceCopy,
     settings: runSettings,
     players,
@@ -866,6 +1071,11 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     shotQualityAtRelease: 0,
     shotDurationMs: SIMULATION_SHOT_MS,
     plannedActionDurationMs: actionDurationMs,
+    nextEarlyReadMs: EARLY_READ_START_MS,
+    adaptiveActionsTaken: 0,
+    adaptiveContinuationStartedAtMs: null,
+    adaptivePassPairs: new Set(),
+    earlyReadInterrupted: false,
     adaptiveReadResolved: false,
     adaptiveReadLabel: null,
     adaptiveReadReason: null,
@@ -1083,7 +1293,32 @@ function offBallTarget(run: SimulationRun, player: PlaybookMarker, ball: CourtPo
         ? 1
         : clamp(1 - (cycle - 3.2) / 2.3, 0, 1);
     const cutPoint = pointToward(anchor, hoop, maxOffset * 0.8);
-    target = lerpPoint(target, cutPoint, cutAmount * 0.55);
+    const cutterWeight = clamp((playerRating(player, "finishing") - 1) / 2, 0, 1) * 0.55;
+    target = lerpPoint(target, cutPoint, cutAmount * cutterWeight);
+  }
+
+  const targetSkill = run.offBallTargetSkills.get(player.id) ?? null;
+  if (targetSkill) {
+    const desiredRadius = targetSkill === "threePoint"
+      ? NBA_COURT_GEOMETRY.threePoint.radiusFeet + 0.75
+      : targetSkill === "midrange" ? 15.5 : 7.5;
+    const desired = pointToward(hoop, anchor, desiredRadius);
+    const hoopFeet = toCourtFeet(hoop);
+    const desiredFeet = toCourtFeet(desired);
+    const radialLength = Math.max(0.01, Math.hypot(desiredFeet.x - hoopFeet.x, desiredFeet.y - hoopFeet.y));
+    const lateral = { x: -(desiredFeet.y - hoopFeet.y) / radialLength, y: (desiredFeet.x - hoopFeet.x) / radialLength };
+    const locationOptions = [0, -3.5, 3.5].map((offset) => addFeet(desired, { x: lateral.x * offset, y: lateral.y * offset }));
+    const openLocation = locationOptions
+      .map((point, index) => {
+        const defenderSpace = Math.min(16, defenderGap(point, run.defenders));
+        const teammateSpace = Math.min(18, nearestTeammateGap({ ...player, ...point }, player.id, run.players));
+        const ballSpacing = Math.abs(pointDistanceFeet(point, ball) - 23);
+        const movementCost = pointDistanceFeet(anchor, point);
+        return { point, index, score: defenderSpace + teammateSpace * 0.55 - ballSpacing * 0.18 - movementCost * 0.12 };
+      })
+      .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.point ?? desired;
+    const roleWeight = playerRating(player, targetSkill) >= 4 ? 0.7 : 0.58;
+    target = lerpPoint(target, openLocation, roleWeight);
   }
   const offset = pointDistanceFeet(anchor, target);
   return offset > maxOffset && offset > 0
@@ -1496,15 +1731,21 @@ function calculateDefensiveQuality(
   return Math.round(clamp((onBallScore * 0.42 + assignmentScore * 0.38 + helpScore * 0.2) * 100 * styleWeight, 0, 100));
 }
 
-function calculateShotQuality(players: PlaybookMarker[], defenders: PlaybookMarker[], shooter: PlaybookMarker, offBallQuality: number) {
-  const rangeScore = 1 - Math.min(1, pointDistanceFeet(shooter, HOOP_POINT) / 37);
+function calculateShotQuality(
+  players: PlaybookMarker[],
+  defenders: PlaybookMarker[],
+  shooter: PlaybookMarker,
+  offBallQuality: number,
+  hoop = HOOP_POINT,
+) {
+  const rangeScore = 1 - Math.min(1, pointDistanceFeet(shooter, hoop) / 37);
   const closestDefenderGap = defenders.length
     ? Math.min(...defenders.map((defender) => pointDistanceFeet(defender, shooter)))
     : 19;
   const contestScore = Math.min(1, closestDefenderGap / 19);
   const baseQuality = (rangeScore * 0.52 + contestScore * 0.28 + (offBallQuality / 100) * 0.2) * 100;
-  const rating = shotSkillRating(shooter, HOOP_POINT);
-  const adjustedQuality = baseQuality + (rating - 3) * 6;
+  const rating = shotSkillRating(shooter, hoop);
+  const adjustedQuality = baseQuality + (rating - 3) * 8;
   return Math.round(clamp(rating === 1 ? Math.min(adjustedQuality, 40) : adjustedQuality, 0, 100));
 }
 
@@ -1526,7 +1767,7 @@ function updateShot(run: SimulationRun, timeMs: number, dt: number, hoop: CourtP
     run.shotStart = run.ball ? { ...run.ball } : { x: shooter.x, y: shooter.y };
     run.shotShooterId = shooter.id;
     const offBall = calculateOffBallQuality(run.players, run.shotStart, run.settings, run.defenders, shooter.id);
-    run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, shooter, offBall);
+    run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, shooter, offBall, hoop);
   }
   const path = run.shotPathOverride;
   const pathStartTime = path ? Math.max(run.actionDurationMs, path.atMs) : run.actionDurationMs;
@@ -1552,10 +1793,14 @@ function nextTimeBoundary(run: SimulationRun, stepEnd: number) {
   const nextActionBoundary = run.actions.flatMap((action) => [action.startTime, action.startTime + action.durationMs])
     .filter((time) => time > run.elapsedMs + 1e-6)
     .reduce((best, time) => Math.min(best, time), stepEnd);
+  const nextEarlyRead = !run.shotStart && run.nextEarlyReadMs > run.elapsedMs + 1e-6
+    ? run.nextEarlyReadMs
+    : Number.POSITIVE_INFINITY;
   return Math.min(
     stepEnd,
     run.durationMs,
     nextActionBoundary,
+    nextEarlyRead,
     run.actionDurationMs > run.elapsedMs + 1e-6 ? run.actionDurationMs : Number.POSITIVE_INFINITY,
   );
 }
@@ -1603,15 +1848,16 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   }
   if (startTime < run.actionDurationMs) updateDefense(run, sampleTime, dt, hoop);
   run.elapsedMs = endTime;
-  if (run.elapsedMs >= run.plannedActionDurationMs && !run.adaptiveReadResolved) resolveAdaptiveRead(run, hoop);
-  if (run.elapsedMs >= run.actionDurationMs && run.adaptiveReadResolved && !run.shotStart) {
-    const shooter = markerForId(run.players, run.ballHandlerId) ?? run.players[nearestPointIndex(run.players, run.ball ?? hoop)] ?? null;
-    if (shooter) {
-      run.shotStart = run.ball ? { ...run.ball } : { x: shooter.x, y: shooter.y };
-      run.shotShooterId = shooter.id;
-      const offBall = calculateOffBallQuality(run.players, run.shotStart, run.settings, run.defenders, shooter.id);
-      run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, shooter, offBall);
-    }
+  if (!run.shotStart && run.elapsedMs + 1e-6 >= run.nextEarlyReadMs) {
+    startEarlyRead(run, hoop);
+    if (!run.earlyReadInterrupted) run.nextEarlyReadMs += EARLY_READ_INTERVAL_MS;
+  }
+  const authoredActionsEnded = run.elapsedMs + 1e-6 >= run.plannedActionDurationMs
+    && run.adaptiveContinuationStartedAtMs == null;
+  const liveActionEnded = run.adaptiveContinuationStartedAtMs != null
+    && run.elapsedMs + 1e-6 >= run.actionDurationMs;
+  if (!run.shotStart && (authoredActionsEnded || liveActionEnded)) {
+    resolveAdaptiveRead(run, hoop);
   }
   run.frame = frameFor(run);
 }
