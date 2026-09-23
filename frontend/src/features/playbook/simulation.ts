@@ -47,6 +47,7 @@ export type SimulationRun = {
   readonly actionDurationMs: number;
   readonly durationMs: number;
   readonly assignments: Map<number, number>;
+  readonly initialAssignments: Map<number, number>;
   readonly ephemeralDefenders: boolean;
   readonly switchedActions: Set<string>;
   readonly actionStarts: Map<string, CourtPoint>;
@@ -291,10 +292,15 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
       durationMs,
       plannedStart,
       controlOffset,
+      partnerId: (arrow.kind === "screen" || arrow.kind === "pick-roll") && actor?.id !== ballHandlerId ? ballHandlerId : null,
+      partnerStart: (arrow.kind === "screen" || arrow.kind === "pick-roll") && actor?.id !== ballHandlerId && markerForId(positions, ballHandlerId)
+        ? { ...markerForId(positions, ballHandlerId)! }
+        : null,
     };
     cursor += durationMs;
     if (movesOnCourt && actorIndex >= 0) {
-      positions[actorIndex] = { ...positions[actorIndex], ...arrow.end };
+      const finish = arrow.kind === "pick-roll" ? pointToward(arrow.end, HOOP_POINT, 8) : arrow.end;
+      positions[actorIndex] = { ...positions[actorIndex], ...finish };
     }
     if (isOffBallScreen && recipientIndex >= 0) {
       positions[recipientIndex] = { ...positions[recipientIndex], ...offBallCutterTarget(arrow.end) };
@@ -311,7 +317,7 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
 function normalizeSettings(settings: SimulationSettings): SimulationSettings {
   return {
     offenseOffBall: settings.offenseOffBall,
-    defenseOffBall: settings.defenseOffBall,
+    defenseStrategy: settings.defenseStrategy,
     offBallIntensity: settings.offBallIntensity,
     automaticActions: { ...settings.automaticActions },
   };
@@ -508,6 +514,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
   const defenders = createGoalSideDefenders(players, sourceCopy.defenders, hoop);
   const assignments = new Map<number, number>();
   bestDefensiveMatchups(players, defenders).forEach((playerId, index) => assignments.set(defenders[index].id, playerId));
+  const initialAssignments = new Map(assignments);
   const manual = buildActions(sourceCopy);
   const actions = [...manual.actions];
   let actionDurationMs = manual.actionDurationMs;
@@ -573,6 +580,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     actionDurationMs,
     durationMs: actionDurationMs + SIMULATION_SHOT_MS,
     assignments,
+    initialAssignments,
     ephemeralDefenders,
     switchedActions: new Set(),
     actionStarts: new Map(),
@@ -607,7 +615,13 @@ export function getSimulationFrame(run: SimulationRun) {
 }
 
 export function setSimulationRunSettings(run: SimulationRun, settings: SimulationSettings) {
-  run.settings = normalizeSettings(settings);
+  const previousStrategy = run.settings.defenseStrategy;
+  const nextSettings = normalizeSettings(settings);
+  if (previousStrategy === "switch" && nextSettings.defenseStrategy !== "switch") {
+    run.assignments.clear();
+    run.initialAssignments.forEach((playerId, defenderId) => run.assignments.set(defenderId, playerId));
+  }
+  run.settings = nextSettings;
   run.frame = frameFor(run);
 }
 
@@ -676,7 +690,7 @@ function swapAssignments(run: SimulationRun, firstPlayerId: number | null, secon
 function processActionStart(run: SimulationRun, action: BoundAction) {
   if (run.switchedActions.has(action.arrow.id)) return;
   run.switchedActions.add(action.arrow.id);
-  if (run.settings.defenseOffBall !== "switch") return;
+  if (run.settings.defenseStrategy !== "switch") return;
   if (action.arrow.kind === "screen" || action.arrow.kind === "pick-roll") {
     swapAssignments(run, action.actorId, action.partnerId ?? run.ballHandlerId);
   } else if (action.arrow.kind === "handoff") {
@@ -704,6 +718,45 @@ function currentPrepAt(run: SimulationRun, timeMs: number) {
     const prepWindow = Math.min(PASS_PREP_MS, Math.max(180, action.durationMs * 0.42));
     return timeMs >= Math.max(0, action.startTime - prepWindow) && timeMs < action.startTime;
   }) ?? null;
+}
+
+type ScreenCoverage = {
+  action: BoundAction;
+  screenerIndex: number;
+  screenedIndex: number;
+  screenerId: number;
+  screenedId: number;
+};
+
+function screenCoveragesAt(run: SimulationRun, timeMs: number) {
+  const activeScreens = run.actions
+    .filter((action) => {
+      const kind = action.arrow.kind;
+      return (kind === "screen" || kind === "pick-roll" || kind === "off-ball-screen")
+        && timeMs >= action.startTime
+        && timeMs < action.startTime + action.durationMs;
+    })
+    .sort((a, b) => Number(Boolean(a.automatic)) - Number(Boolean(b.automatic)) || a.sequence - b.sequence || a.startTime - b.startTime);
+  const usedPlayers = new Set<number>();
+  const usedDefenders = new Set<number>();
+  const coverages: ScreenCoverage[] = [];
+  for (const action of activeScreens) {
+    const screenerId = action.actorId;
+    const screenedId = action.arrow.kind === "off-ball-screen" ? action.recipientId : action.partnerId ?? run.ballHandlerId;
+    if (screenerId == null || screenedId == null || screenerId === screenedId || usedPlayers.has(screenerId) || usedPlayers.has(screenedId)) continue;
+    const screenerIndex = run.defenders.findIndex((defender) => run.assignments.get(defender.id) === screenerId);
+    const screenedIndex = run.defenders.findIndex((defender) => run.assignments.get(defender.id) === screenedId);
+    if (screenerIndex < 0 || screenedIndex < 0 || screenerIndex === screenedIndex) continue;
+    const screenerDefenderId = run.defenders[screenerIndex].id;
+    const screenedDefenderId = run.defenders[screenedIndex].id;
+    if (usedDefenders.has(screenerDefenderId) || usedDefenders.has(screenedDefenderId)) continue;
+    usedPlayers.add(screenerId);
+    usedPlayers.add(screenedId);
+    usedDefenders.add(screenerDefenderId);
+    usedDefenders.add(screenedDefenderId);
+    coverages.push({ action, screenerIndex, screenedIndex, screenerId, screenedId });
+  }
+  return coverages;
 }
 
 function actionStartFor(run: SimulationRun, action: BoundAction) {
@@ -798,12 +851,19 @@ function defenderReactionPoint(run: SimulationRun, player: PlaybookMarker) {
 function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
   const handler = markerForId(run.players, run.ballHandlerId) ?? run.players[0] ?? null;
   const activeAction = currentActionAt(run, timeMs);
+  const screenCoverages = run.settings.defenseStrategy === "switch" ? [] : screenCoveragesAt(run, timeMs);
+  const coverageByDefender = new Map<number, { coverage: ScreenCoverage; role: "screener" | "screened" }>();
+  screenCoverages.forEach((coverage) => {
+    coverageByDefender.set(run.defenders[coverage.screenerIndex].id, { coverage, role: "screener" });
+    coverageByDefender.set(run.defenders[coverage.screenedIndex].id, { coverage, role: "screened" });
+  });
   const transfer = currentTransferAt(run, timeMs);
   const drive = handler ? driveThreat(run, hoop) : false;
   const helpSpot = handler ? helpSpotFor(handler, hoop) : hoop;
   const handlerDefenderIndex = handler ? nearestDefenderToPlayer(run, handler.id) : -1;
   let helperIndex = -1;
-  const helpStyle = run.settings.defenseOffBall === "help" || run.settings.defenseOffBall === "trap-rotate";
+  const strategy = run.settings.defenseStrategy;
+  const helpStyle = strategy === "help" || strategy === "trap-rotate" || strategy === "protect-paint";
   if (!drive || !helpStyle) run.helpDefenderId = null;
   if (drive && helpStyle) {
     const currentHelperIndex = run.defenders.findIndex((defender) => defender.id === run.helpDefenderId);
@@ -831,29 +891,59 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
   const targets = run.defenders.map((defender, index) => {
     const assignmentId = run.assignments.get(defender.id);
     const assignment = markerForId(run.players, assignmentId ?? null) ?? handler;
-    if (!handler || !assignment || run.settings.defenseOffBall === "off") return { ...defender };
+    if (!handler || !assignment || strategy === "off") return { ...defender };
     const isOnBall = assignment.id === handler.id;
-    const goalSideGap = run.settings.defenseOffBall === "trap-rotate" && drive ? 2.75 : 3.75;
+    const goalSideGap = strategy === "trap-rotate" && drive ? 2.75 : 3.75;
     const defenderReference = isOnBall ? defenderReactionPoint(run, handler) : assignment;
     let target = pointToward(defenderReference, hoop, goalSideGap);
-    if (!isOnBall && run.settings.defenseOffBall === "help") {
+    if (!isOnBall && strategy === "help") {
       if (drive && index === helperIndex) target = lerpPoint(target, helpSpot, 0.62);
       else if (drive) target = lerpPoint(target, helpSpot, 0.08);
     }
-    if (!isOnBall && run.settings.defenseOffBall === "trap-rotate") {
+    if (!isOnBall && strategy === "trap-rotate") {
       if (drive && index === helperIndex) target = pointToward(handler, hoop, 4.5);
       else if (drive) target = lerpPoint(target, helpSpot, 0.2);
+    }
+    if (!isOnBall && strategy === "deny-lanes") {
+      const ball = run.ball ?? handler;
+      target = lerpPoint(target, lerpPoint(assignment, ball, 0.48), 0.35);
+    }
+    if (!isOnBall && strategy === "protect-paint") {
+      const paintSpot = pointToward(assignment, hoop, Math.min(10, pointDistanceFeet(assignment, hoop) * 0.4));
+      target = lerpPoint(target, paintSpot, drive && index === helperIndex ? 0.82 : 0.55);
     }
     if (transfer?.recipientId === assignment.id) {
       const progress = clamp((timeMs - transfer.startTime) / transfer.durationMs, 0, 1);
       target = lerpPoint(target, assignment, 0.3 + progress * 0.4);
     }
     if (activeAction && (activeAction.arrow.kind === "screen" || activeAction.arrow.kind === "pick-roll")
-      && run.settings.defenseOffBall === "contain" && (isOnBall || activeAction.partnerId === assignment.id)) {
+      && strategy === "contain" && (isOnBall || activeAction.partnerId === assignment.id)) {
       const start = activeAction.plannedStart ?? activeAction.arrow.start;
       const end = activeAction.arrow.end;
       const progress = clamp((timeMs - activeAction.startTime) / activeAction.durationMs, 0, 1);
       target = lerpPoint(target, lerpPoint(start, end, progress), 0.12);
+    }
+    const coverageRole = coverageByDefender.get(defender.id);
+    if (coverageRole) {
+      const { action, screenedId } = coverageRole.coverage;
+      const screenPoint = action.arrow.end;
+      const progress = clamp((timeMs - action.startTime) / action.durationMs, 0, 1);
+      const screenedPlayer = markerForId(run.players, screenedId) ?? handler;
+      if (strategy === "fight-over" && coverageRole.role === "screened") {
+        const outsideRoute = pointToward(screenPoint, hoop, -3.25);
+        target = progress < 0.48 ? outsideRoute : lerpPoint(outsideRoute, target, clamp((progress - 0.48) / 0.4, 0, 1));
+      } else if (strategy === "go-under" && coverageRole.role === "screened") {
+        const insideRoute = pointToward(screenPoint, hoop, 3.25);
+        target = progress < 0.48 ? insideRoute : lerpPoint(insideRoute, target, clamp((progress - 0.48) / 0.4, 0, 1));
+      } else if (strategy === "drop" && coverageRole.role === "screener") {
+        const dropSpot = pointToward(screenPoint, hoop, 5.25);
+        target = lerpPoint(target, dropSpot, progress < 0.68 ? 0.78 : 0.2);
+      } else if ((strategy === "hedge" || strategy === "trap-rotate") && coverageRole.role === "screener") {
+        const hedgeSpot = pointToward(screenPoint, screenedPlayer, 2.25);
+        const hedgeAmount = strategy === "trap-rotate" ? 0.86 : 0.62;
+        const recovery = progress < 0.52 ? 1 : clamp(1 - (progress - 0.52) / 0.38, 0, 1);
+        target = lerpPoint(target, hedgeSpot, hedgeAmount * recovery);
+      }
     }
     return clampCourt(target);
   });
@@ -908,7 +998,7 @@ function sampleMovementTarget(run: SimulationRun, action: BoundAction, timeMs: n
     ? clamp((timeMs - effectiveStart.atMs) / (action.startTime + action.durationMs - effectiveStart.atMs), 0, 1)
     : clamp((timeMs - action.startTime) / action.durationMs, 0, 1);
   const easedProgress = easeInOut(progress);
-  if (action.automatic && action.arrow.kind === "pick-roll") {
+  if (action.arrow.kind === "pick-roll") {
     const screen = action.arrow.end;
     const roll = pointToward(screen, HOOP_POINT, 8);
     return easedProgress < 0.45
@@ -1009,7 +1099,7 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
   const { targets } = defensiveTargets(run, timeMs, hoop);
   run.defenders = run.defenders.map((defender, index) => {
     const target = targets[index] ?? defender;
-    if (run.settings.defenseOffBall === "off") {
+    if (run.settings.defenseStrategy === "off") {
       const velocity = run.velocities.get(velocityKey("defender", defender.id)) ?? { x: 0, y: 0 };
       run.velocities.set(velocityKey("defender", defender.id), { x: velocity.x * 0.4, y: velocity.y * 0.4 });
       return defender;

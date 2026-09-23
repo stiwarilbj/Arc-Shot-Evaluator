@@ -6,7 +6,6 @@ interface VideoUploadProps {
   error: string | null;
   onFiles: (files: File[]) => void;
   processingMode: ProcessingMode;
-  onProcessingModeChange: (mode: ProcessingMode) => void;
   shotMode: ShotMode;
   onShotModeChange: (mode: ShotMode) => void;
 }
@@ -16,7 +15,7 @@ const VIDEO_TYPES = [
   ".mpeg", ".mpg", ".3gp", ".m2ts", ".mts", ".ts", ".ogv", ".asf",
 ];
 
-export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange }: VideoUploadProps) {
+export function VideoUpload({ error, onFiles, processingMode, shotMode, onShotModeChange }: VideoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -32,16 +31,10 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
           Upload a basketball clip to review movement, release timing, and shot attempts in ARC; use Playbook for a half-court diagram when you need a plan
         </p>
       </section>
-      <label className="analysis-depth-control">
+      <div className="analysis-depth-control">
         <span>Analysis depth</span>
-        <select
-          aria-label="Analysis depth"
-          value={processingMode}
-          onChange={() => onProcessingModeChange("normal")}
-        >
-          <option value="normal">Normal · standard shot review</option>
-        </select>
-      </label>
+        <output className="analysis-depth-value" aria-label="Analysis depth">{processingMode === "normal" ? "Normal · standard shot review" : processingMode}</output>
+      </div>
       <fieldset className="shot-mode-control">
         <legend>Shot type</legend>
         <div className="shot-mode-options" role="group" aria-label="Shot type">

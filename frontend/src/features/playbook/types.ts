@@ -2,7 +2,7 @@ export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | 
 export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "off-ball-screen";
 export type ArrowPath = "straight" | "curve";
 export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
-export type DefenseOffBallStyle = "off" | "contain" | "help" | "switch" | "trap-rotate";
+export type DefenseStrategy = "off" | "contain" | "help" | "switch" | "trap-rotate" | "fight-over" | "go-under" | "drop" | "hedge" | "deny-lanes" | "protect-paint";
 
 export interface AutomaticActionSettings {
   screen: boolean;
@@ -13,14 +13,14 @@ export interface AutomaticActionSettings {
 
 export interface SimulationSettings {
   offenseOffBall: OffenseOffBallStyle;
-  defenseOffBall: DefenseOffBallStyle;
+  defenseStrategy: DefenseStrategy;
   offBallIntensity: number;
   automaticActions: AutomaticActionSettings;
 }
 
 export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = {
   offenseOffBall: "read-react",
-  defenseOffBall: "help",
+  defenseStrategy: "help",
   offBallIntensity: 70,
   automaticActions: { screen: true, handoff: true, pickRoll: true, offBallScreen: true },
 };

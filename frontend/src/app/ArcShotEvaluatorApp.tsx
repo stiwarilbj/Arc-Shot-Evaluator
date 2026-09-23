@@ -103,7 +103,7 @@ export function ArcShotEvaluatorApp() {
   const [reviewFrame, setReviewFrame] = useState<number | null>(null);
   const [mode, setMode] = useState<VideoMode>("pose");
   const [tab, setTab] = useState<WorkspaceTab>("shot");
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>("normal");
+  const [processingMode] = useState<ProcessingMode>("normal");
   // Free throw is the safest default for a new launch; a selected mode is
   // captured into each queue item so changing it never mutates an active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
@@ -488,7 +488,6 @@ export function ArcShotEvaluatorApp() {
           error={error}
           onFiles={enqueueUploadedVideos}
           processingMode={processingMode}
-          onProcessingModeChange={setProcessingMode}
           shotMode={shotMode}
           onShotModeChange={setShotMode}
         />

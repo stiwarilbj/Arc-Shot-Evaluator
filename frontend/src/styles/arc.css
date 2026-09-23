@@ -212,9 +212,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .timecode { color: var(--muted); font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
 .timecode { margin-left: 6px; }
 .speed-control { display: inline-flex; align-items: center; margin-left: 6px; }
-.speed-control select { min-width: 58px; height: 30px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--muted); cursor: pointer; font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.speed-control select:hover { border-color: var(--line-strong); }
-.speed-control select:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .transport-icon { color: var(--muted); margin-left: 2px; }
 .timeline-wrap { position: relative; flex: 1; display: flex; align-items: center; margin-left: 10px; }
@@ -322,7 +319,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 .video-upload { width: min(960px, calc(100% - 40px)); margin: auto; padding: 70px 0 90px; }
 .analysis-depth-control { display: flex; align-items: center; justify-content: space-between; gap: 14px; max-width: 520px; margin: 0 auto 12px; color: var(--muted); font-size: 12px; }
-.analysis-depth-control select { min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 12px; }
 .shot-mode-control { max-width: 520px; margin: 0 auto 14px; padding: 0; border: 0; color: var(--muted); }
 .shot-mode-control legend { margin-bottom: 7px; color: var(--text); font-size: 12px; font-weight: 600; }
 .shot-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -530,7 +526,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .transport .icon-button:nth-of-type(2), .transport .icon-button:nth-of-type(3), .transport-icon { display: none; }
   .timecode { font-size: 10px; }
   .speed-control { margin-left: 2px; }
-  .speed-control select { min-width: 50px; height: 28px; padding: 0 3px; font-size: 10px; }
   .mode-switch { left: 8px; bottom: 8px; }
   .mode-switch button { min-width: 64px; padding: 7px; font-size: 11px; }
   .shot-selector { padding: 8px; }
@@ -657,8 +652,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .simulation-settings-panel { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line); border-top: 0; background: var(--surface); color: var(--muted); font-size: 10px; }
 .simulation-setting { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .simulation-setting > span { color: var(--dim); }
-.simulation-setting select { min-height: 28px; padding: 0 22px 0 7px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); color: var(--text); font-size: 10px; }
-.simulation-setting select:focus, .simulation-setting input:focus { border-color: var(--orange); outline: none; }
+.simulation-setting > .arc-select { width: 158px; }
+.simulation-defense-setting > .arc-select { width: 195px; }
+.simulation-setting input:focus { border-color: var(--orange); outline: none; }
 .simulation-setting-range { min-width: 210px; flex: 1 1 240px; flex-wrap: wrap; }
 .simulation-setting-range > span { display: flex; align-items: center; gap: 5px; width: 100%; }
 .simulation-setting-range output { color: var(--text); font-weight: 700; }
@@ -666,10 +662,36 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .simulation-settings-note { color: var(--dim); }
 .sequence-editor { display: inline-flex; align-items: center; gap: 5px; padding-left: 9px; border-left: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .sequence-editor input { width: 45px; min-height: 27px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--text); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
-.sequence-editor select { min-height: 27px; max-width: 95px; padding: 0 20px 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--text); font-size: 10px; }
-.sequence-editor select:focus { border-color: var(--orange); outline: none; }
 .sequence-editor input:focus { border-color: var(--orange); outline: none; }
 .sequence-editor small { color: var(--dim); }
+.arc-select { position: relative; display: inline-flex; min-width: 0; }
+.arc-select--full { display: flex; width: 100%; }
+.arc-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; min-height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--input-bg); color: var(--text); text-align: left; font-size: 12px; line-height: 1.25; cursor: pointer; transition: border-color .14s ease, background .14s ease, box-shadow .14s ease; }
+.arc-select-trigger:hover { border-color: color-mix(in srgb, var(--orange) 65%, var(--line-strong)); background: var(--surface-2); }
+.arc-select-trigger.is-open { border-color: var(--orange); box-shadow: 0 0 0 2px color-mix(in srgb, var(--orange) 15%, transparent); }
+.arc-select-trigger:disabled { opacity: .55; cursor: not-allowed; }
+.arc-select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arc-select-value.is-placeholder { color: var(--dim); }
+.arc-select-chevron { flex: none; color: var(--muted); transition: transform .14s ease; }
+.arc-select-trigger.is-open .arc-select-chevron { transform: rotate(180deg); color: var(--orange); }
+.arc-select--compact .arc-select-trigger { min-height: 28px; padding: 0 7px; border-radius: 5px; font-size: 10px; }
+.arc-select-popup { position: fixed; z-index: 1500; overflow: auto; padding: 4px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--text); box-shadow: 0 14px 34px rgba(0, 0, 0, .28); overscroll-behavior: contain; }
+.arc-select-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; padding: 7px 9px; border-radius: 4px; color: var(--text); font-size: 12px; line-height: 1.3; cursor: pointer; }
+.arc-select-option:hover, .arc-select-option.is-active { background: color-mix(in srgb, var(--orange) 9%, var(--surface-2)); }
+.arc-select-option[aria-selected="true"] { background: color-mix(in srgb, var(--orange) 15%, var(--surface-2)); color: var(--text); }
+.arc-select-option[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.arc-select-option > svg { flex: none; color: var(--orange); }
+.arc-select-option-copy { display: grid; gap: 2px; min-width: 0; }
+.arc-select-option-label { font-weight: 600; }
+.arc-select-option-description { color: var(--muted); font-size: 10px; line-height: 1.35; }
+.analysis-depth-value { min-height: 34px; display: flex; align-items: center; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 12px; }
+.video-speed-select { width: 66px; }
+.video-speed-select .arc-select-trigger { min-height: 30px; padding: 0 6px; border-color: var(--line); background: var(--surface-2); color: var(--muted); font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.video-speed-select .arc-select-chevron { width: 12px; }
+.playbook-path-select { width: 95px; }
+.playbook-offense-select { width: 158px; }
+.playbook-defense-select { width: 195px; }
+.correction-field > .arc-select { width: 100%; }
 .playbook-statusbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 35px; padding: 6px 4px 0; color: var(--dim); font-size: 10px; }
 .playbook-statusbar span { gap: 6px; min-width: 0; }
 .playbook-statusbar span:last-child { justify-content: flex-end; text-align: right; }
@@ -783,7 +805,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .simulation-setting-range { display: block; min-width: 0; }
   .simulation-settings-note { line-height: 1.45; }
   .sequence-editor { padding-left: 0; border-left: 0; }
-  .sequence-editor select { max-width: 86px; }
+  .playbook-path-select { width: 86px; }
   .court-frame { padding: 6px; }
   .court-hint { right: 12px; bottom: 13px; font-size: 9px; }
   .playbook-statusbar { display: block; line-height: 1.5; }

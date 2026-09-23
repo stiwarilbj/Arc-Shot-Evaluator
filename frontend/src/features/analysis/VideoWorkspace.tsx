@@ -9,6 +9,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import type { AnalysisSession, BrowserPoseFrame, BrowserPoseOverlay, ShotAnalysis, VideoMode } from "../../domain/analysisTypes";
+import { ArcSelect } from "../../components/ArcSelect";
 
 interface VideoWorkspaceProps {
   session: AnalysisSession;
@@ -306,16 +307,15 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
           />
           {shot ? <span className="release-marker" style={{ left: `${releasePercent}%` }} title={`Release ${formatTime(shot.release_time)}`} /> : null}
         </div>
-        <label className="speed-control">
-          <span className="sr-only">Playback speed</span>
-          <select
-            aria-label="Playback speed"
-            value={playbackRate}
-            onChange={(event) => setPlaybackRate(Number(event.currentTarget.value))}
-          >
-            {PLAYBACK_RATES.map((rate) => <option key={rate} value={rate}>{formatRate(rate)}</option>)}
-          </select>
-        </label>
+        <div className="speed-control">
+          <ArcSelect
+            ariaLabel="Playback speed"
+            className="arc-select--compact video-speed-select"
+            value={String(playbackRate)}
+            options={PLAYBACK_RATES.map((rate) => ({ value: String(rate), label: formatRate(rate) }))}
+            onValueChange={(value) => setPlaybackRate(Number(value))}
+          />
+        </div>
         <button
           className="icon-button volume-button"
           type="button"

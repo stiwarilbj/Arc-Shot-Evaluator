@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { AnalysisSession, ShotAnalysis, WorkspaceTab, CourtCalibration } from "../../domain/analysisTypes";
 import { addManualShot, correctSavedShot, updateSessionContext } from "../../services/analysisApi";
+import { ArcSelect } from "../../components/ArcSelect";
 
 interface ShotDataPanelProps {
   session: AnalysisSession;
@@ -330,31 +331,31 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
         </label>
         {isJumpShot ? (
           <>
-            <label className="correction-field">
+            <div className="correction-field">
               <span>Shot classification</span>
-              <select value={shotTypeDraft} onChange={(event) => setShotTypeDraft(event.currentTarget.value)}>
-                <option value="unknown">Unknown / review</option>
-                <option value="three_pointer">Three-pointer</option>
-                <option value="mid_range">Mid-range</option>
-                <option value="near_three_point_line_review">Near line / review</option>
-                <option value="layup">Layup (exclude)</option>
-                <option value="dunk">Dunk (exclude)</option>
-                <option value="pass">Pass (exclude)</option>
-                <option value="pump_fake">Pump fake (exclude)</option>
-              </select>
-            </label>
+              <ArcSelect ariaLabel="Shot classification" className="arc-select--full" value={shotTypeDraft} options={[
+                { value: "unknown", label: "Unknown / review" },
+                { value: "three_pointer", label: "Three-pointer" },
+                { value: "mid_range", label: "Mid-range" },
+                { value: "near_three_point_line_review", label: "Near line / review" },
+                { value: "layup", label: "Layup (exclude)" },
+                { value: "dunk", label: "Dunk (exclude)" },
+                { value: "pass", label: "Pass (exclude)" },
+                { value: "pump_fake", label: "Pump fake (exclude)" },
+              ]} onValueChange={setShotTypeDraft} />
+            </div>
             <label className="correction-field">
               <span>Takeoff frame</span>
               <input type="number" min={0} step={1} value={takeoffFrameDraft} onChange={(event) => setTakeoffFrameDraft(parseFrame(event.currentTarget.value))} />
             </label>
-            <label className="correction-field">
+            <div className="correction-field">
               <span>Shooting hand</span>
-              <select value={shootingHandDraft} onChange={(event) => setShootingHandDraft(event.currentTarget.value as "left" | "right" | "unknown")}>
-                <option value="unknown">Unknown</option>
-                <option value="left">Left</option>
-                <option value="right">Right</option>
-              </select>
-            </label>
+              <ArcSelect ariaLabel="Shooting hand" className="arc-select--full" value={shootingHandDraft} options={[
+                { value: "unknown", label: "Unknown" },
+                { value: "left", label: "Left" },
+                { value: "right", label: "Right" },
+              ]} onValueChange={(value) => setShootingHandDraft(value as "left" | "right" | "unknown")} />
+            </div>
             <label className="correction-field">
               <span>Defender track labels</span>
               <input type="text" placeholder="player-2, player-3" value={defenderIdsDraft} onChange={(event) => setDefenderIdsDraft(event.currentTarget.value)} />
@@ -425,17 +426,17 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
         <section className="rail-panel correction-panel calibration-panel">
           <h3>Court setup</h3>
           <p className="basis-note">Four floor landmarks let ARC turn projected feet into a court-plane distance. Coordinates are source-video pixels and court metres.</p>
-          <label className="correction-field">
+          <div className="correction-field">
             <span>Court rules</span>
-            <select value={courtPreset} onChange={(event) => setCourtPreset(event.currentTarget.value as CourtCalibration["preset"])}>
-              <option value="unknown">Unknown</option>
-              <option value="nba">NBA / WNBA</option>
-              <option value="ncaa">NCAA</option>
-              <option value="fiba">FIBA</option>
-              <option value="high_school">High school</option>
-              <option value="custom">Custom</option>
-            </select>
-          </label>
+            <ArcSelect ariaLabel="Court rules" className="arc-select--full" value={courtPreset} options={[
+              { value: "unknown", label: "Unknown" },
+              { value: "nba", label: "NBA / WNBA" },
+              { value: "ncaa", label: "NCAA" },
+              { value: "fiba", label: "FIBA" },
+              { value: "high_school", label: "High school" },
+              { value: "custom", label: "Custom" },
+            ]} onValueChange={(value) => setCourtPreset(value as CourtCalibration["preset"])} />
+          </div>
           <label className="correction-field">
             <span>Image points JSON</span>
             <textarea value={imagePointsDraft} onChange={(event) => setImagePointsDraft(event.currentTarget.value)} placeholder="[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]" />

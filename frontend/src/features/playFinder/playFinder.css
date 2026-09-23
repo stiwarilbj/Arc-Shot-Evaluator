@@ -27,11 +27,15 @@
 .finder-chip button { display: grid; width: 20px; height: 20px; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--dim); cursor: pointer; }
 .finder-chip button:hover { color: var(--text); background: var(--line); }
 .finder-chip-unsupported, .finder-chip-ambiguous { border-color: color-mix(in srgb, var(--review) 60%, var(--line)); background: color-mix(in srgb, var(--review) 9%, var(--surface)); color: var(--review); }
-.finder-chip select { max-width: 210px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 10px; }
+.finder-chip-select { width: min(210px, 42vw); }
+.finder-chip-select .arc-select-trigger { min-height: 24px; padding: 0 4px; border: 0; border-radius: 3px; background: transparent; font-size: 10px; }
+.finder-chip-select .arc-select-trigger:hover, .finder-chip-select .arc-select-trigger.is-open { background: color-mix(in srgb, var(--orange) 9%, var(--surface-2)); }
+.finder-chip-select .arc-select-chevron { width: 11px; }
 .finder-condition-alert { color: var(--review); font-size: 10px; }
 .finder-filter-builder { display: grid; grid-template-columns: minmax(130px, .8fr) minmax(112px, .65fr) minmax(180px, 1fr) auto; align-items: end; gap: 9px; margin-top: 11px; padding: 12px; border-top: 1px solid var(--line); }
-.finder-filter-builder label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 650; }
-.finder-filter-builder input, .finder-filter-builder select, .finder-sort select, .finder-detail-actions select { width: 100%; min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--input-bg); color: var(--text); font-size: 11px; }
+.finder-select-field { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 10px; font-weight: 650; }
+.finder-select-field > .arc-select { width: 100%; }
+.finder-filter-builder input { width: 100%; min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--input-bg); color: var(--text); font-size: 11px; }
 .finder-filter-builder .button { min-height: 34px; white-space: nowrap; }
 .finder-filter-builder p { grid-column: 1 / -1; margin: 0; color: var(--dim); font-size: 10px; }
 .finder-catalog-line { display: flex; justify-content: space-between; gap: 14px; padding: 13px 2px; color: var(--dim); font-size: 10px; }
@@ -45,7 +49,8 @@
 .finder-results-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin: 2px 0 10px; }
 .finder-results-heading h2 { margin: 3px 0 0; font-size: 17px; letter-spacing: -.02em; }
 .finder-sort { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 10px; }
-.finder-sort select { width: auto; min-width: 112px; }
+.finder-sort-select { width: 118px; }
+.finder-sort-select .arc-select-trigger { min-height: 30px; font-size: 10px; }
 .finder-result-list { display: grid; gap: 7px; }
 .finder-result-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) 16px; align-items: start; gap: 11px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); text-align: left; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
 .finder-result-card:hover, .finder-result-card.is-selected { border-color: color-mix(in srgb, var(--orange) 65%, var(--line)); background: color-mix(in srgb, var(--orange) 4%, var(--surface)); }
@@ -83,7 +88,8 @@
 .finder-detail-context strong { overflow-wrap: anywhere; color: var(--text); font-size: 10px; font-weight: 600; }
 .finder-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .finder-detail-actions .button { min-height: 34px; font-size: 10px; }
-.finder-detail-actions select { width: auto; max-width: 150px; }
+.finder-collection-select { width: min(150px, 100%); }
+.finder-collection-select .arc-select-trigger { min-height: 34px; font-size: 10px; }
 .finder-detail-source { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--dim); font-size: 9px; line-height: 1.4; }
 .finder-detail-source svg { flex: none; }
 .finder-detail-source span { flex: 1 1 180px; }
@@ -166,7 +172,7 @@
   .finder-detail-context { gap: 5px; margin: 10px 0; }
   .finder-detail-actions { align-items: stretch; }
   .finder-detail-actions .button { flex: 1; justify-content: center; }
-  .finder-detail-actions select { flex: 1; max-width: none; }
+  .finder-detail-actions .finder-collection-select { flex: 1; width: auto; max-width: none; }
   .finder-results-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .finder-result-card { grid-template-columns: 27px minmax(0, 1fr) 13px; gap: 8px; padding: 9px; }
   .finder-result-icon { width: 27px; height: 27px; }
