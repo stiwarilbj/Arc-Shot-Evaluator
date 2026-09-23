@@ -1,4 +1,5 @@
-import type { CourtPoint, DefenseScheme, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
+import type { CourtPoint, DefenseScheme, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
+import { playerHasBadge } from "./badges.ts";
 import {
   COURT_SCALE,
   COURT_VIEWBOX,
@@ -69,7 +70,8 @@ export type SimulationRun = {
   readonly offBallAnchors: Map<number, CourtPoint>;
   readonly velocities: Map<string, Velocity>;
   readonly recipientStartOverrides: Map<string, PositionOverride>;
-  readonly offBallTargetSkills: Map<number, keyof PlayerSkillRatings | null>;
+  readonly offBallTargetSkills: Map<number, OffBallTargetSkill | null>;
+  readonly lastReceiveAtMs: Map<number, number>;
   readonly shotDurationMs: number;
   readonly plannedActionDurationMs: number;
   nextEarlyReadMs: number;
@@ -252,7 +254,7 @@ function assignZoneDefenders(defenders: PlaybookMarker[], anchors: CourtPoint[],
 }
 
 function assignZoneChasers(defenders: PlaybookMarker[], players: PlaybookMarker[], count: number, hoop: CourtPoint) {
-  const threatScore = (player: PlaybookMarker) => playerRating(player, "threePoint") + playerRating(player, "midrange") + playerRating(player, "finishing");
+  const threatScore = (player: PlaybookMarker) => playerRating(player, "threePoint") + playerRating(player, "midrange") + playerRating(player, "finishing") + badgeThreatScore(player, hoop);
   const threats = players.slice().sort((a, b) => threatScore(b) - threatScore(a) || a.id - b.id).slice(0, count);
   const available = defenders.slice().sort((a, b) => a.id - b.id);
   const assignments = new Map<number, number>();
@@ -565,7 +567,58 @@ function shotSkillRating(player: PlaybookMarker, hoop: CourtPoint) {
   return playerRating(player, shotSkillFor(player, hoop));
 }
 
-function offBallTargetSkill(player: PlaybookMarker, hoop: CourtPoint): keyof PlayerSkillRatings | null {
+function badgeThreatScore(player: PlaybookMarker, hoop: CourtPoint) {
+  const skill = shotSkillFor(player, hoop);
+  let score = 0;
+  if (playerRating(player, "threePoint") >= 2 && skill === "threePoint") {
+    if (playerHasBadge(player, "deep-range")) score += 0.9;
+    if (playerHasBadge(player, "catch-and-shoot")) score += 0.55;
+  }
+  if (playerRating(player, "midrange") >= 2 && skill === "midrange") {
+    if (playerHasBadge(player, "off-dribble-creator")) score += 0.7;
+    if (playerHasBadge(player, "post-scorer")) score += 0.75;
+  }
+  if (playerRating(player, "finishing") >= 2 && skill === "finishing") {
+    if (playerHasBadge(player, "slasher")) score += 0.65;
+    if (playerHasBadge(player, "rim-finisher")) score += 0.9;
+    if (playerHasBadge(player, "cutter")) score += 0.35;
+    if (playerHasBadge(player, "roll-threat")) score += 0.55;
+  }
+  if (playerHasBadge(player, "playmaker")) score += 0.35;
+  if (playerHasBadge(player, "screen-setter")) score += 0.35;
+  return Math.min(1.7, score);
+}
+
+function defensiveThreatRating(player: PlaybookMarker, hoop: CourtPoint) {
+  return clamp(shotSkillRating(player, hoop) + badgeThreatScore(player, hoop), 1, 6.7);
+}
+
+function helpFinishingRating(player: PlaybookMarker) {
+  const finishingIsViable = playerRating(player, "finishing") >= 2;
+  const bonus = (finishingIsViable && playerHasBadge(player, "slasher") ? 1.15 : 0)
+    + (finishingIsViable && playerHasBadge(player, "rim-finisher") ? 0.85 : 0)
+    + (finishingIsViable && playerHasBadge(player, "off-dribble-creator") ? 0.35 : 0)
+    + (finishingIsViable && playerHasBadge(player, "roll-threat") ? 0.35 : 0)
+    + (finishingIsViable && playerHasBadge(player, "cutter") ? 0.25 : 0);
+  return clamp(playerRating(player, "finishing") + bonus, 1, 5);
+}
+
+type OffBallTargetSkill = keyof PlayerSkillRatings | "post";
+
+function offBallTargetSkill(player: PlaybookMarker, hoop: CourtPoint): OffBallTargetSkill | null {
+  const badgeTargets: Array<{ badge: OffensiveBadge; skill: OffBallTargetSkill }> = [
+    { badge: "deep-range", skill: "threePoint" },
+    { badge: "catch-and-shoot", skill: "threePoint" },
+    { badge: "post-scorer", skill: "post" },
+    { badge: "cutter", skill: "finishing" },
+    { badge: "slasher", skill: "finishing" },
+    { badge: "rim-finisher", skill: "finishing" },
+    { badge: "roll-threat", skill: "finishing" },
+    { badge: "off-dribble-creator", skill: "midrange" },
+  ];
+  const badgeTarget = badgeTargets.find(({ badge, skill }) => playerHasBadge(player, badge)
+    && playerRating(player, skill === "post" ? "midrange" : skill) >= 2);
+  if (badgeTarget) return badgeTarget.skill;
   const currentSkill = shotSkillFor(player, hoop);
   const skills: Array<keyof PlayerSkillRatings> = ["threePoint", "midrange", "finishing"];
   const currentRating = playerRating(player, currentSkill);
@@ -589,15 +642,17 @@ function goalSideGapFor(player: PlaybookMarker, hoop: CourtPoint, baseGap: numbe
   const skill = shotSkillFor(player, hoop);
   const rating = playerRating(player, skill);
   const weight = skill === "finishing" ? 0.65 : 1.35;
-  return clamp(baseGap + (3 - rating) * weight, 1.8, 8.5);
+  return clamp(baseGap + (3 - rating) * weight - badgeThreatScore(player, hoop) * 0.72, 1.8, 8.5);
 }
 
 function automaticOffBallArrow(players: PlaybookMarker[], defenders: PlaybookMarker[], handlerId: number | null, sequence: number): PlaybookArrow | null {
   if (players.length < 3 || handlerId == null) return null;
   const cutters = players.filter((player) => player.id !== handlerId
-      && playerRating(player, "finishing") >= 2
+      && (playerRating(player, "finishing") >= 2 || playerHasBadge(player, "cutter") || playerHasBadge(player, "slasher"))
       && defenderGap(player, defenders) <= 8)
-    .sort((a, b) => playerRating(b, "finishing") - playerRating(a, "finishing")
+    .sort((a, b) => Number(playerHasBadge(b, "cutter")) - Number(playerHasBadge(a, "cutter"))
+      || Number(playerHasBadge(b, "slasher")) - Number(playerHasBadge(a, "slasher"))
+      || playerRating(b, "finishing") - playerRating(a, "finishing")
       || defenderGap(b, defenders) - defenderGap(a, defenders)
       || a.id - b.id);
   for (const cutter of cutters) {
@@ -606,9 +661,12 @@ function automaticOffBallArrow(players: PlaybookMarker[], defenders: PlaybookMar
     const screener = players.filter((player) => player.id !== handlerId && player.id !== cutter.id)
       .filter((player) => pointDistanceFeet(player, cutter) >= 4 && pointDistanceFeet(player, cutter) <= 16 && defenderGap(player, defenders) >= 4)
       .sort((a, b) => {
+        const aBadgePriority = Number(playerHasBadge(a, "screen-setter")) * 2 + Number(playerHasBadge(a, "roll-threat"));
+        const bBadgePriority = Number(playerHasBadge(b, "screen-setter")) * 2 + Number(playerHasBadge(b, "roll-threat"));
         const aTopSkill = Math.max(playerRating(a, "threePoint"), playerRating(a, "midrange"), playerRating(a, "finishing"));
         const bTopSkill = Math.max(playerRating(b, "threePoint"), playerRating(b, "midrange"), playerRating(b, "finishing"));
-        return aTopSkill - bTopSkill
+        return bBadgePriority - aBadgePriority
+          || aTopSkill - bTopSkill
           || pointDistanceFeet(a, cutter) - pointDistanceFeet(b, cutter)
           || a.id - b.id;
       })[0];
@@ -631,27 +689,36 @@ function automaticOnBallArrow(players: PlaybookMarker[], defenders: PlaybookMark
     .sort((a, b) => {
       const aValue = calculateShotQuality(players, defenders, a, 70) * (shotSkillFor(a, hoop) === "threePoint" ? 3 : 2) / 100
         + playerRating(a, "finishing") * 0.035
+        + Number(playerHasBadge(a, "catch-and-shoot")) * 0.08
+        + Number(playerHasBadge(a, "deep-range")) * 0.08
+        + Number(playerHasBadge(a, "roll-threat")) * 0.06
+        + Number(playerHasBadge(a, "post-scorer")) * 0.05
         + Math.min(12, defenderGap(a, defenders)) * 0.004;
       const bValue = calculateShotQuality(players, defenders, b, 70) * (shotSkillFor(b, hoop) === "threePoint" ? 3 : 2) / 100
         + playerRating(b, "finishing") * 0.035
+        + Number(playerHasBadge(b, "catch-and-shoot")) * 0.08
+        + Number(playerHasBadge(b, "deep-range")) * 0.08
+        + Number(playerHasBadge(b, "roll-threat")) * 0.06
+        + Number(playerHasBadge(b, "post-scorer")) * 0.05
         + Math.min(12, defenderGap(b, defenders)) * 0.004;
       return bValue - aValue || a.id - b.id;
     })[0];
-  if (settings.automaticActions.handoff && pressure <= 7 && receiver) {
+  if (settings.automaticActions.handoff && pressure <= (playerHasBadge(handler, "playmaker") ? 9 : 7) && receiver) {
     return { id: `auto-handoff-${sequence}`, kind: "handoff", sequence, timing: 1.15, start: { x: handler.x, y: handler.y }, end: { x: receiver.x, y: receiver.y } };
   }
   const screeners = teammates.filter((player) => pointDistanceFeet(player, handler) >= 4 && pointDistanceFeet(player, handler) <= 16)
-    .sort((a, b) => playerRating(b, "finishing") - playerRating(a, "finishing")
+    .sort((a, b) => (Number(playerHasBadge(b, "screen-setter")) * 2 + Number(playerHasBadge(b, "roll-threat"))) - (Number(playerHasBadge(a, "screen-setter")) * 2 + Number(playerHasBadge(a, "roll-threat")))
+      || playerRating(b, "finishing") - playerRating(a, "finishing")
       || pointDistanceFeet(a, handler) - pointDistanceFeet(b, handler)
       || a.id - b.id);
   for (const screener of screeners) {
     const screenPoint = pointToward(handler, screener, Math.min(3.5, pointDistanceFeet(handler, screener) * 0.45));
     const rollPoint = pointToward(screenPoint, hoop, 8);
     const rollClearance = defenderGap({ ...screener, ...rollPoint }, defenders);
-    if (settings.automaticActions.pickRoll && playerRating(screener, "finishing") >= 2 && pressure >= 3 && pressure <= 10 && pointDistanceFeet(handler, hoop) > 12 && rollClearance >= 3.5) {
+    if (settings.automaticActions.pickRoll && (playerRating(screener, "finishing") >= 2 || playerHasBadge(screener, "roll-threat")) && pressure >= 3 && pressure <= 10 && pointDistanceFeet(handler, hoop) > 12 && rollClearance >= 3.5) {
       return { id: `auto-pick-roll-${sequence}`, kind: "pick-roll", sequence, timing: 1.3, start: { x: screener.x, y: screener.y }, end: screenPoint, screener_id: screener.id };
     }
-    if (settings.automaticActions.screen && pressure <= 12) {
+    if (settings.automaticActions.screen && pressure <= (playerHasBadge(screener, "screen-setter") ? 14 : 12)) {
       return { id: `auto-screen-${sequence}`, kind: "screen", sequence, timing: 1.2, start: { x: screener.x, y: screener.y }, end: screenPoint, screener_id: screener.id };
     }
   }
@@ -706,6 +773,9 @@ function adaptiveTargetRole(run: SimulationRun, playerId: number, hoop: CourtPoi
     || action.arrow.kind === "movement" && action.actorId === playerId,
   )) return "cutter";
   const player = markerForId(run.players, playerId);
+  if (player && playerHasBadge(player, "roll-threat")) return "roller";
+  if (player && playerHasBadge(player, "cutter")) return "cutter";
+  if (player && playerHasBadge(player, "post-scorer")) return "post";
   return player && pointDistanceFeet(player, hoop) <= 19 ? "post" : "perimeter";
 }
 
@@ -788,11 +858,37 @@ function roleValue(role: AdaptiveTargetRole) {
   return role === "roller" || role === "cutter" ? 0.08 : role === "popping screener" || role === "post" ? 0.04 : 0;
 }
 
+function badgePassValue(handler: PlaybookMarker, receiver: PlaybookMarker, role: AdaptiveTargetRole) {
+  const bonus = (playerHasBadge(handler, "playmaker") ? 0.08 : 0)
+    + (playerHasBadge(receiver, "catch-and-shoot") ? 0.075 : 0)
+    + (playerHasBadge(receiver, "roll-threat") && role === "roller" ? 0.11 : 0)
+    + (playerHasBadge(receiver, "cutter") && role === "cutter" ? 0.08 : 0)
+    + (playerHasBadge(receiver, "post-scorer") && role === "post" ? 0.07 : 0);
+  return Math.min(0.16, bonus);
+}
+
+function recentlyMovedWithBall(run: SimulationRun, playerId: number, timeMs: number) {
+  const velocity = run.velocities.get(velocityKey("player", playerId)) ?? { x: 0, y: 0 };
+  if (Math.hypot(velocity.x, velocity.y) >= 2.5) return true;
+  return run.actions.some((action) => action.actorId === playerId
+    && ["movement", "pick-roll", "pick-pop", "backdoor-cut"].includes(action.arrow.kind)
+    && action.startTime <= timeMs
+    && timeMs - action.startTime <= 1800);
+}
+
+function badgeShotContext(run: SimulationRun, player: PlaybookMarker, timeMs: number) {
+  const receivedAt = run.lastReceiveAtMs.get(player.id) ?? Number.NEGATIVE_INFINITY;
+  return {
+    recentCatch: timeMs - receivedAt >= 0 && timeMs - receivedAt <= 1150,
+    recentMovement: recentlyMovedWithBall(run, player.id, timeMs),
+  };
+}
+
 function estimatedShot(run: SimulationRun, player: PlaybookMarker, position: CourtPoint, hoop: CourtPoint) {
   const candidatePlayers = run.players.map((candidate) => candidate.id === player.id ? { ...candidate, ...position } : candidate);
   const offBall = calculateOffBallQuality(candidatePlayers, position, run.settings, run.defenders, player.id);
   const candidate = { ...player, ...position };
-  const quality = calculateShotQuality(candidatePlayers, run.defenders, candidate, offBall, hoop);
+  const quality = calculateShotQuality(candidatePlayers, run.defenders, candidate, offBall, hoop, badgeShotContext(run, candidate, run.elapsedMs));
   const points = shotSkillFor(candidate, hoop) === "threePoint" ? 3 : 2;
   return { quality, expectedPoints: quality * points / 100 };
 }
@@ -823,7 +919,7 @@ function liveReadChoices(run: SimulationRun, hoop: CourtPoint) {
     const shot = estimatedShot(run, player, player, hoop);
     const role = adaptiveTargetRole(run, player.id, hoop);
     const spacingBonus = clamp((teammateGap - 3) / 24, 0, 0.06);
-    const score = shot.expectedPoints + roleValue(role) + spacingBonus;
+    const score = shot.expectedPoints + roleValue(role) + spacingBonus + badgePassValue(handler, player, role);
     choices.push({ kind: "pass", player, target: { x: player.x, y: player.y }, role, ...shot, score, receiverGap, laneGap });
   }
 
@@ -842,7 +938,10 @@ function liveReadChoices(run: SimulationRun, hoop: CourtPoint) {
         target: driveTarget,
         role: "cutter",
         ...shot,
-        score: shot.expectedPoints - driveCost,
+        score: shot.expectedPoints - driveCost + Math.min(0.16,
+          (playerHasBadge(handler, "slasher") ? 0.11 : 0)
+          + (playerHasBadge(handler, "off-dribble-creator") ? 0.08 : 0)
+          + (playerHasBadge(handler, "rim-finisher") ? 0.05 : 0)),
         receiverGap: pressureGap,
         laneGap,
       });
@@ -883,7 +982,7 @@ function beginShot(run: SimulationRun, player: PlaybookMarker, hoop: CourtPoint)
   run.shotStart = { x: player.x, y: player.y };
   run.shotShooterId = player.id;
   const offBall = calculateOffBallQuality(run.players, run.shotStart, run.settings, run.defenders, player.id);
-  run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, player, offBall, hoop);
+  run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, player, offBall, hoop, badgeShotContext(run, player, run.elapsedMs));
 }
 
 function readReason(choice: LiveReadChoice, handler: PlaybookMarker, hoop: CourtPoint) {
@@ -1229,6 +1328,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     velocities: new Map(),
     recipientStartOverrides: new Map(),
     offBallTargetSkills: new Map(players.map((player) => [player.id, offBallTargetSkill(player, hoop)])),
+    lastReceiveAtMs: new Map(),
     source: sourceCopy,
     settings: runSettings,
     players,
@@ -1503,15 +1603,22 @@ function offBallTarget(run: SimulationRun, player: PlaybookMarker, ball: CourtPo
         ? 1
         : clamp(1 - (cycle - 3.2) / 2.3, 0, 1);
     const cutPoint = pointToward(anchor, hoop, maxOffset * 0.8);
-    const cutterWeight = clamp((playerRating(player, "finishing") - 1) / 2, 0, 1) * 0.55;
+    const cutterWeight = clamp(
+      clamp((playerRating(player, "finishing") - 1) / 2, 0, 1) * 0.55
+        + (playerHasBadge(player, "cutter") ? 0.36 : 0)
+        + (playerHasBadge(player, "slasher") ? 0.24 : 0)
+        + (playerHasBadge(player, "rim-finisher") ? 0.18 : 0),
+      0,
+      0.82,
+    );
     target = lerpPoint(target, cutPoint, cutAmount * cutterWeight);
   }
 
   const targetSkill = run.offBallTargetSkills.get(player.id) ?? null;
   if (targetSkill) {
     const desiredRadius = targetSkill === "threePoint"
-      ? NBA_COURT_GEOMETRY.threePoint.radiusFeet + 0.75
-      : targetSkill === "midrange" ? 15.5 : 7.5;
+      ? NBA_COURT_GEOMETRY.threePoint.radiusFeet + (playerHasBadge(player, "deep-range") ? 2 : 0.75)
+      : targetSkill === "midrange" ? 15.5 : targetSkill === "post" ? 10.5 : 7.5;
     const desired = pointToward(hoop, anchor, desiredRadius);
     const hoopFeet = toCourtFeet(hoop);
     const desiredFeet = toCourtFeet(desired);
@@ -1527,7 +1634,12 @@ function offBallTarget(run: SimulationRun, player: PlaybookMarker, ball: CourtPo
         return { point, index, score: defenderSpace + teammateSpace * 0.55 - ballSpacing * 0.18 - movementCost * 0.12 };
       })
       .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.point ?? desired;
-    const roleWeight = playerRating(player, targetSkill) >= 4 ? 0.7 : 0.58;
+    const roleRating = playerRating(player, targetSkill === "post" ? "midrange" : targetSkill);
+    const badgeWeight = playerHasBadge(player, "deep-range") || playerHasBadge(player, "catch-and-shoot")
+      || playerHasBadge(player, "post-scorer") || playerHasBadge(player, "cutter")
+      || playerHasBadge(player, "slasher") || playerHasBadge(player, "rim-finisher")
+      || playerHasBadge(player, "roll-threat") || playerHasBadge(player, "off-dribble-creator");
+    const roleWeight = badgeWeight ? (roleRating >= 4 ? 0.78 : 0.68) : roleRating >= 4 ? 0.7 : 0.58;
     target = lerpPoint(target, openLocation, roleWeight);
   }
   const offset = pointDistanceFeet(anchor, target);
@@ -1546,12 +1658,14 @@ function driveThreat(run: SimulationRun, hoop: CourtPoint) {
   const dy = hoopFeet.y - playerFeet.y;
   const distance = Math.max(0.01, Math.hypot(dx, dy));
   const towardHoopSpeed = (velocity.x * dx + velocity.y * dy) / distance;
-  return towardHoopSpeed > 2.5 && distance < 30;
+  const finishingThreat = playerRating(handler, "finishing") >= 2
+    && (playerHasBadge(handler, "slasher") || playerHasBadge(handler, "rim-finisher") || playerHasBadge(handler, "roll-threat"));
+  return towardHoopSpeed > (finishingThreat ? 1.65 : 2.5) && distance < (finishingThreat ? 34 : 30);
 }
 
 function helpSpotFor(handler: PlaybookMarker, hoop: CourtPoint, finishingRating = 3) {
   const depth = clamp(0.34 + (finishingRating - 3) * 0.075, 0.18, 0.5);
-  const maxDepth = finishingRating >= 4 ? 13 : finishingRating <= 2 ? 7 : 9;
+  const maxDepth = finishingRating >= 3.8 ? 13 : finishingRating <= 2 ? 7 : 9;
   return pointToward(handler, hoop, Math.min(maxDepth, pointDistanceFeet(handler, hoop) * depth));
 }
 
@@ -1635,7 +1749,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     : -1;
   let helperIndex = -1;
   const helpStyle = strategy === "help" || strategy === "trap-rotate" || strategy === "protect-paint";
-  const finishingRating = handler ? playerRating(handler, "finishing") : 3;
+  const finishingRating = handler ? helpFinishingRating(handler) : 3;
   const helpWeight = clamp(0.55 + finishingRating * 0.15, 0.7, 1.3);
   const helpSpot = handler ? helpSpotFor(handler, hoop, finishingRating) : hoop;
   if (!drive || !helpStyle) run.helpDefenderId = null;
@@ -1658,7 +1772,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
           ? run.players.filter((player) => ![...run.zoneChaserAssignments.values()].includes(player.id))
             .slice().sort((a, b) => pointDistanceFeet(slotAnchor, a) - pointDistanceFeet(slotAnchor, b) || a.id - b.id)[0]
           : markerForId(run.players, assignedPlayerId ?? null);
-        const shootingThreat = assignedPlayer ? shotSkillRating(assignedPlayer, hoop) : 3;
+        const shootingThreat = assignedPlayer ? defensiveThreatRating(assignedPlayer, hoop) : 3;
         const score = distance + (shootingThreat - 3) * 1.15;
         if (score < helperScore) {
           helperScore = score;
@@ -1698,7 +1812,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
           const candidates = run.players
             .filter((player) => ![...run.zoneChaserAssignments.values()].includes(player.id) && player.id !== handler.id)
             .map((player) => {
-              const rating = shotSkillRating(player, hoop);
+              const rating = defensiveThreatRating(player, hoop);
               const distance = pointDistanceFeet(target, player);
               return { player, distance, score: distance - (rating - 3) * 1.2 };
             })
@@ -1717,7 +1831,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       const goalSideGap = goalSideGapFor(playerToGuard, hoop, baseGoalSideGap);
       target = defenderContainmentTarget(run, playerToGuard, hoop, goalSideGap, isOnBall);
       if (run.activeDefenseScheme === "pack-line" && !isOnBall) {
-        const rating = shotSkillRating(assignment, hoop);
+        const rating = defensiveThreatRating(assignment, hoop);
         const sagSpot = pointToward(assignment, hoop, Math.min(13, pointDistanceFeet(assignment, hoop) * 0.48));
         target = lerpPoint(target, sagSpot, clamp(0.22 + (3 - rating) * 0.1, 0.05, 0.48));
       }
@@ -1741,6 +1855,26 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       const paintAnchor = formation ? target : assignment;
       const paintSpot = pointToward(paintAnchor, hoop, Math.min(10, pointDistanceFeet(paintAnchor, hoop) * 0.4));
       target = lerpPoint(target, paintSpot, clamp((drive && index === helperIndex ? 0.82 : formation ? 0.28 : 0.55) * helpWeight, 0.25, 0.95));
+    }
+    if (!isOnBall && handler && playerHasBadge(handler, "playmaker")) {
+      const likelyReceiver = formation
+        ? run.players.filter((player) => player.id !== handler.id && ![...run.zoneChaserAssignments.values()].includes(player.id))
+          .sort((a, b) => (defensiveThreatRating(b, hoop) - defensiveThreatRating(a, hoop)) || a.id - b.id)[0] ?? assignment
+        : assignment;
+      if (likelyReceiver.id !== handler.id) {
+        const laneTarget = lerpPoint(handler, likelyReceiver, 0.44);
+        target = lerpPoint(target, laneTarget, formation ? 0.1 : 0.12);
+      }
+    }
+    if (!isOnBall && playerHasBadge(assignment, "post-scorer") && pointDistanceFeet(assignment, hoop) <= 19) {
+      const postHelp = pointToward(assignment, hoop, Math.min(9.5, pointDistanceFeet(assignment, hoop) * 0.5));
+      target = lerpPoint(target, postHelp, formation ? 0.12 : 0.16);
+    }
+    const rollAction = activeAction?.arrow.kind === "pick-roll" ? activeAction : null;
+    const roller = rollAction ? markerForId(run.players, rollAction.actorId) : null;
+    if (roller && playerHasBadge(roller, "roll-threat") && !isOnBall && assignment.id === roller.id) {
+      const rollTarget = defenderContainmentTarget(run, roller, hoop, goalSideGapFor(roller, hoop, 3.1), false);
+      target = lerpPoint(target, rollTarget, formation ? 0.22 : 0.3);
     }
     if (formation && transferDefenderIndex === index && transfer?.recipientId != null) {
       const recipient = markerForId(run.players, transfer.recipientId);
@@ -1766,11 +1900,19 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
           const other = markerForId(run.players, otherId);
           if (other) target = lerpPoint(target, defenderContainmentTarget(run, other, hoop, goalSideGapFor(other, hoop, 4), other.id === handler.id), formation ? 0.62 : 0.85);
         }
+        const handoffScreener = markerForId(run.players, screenerId);
+        if (coverageRole.role === "screener" && handoffScreener && playerHasBadge(handoffScreener, "screen-setter")) {
+          target = lerpPoint(target, defenderContainmentTarget(run, handoffScreener, hoop, goalSideGapFor(handoffScreener, hoop, 3), false), formation ? 0.18 : 0.28);
+        }
         return clampCourt(target);
       }
       const screenPoint = action.arrow.end;
       const progress = clamp((timeMs - action.startTime) / action.durationMs, 0, 1);
       const screenedPlayer = markerForId(run.players, screenedId) ?? handler;
+      const coverageScreener = markerForId(run.players, screenerId);
+      if (coverageRole.role === "screener" && coverageScreener && playerHasBadge(coverageScreener, "screen-setter")) {
+        target = lerpPoint(target, defenderContainmentTarget(run, coverageScreener, hoop, goalSideGapFor(coverageScreener, hoop, 3), false), formation ? 0.18 : 0.28);
+      }
       if (strategy === "switch" && formation) {
         const otherId = coverageRole.role === "screener" ? screenedId : screenerId;
         const other = markerForId(run.players, otherId);
@@ -1973,7 +2115,7 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
       ? run.velocities.get(velocityKey("player", focusPlayer.id)) ?? { x: 0, y: 0 }
       : { x: 0, y: 0 };
     const isTrackingMovement = Math.hypot(assignmentVelocity.x, assignmentVelocity.y) > 2.5;
-    const shootingThreat = focusPlayer ? shotSkillRating(focusPlayer, HOOP_POINT) : 3;
+    const shootingThreat = focusPlayer ? defensiveThreatRating(focusPlayer, HOOP_POINT) : 3;
     const responseSpeed = clamp((isRecovering ? DEFENDER_MAX_SPEED_FT_PER_SECOND : isTrackingMovement ? 12 : 9) + (shootingThreat - 3) * 1.2, 5, DEFENDER_MAX_SPEED_FT_PER_SECOND);
     const responseAcceleration = DEFENDER_ACCELERATION_FT_PER_SECOND + (shootingThreat - 3) * 3;
     return integrateMarker(
@@ -2054,7 +2196,7 @@ function calculateDefensiveQuality(run: SimulationRun, hoop = HOOP_POINT) {
     const threatContainment = nonChaserPlayers.length
       ? nonChaserPlayers.reduce((total, player) => {
           const nearest = Math.min(...defenders.map((defender) => pointDistanceFeet(defender, player)));
-          const rating = shotSkillRating(player, hoop);
+          const rating = defensiveThreatRating(player, hoop);
           return total + Math.max(0, 1 - nearest / (21 - rating * 0.8));
         }, 0) / nonChaserPlayers.length
       : shapeScore;
@@ -2065,7 +2207,7 @@ function calculateDefensiveQuality(run: SimulationRun, hoop = HOOP_POINT) {
           return total + (defender && player ? Math.max(0, 1 - Math.abs(pointDistanceFeet(defender, player) - 4.25) / 18) : 0);
         }, 0) / run.zoneChaserAssignments.size
       : 0;
-    const helpSpot = helpSpotFor(handler, hoop, playerRating(handler, "finishing"));
+    const helpSpot = helpSpotFor(handler, hoop, helpFinishingRating(handler));
     const paintHelp = defenders.length < 2
       ? 0.5
       : 1 - Math.min(1, Math.min(...defenders.filter((defender) => defender.id !== ballDefender?.id).map((defender) => pointDistanceFeet(defender, helpSpot))) / 24);
@@ -2084,7 +2226,7 @@ function calculateDefensiveQuality(run: SimulationRun, hoop = HOOP_POINT) {
     const frontScore = (defenderIsGoalSide(defender, player, hoop) + 1) / 2;
     return total + positionScore * 0.72 + frontScore * 0.28;
   }, 0) / defenders.length;
-  const helpSpot = helpSpotFor(handler, hoop);
+  const helpSpot = helpSpotFor(handler, hoop, helpFinishingRating(handler));
   const helpScore = defenders.length < 2
     ? 0.5
     : 1 - Math.min(1, Math.min(...defenders.filter((defender) => defender.id !== onBall?.id).map((defender) => pointDistanceFeet(defender, helpSpot))) / 24);
@@ -2098,6 +2240,7 @@ function calculateShotQuality(
   shooter: PlaybookMarker,
   offBallQuality: number,
   hoop = HOOP_POINT,
+  context: { recentCatch?: boolean; recentMovement?: boolean } = {},
 ) {
   const rangeScore = 1 - Math.min(1, pointDistanceFeet(shooter, hoop) / 37);
   const closestDefenderGap = defenders.length
@@ -2105,8 +2248,23 @@ function calculateShotQuality(
     : 19;
   const contestScore = Math.min(1, closestDefenderGap / 19);
   const baseQuality = (rangeScore * 0.52 + contestScore * 0.28 + (offBallQuality / 100) * 0.2) * 100;
-  const rating = shotSkillRating(shooter, hoop);
-  const adjustedQuality = baseQuality + (rating - 3) * 8;
+  const skill = shotSkillFor(shooter, hoop);
+  const rating = playerRating(shooter, skill);
+  const distance = pointDistanceFeet(shooter, hoop);
+  let badgeBonus = 0;
+  if (rating >= 2) {
+    if (skill === "threePoint" && playerHasBadge(shooter, "deep-range") && distance > NBA_COURT_GEOMETRY.threePoint.radiusFeet + 0.5) {
+      badgeBonus += clamp(2 + (distance - NBA_COURT_GEOMETRY.threePoint.radiusFeet) * 1.1, 0, 7);
+    }
+    if (context.recentCatch && skill !== "finishing" && playerHasBadge(shooter, "catch-and-shoot")) badgeBonus += 6;
+    if (context.recentMovement && playerHasBadge(shooter, "off-dribble-creator")) badgeBonus += 5;
+    if (skill === "finishing" && playerHasBadge(shooter, "rim-finisher")) badgeBonus += 7;
+    if (skill === "finishing" && playerHasBadge(shooter, "slasher")) badgeBonus += 3;
+    if (skill === "finishing" && context.recentMovement && playerHasBadge(shooter, "cutter")) badgeBonus += 3;
+    if (skill === "finishing" && context.recentMovement && playerHasBadge(shooter, "roll-threat")) badgeBonus += 4;
+    if (skill === "midrange" && distance <= 14 && playerHasBadge(shooter, "post-scorer")) badgeBonus += 4;
+  }
+  const adjustedQuality = baseQuality + (rating - 3) * 8 + Math.min(10, badgeBonus);
   return Math.round(clamp(rating === 1 ? Math.min(adjustedQuality, 40) : adjustedQuality, 0, 100));
 }
 
@@ -2128,7 +2286,7 @@ function updateShot(run: SimulationRun, timeMs: number, dt: number, hoop: CourtP
     run.shotStart = run.ball ? { ...run.ball } : { x: shooter.x, y: shooter.y };
     run.shotShooterId = shooter.id;
     const offBall = calculateOffBallQuality(run.players, run.shotStart, run.settings, run.defenders, shooter.id);
-    run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, shooter, offBall, hoop);
+    run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, shooter, offBall, hoop, badgeShotContext(run, shooter, timeMs));
   }
   const path = run.shotPathOverride;
   const pathStartTime = path ? Math.max(run.actionDurationMs, path.atMs) : run.actionDurationMs;
@@ -2175,6 +2333,7 @@ function transferBallToRecipient(run: SimulationRun, previousTime: number, nextT
   );
   if (transfer?.recipientId != null) {
     run.ballHandlerId = transfer.recipientId;
+    run.lastReceiveAtMs.set(transfer.recipientId, nextTime);
     const receiver = markerForId(run.players, transfer.recipientId);
     if (receiver) run.offBallAnchors.set(receiver.id, { x: receiver.x, y: receiver.y });
   }

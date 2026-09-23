@@ -95,7 +95,7 @@ export function UsageGuide() {
               <li>Choose Play to run the sequence; ARC moves defenders, adjusts help and closeouts, then reads the live defense for an open cut, roll, post, drive, or perimeter pass before the shot</li>
               <li>Use Auto actions in the left rail to choose which screens, handoffs, pick and rolls, and off-ball screens the simulator may add when a matchup allows</li>
               <li>Open Settings to tune offensive cuts or spacing, defensive reads, and movement intensity; pause to edit before resuming</li>
-              <li>Use Player ratings to set each player's three-point, midrange, and finishing skill from 1 to 5, or raise and lower each rating for the whole play; off-ball spacing and automatic action roles respond to those ratings</li>
+              <li>Use Player skills to set three-point, midrange, and finishing ratings from 1 to 5, then assign badges such as Playmaker, Deep range, Cutter, and Roll threat; the offense and defense respond to those strengths</li>
               <li>During playback, the offense favors open shots by expected points, can interrupt the drawn sequence for a clear high-quality look, and continues with up to three quick passes or drives when the defense shifts</li>
               <li>Defenders adjust their spacing, help, and closeouts to the live movement and the current ball handler; playback reads and routes are temporary and do not change saved diagrams or exports</li>
               <li>Save play stores the diagram and actions; Saved plays lets you reopen, duplicate, or delete a play</li>

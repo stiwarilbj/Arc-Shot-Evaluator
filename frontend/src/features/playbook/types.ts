@@ -39,10 +39,24 @@ export interface PlayerSkillRatings {
   finishing: number;
 }
 
+export type OffensiveBadge =
+  | "playmaker"
+  | "off-dribble-creator"
+  | "deep-range"
+  | "catch-and-shoot"
+  | "slasher"
+  | "rim-finisher"
+  | "cutter"
+  | "screen-setter"
+  | "roll-threat"
+  | "post-scorer";
+
 export interface PlaybookMarker extends CourtPoint {
   id: number;
   /** Optional on legacy version 1 plays; normalized to 3 when loaded. */
   ratings?: PlayerSkillRatings;
+  /** Optional on legacy version 1 plays; normalized to an empty list when loaded. */
+  badges?: OffensiveBadge[];
 }
 
 export interface PlaybookArrow {

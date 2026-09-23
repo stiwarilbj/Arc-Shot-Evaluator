@@ -963,4 +963,156 @@ const noOpportunityDraft = makeDraft({
 const noOpportunityRun = createSimulationRun(noOpportunityDraft, autoSettings({ screen: true, handoff: true, pickRoll: true, offBallScreen: true }));
 assert.equal(noOpportunityRun.actions.some((action) => action.automatic), false, 'the simulator does not invent an action when no matchup opportunity exists');
 
-console.log('Playbook simulation tests passed: timeline order, live possession, continuous shot boundary, adaptive read selection and spacing, bounded/stable defense, help and recovery, screen coverage, switching, paused edits, settings, draft isolation, and all 24 starters');
+// Badges steer offensive roles and shift defensive attention while respecting the normal skill floor.
+const withPlayerBadge = (draft, playerId, badge) => {
+  const player = draft.players.find((candidate) => candidate.id === playerId);
+  player.badges = [...(player.badges ?? []), badge];
+  return draft;
+};
+const badgeShotQuality = (point, badge, ratingKey) => {
+  const draft = makeDraft({ players: [point], ball: point });
+  draft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 3, ...(ratingKey ? { [ratingKey]: 3 } : {}) };
+  if (badge) draft.players[0].badges = [badge];
+  const run = createSimulationRun(draft, { ...settings, defenseStrategy: 'off' });
+  advance(run, run.actionDurationMs);
+  return run.frame.shotQuality;
+};
+const deepThreePoint = [50, 85];
+assert.ok(badgeShotQuality(deepThreePoint, 'deep-range', 'threePoint') > badgeShotQuality(deepThreePoint, null, 'threePoint'), 'Deep range improves shot quality well beyond the three-point arc');
+const rimPoint = [50, 27];
+assert.ok(badgeShotQuality(rimPoint, 'rim-finisher', 'finishing') > badgeShotQuality(rimPoint, null, 'finishing'), 'Rim finisher improves a viable close-range attempt');
+const weakBadgeShot = (() => {
+  const draft = makeDraft({ players: [deepThreePoint], ball: deepThreePoint });
+  draft.players[0].ratings = { threePoint: 1, midrange: 3, finishing: 3 };
+  draft.players[0].badges = ['deep-range'];
+  const run = createSimulationRun(draft, { ...settings, defenseStrategy: 'off' });
+  advance(run, run.actionDurationMs);
+  return run.frame.shotQuality;
+})();
+assert.ok(weakBadgeShot <= 40, 'a badge cannot override the rating-1 poor-shot ceiling');
+
+const taggedRollDraft = structuredClone(ratingPickRollDraft);
+taggedRollDraft.players[1].ratings = { threePoint: 3, midrange: 3, finishing: 1 };
+taggedRollDraft.players[1].badges = ['screen-setter', 'roll-threat'];
+taggedRollDraft.players[2].ratings = { threePoint: 3, midrange: 3, finishing: 4 };
+const taggedRollRun = createSimulationRun(taggedRollDraft, autoSettings({ screen: false, handoff: false, pickRoll: true, offBallScreen: false }));
+const taggedRoll = taggedRollRun.actions.find((action) => action.automatic && action.arrow.kind === 'pick-roll');
+assert.equal(taggedRoll?.actorId, 2, 'Roll threat and Screen setter badges prioritize that eligible screener');
+const setterOnlyDraft = structuredClone(ratingPickRollDraft);
+setterOnlyDraft.players[1].ratings = { threePoint: 3, midrange: 3, finishing: 1 };
+setterOnlyDraft.players[1].badges = ['screen-setter'];
+setterOnlyDraft.players[2].ratings = { threePoint: 3, midrange: 3, finishing: 4 };
+const setterOnlyRun = createSimulationRun(setterOnlyDraft, autoSettings({ screen: true, handoff: false, pickRoll: false, offBallScreen: false }));
+assert.equal(setterOnlyRun.actions.find((action) => action.automatic && action.arrow.kind === 'screen')?.actorId, 2, 'Screen setter alone improves automatic screen selection');
+const rollOnlyDraft = structuredClone(ratingPickRollDraft);
+rollOnlyDraft.players[1].ratings = { threePoint: 3, midrange: 3, finishing: 1 };
+rollOnlyDraft.players[1].badges = ['roll-threat'];
+rollOnlyDraft.players[2].ratings = { threePoint: 3, midrange: 3, finishing: 4 };
+const rollOnlyRun = createSimulationRun(rollOnlyDraft, autoSettings({ screen: false, handoff: false, pickRoll: true, offBallScreen: false }));
+assert.equal(rollOnlyRun.actions.find((action) => action.automatic && action.arrow.kind === 'pick-roll')?.actorId, 2, 'Roll threat alone can create a pick-and-roll opportunity');
+
+const taggedCutterDraft = structuredClone(autoOffBallDraft);
+taggedCutterDraft.players[1].ratings = { threePoint: 3, midrange: 3, finishing: 1 };
+taggedCutterDraft.players[2].ratings = { threePoint: 3, midrange: 3, finishing: 1 };
+taggedCutterDraft.players[2].badges = ['cutter'];
+const taggedCutterRun = createSimulationRun(taggedCutterDraft, autoSettings({ screen: false, handoff: false, pickRoll: false, offBallScreen: true }));
+assert.equal(taggedCutterRun.actions.find((action) => action.automatic && action.arrow.kind === 'off-ball-screen')?.recipientId, 3, 'Cutter badge opens an off-ball screen read for its player');
+
+const badgeSpacingDraft = makeDraft({ players: [[50, 76], [26, 62], [74, 62], [40, 48], [60, 48]], ball: [50, 76] });
+badgeSpacingDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+const baselinePostRun = createSimulationRun(structuredClone(badgeSpacingDraft), { ...settings, defenseStrategy: 'off' });
+const postBadgeDraft = structuredClone(badgeSpacingDraft);
+postBadgeDraft.players[1].badges = ['post-scorer'];
+const postBadgeRun = createSimulationRun(postBadgeDraft, { ...settings, defenseStrategy: 'off' });
+advance(baselinePostRun, 300);
+advance(postBadgeRun, 300);
+assert.ok(pointDistanceFeet(postBadgeRun.players[1], hoop) < pointDistanceFeet(baselinePostRun.players[1], hoop), 'Post scorer moves toward useful interior space');
+
+const defenderSpacingForBadge = (badges) => {
+  const draft = makeDraft({ players: [[50, 45], [25, 61], [75, 61]], ball: [50, 45], defenders: [[50, 39], [32, 56], [68, 56]] });
+  if (badges) draft.players[0].badges = badges;
+  const run = createSimulationRun(draft, { ...settings, defenseStrategy: 'contain' });
+  advance(run, 950);
+  const onBall = run.defenders.find((defender) => run.assignments.get(defender.id) === 1);
+  return { run, onBall, handler: run.players.find((player) => player.id === 1) };
+};
+const baselineCreatorDefense = defenderSpacingForBadge([]);
+const creatorBadgeDefense = defenderSpacingForBadge(['off-dribble-creator']);
+assert.ok(pointDistanceFeet(creatorBadgeDefense.onBall, creatorBadgeDefense.handler) < pointDistanceFeet(baselineCreatorDefense.onBall, baselineCreatorDefense.handler), 'Defenders close the gap on an off-dribble creator');
+
+const movingShooterDraft = (badge) => {
+  const draft = makeDraft({
+    players: [[50, 60]],
+    ball: [50, 60],
+    arrows: [{ id: 'pull-up-route', kind: 'movement', start: { x: 50, y: 60 }, end: { x: 50, y: 45 }, sequence: 1, timing: 1.2 }],
+  });
+  draft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 3 };
+  if (badge) draft.players[0].badges = [badge];
+  const run = createSimulationRun(draft, { ...settings, defenseStrategy: 'off' });
+  run.nextEarlyReadMs = Number.POSITIVE_INFINITY;
+  advance(run, 8000);
+  return run.frame.shotQuality;
+};
+assert.ok(movingShooterDraft('off-dribble-creator') > movingShooterDraft(null), 'Off-dribble creator improves a pull-up after an authored movement route');
+
+const driveHelpForBadge = (badge) => {
+  const draft = makeDraft({
+    players: [[50, 75], [29, 63], [71, 63]],
+    ball: [50, 75],
+    arrows: [{ id: 'badge-drive', kind: 'movement', start: { x: 50, y: 75 }, end: { x: 50, y: 55 }, sequence: 1, timing: 1.2 }],
+  });
+  draft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 3 };
+  if (badge) draft.players[0].badges = [badge];
+  const run = createSimulationRun(draft, settings);
+  advance(run, 430);
+  const helper = run.defenders.find((defender) => defender.id === run.helpDefenderId);
+  return helper ? pointDistanceFeet(helper, hoop) : Number.POSITIVE_INFINITY;
+};
+assert.ok(driveHelpForBadge('slasher') < driveHelpForBadge(null), 'Slasher draws earlier and deeper help toward the basket');
+
+const passingBadgeDraft = makeDraft({ players: [[50, 75], [26, 66], [74, 66]], ball: [50, 75], defenders: [[50, 68], [26, 60], [74, 60]] });
+const passingBaseRun = createSimulationRun(structuredClone(passingBadgeDraft), { ...settings, defenseStrategy: 'contain' });
+const passingBadgeRun = createSimulationRun(withPlayerBadge(structuredClone(passingBadgeDraft), 1, 'playmaker'), { ...settings, defenseStrategy: 'contain' });
+advance(passingBaseRun, 900);
+advance(passingBadgeRun, 900);
+const laneMidpoint = { x: (passingBadgeRun.players[0].x + passingBadgeRun.players[1].x) / 2, y: (passingBadgeRun.players[0].y + passingBadgeRun.players[1].y) / 2 };
+const laneDefenderBase = passingBaseRun.defenders.find((defender) => passingBaseRun.assignments.get(defender.id) === 2);
+const laneDefenderBadge = passingBadgeRun.defenders.find((defender) => passingBadgeRun.assignments.get(defender.id) === 2);
+const baseLaneDistance = pointDistanceFeet(laneDefenderBase, laneMidpoint);
+const badgeLaneDistance = pointDistanceFeet(laneDefenderBadge, laneMidpoint);
+assert.ok(badgeLaneDistance < baseLaneDistance, 'Defenders shade a likely passing lane when the handler is a Playmaker');
+
+const catchDraft = makeDraft({
+  players: [[50, 78], [50, 58]],
+  ball: [50, 78],
+  arrows: [{ id: 'badge-catch-pass', kind: 'pass', start: { x: 50, y: 78 }, end: { x: 50, y: 58 }, sequence: 1, timing: 0.8 }],
+});
+catchDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+const catchBadgeDraft = structuredClone(catchDraft);
+catchBadgeDraft.players[1].badges = ['catch-and-shoot'];
+const catchRun = createSimulationRun(catchBadgeDraft, { ...settings, defenseStrategy: 'off' });
+catchRun.nextEarlyReadMs = Number.POSITIVE_INFINITY;
+advance(catchRun, catchRun.actionDurationMs);
+assert.equal(catchRun.ballHandlerId, 2, 'the drawn pass still transfers possession to the receiver');
+assert.ok(catchRun.lastReceiveAtMs.has(2), 'the simulation records when a player receives a pass for catch-and-shoot timing');
+const plainCatchRun = createSimulationRun(catchDraft, { ...settings, defenseStrategy: 'off' });
+plainCatchRun.nextEarlyReadMs = Number.POSITIVE_INFINITY;
+advance(plainCatchRun, 8000);
+const taggedCatchRun = createSimulationRun(catchBadgeDraft, { ...settings, defenseStrategy: 'off' });
+taggedCatchRun.nextEarlyReadMs = Number.POSITIVE_INFINITY;
+advance(taggedCatchRun, 8000);
+assert.equal(taggedCatchRun.shotShooterId, 2, 'the received ball stays with the intended catch-and-shoot player');
+assert.ok(taggedCatchRun.frame.shotQuality > plainCatchRun.frame.shotQuality, 'Catch-and-shoot improves the shot taken after a pass');
+
+const zoneThreatDraft = makeDraft({ players: [[22, 72], [38, 72], [62, 72], [78, 72], [50, 61]], ball: [50, 61], defenders: [[20, 50], [38, 50], [62, 50], [78, 50], [50, 45]] });
+const ordinaryZoneRun = createSimulationRun(structuredClone(zoneThreatDraft), { ...settings, defenseScheme: 'triangle-and-two' });
+const badgeZoneRun = createSimulationRun(withPlayerBadge(structuredClone(zoneThreatDraft), 5, 'playmaker'), { ...settings, defenseScheme: 'triangle-and-two' });
+assert.ok(![...ordinaryZoneRun.zoneChaserAssignments.values()].includes(5), 'an ordinary, tied player is not selected as a chaser ahead of lower IDs');
+assert.ok([...badgeZoneRun.zoneChaserAssignments.values()].includes(5), 'a badge can move the leading offensive threat into a zone chaser role');
+
+const holdBadgeRun = createSimulationRun(withPlayerBadge(structuredClone(passingBadgeDraft), 1, 'slasher'), { ...settings, defenseStrategy: 'off' });
+const holdBadgePositions = holdBadgeRun.defenders.map((defender) => ({ ...defender }));
+advance(holdBadgeRun, 500);
+assert.deepEqual(holdBadgeRun.defenders, holdBadgePositions, 'Hold positions still freezes defenders around badged players');
+
+console.log('Playbook simulation tests passed: timeline order, live possession, adaptive reads, ratings and badges, spacing, bounded/stable defense, help and recovery, screen coverage, switching, paused edits, settings, draft isolation, and all 24 starters');

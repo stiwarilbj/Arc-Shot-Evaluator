@@ -23,6 +23,10 @@ MAX_DEFENDERS = 5
 MAX_ARROWS = 30
 ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"}
 ALLOWED_ARROW_PATHS = {"straight", "curve"}
+ALLOWED_PLAYER_BADGES = {
+    "playmaker", "off-dribble-creator", "deep-range", "catch-and-shoot", "slasher",
+    "rim-finisher", "cutter", "screen-setter", "roll-threat", "post-scorer",
+}
 
 
 def _now() -> str:
@@ -67,6 +71,12 @@ def _markers(value: object, label: str, limit: int, *, player_ratings: bool = Fa
                     raise HTTPException(400, "Player ratings must be integers from 1 to 5")
                 clean_ratings[key] = rating
             clean_marker["ratings"] = clean_ratings
+            badges = marker.get("badges", [])
+            if not isinstance(badges, list) or any(not isinstance(badge, str) or badge not in ALLOWED_PLAYER_BADGES for badge in badges):
+                raise HTTPException(400, "Player badges must use supported badge ids")
+            if len(badges) != len(set(badges)):
+                raise HTTPException(400, "Player badges must be unique")
+            clean_marker["badges"] = list(badges)
         result.append(clean_marker)
     return result
 

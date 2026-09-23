@@ -30,9 +30,10 @@ import {
 } from "lucide-react";
 import { createPlaybook, deletePlaybook, fetchPlaybooks, updatePlaybook } from "./api";
 import { ArcSelect } from "../../components/ArcSelect";
+import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, PlayerSkillRatings, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -151,6 +152,7 @@ function normalizeDraft(source: PlaybookDraft) {
   const next = clonePlaybook(source);
   next.players = next.players.map((player) => ({
     ...player,
+    badges: OFFENSIVE_BADGE_ORDER.filter((badge) => (player.badges ?? []).includes(badge)),
     ratings: {
       threePoint: Math.max(1, Math.min(5, Math.round(player.ratings?.threePoint ?? 3))),
       midrange: Math.max(1, Math.min(5, Math.round(player.ratings?.midrange ?? 3))),
@@ -328,6 +330,7 @@ export function PlaybookBoard() {
   const [autoActionsOpen, setAutoActionsOpen] = useState(false);
   const [defenseSchemesOpen, setDefenseSchemesOpen] = useState(false);
   const [ratingsOpen, setRatingsOpen] = useState(false);
+  const [playerSkillsTab, setPlayerSkillsTab] = useState<"ratings" | "badges">("ratings");
   const [ratingPlayerId, setRatingPlayerId] = useState<number | null>(null);
   const [saved, setSaved] = useState<PlaybookDocument[]>([]);
   const [savedOpen, setSavedOpen] = useState(false);
@@ -547,6 +550,21 @@ export function PlaybookBoard() {
     commit(next, draft, { preserveSimulation: false });
   }
 
+  function togglePlayerBadge(playerId: number, badge: OffensiveBadge) {
+    const next = clonePlaybook(draft);
+    next.players = next.players.map((player) => {
+      if (player.id !== playerId) return player;
+      const badges = player.badges ?? [];
+      return {
+        ...player,
+        badges: badges.includes(badge)
+          ? badges.filter((current) => current !== badge)
+          : OFFENSIVE_BADGE_ORDER.filter((current) => current === badge || badges.includes(current)),
+      };
+    });
+    commit(next, draft, { preserveSimulation: false });
+  }
+
   function adjustTeamRating(key: keyof PlayerSkillRatings, amount: -1 | 1) {
     if (!draft.players.length) return;
     const next = clonePlaybook(draft);
@@ -655,7 +673,7 @@ export function PlaybookBoard() {
     const collection = type === "player" ? draft.players : draft.defenders;
     const id = Math.max(0, ...collection.map((marker) => marker.id)) + 1;
     const next = clonePlaybook(draft);
-    const marker: PlaybookMarker = { id, ...point, ...(type === "player" ? { ratings: { threePoint: 3, midrange: 3, finishing: 3 } } : {}) };
+    const marker: PlaybookMarker = { id, ...point, ...(type === "player" ? { ratings: { threePoint: 3, midrange: 3, finishing: 3 }, badges: [] } : {}) };
     if (type === "player") next.players = [...next.players, marker];
     else next.defenders = [...next.defenders, marker];
     commit(next);
@@ -1082,33 +1100,37 @@ export function PlaybookBoard() {
             <label><input type="checkbox" checked={simulationSettings.automaticActions.offBallScreen} onChange={(event) => changeAutomaticAction("offBallScreen", event.currentTarget.checked)} /><span>Off-ball screens</span></label>
             <small>Applied when the next simulation starts.</small>
           </div> : null}
-          <button type="button" className={`preset-button ${ratingsOpen ? "is-active" : ""}`} aria-expanded={ratingsOpen} aria-controls="player-ratings-panel" onClick={() => setRatingsOpen((open) => !open)}>
-            <UsersRound size={17} /><span>Player ratings</span><i className={`toggle-dot ${ratingsOpen ? "is-on" : ""}`} />
+          <button type="button" className={`preset-button ${ratingsOpen ? "is-active" : ""}`} aria-expanded={ratingsOpen} aria-controls="player-skills-panel" onClick={() => setRatingsOpen((open) => !open)}>
+            <UsersRound size={17} /><span>Player skills</span><i className={`toggle-dot ${ratingsOpen ? "is-on" : ""}`} />
           </button>
-          {ratingsOpen ? <div id="player-ratings-panel" className="player-ratings-panel" role="group" aria-label="Player skill ratings">
-            <div className="ratings-panel-heading"><strong>Team adjustment</strong><span>All players</span></div>
-            {([
-              ["threePoint", "3-point"],
-              ["midrange", "Midrange"],
-              ["finishing", "Finishing"],
-            ] as Array<[keyof PlayerSkillRatings, string]>).map(([key, label]) => {
-              const ratings = draft.players.map((player) => player.ratings?.[key] ?? 3);
-              const average = ratings.length ? (ratings.reduce((total, rating) => total + rating, 0) / ratings.length).toFixed(1) : "—";
-              return <div className="team-rating-row" key={`team-${key}`}>
-                <span>{label}</span>
-                <output aria-label={`Team average ${label} rating`}>{average}</output>
-                <button type="button" aria-label={`Decrease team ${label} rating by 1`} title={`Decrease every player's ${label} rating by 1`} disabled={!draft.players.length || ratings.every((rating) => rating <= 1)} onClick={() => adjustTeamRating(key, -1)}>−</button>
-                <button type="button" aria-label={`Increase team ${label} rating by 1`} title={`Increase every player's ${label} rating by 1`} disabled={!draft.players.length || ratings.every((rating) => rating >= 5)} onClick={() => adjustTeamRating(key, 1)}>+</button>
-              </div>;
-            })}
+          {ratingsOpen ? <div id="player-skills-panel" className="player-ratings-panel player-skills-panel" role="group" aria-label="Player skills">
+            <div className="player-skills-tabs" role="tablist" aria-label="Player skill controls">
+              <button type="button" id="player-ratings-tab" role="tab" aria-selected={playerSkillsTab === "ratings"} aria-controls="player-ratings-content" tabIndex={playerSkillsTab === "ratings" ? 0 : -1} className={playerSkillsTab === "ratings" ? "is-active" : ""} onClick={() => setPlayerSkillsTab("ratings")}>Ratings</button>
+              <button type="button" id="player-badges-tab" role="tab" aria-selected={playerSkillsTab === "badges"} aria-controls="player-badges-content" tabIndex={playerSkillsTab === "badges" ? 0 : -1} className={playerSkillsTab === "badges" ? "is-active" : ""} onClick={() => setPlayerSkillsTab("badges")}>Badges</button>
+            </div>
             <div className="ratings-panel-heading ratings-player-heading"><strong>Player</strong><span>Choose one</span></div>
-            {draft.players.length ? <>
-              <div className="ratings-player-list" role="group" aria-label="Select player to edit">
-                {draft.players.map((player) => <button type="button" key={`rating-player-${player.id}`} className={selectedRatingsPlayer?.id === player.id ? "is-active" : ""} aria-pressed={selectedRatingsPlayer?.id === player.id} onClick={() => {
-                  setRatingPlayerId(player.id);
-                  setSelected({ type: "player", id: player.id });
-                }}>Player {player.id}</button>)}
-              </div>
+            {draft.players.length ? <div className="ratings-player-list" role="group" aria-label="Select player to edit">
+              {draft.players.map((player) => <button type="button" key={`rating-player-${player.id}`} className={selectedRatingsPlayer?.id === player.id ? "is-active" : ""} aria-pressed={selectedRatingsPlayer?.id === player.id} onClick={() => {
+                setRatingPlayerId(player.id);
+                setSelected({ type: "player", id: player.id });
+              }}>Player {player.id}</button>)}
+            </div> : <p className="ratings-empty">Add an offensive player to set ratings and badges.</p>}
+            {playerSkillsTab === "ratings" ? <div id="player-ratings-content" role="tabpanel" aria-labelledby="player-ratings-tab" className="player-skill-tab-content">
+              <div className="ratings-panel-heading"><strong>Team adjustment</strong><span>All players</span></div>
+              {([
+                ["threePoint", "3-point"],
+                ["midrange", "Midrange"],
+                ["finishing", "Finishing"],
+              ] as Array<[keyof PlayerSkillRatings, string]>).map(([key, label]) => {
+                const ratings = draft.players.map((player) => player.ratings?.[key] ?? 3);
+                const average = ratings.length ? (ratings.reduce((total, rating) => total + rating, 0) / ratings.length).toFixed(1) : "—";
+                return <div className="team-rating-row" key={`team-${key}`}>
+                  <span>{label}</span>
+                  <output aria-label={`Team average ${label} rating`}>{average}</output>
+                  <button type="button" aria-label={`Decrease team ${label} rating by 1`} title={`Decrease every player's ${label} rating by 1`} disabled={!draft.players.length || ratings.every((rating) => rating <= 1)} onClick={() => adjustTeamRating(key, -1)}>−</button>
+                  <button type="button" aria-label={`Increase team ${label} rating by 1`} title={`Increase every player's ${label} rating by 1`} disabled={!draft.players.length || ratings.every((rating) => rating >= 5)} onClick={() => adjustTeamRating(key, 1)}>+</button>
+                </div>;
+              })}
               {selectedRatingsPlayer ? ([
                 ["threePoint", "3-point"],
                 ["midrange", "Midrange"],
@@ -1122,8 +1144,23 @@ export function PlaybookBoard() {
                   </div>
                 </div>;
               }) : null}
-            </> : <p className="ratings-empty">Add an offensive player to set ratings.</p>}
-            <small>Ratings range from 1 (low) to 5 (high). New players start at 3.</small>
+              <small>Ratings range from 1 (low) to 5 (high). New players start at 3.</small>
+            </div> : <div id="player-badges-content" role="tabpanel" aria-labelledby="player-badges-tab" className="player-skill-tab-content">
+              {selectedRatingsPlayer ? <>
+                <div className="ratings-panel-heading"><strong>Player {selectedRatingsPlayer.id} badges</strong><span>{selectedRatingsPlayer.badges?.length ?? 0} selected</span></div>
+                <div className="player-badge-list" role="group" aria-label={`Player ${selectedRatingsPlayer.id} offensive badges`}>
+                  {OFFENSIVE_BADGE_ORDER.map((badge) => {
+                    const assigned = selectedRatingsPlayer.badges?.includes(badge) ?? false;
+                    const details = OFFENSIVE_BADGES[badge];
+                    return <button type="button" key={badge} className={`player-badge-option ${assigned ? "is-selected" : ""}`} aria-label={`${details.label}, ${assigned ? "assigned" : "not assigned"} to Player ${selectedRatingsPlayer.id}`} aria-pressed={assigned} title={details.description} onClick={() => togglePlayerBadge(selectedRatingsPlayer.id, badge)}>
+                      <span className="player-badge-copy"><strong>{details.label}</strong><small>{details.description}</small></span>
+                      <span className="player-badge-state" aria-hidden="true">{assigned ? "On" : "Off"}</span>
+                    </button>;
+                  })}
+                </div>
+                <small>Badges shape the next simulation run. Any combination can be assigned.</small>
+              </> : <p className="ratings-empty">Add an offensive player to assign badges.</p>}
+            </div>}
           </div> : null}
           <p className="playbook-help">Drag markers to set positions. Select an arrow to adjust its endpoint. Use Delete or the toolbar to clean up.</p>
         </aside>

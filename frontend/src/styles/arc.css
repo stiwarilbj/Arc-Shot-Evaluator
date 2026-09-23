@@ -606,6 +606,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .automatic-actions-panel input { width: 14px; height: 14px; margin: 0; accent-color: var(--orange); }
 .automatic-actions-panel small { color: var(--dim); font-size: 9px; line-height: 1.4; }
 .player-ratings-panel { display: grid; grid-column: 1 / -1; gap: 7px; margin: 1px 2px 5px; padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--muted); }
+.player-skills-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.player-skills-tabs button { min-height: 27px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 700; }
+.player-skills-tabs button:hover { color: var(--text); }
+.player-skills-tabs button.is-active { border-color: color-mix(in srgb, var(--orange) 58%, var(--line)); background: color-mix(in srgb, var(--orange) 12%, var(--surface)); color: var(--orange); }
+.player-skill-tab-content { display: grid; gap: 7px; min-width: 0; }
 .ratings-panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; color: var(--text); font-size: 10px; }
 .ratings-panel-heading span, .player-ratings-panel > small { color: var(--dim); font-size: 9px; }
 .team-rating-row { display: grid; grid-template-columns: 1fr 28px 25px 25px; align-items: center; gap: 4px; font-size: 10px; }
@@ -623,6 +628,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .rating-scale button { flex: 1 1 0; min-width: 0; min-height: 24px; padding: 0; }
 .rating-scale button.is-selected { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--surface)); color: var(--orange); }
 .ratings-empty { margin: 0; color: var(--dim); font-size: 10px; line-height: 1.4; }
+.player-badge-list { display: grid; gap: 4px; max-height: min(46vh, 360px); overflow-y: auto; padding-right: 2px; scrollbar-width: thin; }
+.player-badge-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--muted); cursor: pointer; text-align: left; }
+.player-badge-option:hover { border-color: var(--line-strong); color: var(--text); }
+.player-badge-option.is-selected { border-color: color-mix(in srgb, var(--orange) 65%, var(--line)); background: color-mix(in srgb, var(--orange) 8%, var(--surface)); color: var(--text); }
+.player-badge-copy { display: grid; gap: 3px; min-width: 0; }
+.player-badge-copy strong { color: var(--text); font-size: 10px; }
+.player-badge-copy small { color: var(--dim); font-size: 9px; line-height: 1.35; }
+.player-badge-state { min-width: 29px; color: var(--dim); font-size: 9px; font-weight: 750; text-align: right; }
+.player-badge-option.is-selected .player-badge-state { color: var(--orange); }
 .is-screen-screener .offense-marker { stroke: #73bff0; stroke-width: 5; }
 .is-screen-cutter .offense-marker { stroke: #f3f1ec; stroke-width: 5; stroke-dasharray: 4 3; }
 .playbook-help { margin: 15px 7px 5px; color: var(--dim); font-size: 10px; line-height: 1.5; }
