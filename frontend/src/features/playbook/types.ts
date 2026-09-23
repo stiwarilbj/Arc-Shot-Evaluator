@@ -1,5 +1,5 @@
-export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "off-ball-screen" | "delete";
-export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "off-ball-screen";
+export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut" | "delete";
+export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut";
 export type ArrowPath = "straight" | "curve";
 export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
 export type DefenseStrategy = "off" | "contain" | "help" | "switch" | "trap-rotate" | "fight-over" | "go-under" | "drop" | "hedge" | "deny-lanes" | "protect-paint";
@@ -51,6 +51,12 @@ export interface PlaybookArrow {
   screener_id?: number;
   /** Player who uses an off-ball screen. */
   cutter_id?: number;
+  /** Ball handler for a named on-ball screen. */
+  handler_id?: number;
+  /** Actor for a named cut. */
+  actor_id?: number;
+  /** Destination after a pick-and-pop or pin-down screen. */
+  exit_target?: CourtPoint;
 }
 
 export interface PlaybookDocument {

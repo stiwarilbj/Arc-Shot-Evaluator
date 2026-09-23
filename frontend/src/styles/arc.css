@@ -615,12 +615,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .court-line { fill: none; stroke: color-mix(in srgb, var(--text) 75%, transparent); stroke-width: 3; vector-effect: non-scaling-stroke; }
 .court-dash { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 9 10; vector-effect: non-scaling-stroke; }
 .basket-mark { fill: none; stroke: var(--orange); stroke-width: 4; vector-effect: non-scaling-stroke; }
-.movement-arrow, .pass-arrow, .screen-arrow, .off-ball-screen-arrow, .pick-roll-arrow { fill: none; stroke-width: 3; vector-effect: non-scaling-stroke; pointer-events: stroke; }
+.movement-arrow, .pass-arrow, .screen-arrow, .off-ball-screen-arrow, .pick-roll-arrow, .pick-pop-arrow, .pin-down-arrow, .backdoor-cut-arrow, .screen-cutter-arrow { fill: none; stroke-width: 3; vector-effect: non-scaling-stroke; pointer-events: stroke; }
 .movement-arrow { stroke: var(--text); }
 .pass-arrow { stroke: var(--orange); stroke-dasharray: 9 8; }
 .screen-arrow { stroke: #73bff0; stroke-dasharray: 3 7; }
 .off-ball-screen-arrow { stroke: #b4a1e8; stroke-dasharray: 5 5; stroke-width: 3; }
 .pick-roll-arrow { stroke: var(--orange); stroke-width: 4; }
+.pick-pop-arrow { stroke: #f3bd67; stroke-width: 4; }
+.pin-down-arrow { stroke: #b4a1e8; stroke-dasharray: 5 5; stroke-width: 3; }
+.backdoor-cut-arrow { stroke: #7fd2a1; stroke-dasharray: 7 5; stroke-width: 3.5; }
+.screen-cutter-arrow { stroke: var(--text); stroke-dasharray: 6 5; stroke-width: 2.5; opacity: .82; pointer-events: none; }
 .play-arrow-group { cursor: pointer; }
 .play-arrow-group.is-selected path { stroke-width: 4.5; }
 .shot-arc { fill: none; stroke: var(--orange); stroke-width: 2.5; stroke-dasharray: 6 8; opacity: .75; vector-effect: non-scaling-stroke; pointer-events: none; }
@@ -744,11 +748,25 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .guide-shortcuts strong { color: var(--text); font-size: 11px; }
 .modal-heading { justify-content: space-between; gap: 14px; margin-bottom: 16px; }
 .modal-heading h2 { margin: 3px 0 0; font-size: 20px; }
-.starter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.starter-card { display: grid; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--text); cursor: pointer; text-align: left; }
+.starter-modal { display: flex; flex-direction: column; width: min(1050px, 100%); max-height: min(88dvh, 900px); overflow: hidden; }
+.starter-modal .modal-heading { flex: none; margin-bottom: 11px; }
+.starter-search { display: flex; align-items: center; gap: 8px; flex: none; min-height: 38px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--input-bg); color: var(--muted); }
+.starter-search:focus-within { border-color: var(--orange); box-shadow: 0 0 0 2px color-mix(in srgb, var(--orange) 12%, transparent); }
+.starter-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 12px; }
+.starter-search input::placeholder { color: var(--dim); }
+.starter-categories { display: flex; flex: none; gap: 6px; overflow-x: auto; margin: 9px 0; padding: 1px 0 4px; scrollbar-width: thin; }
+.starter-categories button { min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.starter-categories button:hover { border-color: var(--line-strong); color: var(--text); }
+.starter-categories button.is-active { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 13%, var(--surface)); color: var(--orange); }
+.starter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; overflow-y: auto; align-content: start; padding: 1px 2px 2px 0; scrollbar-width: thin; }
+.starter-card { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--text); cursor: pointer; text-align: left; }
 .starter-card:hover { border-color: var(--orange); }
-.starter-card strong { font-size: 12px; }
-.starter-card span { color: var(--dim); font-size: 10px; }
+.starter-card:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.starter-card-copy { display: grid; gap: 4px; }
+.starter-card-copy strong { font-size: 12px; }
+.starter-card-copy span { color: var(--dim); font-size: 10px; line-height: 1.4; }
+.starter-card-copy .starter-category-label { color: var(--orange); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.starter-empty { grid-column: 1 / -1; margin: 0; padding: 28px 12px; color: var(--muted); font-size: 12px; text-align: center; }
 .replacement-modal { width: min(440px, 100%); }
 .replacement-modal p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .modal-actions { justify-content: flex-end; gap: 7px; margin-top: 20px; }
@@ -815,8 +833,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .guide-modal { max-height: 88dvh; padding: 13px; }
   .guide-grid { grid-template-columns: 1fr; gap: 7px; }
   .guide-card { padding: 9px 10px; }
-  .starter-card { grid-template-columns: 110px minmax(0, 1fr); align-items: center; }
-  .starter-card span { grid-column: 2; grid-row: 1; align-self: end; }
+  .starter-modal { max-height: 90dvh; padding: 13px; }
+  .starter-grid { grid-template-columns: 1fr; gap: 7px; }
+  .starter-card { grid-template-columns: minmax(90px, 30%) minmax(0, 1fr); align-items: center; gap: 8px; }
+  .starter-card .mini-court { grid-column: 1; grid-row: 1; }
+  .starter-card-copy { grid-column: 2; grid-row: 1; }
 }
 
 /* Keep the playbook fully visible in tall desktop and fullscreen windows. */

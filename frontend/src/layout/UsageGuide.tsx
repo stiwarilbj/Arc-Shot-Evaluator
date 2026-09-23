@@ -72,7 +72,9 @@ export function UsageGuide() {
             <ul>
               <li>Start with Ready setup, choose a Starter play, or begin on Empty court; turn Defenders on or off as needed</li>
               <li>Select a tool, then click or drag on the court; circles are offense, X markers are defenders, and the ball is its own marker</li>
-              <li>For a manual off-ball screen choose the screener, cutter, and screen spot</li>
+              <li>For Pick and pop choose the screener and handler, then place the screen and pop destination; for Pin-down choose the screener and cutter, then place the screen and cutter destination</li>
+              <li>For an off-ball screen choose the screener, cutter, and screen spot; for Backdoor cut select a cutter and draw the route to the basket</li>
+              <li>Open Starter plays to search sixteen editable sets, including Horns, Flex, Floppy, Spain, Pistol, Chicago, and Elevator</li>
               <li>Drag arrows to edit them even while another drawing tool is active; select an arrow to set its order, duration, or curved path</li>
               <li>Use Delete, Undo, and Redo to revise the diagram; touch dragging and arrow-key nudging are supported</li>
             </ul>

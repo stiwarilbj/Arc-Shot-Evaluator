@@ -28,7 +28,7 @@ export function VideoUpload({ error, onFiles, processingMode, shotMode, onShotMo
       <section className="upload-intro">
         <h1>See the shot; fix the form</h1>
         <p>
-          Upload a basketball clip to review movement, release timing, and shot attempts in ARC; use Playbook for a half-court diagram when you need a plan
+          Upload a basketball clip to review movement, release timing, and shot attempts in ARC; use Playbook to draw screens, cuts, handoffs, and complete plays from sixteen editable starters
         </p>
       </section>
       <div className="analysis-depth-control">

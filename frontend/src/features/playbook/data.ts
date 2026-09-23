@@ -13,22 +13,32 @@ function draft(name: string, players: Array<[number, number]>, ball: [number, nu
   };
 }
 
-const arrow = (id: string, kind: ArrowKind, start: [number, number], end: [number, number], timing = 1.2) => ({
+const arrow = (id: string, kind: ArrowKind, start: [number, number], end: [number, number], timing = 1.2, options: Partial<PlaybookDraft["arrows"][number]> = {}) => ({
   id,
   kind,
   start: { x: start[0], y: start[1] },
   end: { x: end[0], y: end[1] },
   timing,
+  ...options,
 });
+
+const player = (players: Array<[number, number]>, id: number) => players[id - 1];
+const namedScreen = (id: string, kind: "screen" | "pick-roll" | "pick-pop", players: Array<[number, number]>, screenerId: number, handlerId: number, screen: [number, number], sequence: number, exit?: [number, number]) => arrow(
+  id, kind, player(players, screenerId), screen, 1.5,
+  { screener_id: screenerId, handler_id: handlerId, sequence, ...(exit ? { exit_target: { x: exit[0], y: exit[1] } } : {}) },
+);
+const offBall = (id: string, kind: "off-ball-screen" | "pin-down", players: Array<[number, number]>, screenerId: number, cutterId: number, screen: [number, number], sequence: number, exit?: [number, number]) => arrow(
+  id, kind, player(players, screenerId), screen, 1.35,
+  { screener_id: screenerId, cutter_id: cutterId, sequence, ...(exit ? { exit_target: { x: exit[0], y: exit[1] } } : {}) },
+);
 
 export const READY_SETUP = draft("Ready setup", [[50, 77], [26, 60], [74, 60], [23, 30], [77, 30]], [50, 77]);
 
 export const STARTER_PLAYS: PlaybookDraft[] = [
-  draft("Pick and roll", [[50, 78], [29, 57], [71, 36], [22, 29], [78, 29]], [30, 57], [
-    arrow("pick-drive", "screen", [71, 36], [56, 53], 1.4),
-    arrow("guard-roll", "pick-roll", [50, 78], [50, 62], 1.6),
-    arrow("kick-out", "pass", [50, 62], [22, 29]),
-  ], [[47, 67], [60, 59], [39, 48], [68, 33], [28, 33]]),
+  draft("Pick and roll", [[50, 78], [27, 57], [73, 57], [24, 30], [60, 68]], [50, 78], [
+    namedScreen("pickroll-screen", "pick-roll", [[50, 78], [27, 57], [73, 57], [24, 30], [60, 68]], 5, 1, [55, 68], 1),
+    arrow("pickroll-pass", "pass", [50, 78], [51, 50], 1.1, { sequence: 2 }),
+  ], [[47, 70], [34, 56], [66, 56], [69, 34], [30, 34]]),
   draft("Give and go", [[50, 77], [35, 52], [76, 31], [24, 31], [74, 61]], [36, 52], [
     arrow("give", "handoff", [36, 52], [50, 70], 1.1),
     arrow("cut", "movement", [35, 52], [55, 31]),
@@ -39,7 +49,90 @@ export const STARTER_PLAYS: PlaybookDraft[] = [
     arrow("corner-pass", "pass", [50, 49], [24, 29]),
     arrow("space", "movement", [73, 58], [82, 43]),
   ], [[48, 64], [62, 53], [38, 47], [68, 33], [30, 34]]),
+  draft("Horns", [[50, 78], [25, 32], [75, 32], [42, 58], [58, 58]], [50, 78], [
+    arrow("horns-entry", "pass", [50, 78], [42, 58], 1, { sequence: 1 }),
+    namedScreen("horns-roll", "pick-roll", [[50, 78], [25, 32], [75, 32], [42, 58], [58, 58]], 5, 4, [49, 59], 2),
+    arrow("horns-feed", "pass", [42, 58], [50, 46], 1, { sequence: 3 }),
+  ], [[48, 68], [30, 36], [70, 36], [37, 53], [63, 53]]),
+  draft("Flex", [[50, 78], [24, 34], [76, 58], [40, 39], [60, 39]], [50, 78], [
+    offBall("flex-cross", "off-ball-screen", [[50, 78], [24, 34], [76, 58], [40, 39], [60, 39]], 5, 2, [31, 42], 1),
+    offBall("flex-down", "pin-down", [[50, 78], [24, 34], [76, 58], [40, 39], [60, 39]], 4, 3, [68, 47], 2, [75, 60]),
+    arrow("flex-entry", "pass", [50, 78], [75, 60], 1, { sequence: 3 }),
+  ], [[48, 68], [32, 37], [68, 56], [40, 43], [60, 43]]),
+  draft("Pick and pop", [[50, 78], [26, 56], [74, 56], [24, 30], [60, 68]], [50, 78], [
+    namedScreen("pickpop-screen", "pick-pop", [[50, 78], [26, 56], [74, 56], [24, 30], [60, 68]], 5, 1, [55, 68], 1, [69, 58]),
+    arrow("pickpop-pass", "pass", [50, 78], [69, 58], 1, { sequence: 2 }),
+  ], [[48, 69], [34, 57], [66, 57], [69, 34], [30, 34]]),
+  draft("Inverted pick and roll", [[50, 78], [24, 31], [76, 31], [50, 65], [42, 65]], [50, 65], [
+    namedScreen("inverted-pick", "pick-roll", [[50, 78], [24, 31], [76, 31], [50, 65], [42, 65]], 1, 4, [46, 62], 1),
+    arrow("inverted-feed", "pass", [50, 65], [50, 46], 1, { sequence: 2 }),
+  ], [[48, 70], [30, 35], [70, 35], [50, 60], [37, 65]]),
+  draft("Spain pick and roll", [[50, 78], [74, 59], [25, 31], [25, 59], [60, 68]], [50, 78], [
+    namedScreen("spain-ball-screen", "pick-roll", [[50, 78], [74, 59], [25, 31], [25, 59], [60, 68]], 5, 1, [55, 68], 1),
+    offBall("spain-back-screen", "off-ball-screen", [[50, 78], [74, 59], [25, 31], [25, 59], [60, 68]], 2, 5, [58, 65], 2),
+    arrow("spain-kick", "pass", [50, 78], [60, 49], 1, { sequence: 3 }),
+  ], [[48, 69], [69, 58], [30, 34], [30, 56], [56, 66]]),
+  draft("Floppy", [[50, 78], [25, 34], [75, 34], [40, 37], [60, 37]], [50, 78], [
+    offBall("floppy-left", "pin-down", [[50, 78], [25, 34], [75, 34], [40, 37], [60, 37]], 4, 2, [31, 47], 1, [27, 56]),
+    offBall("floppy-right", "pin-down", [[50, 78], [25, 34], [75, 34], [40, 37], [60, 37]], 5, 3, [69, 47], 1, [73, 56]),
+    arrow("floppy-pass", "pass", [50, 78], [27, 56], 1, { sequence: 2 }),
+  ], [[48, 68], [31, 38], [69, 38], [39, 41], [61, 41]]),
+  draft("5-out motion", [[50, 78], [24, 56], [76, 56], [25, 31], [75, 31]], [50, 78], [
+    arrow("fiveout-entry", "pass", [50, 78], [24, 56], 0.9, { sequence: 1 }),
+    arrow("fiveout-cut", "backdoor-cut", [50, 78], [51, 42], 1.1, { actor_id: 1, sequence: 2 }),
+    arrow("fiveout-fill", "movement", [75, 31], [55, 76], 1.2, { sequence: 2 }),
+    arrow("fiveout-return", "pass", [24, 56], [51, 42], 0.9, { sequence: 3 }),
+  ], [[48, 68], [31, 58], [69, 58], [30, 34], [70, 34]]),
+  draft("Horns twist", [[50, 78], [25, 32], [75, 32], [42, 58], [58, 58]], [50, 78], [
+    arrow("twist-entry", "pass", [50, 78], [58, 58], 1, { sequence: 1 }),
+    arrow("twist-handoff", "handoff", [58, 58], [75, 32], 1, { sequence: 2 }),
+    namedScreen("twist-screen", "pick-roll", [[50, 78], [25, 32], [75, 32], [42, 58], [58, 58]], 4, 3, [67, 54], 3),
+  ], [[48, 68], [30, 36], [70, 36], [38, 54], [62, 54]]),
+  draft("UCLA cut", [[50, 78], [76, 58], [25, 31], [75, 31], [50, 42]], [50, 78], [
+    arrow("ucla-entry", "pass", [50, 78], [76, 58], 1, { sequence: 1 }),
+    offBall("ucla-back-screen", "off-ball-screen", [[50, 78], [76, 58], [25, 31], [75, 31], [50, 42]], 5, 1, [50, 54], 2),
+    arrow("ucla-feed", "pass", [76, 58], [50, 25], 1, { sequence: 3 }),
+  ], [[48, 69], [70, 56], [30, 35], [70, 35], [50, 45]]),
+  draft("Princeton backdoor", [[50, 78], [25, 56], [75, 56], [24, 31], [50, 48]], [50, 78], [
+    arrow("princeton-entry", "pass", [50, 78], [50, 48], 1, { sequence: 1 }),
+    arrow("princeton-cut", "backdoor-cut", [50, 78], [51, 24], 1.1, { actor_id: 1, sequence: 2 }),
+    arrow("princeton-feed", "pass", [50, 48], [51, 24], 0.9, { sequence: 3 }),
+  ], [[48, 69], [30, 58], [70, 58], [30, 34], [50, 51]]),
+  draft("Pistol", [[50, 78], [28, 57], [72, 57], [24, 31], [60, 68]], [50, 78], [
+    arrow("pistol-entry", "pass", [50, 78], [28, 57], 0.9, { sequence: 1 }),
+    arrow("pistol-handoff", "handoff", [28, 57], [72, 57], 1, { sequence: 2 }),
+    namedScreen("pistol-screen", "pick-roll", [[50, 78], [28, 57], [72, 57], [24, 31], [60, 68]], 5, 3, [67, 57], 3),
+  ], [[48, 69], [33, 57], [68, 57], [30, 34], [57, 66]]),
+  draft("Chicago", [[50, 78], [27, 57], [74, 56], [25, 31], [60, 42]], [50, 78], [
+    offBall("chicago-pin", "pin-down", [[50, 78], [27, 57], [74, 56], [25, 31], [60, 42]], 5, 2, [29, 51], 1, [27, 62]),
+    arrow("chicago-handoff", "handoff", [50, 78], [27, 62], 1, { sequence: 2 }),
+    arrow("chicago-drive", "movement", [27, 62], [42, 48], 1, { sequence: 3 }),
+  ], [[48, 69], [33, 57], [68, 56], [30, 34], [60, 45]]),
+  draft("Elevator", [[50, 78], [50, 38], [25, 31], [40, 39], [60, 39]], [50, 78], [
+    offBall("elevator-left", "pin-down", [[50, 78], [50, 38], [25, 31], [40, 39], [60, 39]], 4, 2, [45, 50], 1, [50, 61]),
+    offBall("elevator-right", "pin-down", [[50, 78], [50, 38], [25, 31], [40, 39], [60, 39]], 5, 2, [55, 50], 1, [50, 61]),
+    arrow("elevator-shot-pass", "pass", [50, 78], [50, 61], 0.9, { sequence: 2 }),
+  ], [[48, 69], [50, 41], [30, 35], [42, 42], [58, 42]]),
 ];
+
+export const STARTER_PLAY_DETAILS: Record<string, { category: string; description: string }> = {
+  "Pick and roll": { category: "Ball screens", description: "Screen, roll to the rim, then feed the screener." },
+  "Give and go": { category: "Cuts and passes", description: "Give the ball away and cut into open space." },
+  "Drive and kick": { category: "Cuts and passes", description: "Attack the lane and pass to a spaced shooter." },
+  Horns: { category: "Horns", description: "Elbow entry into a middle ball screen." },
+  Flex: { category: "Off-ball screens", description: "Cross screen and pin-down create two cuts." },
+  "Pick and pop": { category: "Ball screens", description: "Screen, pop to space, and receive the return pass." },
+  "Inverted pick and roll": { category: "Ball screens", description: "A guard screens for a forward handling the ball." },
+  "Spain pick and roll": { category: "Ball screens", description: "A back screen joins the roll to complicate help." },
+  Floppy: { category: "Off-ball screens", description: "Two baseline screen routes open a shooter." },
+  "5-out motion": { category: "Cuts and passes", description: "Pass, cut behind the defense, and fill the top." },
+  "Horns twist": { category: "Horns", description: "Elbow entry and handoff flow into a ball screen." },
+  "UCLA cut": { category: "Cuts and passes", description: "Wing entry triggers a back screen and basket cut." },
+  "Princeton backdoor": { category: "Cuts and passes", description: "High-post entry punishes a denied passing lane." },
+  Pistol: { category: "Ball screens", description: "Wing entry, handoff, and a quick ball screen." },
+  Chicago: { category: "Off-ball screens", description: "Pin-down flows into a wing handoff and drive." },
+  Elevator: { category: "Off-ball screens", description: "Two screeners close a gate as the shooter cuts through." },
+};
 
 export const EMPTY_COURT: PlaybookDraft = draft("Empty court", [], null);
 

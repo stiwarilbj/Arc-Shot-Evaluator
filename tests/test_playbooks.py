@@ -100,6 +100,130 @@ def test_off_ball_screen_stores_distinct_player_references(tmp_path, monkeypatch
     assert client.post("/api/playbooks", json=payload).status_code == 400
 
 
+def test_new_screen_and_cut_actions_round_trip_in_version_one(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    payload = _payload("New action types")
+    payload["players"] = [
+        {"id": 1, "x": 50, "y": 70},
+        {"id": 2, "x": 38, "y": 62},
+        {"id": 3, "x": 27, "y": 55},
+    ]
+    payload["arrows"] = [
+        {
+            "id": "saved-pick-pop",
+            "kind": "pick-pop",
+            "sequence": 1,
+            "start": {"x": 38, "y": 62},
+            "end": {"x": 44, "y": 66},
+            "screener_id": 2,
+            "handler_id": 1,
+            "exit_target": {"x": 55, "y": 57},
+        },
+        {
+            "id": "saved-screen",
+            "kind": "screen",
+            "sequence": 2,
+            "start": {"x": 38, "y": 62},
+            "end": {"x": 44, "y": 66},
+            "screener_id": 2,
+            "handler_id": 1,
+        },
+        {
+            "id": "saved-pick-roll",
+            "kind": "pick-roll",
+            "sequence": 3,
+            "start": {"x": 38, "y": 62},
+            "end": {"x": 44, "y": 66},
+            "screener_id": 2,
+            "handler_id": 1,
+        },
+        {
+            "id": "saved-pin-down",
+            "kind": "pin-down",
+            "sequence": 4,
+            "start": {"x": 38, "y": 62},
+            "end": {"x": 34, "y": 58},
+            "screener_id": 2,
+            "cutter_id": 3,
+            "exit_target": {"x": 30, "y": 49},
+        },
+        {
+            "id": "saved-backdoor",
+            "kind": "backdoor-cut",
+            "sequence": 5,
+            "start": {"x": 27, "y": 55},
+            "end": {"x": 49, "y": 20},
+            "actor_id": 3,
+        },
+    ]
+    client = TestClient(app)
+    created = client.post("/api/playbooks", json=payload)
+    assert created.status_code == 200
+    value = created.json()
+    assert value["version"] == 1
+    assert value["arrows"][0]["screener_id"] == 2
+    assert value["arrows"][0]["handler_id"] == 1
+    assert value["arrows"][0]["exit_target"] == {"x": 55.0, "y": 57.0}
+    assert value["arrows"][1]["screener_id"] == 2
+    assert value["arrows"][1]["handler_id"] == 1
+    assert value["arrows"][2]["screener_id"] == 2
+    assert value["arrows"][2]["handler_id"] == 1
+    assert value["arrows"][3]["cutter_id"] == 3
+    assert value["arrows"][3]["exit_target"] == {"x": 30.0, "y": 49.0}
+    assert value["arrows"][4]["actor_id"] == 3
+    reopened = client.get(f"/api/playbooks/{value['id']}")
+    assert reopened.status_code == 200
+    assert reopened.json()["arrows"] == value["arrows"]
+
+
+def test_new_action_validation_and_legacy_v1_play_reads(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Invalid new action")
+    payload["players"] = [{"id": 1, "x": 50, "y": 70}, {"id": 2, "x": 35, "y": 60}]
+    payload["arrows"] = [{
+        "id": "bad-pin-down",
+        "kind": "pin-down",
+        "sequence": 1,
+        "start": {"x": 35, "y": 60},
+        "end": {"x": 40, "y": 64},
+        "screener_id": 2,
+        "cutter_id": 1,
+    }]
+    assert client.post("/api/playbooks", json=payload).status_code == 400
+    payload["arrows"][0]["kind"] = "pick-pop"
+    payload["arrows"][0].pop("cutter_id")
+    payload["arrows"][0]["screener_id"] = 2
+    payload["arrows"][0]["handler_id"] = 1
+    payload["arrows"][0]["exit_target"] = {"x": 110, "y": 64}
+    assert client.post("/api/playbooks", json=payload).status_code == 400
+    payload["arrows"][0]["exit_target"] = {"x": 50, "y": 60}
+    assert client.post("/api/playbooks", json=payload).status_code == 200
+    payload["arrows"][0].pop("screener_id")
+    assert client.post("/api/playbooks", json=payload).status_code == 400
+    payload["arrows"][0]["screener_id"] = 2
+    payload["arrows"][0].pop("handler_id")
+    assert client.post("/api/playbooks", json=payload).status_code == 400
+
+    # Version 1 diagrams saved before participant IDs remain readable as-is.
+    old_play = {
+        "version": 1,
+        "id": "play-oldversion1",
+        "name": "Old screen play",
+        "created_at": "2024-01-01T00:00:00+0000",
+        "updated_at": "2024-01-01T00:00:00+0000",
+        "defenders_visible": False,
+        "players": [{"id": 1, "x": 50, "y": 70}, {"id": 2, "x": 40, "y": 62}],
+        "defenders": [],
+        "ball": {"x": 50, "y": 70},
+        "arrows": [{"id": "old-screen", "kind": "screen", "sequence": 1, "start": {"x": 40, "y": 62}, "end": {"x": 45, "y": 67}}],
+    }
+    (tmp_path / "play-oldversion1.json").write_text(json.dumps(old_play))
+    response = client.get("/api/playbooks/play-oldversion1")
+    assert response.status_code == 200
+    assert response.json() == old_play
+
+
 def test_corrupt_saved_play_is_skipped_from_library(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     (tmp_path / "broken.json").write_text("not json")

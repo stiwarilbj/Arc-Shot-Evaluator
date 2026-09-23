@@ -17,6 +17,7 @@ import {
   Play,
   Redo2,
   Save,
+  Search,
   Send,
   Settings2,
   Shield,
@@ -30,7 +31,7 @@ import {
 import { createPlaybook, deletePlaybook, fetchPlaybooks, updatePlaybook } from "./api";
 import { ArcSelect } from "../../components/ArcSelect";
 import { CourtMarkings } from "./CourtMarkings";
-import { EMPTY_COURT, READY_SETUP, STARTER_PLAYS } from "./data";
+import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
 import type { ArrowKind, AutomaticActionSettings, CourtPoint, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
@@ -48,7 +49,7 @@ import {
 import type { SimulationFrame, SimulationRun } from "./simulation";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
-type DragState = { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-control"; id: number | string; before: PlaybookDraft };
+type DragState = { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-exit" | "arrow-control"; id: number | string; before: PlaybookDraft };
 const TOOL_LABELS: Record<PlaybookTool, string> = {
   select: "Select / move",
   player: "Add offensive player",
@@ -58,7 +59,10 @@ const TOOL_LABELS: Record<PlaybookTool, string> = {
   screen: "Add screen action",
   handoff: "Add dribble handoff action",
   "pick-roll": "Add pick and roll action",
+  "pick-pop": "Add pick and pop action",
   "off-ball-screen": "Add manual off-ball screen",
+  "pin-down": "Add pin-down screen",
+  "backdoor-cut": "Add backdoor cut",
   delete: "Delete selected object",
 };
 
@@ -111,7 +115,7 @@ function removeSelection(draft: PlaybookDraft, selection: Selection): PlaybookDr
   const next = clonePlaybook(draft);
   if (selection.type === "player") {
     next.players = next.players.filter((marker) => marker.id !== selection.id);
-    next.arrows = next.arrows.filter((arrow) => arrow.kind !== "off-ball-screen" || (arrow.screener_id !== selection.id && arrow.cutter_id !== selection.id));
+    next.arrows = next.arrows.filter((arrow) => arrow.screener_id !== selection.id && arrow.cutter_id !== selection.id && arrow.handler_id !== selection.id && arrow.actor_id !== selection.id);
   }
   if (selection.type === "defender") next.defenders = next.defenders.filter((marker) => marker.id !== selection.id);
   if (selection.type === "ball") next.ball = null;
@@ -135,11 +139,8 @@ function orderedArrows(arrows: PlaybookArrow[]) {
 
 function normalizeDraft(source: PlaybookDraft) {
   const next = clonePlaybook(source);
-  const used = new Set<number>();
   next.arrows = next.arrows.map((arrow, index) => {
-    let sequence = arrowSequence(arrow, index);
-    while (used.has(sequence)) sequence += 1;
-    used.add(sequence);
+    const sequence = arrowSequence(arrow, index);
     const path = arrow.path === "curve" ? "curve" : "straight";
     const control = arrow.control ?? defaultArrowControl(arrow.start, arrow.end);
     return { ...arrow, sequence, path, timing: clampTiming(arrow.timing ?? 1.2), control };
@@ -209,6 +210,10 @@ function actionPointAt(arrow: PlaybookArrow, amount: number) {
 function actionPath(arrow: PlaybookArrow) {
   const start = markerPoint(arrow.start);
   const end = markerPoint(arrow.end);
+  if (arrow.kind === "pick-pop" && arrow.exit_target) {
+    const pop = markerPoint(arrow.exit_target);
+    return `M${start.x} ${start.y} L${end.x} ${end.y} L${pop.x} ${pop.y}`;
+  }
   if (arrow.path === "curve") {
     const control = markerPoint(arrowControl(arrow));
     return `M${start.x} ${start.y} Q${control.x} ${control.y} ${end.x} ${end.y}`;
@@ -216,12 +221,35 @@ function actionPath(arrow: PlaybookArrow) {
   return `M${start.x} ${start.y} L${end.x} ${end.y}`;
 }
 
+function screenCutterPath(arrow: PlaybookArrow, players: PlaybookMarker[]) {
+  if (arrow.kind !== "off-ball-screen" && arrow.kind !== "pin-down") return null;
+  const cutter = players.find((player) => player.id === arrow.cutter_id);
+  if (!cutter) return null;
+  const start = markerPoint(cutter);
+  const screen = markerPoint(arrow.end);
+  const hoop = courtSvgToPoint(NBA_COURT_GEOMETRY.basket.center);
+  const distance = Math.hypot(hoop.x - arrow.end.x, hoop.y - arrow.end.y);
+  const finishPoint = markerPoint(arrow.exit_target ?? {
+    x: arrow.end.x + (hoop.x - arrow.end.x) * Math.min(1, 16 / Math.max(1, distance)),
+    y: arrow.end.y + (hoop.y - arrow.end.y) * Math.min(1, 16 / Math.max(1, distance)),
+  });
+  return `M${start.x} ${start.y} L${screen.x} ${screen.y} L${finishPoint.x} ${finishPoint.y}`;
+}
+
+function nearestPlayerId(players: PlaybookMarker[], point: CourtPoint, excludeId?: number) {
+  return players.filter((player) => player.id !== excludeId)
+    .sort((left, right) => pointDistance(left, point) - pointDistance(right, point) || left.id - right.id)[0]?.id ?? null;
+}
+
 function actionLabel(kind: ArrowKind) {
   if (kind === "pass") return "Pass";
   if (kind === "screen") return "Screen";
   if (kind === "handoff") return "Dribble handoff";
   if (kind === "pick-roll") return "Pick and roll";
+  if (kind === "pick-pop") return "Pick and pop";
   if (kind === "off-ball-screen") return "Off-ball screen";
+  if (kind === "pin-down") return "Pin-down screen";
+  if (kind === "backdoor-cut") return "Backdoor cut";
   return "Movement";
 }
 
@@ -230,6 +258,9 @@ function actionClass(kind: ArrowKind) {
   if (kind === "screen") return "screen-arrow";
   if (kind === "off-ball-screen") return "off-ball-screen-arrow";
   if (kind === "pick-roll") return "pick-roll-arrow";
+  if (kind === "pick-pop") return "pick-pop-arrow";
+  if (kind === "pin-down") return "pin-down-arrow";
+  if (kind === "backdoor-cut") return "backdoor-cut-arrow";
   return "movement-arrow";
 }
 
@@ -267,11 +298,15 @@ export function PlaybookBoard() {
   const [tool, setTool] = useState<PlaybookTool>("select");
   const [drawStart, setDrawStart] = useState<CourtPoint | null>(null);
   const [drawEnd, setDrawEnd] = useState<CourtPoint | null>(null);
-  const [offBallScreenSelection, setOffBallScreenSelection] = useState<{ screenerId: number | null; cutterId: number | null }>({ screenerId: null, cutterId: null });
+  const [offBallScreenSelection, setOffBallScreenSelection] = useState<{ screenerId: number | null; cutterId: number | null; screenPoint: CourtPoint | null }>({ screenerId: null, cutterId: null, screenPoint: null });
+  const [pickPopSelection, setPickPopSelection] = useState<{ screenerId: number | null; handlerId: number | null; screenPoint: CourtPoint | null }>({ screenerId: null, handlerId: null, screenPoint: null });
+  const [backdoorCutterId, setBackdoorCutterId] = useState<number | null>(null);
   const [autoActionsOpen, setAutoActionsOpen] = useState(false);
   const [saved, setSaved] = useState<PlaybookDocument[]>([]);
   const [savedOpen, setSavedOpen] = useState(false);
   const [starterOpen, setStarterOpen] = useState(false);
+  const [starterSearch, setStarterSearch] = useState("");
+  const [starterCategory, setStarterCategory] = useState("All plays");
   const [replacement, setReplacement] = useState<PlaybookDraft | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -288,6 +323,16 @@ export function PlaybookBoard() {
 
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
+  const starterCategories = useMemo(() => ["All plays", ...new Set(STARTER_PLAYS.map((play) => STARTER_PLAY_DETAILS[play.name]?.category ?? "Other"))], []);
+  const filteredStarterPlays = useMemo(() => {
+    const query = starterSearch.trim().toLowerCase();
+    return STARTER_PLAYS.filter((play) => {
+      const details = STARTER_PLAY_DETAILS[play.name];
+      const categoryMatches = starterCategory === "All plays" || details?.category === starterCategory;
+      const queryMatches = !query || `${play.name} ${details?.category ?? ""} ${details?.description ?? ""}`.toLowerCase().includes(query);
+      return categoryMatches && queryMatches;
+    });
+  }, [starterCategory, starterSearch]);
   const simulationFrame = simulationFrameState ?? EMPTY_SIMULATION_FRAME;
   const simulationDuration = simulationRunRef.current?.durationMs ?? simulationTimelineDuration(draft.arrows) + SIMULATION_SHOT_MS;
   const simulationActive = simulationRunRef.current !== null;
@@ -415,7 +460,9 @@ export function PlaybookBoard() {
 
   function chooseTool(next: PlaybookTool) {
     setTool(next);
-    if (next !== "off-ball-screen") setOffBallScreenSelection({ screenerId: null, cutterId: null });
+    if (next !== "off-ball-screen" && next !== "pin-down") setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
+    if (next !== "pick-pop") setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
+    if (next !== "backdoor-cut") setBackdoorCutterId(null);
     setDrawStart(null);
     setDrawEnd(null);
     focusBoard();
@@ -429,7 +476,9 @@ export function PlaybookBoard() {
     setTool("select");
     setDrawStart(null);
     setDrawEnd(null);
-    setOffBallScreenSelection({ screenerId: null, cutterId: null });
+    setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
+    setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
+    setBackdoorCutterId(null);
     setDirty(false);
     setStatus("idle");
     setError(null);
@@ -491,16 +540,23 @@ export function PlaybookBoard() {
     setError(null);
   }
 
+  function addAuthoredArrow(arrow: PlaybookArrow) {
+    const next = clonePlaybook(draft);
+    next.arrows = [...next.arrows, arrow];
+    commit(next);
+    setSelected({ type: "arrow", id: arrow.id });
+    setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
+    setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
+    setBackdoorCutterId(null);
+    setTool("select");
+  }
+
   function changeArrowSequence(arrowIdValue: string, requestedSequence: number) {
     if (!Number.isFinite(requestedSequence)) return;
-    const current = orderedArrows(draft.arrows);
-    const selectedIndex = current.findIndex(({ arrow }) => arrow.id === arrowIdValue);
-    if (selectedIndex < 0) return;
-    const targetIndex = Math.max(0, Math.min(current.length - 1, Math.round(requestedSequence) - 1));
-    const [item] = current.splice(selectedIndex, 1);
-    current.splice(targetIndex, 0, item);
     const next = clonePlaybook(draft);
-    next.arrows = current.map(({ arrow }, index) => ({ ...arrow, sequence: index + 1 }));
+    next.arrows = next.arrows.map((arrow) => arrow.id === arrowIdValue
+      ? { ...arrow, sequence: Math.max(1, Math.min(30, Math.round(requestedSequence))) }
+      : arrow);
     commit(next);
     setSelected({ type: "arrow", id: arrowIdValue });
   }
@@ -565,8 +621,28 @@ export function PlaybookBoard() {
     const point = pointFromPointer(event, svgRef.current);
     if (!point) return;
     focusBoard();
-    if (tool === "off-ball-screen") {
-      const { screenerId, cutterId } = offBallScreenSelection;
+    const nextSequence = Math.max(0, ...draft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1;
+    if (tool === "pick-pop") {
+      const { screenerId, handlerId, screenPoint } = pickPopSelection;
+      if (screenerId == null || handlerId == null) {
+        setError("Select the screener and ball handler first.");
+        return;
+      }
+      if (!screenPoint) {
+        setPickPopSelection({ ...pickPopSelection, screenPoint: point });
+        setError(null);
+        return;
+      }
+      const screener = draft.players.find((player) => player.id === screenerId);
+      if (!screener) {
+        setError("The selected screener is no longer on the court.");
+        return;
+      }
+      addAuthoredArrow({ id: arrowId(), kind: "pick-pop", start: { x: screener.x, y: screener.y }, end: screenPoint, exit_target: point, screener_id: screenerId, handler_id: handlerId, path: "straight", timing: 1.5, sequence: nextSequence });
+      return;
+    }
+    if (tool === "off-ball-screen" || tool === "pin-down") {
+      const { screenerId, cutterId, screenPoint } = offBallScreenSelection;
       if (screenerId == null || cutterId == null) {
         setError("Select a screener and cutter before placing the screen.");
         return;
@@ -574,26 +650,40 @@ export function PlaybookBoard() {
       const screener = draft.players.find((player) => player.id === screenerId);
       if (!screener) {
         setError("The selected screener is no longer on the court.");
-        setOffBallScreenSelection({ screenerId: null, cutterId: null });
+        setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
         return;
       }
-      const next = clonePlaybook(draft);
-      const newArrow: PlaybookArrow = {
+      if (tool === "pin-down" && !screenPoint) {
+        setOffBallScreenSelection({ ...offBallScreenSelection, screenPoint: point });
+        setError(null);
+        return;
+      }
+      addAuthoredArrow({
         id: arrowId(),
-        kind: "off-ball-screen",
+        kind: tool,
         start: { x: screener.x, y: screener.y },
-        end: point,
+        end: screenPoint ?? point,
+        ...(tool === "pin-down" ? { exit_target: point } : {}),
         screener_id: screenerId,
         cutter_id: cutterId,
         path: "straight",
         timing: 1.4,
-        sequence: Math.max(0, ...draft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
-      };
-      next.arrows = [...next.arrows, newArrow];
-      commit(next);
-      setSelected({ type: "arrow", id: newArrow.id });
-      setOffBallScreenSelection({ screenerId: null, cutterId: null });
-      setTool("select");
+        sequence: nextSequence,
+      });
+      return;
+    }
+    if (tool === "backdoor-cut") {
+      if (backdoorCutterId == null) {
+        setError("Select the cutter before placing the backdoor route.");
+        return;
+      }
+      const cutter = draft.players.find((player) => player.id === backdoorCutterId);
+      if (!cutter) {
+        setError("The selected cutter is no longer on the court.");
+        setBackdoorCutterId(null);
+        return;
+      }
+      addAuthoredArrow({ id: arrowId(), kind: "backdoor-cut", start: { x: cutter.x, y: cutter.y }, end: point, actor_id: cutter.id, path: "straight", timing: 1.2, sequence: nextSequence });
       return;
     }
     if (tool === "player") return addMarker(point, "player");
@@ -626,7 +716,7 @@ export function PlaybookBoard() {
     }
     const drag = dragRef.current;
     if (!drag) return;
-    const editingTimeline = drag.type === "arrow-start" || drag.type === "arrow-end" || drag.type === "arrow-control";
+    const editingTimeline = drag.type === "arrow-start" || drag.type === "arrow-end" || drag.type === "arrow-exit" || drag.type === "arrow-control";
     if (editingTimeline && simulationActive) {
       resetSimulation();
     } else if (simulationRunRef.current && (simulationPaused || simulationPlaying)) {
@@ -647,6 +737,7 @@ export function PlaybookBoard() {
     if (drag.type === "arrow-start" || drag.type === "arrow-end") {
       next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, [drag.type === "arrow-start" ? "start" : "end"]: point } : arrow);
     }
+    if (drag.type === "arrow-exit") next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, exit_target: point } : arrow);
     if (drag.type === "arrow-control") next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, path: "curve", control: point } : arrow);
     setDraft(next);
     setDirty(true);
@@ -666,6 +757,10 @@ export function PlaybookBoard() {
           path: "straight",
           timing: kind === "screen" || kind === "pick-roll" ? 1.4 : 1.2,
           sequence: Math.max(0, ...draft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
+          ...(kind === "screen" || kind === "pick-roll" ? {
+            screener_id: nearestPlayerId(draft.players, drawStart),
+            handler_id: draft.ball ? nearestPlayerId(draft.players, draft.ball, nearestPlayerId(draft.players, drawStart)) ?? undefined : undefined,
+          } : {}),
         };
         next.arrows = [...next.arrows, newArrow];
         commit(next);
@@ -698,21 +793,56 @@ export function PlaybookBoard() {
       setTool("select");
       return;
     }
-    if (tool === "off-ball-screen") {
+    if (tool === "pick-pop") {
+      if (selection.type !== "player") {
+        setError("Choose offensive players for the screen and ball handler.");
+        return;
+      }
+      const id = Number(selection.id);
+      setError(null);
+      if (pickPopSelection.screenerId == null) {
+        setPickPopSelection({ screenerId: id, handlerId: null, screenPoint: null });
+        setSelected(selection);
+      } else if (pickPopSelection.handlerId == null) {
+        if (pickPopSelection.screenerId === id) setError("Choose a different player as the ball handler.");
+        else {
+          setPickPopSelection({ ...pickPopSelection, handlerId: id });
+          setSelected(selection);
+        }
+      } else {
+        setError("Click the screen location, then the pop destination.");
+      }
+      return;
+    }
+    if (tool === "off-ball-screen" || tool === "pin-down") {
       if (selection.type !== "player") {
         setError("Choose offensive players for the screener and cutter.");
         return;
       }
+      const id = Number(selection.id);
       setError(null);
       if (offBallScreenSelection.screenerId == null) {
-        setOffBallScreenSelection({ screenerId: Number(selection.id), cutterId: null });
+        setOffBallScreenSelection({ screenerId: id, cutterId: null, screenPoint: null });
         setSelected(selection);
-      } else if (offBallScreenSelection.screenerId === Number(selection.id)) {
-        setError("Choose a different player as the cutter.");
+      } else if (offBallScreenSelection.cutterId == null) {
+        if (offBallScreenSelection.screenerId === id) setError("Choose a different player as the cutter.");
+        else {
+          setOffBallScreenSelection({ ...offBallScreenSelection, cutterId: id });
+          setSelected(selection);
+        }
       } else {
-        setOffBallScreenSelection({ ...offBallScreenSelection, cutterId: Number(selection.id) });
-        setSelected(selection);
+        setError(tool === "pin-down" ? "Click the screen location, then the cutter destination." : "Click the screen location.");
       }
+      return;
+    }
+    if (tool === "backdoor-cut") {
+      if (selection.type !== "player") {
+        setError("Choose an offensive player for the backdoor cut.");
+        return;
+      }
+      setBackdoorCutterId(Number(selection.id));
+      setSelected(selection);
+      setError(null);
       return;
     }
     // Lines remain editable from every toolbar mode. This keeps an accidental
@@ -731,7 +861,7 @@ export function PlaybookBoard() {
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
-  function onArrowEndpointPointerDown(event: ReactPointerEvent<SVGElement>, arrow: PlaybookArrow, endpoint: "start" | "end" | "control") {
+  function onArrowEndpointPointerDown(event: ReactPointerEvent<SVGElement>, arrow: PlaybookArrow, endpoint: "start" | "end" | "exit" | "control") {
     event.stopPropagation();
     focusBoard();
     if (tool === "delete") {
@@ -743,7 +873,7 @@ export function PlaybookBoard() {
     // Endpoint handles follow the same always-draggable rule as the arrow
     // stroke, including while another drawing tool is active.
     setSelected({ type: "arrow", id: arrow.id });
-    dragRef.current = { type: endpoint === "start" ? "arrow-start" : endpoint === "end" ? "arrow-end" : "arrow-control", id: arrow.id, before: clonePlaybook(draft) };
+    dragRef.current = { type: endpoint === "start" ? "arrow-start" : endpoint === "end" ? "arrow-end" : endpoint === "exit" ? "arrow-exit" : "arrow-control", id: arrow.id, before: clonePlaybook(draft) };
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
@@ -766,6 +896,9 @@ export function PlaybookBoard() {
       setSelected(null);
       setDrawStart(null);
       setDrawEnd(null);
+      setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
+      setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
+      setBackdoorCutterId(null);
       setTool("select");
       return;
     }
@@ -794,7 +927,7 @@ export function PlaybookBoard() {
     clone.setAttribute("height", "1152");
     clone.querySelectorAll(".selection-handle, .drawing-preview").forEach((node) => node.remove());
     const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
-    style.textContent = `.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
+    style.textContent = `.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
     clone.prepend(style);
     const serialized = new XMLSerializer().serializeToString(clone);
     const image = new Image();
@@ -895,7 +1028,10 @@ export function PlaybookBoard() {
             <ToolButton active={tool === "screen"} icon={<Shield size={15} />} label="Screen" title={TOOL_LABELS.screen} onClick={() => chooseTool("screen")} />
             <ToolButton active={tool === "handoff"} icon={<Hand size={15} />} label="Handoff" title={TOOL_LABELS.handoff} onClick={() => chooseTool("handoff")} />
             <ToolButton active={tool === "pick-roll"} icon={<ArrowUpRight size={15} />} label="Pick & roll" title={TOOL_LABELS["pick-roll"]} onClick={() => chooseTool("pick-roll")} />
+            <ToolButton active={tool === "pick-pop"} icon={<ArrowUpRight size={15} />} label="Pick & pop" title={TOOL_LABELS["pick-pop"]} onClick={() => chooseTool("pick-pop")} />
             <ToolButton active={tool === "off-ball-screen"} icon={<UsersRound size={15} />} label="Off-ball screen" title={TOOL_LABELS["off-ball-screen"]} onClick={() => chooseTool("off-ball-screen")} />
+            <ToolButton active={tool === "pin-down"} icon={<UsersRound size={15} />} label="Pin-down" title={TOOL_LABELS["pin-down"]} onClick={() => chooseTool("pin-down")} />
+            <ToolButton active={tool === "backdoor-cut"} icon={<ArrowUpRight size={15} />} label="Backdoor cut" title={TOOL_LABELS["backdoor-cut"]} onClick={() => chooseTool("backdoor-cut")} />
             <span className="toolbar-spacer" />
             <ToolButton icon={<BrainCircuit size={15} />} label="AI defense" title="Apply ARC defensive AI" onClick={applyAIDefense} />
             <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : simulationPaused ? "Resume" : "Play"} title={!draft.players.length ? "Add at least one offensive player before simulating" : simulationPlaying ? "Pause play simulation" : simulationPaused ? "Resume play simulation" : "Play simulation with defensive AI"} disabled={!draft.players.length && !simulationActive} onClick={() => {
@@ -913,7 +1049,7 @@ export function PlaybookBoard() {
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
             {selectedArrow ? <>
-              <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>1 = first</small></label>
+              <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>Same number runs together</small></label>
               <div className="sequence-editor"><span>Path</span><ArcSelect ariaLabel="Arrow path" className="arc-select--compact playbook-path-select" value={selectedArrow.path ?? "straight"} options={[{ value: "straight", label: "Straight" }, { value: "curve", label: "Curved" }]} onValueChange={(value) => changeArrowPath(selectedArrow.id, value as "straight" | "curve")} /></div>
               <label className="sequence-editor"><span>Seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
             </> : null}
@@ -955,10 +1091,11 @@ export function PlaybookBoard() {
                 const badgePoint = actionPointAt(arrow, 0.5);
                 const badge = markerPoint(badgePoint);
                 return <g key={arrow.id} onPointerDown={(event) => onMarkerPointerDown(event, { type: "arrow", id: arrow.id })} className={`play-arrow-group ${active ? "is-selected" : ""}`}>
-                  <title>Move {sequence} · {actionLabel(arrow.kind)}{arrow.kind === "off-ball-screen" ? ` · Player ${arrow.screener_id} screens for player ${arrow.cutter_id}` : ""} · {clampTiming(arrow.timing ?? 1.2).toFixed(1)} seconds</title>
+                  <title>Move {sequence} · {actionLabel(arrow.kind)}{arrow.screener_id != null ? ` · Player ${arrow.screener_id} screens for player ${arrow.handler_id ?? arrow.cutter_id ?? "the ball handler"}` : ""} · {clampTiming(arrow.timing ?? 1.2).toFixed(1)} seconds</title>
+                  {screenCutterPath(arrow, draft.players) ? <path d={screenCutterPath(arrow, draft.players) as string} className="screen-cutter-arrow" markerEnd="url(#movement-arrow)" /> : null}
                   <path d={actionPath(arrow)} className={actionClass(arrow.kind)} markerEnd={`url(#${actionMarker(arrow.kind)})`} />
                   <g className="arrow-sequence-badge"><circle cx={badge.x} cy={badge.y} r="12" /><text x={badge.x} y={badge.y + 1}>{sequence}</text></g>
-                  {active ? <><circle cx={start.x} cy={start.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "start")} /><circle cx={end.x} cy={end.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "end")} />{arrow.path === "curve" ? <circle cx={control.x} cy={control.y} r="7" className="curve-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "control")} /> : null}</> : null}
+                  {active ? <><circle cx={start.x} cy={start.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "start")} /><circle cx={end.x} cy={end.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "end")} />{arrow.exit_target ? <circle cx={markerPoint(arrow.exit_target).x} cy={markerPoint(arrow.exit_target).y} r="8" className="selection-handle exit-target-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "exit")} /> : null}{arrow.path === "curve" ? <circle cx={control.x} cy={control.y} r="7" className="curve-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "control")} /> : null}</> : null}
                 </g>;
               })}
               {drawStart && drawEnd ? <path d={actionPath({ id: "preview", kind: tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement", start: drawStart, end: drawEnd, path: "straight" })} className={`drawing-preview ${actionClass(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")}`} markerEnd={`url(#${actionMarker(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")})`} /> : null}
@@ -972,16 +1109,16 @@ export function PlaybookBoard() {
               {(simulationActive ? simulationFrame.players : draft.players).map((marker) => {
                 const point = markerPoint(marker);
                 const active = selected?.type === "player" && selected.id === marker.id;
-                const role = offBallScreenSelection.screenerId === marker.id ? "is-screen-screener" : offBallScreenSelection.cutterId === marker.id ? "is-screen-cutter" : "";
+                const role = offBallScreenSelection.screenerId === marker.id ? "is-screen-screener" : offBallScreenSelection.cutterId === marker.id ? "is-screen-cutter" : pickPopSelection.screenerId === marker.id ? "is-screen-screener" : pickPopSelection.handlerId === marker.id ? "is-screen-cutter" : backdoorCutterId === marker.id ? "is-screen-cutter" : "";
                 return <g key={`player-${marker.id}`} className={`offense-marker-group ${active ? "is-selected" : ""} ${role}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "player", id: marker.id })}>
                   <circle cx={point.x} cy={point.y} r="25" className="offense-marker" /><text x={point.x} y={point.y + 1} className="marker-number">{marker.id}</text>
                 </g>;
               })}
-              {(simulationActive ? simulationFrame.ball : draft.ball) ? <g className={`ball-marker-group ${selected?.type === "ball" ? "is-selected" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "ball", id: "ball" })}>
+              {(simulationActive ? simulationFrame.ball : draft.ball) ? <g className={`ball-marker-group ${selected?.type === "ball" ? "is-selected" : ""}`} style={{ pointerEvents: ["pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"].includes(tool) ? "none" : undefined }} onPointerDown={(event) => onMarkerPointerDown(event, { type: "ball", id: "ball" })}>
                 <circle cx={markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x} cy={markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y} r="14" className="ball-marker" /><path d={`M${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x - 11} ${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y}h22M${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x} ${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y - 11}v22`} className="ball-seam" />
               </g> : null}
             </svg>
-            <div className="court-hint">{tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : "Drag across the court to draw"}</div>
+            <div className="court-hint">{tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "pick-pop" ? pickPopSelection.screenerId == null ? "Select the screener" : pickPopSelection.handlerId == null ? "Select the ball handler" : pickPopSelection.screenPoint == null ? "Click the screen location" : "Click the pop destination" : tool === "pin-down" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : offBallScreenSelection.screenPoint == null ? "Click the screen location" : "Click the cutter destination" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : tool === "backdoor-cut" ? backdoorCutterId == null ? "Select the cutter" : "Click the basket route destination" : "Drag across the court to draw"}</div>
           </div>
           <div className="playbook-statusbar"><span><Hand size={14} /> {selected ? `${selected.type === "ball" ? "Ball" : selected.type === "arrow" ? `Move ${selectedArrowSequence ?? ""}` : `${selected.type === "defender" ? "Defender" : "Player"} ${selected.id}`} selected` : "Nothing selected"}</span><span>Arrows stay draggable · Arrow keys nudge · Shift for larger steps · Cmd/Ctrl Z to undo</span></div>
         </main>
@@ -990,9 +1127,11 @@ export function PlaybookBoard() {
           {saved.length ? <div className="saved-play-list">{saved.map((play) => <SavedPlayCard key={play.id} play={play} active={draft.id === play.id} deletePending={deleteId === play.id} onOpen={() => requestLoad(clonePlaybook(play))} onDuplicate={() => duplicate(play)} onDelete={() => { if (window.confirm(`Delete ${play.name}?`)) void confirmDelete(play.id); }} />)}</div> : <div className="saved-empty"><FolderOpen size={20} /><p>Your saved diagrams will appear here.</p><button type="button" onClick={() => void saveDraft()}>Save this play</button></div>}
         </aside>
       </div>
-      {starterOpen ? <div className="playbook-modal-backdrop" role="presentation" onMouseDown={() => setStarterOpen(false)}><section className="playbook-modal" role="dialog" aria-modal="true" aria-labelledby="starter-title" onMouseDown={(event) => event.stopPropagation()}>
+      {starterOpen ? <div className="playbook-modal-backdrop" role="presentation" onMouseDown={() => setStarterOpen(false)}><section className="playbook-modal starter-modal" role="dialog" aria-modal="true" aria-labelledby="starter-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-heading"><div><span className="section-kicker">Start from a diagram</span><h2 id="starter-title">Starter plays</h2></div><button type="button" className="icon-button" onClick={() => setStarterOpen(false)} aria-label="Close starter plays"><X size={17} /></button></div>
-        <div className="starter-grid">{STARTER_PLAYS.map((play) => <button type="button" className="starter-card" key={play.name} onClick={() => { requestLoad(clonePlaybook(play)); setStarterOpen(false); }}><MiniCourt play={play} /><strong>{play.name}</strong><span>Edit this diagram</span></button>)}</div>
+        <label className="starter-search"><Search size={15} /><input type="search" aria-label="Search starter plays" placeholder="Search sets and actions" value={starterSearch} onChange={(event) => setStarterSearch(event.currentTarget.value)} /></label>
+        <div className="starter-categories" role="group" aria-label="Filter starter plays by category">{starterCategories.map((category) => <button type="button" key={category} className={starterCategory === category ? "is-active" : ""} aria-pressed={starterCategory === category} onClick={() => setStarterCategory(category)}>{category}</button>)}</div>
+        <div className="starter-grid">{filteredStarterPlays.map((play) => { const details = STARTER_PLAY_DETAILS[play.name]; return <button type="button" className="starter-card" key={play.name} onClick={() => { requestLoad(clonePlaybook(play)); setStarterOpen(false); }}><MiniCourt play={play} /><span className="starter-card-copy"><span className="starter-category-label">{details?.category}</span><strong>{play.name}</strong><span>{details?.description ?? "Edit this diagram"}</span></span></button>; })}{filteredStarterPlays.length === 0 ? <p className="starter-empty">No starter plays match that search.</p> : null}</div>
       </section></div> : null}
       {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes. Save it before opening the new starting point, or discard the draft.</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
     </div>
@@ -1022,7 +1161,8 @@ function MiniCourt({ play }: { play: PlaybookDocument | PlaybookDraft }) {
       const badge = markerPoint(actionPointAt(arrow, 0.5));
       const sequence = arrowSequence(arrow, index);
       return <g key={arrow.id}>
-        <path d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" || arrow.kind === "off-ball-screen" ? "mini-screen" : arrow.kind === "pick-roll" ? "mini-pick-roll" : "mini-move"} />
+        {screenCutterPath(arrow, play.players) ? <path d={screenCutterPath(arrow, play.players) as string} className="mini-screen-cutter" /> : null}
+        <path d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" || arrow.kind === "off-ball-screen" || arrow.kind === "pin-down" ? "mini-screen" : arrow.kind === "pick-roll" || arrow.kind === "pick-pop" ? "mini-pick-roll" : "mini-move"} />
         <circle cx={badge.x} cy={badge.y} r="22" className="mini-sequence-badge" />
         <text x={badge.x} y={badge.y + 1} className="mini-sequence-number">{sequence}</text>
       </g>;

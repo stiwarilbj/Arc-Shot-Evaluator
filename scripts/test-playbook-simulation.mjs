@@ -269,12 +269,13 @@ assert.deepEqual(pausedRun.defenders, defendersBeforeSettings, 'changing setting
 // Automatic shots begin from the final live positions, including a play without arrows.
 const noArrowRun = createSimulationRun(noDefenderDraft, settings);
 const noArrowInitial = structuredClone(noArrowRun.players);
-advance(noArrowRun, noArrowRun.actionDurationMs - SIMULATION_STEP_MS * 2);
+advance(noArrowRun, noArrowRun.actionDurationMs - noArrowRun.elapsedMs);
 const playersBeforeShot = noArrowRun.players.map((player) => ({ ...player }));
+assert.equal(noArrowRun.frame.shotPhase, 'setup');
+assertNear(pointDistanceFeet(noArrowRun.frame.shotStart, noArrowRun.ball), 0, 0.02, 'the shot starts where the live ball was at the action/shot boundary');
 advance(noArrowRun, SIMULATION_STEP_MS * 3);
 assert.equal(noArrowRun.frame.shotPhase, 'setup');
 assert.equal(noArrowRun.frame.shooterId, noArrowRun.ballHandlerId);
-assertNear(pointDistanceFeet(noArrowRun.frame.shotStart, noArrowRun.ball), 0, 0.02, 'the shot starts where the live ball was at the action/shot boundary');
 noArrowRun.players.forEach((player, index) => {
   assert.ok(pointDistanceFeet(playersBeforeShot[index], player) < 1, 'the shot boundary carries forward every player’s final position');
 });
@@ -285,6 +286,13 @@ assert.deepEqual(shotEditFrame.ball, editedShotBall, 'a paused shot ball edit is
 advance(noArrowRun, SIMULATION_STEP_MS);
 assert.ok(pointDistanceFeet(editedShotBall, noArrowRun.ball) < 1.6, 'the remaining shot resumes from the edited ball location');
 
+assert.deepEqual(STARTER_PLAYS.map((play) => play.name), [
+  'Pick and roll', 'Give and go', 'Drive and kick', 'Horns', 'Flex', 'Pick and pop',
+  'Inverted pick and roll', 'Spain pick and roll', 'Floppy', '5-out motion', 'Horns twist',
+  'UCLA cut', 'Princeton backdoor', 'Pistol', 'Chicago', 'Elevator',
+], 'the starter library includes all sixteen requested plays');
+const spainStarter = STARTER_PLAYS.find((play) => play.name === 'Spain pick and roll');
+assert.deepEqual(spainStarter.arrows.filter((item) => ['screen', 'pick-roll', 'pick-pop', 'off-ball-screen'].includes(item.kind)).map((item) => item.sequence), [1, 2], 'the Spain back screen follows the initial ball screen');
 for (const play of [READY_SETUP, ...STARTER_PLAYS, EMPTY_COURT]) {
   if (!play.players.length) continue;
   const snapshot = structuredClone(play);
@@ -314,6 +322,91 @@ assert.ok(pointDistanceFeet(offBallRun.players.find((player) => player.id === 2)
 assert.ok(pointDistanceFeet(offBallRun.players.find((player) => player.id === 3), offBallSnapshot.players[2]) > 0.3, 'the selected cutter runs around the screen');
 assert.equal(offBallRun.ballHandlerId, 1, 'an off-ball screen keeps possession with the handler');
 assert.deepEqual(offBallDraft, offBallSnapshot, 'simulation actions do not mutate the saved draft');
+
+// Pick and pop records both participants and its pop route, retains possession,
+// and sends a switching defense through the named screen matchup.
+const pickPopDraft = makeDraft({
+  players: [[50, 76], [60, 68], [27, 57]],
+  ball: [50, 76],
+  defenders: [[50, 70], [61, 63], [28, 52]],
+  arrows: [{ id: 'pick-pop', kind: 'pick-pop', screener_id: 2, handler_id: 1, start: { x: 60, y: 68 }, end: { x: 55, y: 69 }, exit_target: { x: 70, y: 57 }, sequence: 1, timing: 1.5 }],
+});
+const pickPopRun = createSimulationRun(pickPopDraft, { ...settings, defenseStrategy: 'switch' });
+const pickPopAction = pickPopRun.actions[0];
+const pickPopAssignments = new Map(pickPopRun.initialAssignments);
+assert.equal(pickPopAction.actorId, 2);
+assert.equal(pickPopAction.partnerId, 1);
+let lastPickPopScreener = { ...pickPopRun.players.find((player) => player.id === 2) };
+for (let frame = 0; frame < 42; frame += 1) {
+  advance(pickPopRun, SIMULATION_STEP_MS);
+  const screener = pickPopRun.players.find((player) => player.id === 2);
+  assert.ok(pointDistanceFeet(lastPickPopScreener, screener) <= 19 * SIMULATION_STEP_MS / 1000 + 0.002, 'the pop route stays within the offensive movement limit');
+  lastPickPopScreener = { ...screener };
+}
+assert.ok(pointDistanceFeet(lastPickPopScreener, pickPopDraft.arrows[0].exit_target) < pointDistanceFeet(pickPopDraft.players[1], pickPopDraft.arrows[0].exit_target), 'the screener moves through the screen spot toward the pop destination');
+assert.equal(pickPopRun.ballHandlerId, 1, 'pick and pop keeps possession with the current handler');
+assert.equal(pickPopRun.assignments.get([...pickPopAssignments].find(([, playerId]) => playerId === 1)[0]), 2, 'switching applies to the pick-and-pop screen participants');
+
+// A pin-down uses its cutter destination while a backdoor cut follows the
+// selected player's authored route; neither action transfers possession.
+const pinDownDraft = makeDraft({
+  players: [[50, 76], [38, 62], [27, 55]],
+  ball: [50, 76],
+  arrows: [{ id: 'pin-down', kind: 'pin-down', screener_id: 2, cutter_id: 3, start: { x: 38, y: 62 }, end: { x: 34, y: 58 }, exit_target: { x: 30, y: 49 }, sequence: 1, timing: 1.4 }],
+});
+const pinDownRun = createSimulationRun(pinDownDraft, settings);
+assert.equal(pinDownRun.actions[0].actorId, 2);
+assert.equal(pinDownRun.actions[0].recipientId, 3);
+advance(pinDownRun, 700);
+assert.ok(pointDistanceFeet(pinDownRun.players.find((player) => player.id === 3), pinDownDraft.arrows[0].end) < pointDistanceFeet(pinDownDraft.players[2], pinDownDraft.arrows[0].end), 'the pin-down cutter runs to the screen before turning');
+advance(pinDownRun, 600);
+assert.ok(pointDistanceFeet(pinDownRun.players.find((player) => player.id === 3), pinDownDraft.arrows[0].exit_target) < pointDistanceFeet(pinDownDraft.players[2], pinDownDraft.arrows[0].exit_target), 'the pin-down cutter continues to the authored destination');
+assert.equal(pinDownRun.ballHandlerId, 1);
+const pinDownSwitchRun = createSimulationRun(pinDownDraft, { ...settings, defenseStrategy: 'switch' });
+const pinDownAssignments = new Map(pinDownSwitchRun.initialAssignments);
+advance(pinDownSwitchRun, SIMULATION_STEP_MS);
+const pinDownCutterDefender = pinDownSwitchRun.defenders.find((defender) => pinDownAssignments.get(defender.id) === 3);
+assert.equal(pinDownSwitchRun.assignments.get(pinDownCutterDefender.id), 2, 'Switch screens exchanges matchups for a pin-down action');
+const pinDownCoverage = (defenseStrategy) => {
+  const run = createSimulationRun(pinDownDraft, { ...settings, defenseStrategy });
+  advance(run, 650);
+  const defenderId = [...run.assignments].find(([, playerId]) => playerId === 3)?.[0];
+  return run.defenders.find((defender) => defender.id === defenderId);
+};
+assert.ok(pointDistanceFeet(pinDownCoverage('fight-over'), pinDownCoverage('help')) > 0.2, 'a pin-down uses the selected screen coverage');
+const backdoorTarget = { x: 49, y: 22 };
+const backdoorDraft = makeDraft({
+  players: [[50, 76], [35, 55]],
+  ball: [50, 76],
+  arrows: [{ id: 'backdoor', kind: 'backdoor-cut', actor_id: 2, start: { x: 35, y: 55 }, end: backdoorTarget, sequence: 1, timing: 1.2 }],
+});
+const backdoorRun = createSimulationRun(backdoorDraft, settings);
+assert.equal(backdoorRun.actions[0].actorId, 2);
+advance(backdoorRun, 700);
+assert.ok(pointDistanceFeet(backdoorRun.players.find((player) => player.id === 2), backdoorTarget) < pointDistanceFeet(backdoorDraft.players[1], backdoorTarget), 'the backdoor cutter follows the selected basket route');
+assert.equal(backdoorRun.ballHandlerId, 1);
+
+// Equal move numbers begin together. The first drawn route wins for a player,
+// while a simultaneous screen still applies defense and coverage to that cutter.
+const sharedOrderDraft = makeDraft({
+  players: [[50, 76], [37, 64], [26, 59], [75, 42]],
+  ball: [50, 76],
+  defenders: [[50, 71], [37, 60], [26, 55], [75, 38]],
+  arrows: [
+    { id: 'cutter-route', kind: 'movement', start: { x: 26, y: 59 }, end: { x: 42, y: 46 }, sequence: 1, timing: 1.5 },
+    { id: 'screen-for-route', kind: 'off-ball-screen', start: { x: 37, y: 64 }, end: { x: 32, y: 60 }, screener_id: 2, cutter_id: 3, sequence: 1, timing: 1.5 },
+    { id: 'losing-route', kind: 'movement', start: { x: 26, y: 59 }, end: { x: 10, y: 48 }, sequence: 1, timing: 1.5 },
+  ],
+});
+const sharedOrderRun = createSimulationRun(sharedOrderDraft, { ...settings, defenseStrategy: 'switch' });
+assert.ok(sharedOrderRun.actions.every((action) => action.startTime === 0), 'all actions with the same sequence share a start time');
+const sharedBaseline = new Map(sharedOrderRun.initialAssignments);
+advance(sharedOrderRun, SIMULATION_STEP_MS);
+assert.equal(sharedOrderRun.assignments.get([...sharedBaseline].find(([, playerId]) => playerId === 3)[0]), 2, 'the screen switches coverage even while its cutter follows a separate drawn route');
+advance(sharedOrderRun, 450);
+const routeCutter = sharedOrderRun.players.find((player) => player.id === 3);
+assert.ok(routeCutter.x > sharedOrderDraft.players[2].x, 'diagram order gives the first conflicting route control of the player');
+assert.ok(routeCutter.y < sharedOrderDraft.players[2].y, 'the first route continues toward its own destination');
 
 // Screen coverages use the live screen location and keep distinct assignments except for Switch screens.
 const coverageDraft = makeDraft({

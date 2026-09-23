@@ -21,7 +21,7 @@ MAX_NAME_LENGTH = 80
 MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
-ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "handoff", "pick-roll", "off-ball-screen"}
+ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"}
 ALLOWED_ARROW_PATHS = {"straight", "curve"}
 
 
@@ -94,15 +94,37 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         control_value = arrow.get("control")
         control = None if control_value is None else _point(control_value, "Arrow control")
         clean_arrow = {"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "path": path, "timing": round(float(timing), 2), "control": control, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")}
-        if arrow["kind"] == "off-ball-screen":
+        player_ids = {marker["id"] for marker in players}
+        if arrow["kind"] in {"screen", "pick-roll", "pick-pop"}:
+            screener_id, handler_id = arrow.get("screener_id"), arrow.get("handler_id")
+            if arrow["kind"] == "pick-pop" and (screener_id is None or handler_id is None):
+                raise HTTPException(400, "Pick and pop actions need screener_id and handler_id")
+            if screener_id is not None and (not isinstance(screener_id, int) or isinstance(screener_id, bool) or screener_id not in player_ids):
+                raise HTTPException(400, "On-ball screener must be an offensive player")
+            if handler_id is not None and (not isinstance(handler_id, int) or isinstance(handler_id, bool) or handler_id not in player_ids):
+                raise HTTPException(400, "On-ball handler must be an offensive player")
+            if screener_id is not None and screener_id == handler_id:
+                raise HTTPException(400, "On-ball screen players must be distinct")
+            if screener_id is not None:
+                clean_arrow["screener_id"] = screener_id
+            if handler_id is not None:
+                clean_arrow["handler_id"] = handler_id
+        if arrow["kind"] in {"off-ball-screen", "pin-down"}:
             screener_id, cutter_id = arrow.get("screener_id"), arrow.get("cutter_id")
-            player_ids = {marker["id"] for marker in players}
             if not isinstance(screener_id, int) or isinstance(screener_id, bool) or not isinstance(cutter_id, int) or isinstance(cutter_id, bool):
                 raise HTTPException(400, "Off-ball screens need screener_id and cutter_id")
             if screener_id == cutter_id or screener_id not in player_ids or cutter_id not in player_ids:
                 raise HTTPException(400, "Off-ball screen players must be distinct offensive players")
             clean_arrow["screener_id"] = screener_id
             clean_arrow["cutter_id"] = cutter_id
+        if arrow["kind"] == "backdoor-cut":
+            actor_id = arrow.get("actor_id")
+            if not isinstance(actor_id, int) or isinstance(actor_id, bool) or actor_id not in player_ids:
+                raise HTTPException(400, "Backdoor cuts need an offensive actor_id")
+            clean_arrow["actor_id"] = actor_id
+        if arrow["kind"] in {"pick-pop", "pin-down"}:
+            exit_target = _point(arrow.get("exit_target"), "Screen exit target")
+            clean_arrow["exit_target"] = exit_target
         arrows.append(clean_arrow)
     defenders_visible = payload.get("defenders_visible", False)
     if not isinstance(defenders_visible, bool):
