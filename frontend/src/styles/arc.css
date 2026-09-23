@@ -726,8 +726,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .mini-move, .mini-pass { fill: none; stroke-width: 5; vector-effect: non-scaling-stroke; }
 .mini-move { stroke: var(--text); }
 .mini-pass { stroke: var(--orange); stroke-dasharray: 9 8; }
+.mini-screen, .mini-pick-roll, .mini-screen-cutter { fill: none; }
 .mini-screen { stroke: #73bff0; stroke-dasharray: 3 7; }
 .mini-pick-roll { stroke: var(--orange); stroke-width: 6; }
+.mini-screen-cutter { stroke: var(--text); stroke-width: 4; stroke-dasharray: 7 6; }
 .mini-sequence-badge { fill: var(--surface-2); stroke: var(--orange); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .mini-sequence-number { fill: var(--text); font: 700 34px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 .saved-empty { display: grid; justify-items: center; gap: 8px; padding: 34px 18px; color: var(--muted); text-align: center; }
