@@ -56,6 +56,28 @@ def test_playbook_crud_is_local_and_versioned(tmp_path, monkeypatch) -> None:
     assert client.get(f"/api/playbooks/{value['id']}").status_code == 404
 
 
+def test_player_skill_ratings_default_validate_and_round_trip(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Player ratings")
+    payload["players"] = [{"id": 1, "x": 50, "y": 70, "ratings": {"threePoint": 5, "midrange": 2, "finishing": 4}}]
+    created = client.post("/api/playbooks", json=payload)
+    assert created.status_code == 200
+    play = created.json()
+    assert play["players"][0]["ratings"] == {"threePoint": 5, "midrange": 2, "finishing": 4}
+    assert client.get(f"/api/playbooks/{play['id']}").json()["players"][0]["ratings"] == play["players"][0]["ratings"]
+
+    legacy = _payload("Legacy defaults")
+    legacy["players"] = [{"id": 1, "x": 50, "y": 70}]
+    saved_legacy = client.post("/api/playbooks", json=legacy).json()
+    assert saved_legacy["players"][0]["ratings"] == {"threePoint": 3, "midrange": 3, "finishing": 3}
+
+    for invalid_rating in (0, 6, 3.5, True, "4"):
+        invalid = _payload("Invalid rating")
+        invalid["players"] = [{"id": 1, "x": 50, "y": 70, "ratings": {"threePoint": invalid_rating}}]
+        assert client.post("/api/playbooks", json=invalid).status_code == 400
+
+
 def test_playbook_rejects_out_of_bounds_or_duplicate_markers(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     client = TestClient(app)

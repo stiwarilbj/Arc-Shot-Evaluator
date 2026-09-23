@@ -195,6 +195,52 @@ const frontQuality = createSimulationRun(frontQualityDraft, { ...settings, defen
 const trailingQuality = createSimulationRun(trailingQualityDraft, { ...settings, defenseStrategy: 'contain' }).frame.defensiveQuality;
 assert.ok(frontQuality > trailingQuality + 10, 'defensive quality rewards goal-side positioning over a similarly close trailing defender');
 
+// Defender spacing follows the guarded player's expected shot at that court location.
+for (const [skill, point, defenderPoint] of [
+  ['threePoint', [50, 75], [50, 68]],
+  ['midrange', [50, 45], [50, 38]],
+  ['finishing', [50, 26], [50, 19]],
+]) {
+  const makeThreatRun = (rating) => {
+    const draft = makeDraft({ players: [point, [25, 60], [75, 60]], ball: point, defenders: [defenderPoint, [31, 56], [69, 56]] });
+    draft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 3, [skill]: rating };
+    const run = createSimulationRun(draft, { ...settings, defenseStrategy: 'contain' });
+    advance(run, 950);
+    const defender = run.defenders.find((item) => run.assignments.get(item.id) === 1);
+    return pointDistanceFeet(defender, run.players[0]);
+  };
+  const lowGap = makeThreatRun(1);
+  const highGap = makeThreatRun(5);
+  assert.ok(lowGap > highGap + 2.5, `${skill} rating changes how much space the defender gives`);
+}
+
+// A strong open shooter becomes the adaptive pass target; a rating-1 handler avoids an automatic drive.
+const shooterChoiceDraft = makeDraft({ players: [[50, 75], [23, 69], [77, 69]], ball: [50, 75], defenders: [[50, 65], [23, 60], [77, 60]] });
+shooterChoiceDraft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 1 };
+shooterChoiceDraft.players[1].ratings = { threePoint: 1, midrange: 3, finishing: 3 };
+shooterChoiceDraft.players[2].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
+const shooterChoiceRun = createSimulationRun(shooterChoiceDraft, { ...settings, defenseStrategy: 'off' });
+advance(shooterChoiceRun, shooterChoiceRun.plannedActionDurationMs);
+assert.ok(shooterChoiceRun.actions.some((action) => action.adaptiveReadLabel && action.recipientId === 3), 'adaptive reads pass to the higher-rated open shooter');
+
+// Rating 1 remains a possible last-resort shot, but its quality is capped below a make.
+const shotQualityAtRating = (rating, point) => {
+  const draft = makeDraft({ players: [point], ball: point });
+  draft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 3, ...rating };
+  const run = createSimulationRun(draft, { ...settings, defenseStrategy: 'off' });
+  advance(run, run.actionDurationMs);
+  return run.frame.shotQuality;
+};
+const lowThreeQuality = shotQualityAtRating({ threePoint: 1 }, [50, 75]);
+const highThreeQuality = shotQualityAtRating({ threePoint: 5 }, [50, 75]);
+assert.ok(lowThreeQuality <= 40 && highThreeQuality > lowThreeQuality, 'shooting rating changes shot quality and makes rating 1 a poor last-resort attempt');
+const lowFinishQuality = shotQualityAtRating({ finishing: 1 }, [50, 26]);
+const highFinishQuality = shotQualityAtRating({ finishing: 5 }, [50, 26]);
+assert.ok(lowFinishQuality <= 40 && highFinishQuality > lowFinishQuality, 'finishing rating changes quality near the basket');
+const lowMidrangeQuality = shotQualityAtRating({ midrange: 1 }, [50, 45]);
+const highMidrangeQuality = shotQualityAtRating({ midrange: 5 }, [50, 45]);
+assert.ok(lowMidrangeQuality <= 40 && highMidrangeQuality > lowMidrangeQuality, 'midrange rating changes quality inside the three-point line');
+
 // A drive triggers a consistent helper; once the drive ends, that defender recovers to the original matchup.
 const driveDraft = makeDraft({
   players: [[50, 75], [29, 63], [71, 63]],
@@ -220,6 +266,31 @@ assert.ok(pointDistanceFeet(helperDuring, helpSpot(handlerDuring)) < helpDistanc
 advance(driveRun, driveRun.actions[0].startTime + driveRun.actions[0].durationMs - driveRun.elapsedMs + 550);
 assert.equal(driveRun.helpDefenderId, null, 'help assignment clears when the drive ends');
 assert.deepEqual(new Map(driveRun.assignments), stableAssignments, 'help and recovery preserve each defender’s original matchup');
+
+const helpThreatDraft = makeDraft({
+  players: [[50, 75], [25, 61], [75, 61]],
+  ball: [50, 75],
+  arrows: [{ id: 'help-threat-drive', kind: 'movement', start: { x: 50, y: 75 }, end: { x: 50, y: 54 }, sequence: 1, timing: 1.2 }],
+  defenders: [[50, 68], [32, 59], [68, 59]],
+});
+helpThreatDraft.players[1].ratings = { threePoint: 1, midrange: 3, finishing: 3 };
+helpThreatDraft.players[2].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
+const helpThreatRun = createSimulationRun(helpThreatDraft, settings);
+advance(helpThreatRun, 430);
+assert.equal(helpThreatRun.helpDefenderId, [...helpThreatRun.assignments].find(([, playerId]) => playerId === 2)?.[0], 'defense chooses to help from the lower-rated perimeter shooter');
+
+const makeFinishThreatRun = (rating) => {
+  const draft = structuredClone(driveDraft);
+  draft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: rating };
+  const run = createSimulationRun(draft, settings);
+  advance(run, 550);
+  return run;
+};
+const lowFinisherRun = makeFinishThreatRun(1);
+const highFinisherRun = makeFinishThreatRun(5);
+const lowFinisherHelper = lowFinisherRun.defenders.find((defender) => defender.id === lowFinisherRun.helpDefenderId);
+const highFinisherHelper = highFinisherRun.defenders.find((defender) => defender.id === highFinisherRun.helpDefenderId);
+assert.ok(pointDistanceFeet(highFinisherHelper, hoop) < pointDistanceFeet(lowFinisherHelper, hoop) - 0.5, 'a high-finishing handler draws help defenders deeper toward the basket');
 
 // Pause/edit/resume keeps the exact simulation clock and uses the edited marker position as its new origin.
 const pausedDraft = makeDraft({

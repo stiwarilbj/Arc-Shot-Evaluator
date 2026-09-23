@@ -32,7 +32,7 @@ import { createPlaybook, deletePlaybook, fetchPlaybooks, updatePlaybook } from "
 import { ArcSelect } from "../../components/ArcSelect";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, PlayerSkillRatings, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -139,6 +139,14 @@ function orderedArrows(arrows: PlaybookArrow[]) {
 
 function normalizeDraft(source: PlaybookDraft) {
   const next = clonePlaybook(source);
+  next.players = next.players.map((player) => ({
+    ...player,
+    ratings: {
+      threePoint: Math.max(1, Math.min(5, Math.round(player.ratings?.threePoint ?? 3))),
+      midrange: Math.max(1, Math.min(5, Math.round(player.ratings?.midrange ?? 3))),
+      finishing: Math.max(1, Math.min(5, Math.round(player.ratings?.finishing ?? 3))),
+    },
+  }));
   next.arrows = next.arrows.map((arrow, index) => {
     const sequence = arrowSequence(arrow, index);
     const path = arrow.path === "curve" ? "curve" : "straight";
@@ -305,6 +313,8 @@ export function PlaybookBoard() {
   const [pickPopSelection, setPickPopSelection] = useState<{ screenerId: number | null; handlerId: number | null; screenPoint: CourtPoint | null }>({ screenerId: null, handlerId: null, screenPoint: null });
   const [backdoorCutterId, setBackdoorCutterId] = useState<number | null>(null);
   const [autoActionsOpen, setAutoActionsOpen] = useState(false);
+  const [ratingsOpen, setRatingsOpen] = useState(false);
+  const [ratingPlayerId, setRatingPlayerId] = useState<number | null>(null);
   const [saved, setSaved] = useState<PlaybookDocument[]>([]);
   const [savedOpen, setSavedOpen] = useState(false);
   const [starterOpen, setStarterOpen] = useState(false);
@@ -325,6 +335,7 @@ export function PlaybookBoard() {
   const simulationRunRef = useRef<SimulationRun | null>(null);
 
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
+  const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
   const starterCategories = useMemo(() => ["All plays", ...new Set(STARTER_PLAYS.map((play) => STARTER_PLAY_DETAILS[play.name]?.category ?? "Other"))], []);
   const filteredStarterPlays = useMemo(() => {
@@ -514,6 +525,24 @@ export function PlaybookBoard() {
     changeSimulationSetting("automaticActions", { ...simulationSettingsRef.current.automaticActions, [key]: value });
   }
 
+  function changePlayerRating(playerId: number, key: keyof PlayerSkillRatings, value: number) {
+    const next = clonePlaybook(draft);
+    next.players = next.players.map((player) => player.id === playerId
+      ? { ...player, ratings: { threePoint: 3, midrange: 3, finishing: 3, ...player.ratings, [key]: Math.max(1, Math.min(5, Math.round(value))) } }
+      : player);
+    commit(next, draft, { preserveSimulation: false });
+  }
+
+  function adjustTeamRating(key: keyof PlayerSkillRatings, amount: -1 | 1) {
+    if (!draft.players.length) return;
+    const next = clonePlaybook(draft);
+    next.players = next.players.map((player) => {
+      const ratings = { threePoint: 3, midrange: 3, finishing: 3, ...player.ratings };
+      return { ...player, ratings: { ...ratings, [key]: Math.max(1, Math.min(5, ratings[key] + amount)) } };
+    });
+    commit(next, draft, { preserveSimulation: false });
+  }
+
   function startSimulation() {
     if (!draft.players.length) {
       setError("Add at least one offensive player before running a simulation.");
@@ -612,11 +641,15 @@ export function PlaybookBoard() {
     const collection = type === "player" ? draft.players : draft.defenders;
     const id = Math.max(0, ...collection.map((marker) => marker.id)) + 1;
     const next = clonePlaybook(draft);
-    const marker = { id, ...point };
+    const marker: PlaybookMarker = { id, ...point, ...(type === "player" ? { ratings: { threePoint: 3, midrange: 3, finishing: 3 } } : {}) };
     if (type === "player") next.players = [...next.players, marker];
     else next.defenders = [...next.defenders, marker];
     commit(next);
     setSelected({ type, id });
+    if (type === "player") {
+      setRatingPlayerId(id);
+      setRatingsOpen(true);
+    }
     setTool("select");
   }
 
@@ -860,6 +893,10 @@ export function PlaybookBoard() {
     }
     if (tool !== "select") return;
     setSelected(selection);
+    if (selection.type === "player") {
+      setRatingPlayerId(Number(selection.id));
+      setRatingsOpen(true);
+    }
     dragRef.current = { type: selection.type, id: selection.id, before: clonePlaybook(draft) };
     svgRef.current?.setPointerCapture(event.pointerId);
   }
@@ -1018,6 +1055,49 @@ export function PlaybookBoard() {
             <label><input type="checkbox" checked={simulationSettings.automaticActions.pickRoll} onChange={(event) => changeAutomaticAction("pickRoll", event.currentTarget.checked)} /><span>Pick and rolls</span></label>
             <label><input type="checkbox" checked={simulationSettings.automaticActions.offBallScreen} onChange={(event) => changeAutomaticAction("offBallScreen", event.currentTarget.checked)} /><span>Off-ball screens</span></label>
             <small>Applied when the next simulation starts.</small>
+          </div> : null}
+          <button type="button" className={`preset-button ${ratingsOpen ? "is-active" : ""}`} aria-expanded={ratingsOpen} aria-controls="player-ratings-panel" onClick={() => setRatingsOpen((open) => !open)}>
+            <UsersRound size={17} /><span>Player ratings</span><i className={`toggle-dot ${ratingsOpen ? "is-on" : ""}`} />
+          </button>
+          {ratingsOpen ? <div id="player-ratings-panel" className="player-ratings-panel" role="group" aria-label="Player skill ratings">
+            <div className="ratings-panel-heading"><strong>Team adjustment</strong><span>All players</span></div>
+            {([
+              ["threePoint", "3-point"],
+              ["midrange", "Midrange"],
+              ["finishing", "Finishing"],
+            ] as Array<[keyof PlayerSkillRatings, string]>).map(([key, label]) => {
+              const ratings = draft.players.map((player) => player.ratings?.[key] ?? 3);
+              const average = ratings.length ? (ratings.reduce((total, rating) => total + rating, 0) / ratings.length).toFixed(1) : "—";
+              return <div className="team-rating-row" key={`team-${key}`}>
+                <span>{label}</span>
+                <output aria-label={`Team average ${label} rating`}>{average}</output>
+                <button type="button" aria-label={`Decrease team ${label} rating by 1`} title={`Decrease every player's ${label} rating by 1`} disabled={!draft.players.length || ratings.every((rating) => rating <= 1)} onClick={() => adjustTeamRating(key, -1)}>−</button>
+                <button type="button" aria-label={`Increase team ${label} rating by 1`} title={`Increase every player's ${label} rating by 1`} disabled={!draft.players.length || ratings.every((rating) => rating >= 5)} onClick={() => adjustTeamRating(key, 1)}>+</button>
+              </div>;
+            })}
+            <div className="ratings-panel-heading ratings-player-heading"><strong>Player</strong><span>Choose one</span></div>
+            {draft.players.length ? <>
+              <div className="ratings-player-list" role="group" aria-label="Select player to edit">
+                {draft.players.map((player) => <button type="button" key={`rating-player-${player.id}`} className={selectedRatingsPlayer?.id === player.id ? "is-active" : ""} aria-pressed={selectedRatingsPlayer?.id === player.id} onClick={() => {
+                  setRatingPlayerId(player.id);
+                  setSelected({ type: "player", id: player.id });
+                }}>Player {player.id}</button>)}
+              </div>
+              {selectedRatingsPlayer ? ([
+                ["threePoint", "3-point"],
+                ["midrange", "Midrange"],
+                ["finishing", "Finishing"],
+              ] as Array<[keyof PlayerSkillRatings, string]>).map(([key, label]) => {
+                const rating = selectedRatingsPlayer.ratings?.[key] ?? 3;
+                return <div className="individual-rating-row" key={`player-${key}`}>
+                  <span>{label}</span>
+                  <div role="group" aria-label={`Player ${selectedRatingsPlayer.id} ${label} rating`} className="rating-scale">
+                    {[1, 2, 3, 4, 5].map((value) => <button type="button" key={value} aria-label={`Player ${selectedRatingsPlayer.id} ${label} rating ${value}`} aria-pressed={rating === value} className={rating === value ? "is-selected" : ""} onClick={() => changePlayerRating(selectedRatingsPlayer.id, key, value)}>{value}</button>)}
+                  </div>
+                </div>;
+              }) : null}
+            </> : <p className="ratings-empty">Add an offensive player to set ratings.</p>}
+            <small>Ratings range from 1 (low) to 5 (high). New players start at 3.</small>
           </div> : null}
           <p className="playbook-help">Drag markers to set positions. Select an arrow to adjust its endpoint. Use Delete or the toolbar to clean up.</p>
         </aside>

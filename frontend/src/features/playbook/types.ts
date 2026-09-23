@@ -30,8 +30,16 @@ export interface CourtPoint {
   y: number;
 }
 
+export interface PlayerSkillRatings {
+  threePoint: number;
+  midrange: number;
+  finishing: number;
+}
+
 export interface PlaybookMarker extends CourtPoint {
   id: number;
+  /** Optional on legacy version 1 plays; normalized to 3 when loaded. */
+  ratings?: PlayerSkillRatings;
 }
 
 export interface PlaybookArrow {

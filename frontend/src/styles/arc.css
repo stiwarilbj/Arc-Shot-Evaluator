@@ -584,7 +584,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .button-subtle { border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
 .button-subtle:hover { border-color: var(--line-strong); color: var(--text); }
 .playbook-alert { margin: 12px 0 -2px; padding: 9px 12px; border-left: 2px solid var(--miss); background: color-mix(in srgb, var(--miss) 8%, var(--surface)); color: var(--miss); font-size: 12px; }
-.playbook-layout { display: grid; grid-template-columns: 164px minmax(0, 1fr) 252px; gap: 14px; margin-top: 18px; align-items: start; }
+.playbook-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr) 252px; gap: 14px; margin-top: 18px; align-items: start; }
 .playbook-presets, .saved-plays-panel { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .playbook-presets { padding: 8px; }
 .preset-button { width: 100%; min-height: 45px; gap: 10px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 650; text-align: left; }
@@ -599,6 +599,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .automatic-actions-panel label { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 10px; line-height: 1.3; cursor: pointer; }
 .automatic-actions-panel input { width: 14px; height: 14px; margin: 0; accent-color: var(--orange); }
 .automatic-actions-panel small { color: var(--dim); font-size: 9px; line-height: 1.4; }
+.player-ratings-panel { display: grid; grid-column: 1 / -1; gap: 7px; margin: 1px 2px 5px; padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--muted); }
+.ratings-panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; color: var(--text); font-size: 10px; }
+.ratings-panel-heading span, .player-ratings-panel > small { color: var(--dim); font-size: 9px; }
+.team-rating-row { display: grid; grid-template-columns: 1fr 28px 25px 25px; align-items: center; gap: 4px; font-size: 10px; }
+.team-rating-row output { color: var(--text); font-size: 9px; font-variant-numeric: tabular-nums; text-align: center; }
+.team-rating-row button, .ratings-player-list button, .rating-scale button { min-height: 25px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 700; }
+.team-rating-row button { font-size: 15px; line-height: 1; }
+.team-rating-row button:hover:not(:disabled), .ratings-player-list button:hover, .rating-scale button:hover { border-color: var(--orange); color: var(--orange); }
+.team-rating-row button:disabled { opacity: .4; cursor: not-allowed; }
+.ratings-player-heading { margin-top: 3px; padding-top: 7px; border-top: 1px solid var(--line); }
+.ratings-player-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.ratings-player-list button { min-height: 24px; padding: 0 6px; font-size: 9px; }
+.ratings-player-list button.is-active { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, var(--surface)); color: var(--orange); }
+.individual-rating-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: 5px; font-size: 10px; }
+.rating-scale { display: flex; gap: 3px; }
+.rating-scale button { flex: 1 1 0; min-width: 0; min-height: 24px; padding: 0; }
+.rating-scale button.is-selected { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--surface)); color: var(--orange); }
+.ratings-empty { margin: 0; color: var(--dim); font-size: 10px; line-height: 1.4; }
 .is-screen-screener .offense-marker { stroke: #73bff0; stroke-width: 5; }
 .is-screen-cutter .offense-marker { stroke: #f3f1ec; stroke-width: 5; stroke-dasharray: 4 3; }
 .playbook-help { margin: 15px 7px 5px; color: var(--dim); font-size: 10px; line-height: 1.5; }
@@ -785,7 +803,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .workspace-nav button { padding-left: 8px; padding-right: 8px; }
 }
 @media (max-width: 1100px) and (min-width: 861px) {
-  .playbook-layout { grid-template-columns: 145px minmax(0, 1fr); }
+  .playbook-layout { grid-template-columns: 180px minmax(0, 1fr); }
   .saved-plays-panel { grid-column: 1 / -1; position: static; max-height: none; }
   .saved-play-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
@@ -866,7 +884,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 @media (min-width: 861px) and (max-width: 1100px) and (min-height: 680px) {
-  .playbook-layout { grid-template-columns: 145px minmax(0, 1fr); }
+  .playbook-layout { grid-template-columns: 180px minmax(0, 1fr); }
   .playbook-layout > .saved-plays-panel { position: fixed; z-index: 10; top: 76px; right: 12px; width: min(320px, calc(100% - 24px)); height: auto; max-height: calc(100dvh - 96px); transform: translateX(calc(100% + 24px)); transition: transform 180ms ease; }
   .playbook-layout > .saved-plays-panel.is-open { transform: translateX(0); }
   .playbook-layout > .saved-plays-panel .saved-play-list { max-height: calc(100dvh - 160px); }

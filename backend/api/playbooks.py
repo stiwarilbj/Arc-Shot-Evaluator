@@ -44,7 +44,7 @@ def _point(value: object, label: str) -> dict[str, float]:
     return {"x": round(x, 4), "y": round(y, 4)}
 
 
-def _markers(value: object, label: str, limit: int) -> list[dict]:
+def _markers(value: object, label: str, limit: int, *, player_ratings: bool = False) -> list[dict]:
     if not isinstance(value, list) or len(value) > limit:
         raise HTTPException(400, f"{label} must contain at most {limit} markers")
     result: list[dict] = []
@@ -55,7 +55,19 @@ def _markers(value: object, label: str, limit: int) -> list[dict]:
         if marker["id"] in ids:
             raise HTTPException(400, f"{label} marker ids must be unique")
         ids.add(marker["id"])
-        result.append({"id": marker["id"], **_point(marker, f"{label} marker")})
+        clean_marker = {"id": marker["id"], **_point(marker, f"{label} marker")}
+        if player_ratings:
+            ratings = marker.get("ratings", {})
+            if not isinstance(ratings, dict):
+                raise HTTPException(400, "Player ratings must be an object")
+            clean_ratings: dict[str, int] = {}
+            for key in ("threePoint", "midrange", "finishing"):
+                rating = ratings.get(key, 3)
+                if not isinstance(rating, int) or isinstance(rating, bool) or not 1 <= rating <= 5:
+                    raise HTTPException(400, "Player ratings must be integers from 1 to 5")
+                clean_ratings[key] = rating
+            clean_marker["ratings"] = clean_ratings
+        result.append(clean_marker)
     return result
 
 
@@ -65,7 +77,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
     name = payload.get("name", "Untitled play")
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > MAX_NAME_LENGTH:
         raise HTTPException(400, f"Play name must be 1-{MAX_NAME_LENGTH} characters")
-    players = _markers(payload.get("players", []), "Players", MAX_PLAYERS)
+    players = _markers(payload.get("players", []), "Players", MAX_PLAYERS, player_ratings=True)
     defenders = _markers(payload.get("defenders", []), "Defenders", MAX_DEFENDERS)
     ball = payload.get("ball")
     clean_ball = None if ball is None else _point(ball, "Ball")

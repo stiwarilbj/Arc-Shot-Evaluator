@@ -1,4 +1,4 @@
-import type { CourtPoint, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
+import type { CourtPoint, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
 import {
   COURT_SCALE,
   COURT_VIEWBOX,
@@ -381,6 +381,32 @@ function defenderGap(player: PlaybookMarker, defenders: PlaybookMarker[]) {
   return defenders.length ? Math.min(...defenders.map((defender) => pointDistanceFeet(player, defender))) : Number.POSITIVE_INFINITY;
 }
 
+function playerRating(player: PlaybookMarker, key: keyof PlayerSkillRatings) {
+  const value = player.ratings?.[key] ?? 3;
+  return Number.isInteger(value) ? clamp(value, 1, 5) : 3;
+}
+
+function shotSkillFor(player: CourtPoint, hoop: CourtPoint): keyof PlayerSkillRatings {
+  const feet = toCourtFeet(player);
+  const basket = toCourtFeet(hoop);
+  const distance = Math.hypot(feet.x - basket.x, feet.y - basket.y);
+  const inCornerThree = (feet.x <= 3.2 || feet.x >= 46.8) && feet.y <= 14.25;
+  if (distance <= 8) return "finishing";
+  if (inCornerThree || distance >= NBA_COURT_GEOMETRY.threePoint.radiusFeet) return "threePoint";
+  return "midrange";
+}
+
+function shotSkillRating(player: PlaybookMarker, hoop: CourtPoint) {
+  return playerRating(player, shotSkillFor(player, hoop));
+}
+
+function goalSideGapFor(player: PlaybookMarker, hoop: CourtPoint, baseGap: number) {
+  const skill = shotSkillFor(player, hoop);
+  const rating = playerRating(player, skill);
+  const weight = skill === "finishing" ? 0.65 : 1.35;
+  return clamp(baseGap + (3 - rating) * weight, 1.8, 8.5);
+}
+
 function automaticOffBallArrow(players: PlaybookMarker[], defenders: PlaybookMarker[], handlerId: number | null, sequence: number): PlaybookArrow | null {
   if (players.length < 3 || handlerId == null) return null;
   const cutters = players.filter((player) => player.id !== handlerId && defenderGap(player, defenders) <= 8)
@@ -560,9 +586,10 @@ function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
       const boundedReceiverGap = Number.isFinite(receiverGap) ? Math.min(receiverGap, 18) : 18;
       const boundedLaneGap = Number.isFinite(laneGap) ? Math.min(laneGap, 12) : 12;
       const boundedTeammateGap = Math.min(teammateGap, 18);
+      const shotRating = shotSkillRating(player, hoop);
       const roleValue = role === "roller" ? 5 : role === "popping screener" ? 4.5 : role === "cutter" ? 4 : role === "post" ? 3.5 : 0;
-      const score = boundedReceiverGap * 1.7 + boundedLaneGap * 1.2 + boundedTeammateGap * 0.45 + roleValue;
-      return { player, role, receiverGap, laneGap, teammateGap, score };
+      const score = boundedReceiverGap * 1.7 + boundedLaneGap * 1.2 + boundedTeammateGap * 0.45 + roleValue + (shotRating - 3) * 2.25;
+      return { player, role, receiverGap, laneGap, teammateGap, shotRating, score };
     });
   const specialPass = passCandidates
     .filter((candidate) => candidate.role !== "perimeter" && candidate.receiverGap >= 3.5 && candidate.laneGap >= 2.25 && candidate.teammateGap >= 3)
@@ -577,7 +604,7 @@ function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
 
   const handlerGap = defenderGap(handler, run.defenders);
   const hoopGap = pointDistanceFeet(handler, hoop);
-  if (hoopGap > 9 && hoopGap <= 30) {
+  if (playerRating(handler, "finishing") > 1 && hoopGap > 9 && hoopGap <= 30) {
     const driveTarget = pointToward(handler, hoop, Math.min(10, hoopGap - 4));
     const laneGap = segmentClearanceFeet(handler, driveTarget, run.defenders);
     const teammateGap = segmentClearanceFeet(handler, driveTarget, run.players.filter((player) => player.id !== handler.id));
@@ -593,7 +620,7 @@ function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
     .sort((a, b) => b.score - a.score || a.player.id - b.player.id)[0];
   if (perimeterPass) {
     const space = Number.isFinite(perimeterPass.receiverGap) ? `${perimeterPass.receiverGap.toFixed(1)} ft of space` : "open space";
-    run.adaptiveReadReason = `Player ${perimeterPass.player.id} is free on the perimeter with ${space} and good floor spacing.`;
+    run.adaptiveReadReason = `Player ${perimeterPass.player.id} is free on the perimeter with ${space}, good floor spacing, and a ${perimeterPass.shotRating}/5 shot rating.`;
     appendAdaptiveAction(run, "pass", handler, perimeterPass.player, perimeterPass.player, "Kick to the open player", ball);
     return;
   }
@@ -1077,8 +1104,10 @@ function driveThreat(run: SimulationRun, hoop: CourtPoint) {
   return towardHoopSpeed > 2.5 && distance < 30;
 }
 
-function helpSpotFor(handler: PlaybookMarker, hoop: CourtPoint) {
-  return pointToward(handler, hoop, Math.min(9, pointDistanceFeet(handler, hoop) * 0.34));
+function helpSpotFor(handler: PlaybookMarker, hoop: CourtPoint, finishingRating = 3) {
+  const depth = clamp(0.34 + (finishingRating - 3) * 0.075, 0.18, 0.5);
+  const maxDepth = finishingRating >= 4 ? 13 : finishingRating <= 2 ? 7 : 9;
+  return pointToward(handler, hoop, Math.min(maxDepth, pointDistanceFeet(handler, hoop) * depth));
 }
 
 function anticipatedPlayerPoint(
@@ -1121,11 +1150,13 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
   });
   const transfer = currentTransferAt(run, timeMs);
   const drive = handler ? driveThreat(run, hoop) : false;
-  const helpSpot = handler ? helpSpotFor(handler, hoop) : hoop;
   const handlerDefenderIndex = handler ? nearestDefenderToPlayer(run, handler.id) : -1;
   let helperIndex = -1;
   const strategy = run.settings.defenseStrategy;
   const helpStyle = strategy === "help" || strategy === "trap-rotate" || strategy === "protect-paint";
+  const finishingRating = handler ? playerRating(handler, "finishing") : 3;
+  const helpWeight = clamp(0.55 + finishingRating * 0.15, 0.7, 1.3);
+  const helpSpot = handler ? helpSpotFor(handler, hoop, finishingRating) : hoop;
   if (!drive || !helpStyle) run.helpDefenderId = null;
   if (drive && helpStyle) {
     const currentHelperIndex = run.defenders.findIndex((defender) => defender.id === run.helpDefenderId);
@@ -1134,12 +1165,17 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       : run.assignments.get(run.defenders[currentHelperIndex].id);
     if (currentHelperIndex < 0 || currentHelperAssignment === handler?.id) {
       let helperDistance = Number.POSITIVE_INFINITY;
+      let helperScore = Number.POSITIVE_INFINITY;
       run.defenders.forEach((defender, index) => {
         if (index === handlerDefenderIndex) return;
         const assignedPlayerId = run.assignments.get(defender.id);
         if (transfer?.recipientId === assignedPlayerId) return;
         const distance = pointDistanceFeet(defender, helpSpot);
-        if (distance < helperDistance) {
+        const assignedPlayer = markerForId(run.players, assignedPlayerId ?? null);
+        const shootingThreat = assignedPlayer ? shotSkillRating(assignedPlayer, hoop) : 3;
+        const score = distance + (shootingThreat - 3) * 1.15;
+        if (score < helperScore) {
+          helperScore = score;
           helperIndex = index;
           helperDistance = distance;
         }
@@ -1155,16 +1191,17 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     const assignment = markerForId(run.players, assignmentId ?? null) ?? handler;
     if (!handler || !assignment || strategy === "off") return { ...defender };
     const isOnBall = assignment.id === handler.id;
-    const goalSideGap = strategy === "trap-rotate" && drive ? 2.75 : 3.75;
+    const baseGoalSideGap = strategy === "trap-rotate" && drive ? 2.75 : 3.75;
     const playerToGuard = isOnBall ? handler : assignment;
+    const goalSideGap = goalSideGapFor(playerToGuard, hoop, baseGoalSideGap);
     let target = defenderContainmentTarget(run, playerToGuard, hoop, goalSideGap, isOnBall);
     if (!isOnBall && strategy === "help") {
-      if (drive && index === helperIndex) target = lerpPoint(target, helpSpot, 0.62);
-      else if (drive) target = lerpPoint(target, helpSpot, 0.08);
+      if (drive && index === helperIndex) target = lerpPoint(target, helpSpot, clamp(0.62 * helpWeight, 0.35, 0.84));
+      else if (drive) target = lerpPoint(target, helpSpot, 0.08 * helpWeight);
     }
     if (!isOnBall && strategy === "trap-rotate") {
       if (drive && index === helperIndex) target = pointToward(handler, hoop, 4.5);
-      else if (drive) target = lerpPoint(target, helpSpot, 0.2);
+      else if (drive) target = lerpPoint(target, helpSpot, 0.2 * helpWeight);
     }
     if (!isOnBall && strategy === "deny-lanes") {
       const ball = run.ball ?? handler;
@@ -1172,7 +1209,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     }
     if (!isOnBall && strategy === "protect-paint") {
       const paintSpot = pointToward(assignment, hoop, Math.min(10, pointDistanceFeet(assignment, hoop) * 0.4));
-      target = lerpPoint(target, paintSpot, drive && index === helperIndex ? 0.82 : 0.55);
+      target = lerpPoint(target, paintSpot, clamp((drive && index === helperIndex ? 0.82 : 0.55) * helpWeight, 0.3, 0.95));
     }
     if (transfer?.recipientId === assignment.id) {
       const progress = clamp((timeMs - transfer.startTime) / transfer.durationMs, 0, 1);
@@ -1376,14 +1413,17 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
       ? run.velocities.get(velocityKey("player", assignment.id)) ?? { x: 0, y: 0 }
       : { x: 0, y: 0 };
     const isTrackingMovement = Math.hypot(assignmentVelocity.x, assignmentVelocity.y) > 2.5;
+    const shootingThreat = assignment ? shotSkillRating(assignment, HOOP_POINT) : 3;
+    const responseSpeed = clamp((isRecovering ? DEFENDER_MAX_SPEED_FT_PER_SECOND : isTrackingMovement ? 12 : 9) + (shootingThreat - 3) * 1.2, 5, DEFENDER_MAX_SPEED_FT_PER_SECOND);
+    const responseAcceleration = DEFENDER_ACCELERATION_FT_PER_SECOND + (shootingThreat - 3) * 3;
     return integrateMarker(
       run,
       "defender",
       defender,
       target,
       dt,
-      isRecovering ? DEFENDER_MAX_SPEED_FT_PER_SECOND : isTrackingMovement ? 12 : 9,
-      DEFENDER_ACCELERATION_FT_PER_SECOND,
+      responseSpeed,
+      responseAcceleration,
     );
   });
 }
@@ -1437,12 +1477,13 @@ function calculateDefensiveQuality(
   const handler = markerForId(players, handlerId) ?? players[0];
   const onBall = defenders.find((defender) => assignments.get(defender.id) === handler.id);
   const onBallGap = onBall ? pointDistanceFeet(onBall, handler) : 40;
-  const onBallDistanceScore = 1 - Math.min(1, Math.max(0, onBallGap - 2) / 18);
+  const onBallTargetGap = goalSideGapFor(handler, hoop, 3.75);
+  const onBallDistanceScore = 1 - Math.min(1, Math.max(0, Math.abs(onBallGap - onBallTargetGap)) / 18);
   const onBallFrontScore = onBall ? (defenderIsGoalSide(onBall, handler, hoop) + 1) / 2 : 0;
   const onBallScore = onBallDistanceScore * 0.62 + onBallFrontScore * 0.38;
   const assignmentScore = defenders.reduce((total, defender) => {
     const player = markerForId(players, assignments.get(defender.id) ?? null) ?? handler;
-    const goalSide = pointToward(player, hoop, 3.75);
+    const goalSide = pointToward(player, hoop, goalSideGapFor(player, hoop, 3.75));
     const positionScore = 1 - Math.min(1, pointDistanceFeet(defender, goalSide) / 22);
     const frontScore = (defenderIsGoalSide(defender, player, hoop) + 1) / 2;
     return total + positionScore * 0.72 + frontScore * 0.28;
@@ -1461,7 +1502,10 @@ function calculateShotQuality(players: PlaybookMarker[], defenders: PlaybookMark
     ? Math.min(...defenders.map((defender) => pointDistanceFeet(defender, shooter)))
     : 19;
   const contestScore = Math.min(1, closestDefenderGap / 19);
-  return Math.round(clamp((rangeScore * 0.52 + contestScore * 0.28 + (offBallQuality / 100) * 0.2) * 100, 0, 100));
+  const baseQuality = (rangeScore * 0.52 + contestScore * 0.28 + (offBallQuality / 100) * 0.2) * 100;
+  const rating = shotSkillRating(shooter, HOOP_POINT);
+  const adjustedQuality = baseQuality + (rating - 3) * 6;
+  return Math.round(clamp(rating === 1 ? Math.min(adjustedQuality, 40) : adjustedQuality, 0, 100));
 }
 
 function parabolicPoint(start: CourtPoint, end: CourtPoint, amount: number) {

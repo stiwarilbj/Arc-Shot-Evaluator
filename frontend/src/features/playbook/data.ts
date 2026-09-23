@@ -6,7 +6,7 @@ function draft(name: string, players: Array<[number, number]>, ball: [number, nu
     id: `draft-${name.toLowerCase().replaceAll(" ", "-")}`,
     name,
     defenders_visible: defenders.length > 0,
-    players: players.map(([x, y], index) => ({ id: index + 1, x, y })),
+    players: players.map(([x, y], index) => ({ id: index + 1, x, y, ratings: { threePoint: 3, midrange: 3, finishing: 3 } })),
     defenders: defenders.map(([x, y], index) => ({ id: index + 1, x, y })),
     ball: ball ? { x: ball[0], y: ball[1] } : null,
     arrows: arrows.map((item, index) => ({ ...item, sequence: item.sequence ?? index + 1 })),
