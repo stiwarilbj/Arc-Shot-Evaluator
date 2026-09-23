@@ -81,8 +81,10 @@ const DEFENDER_ACCELERATION_FT_PER_SECOND = 28;
 const OFFENSE_MAX_SPEED_FT_PER_SECOND = 19;
 const OFFENSE_ACCELERATION_FT_PER_SECOND = 34;
 const OFF_BALL_MAX_SPEED_FT_PER_SECOND = 12;
-const DEFENDER_REACTION_SECONDS = 0.16;
-const DEFENDER_REACTION_LAG_FEET = 2.5;
+const ON_BALL_ANTICIPATION_SECONDS = 0.22;
+const ON_BALL_ANTICIPATION_MAX_FEET = 3.25;
+const OFF_BALL_ANTICIPATION_SECONDS = 0.14;
+const OFF_BALL_ANTICIPATION_MAX_FEET = 2;
 const BALL_MAX_SPEED_FT_PER_SECOND = 42;
 const BALL_ACCELERATION_FT_PER_SECOND = 90;
 const PASS_PREP_MS = 440;
@@ -840,12 +842,33 @@ function helpSpotFor(handler: PlaybookMarker, hoop: CourtPoint) {
   return pointToward(handler, hoop, Math.min(9, pointDistanceFeet(handler, hoop) * 0.34));
 }
 
-function defenderReactionPoint(run: SimulationRun, player: PlaybookMarker) {
+function anticipatedPlayerPoint(
+  run: SimulationRun,
+  player: PlaybookMarker,
+  seconds: number,
+  maxLeadFeet: number,
+) {
   const velocity = run.velocities.get(velocityKey("player", player.id)) ?? { x: 0, y: 0 };
   const speed = Math.hypot(velocity.x, velocity.y);
-  if (speed < 0.01) return player;
-  const lag = Math.min(DEFENDER_REACTION_LAG_FEET, speed * DEFENDER_REACTION_SECONDS);
-  return addFeet(player, { x: -(velocity.x / speed) * lag, y: -(velocity.y / speed) * lag });
+  if (speed < 0.75) return player;
+  const lead = Math.min(maxLeadFeet, speed * seconds);
+  return clampCourt(addFeet(player, { x: (velocity.x / speed) * lead, y: (velocity.y / speed) * lead }));
+}
+
+function defenderContainmentTarget(
+  run: SimulationRun,
+  player: PlaybookMarker,
+  hoop: CourtPoint,
+  goalSideGap: number,
+  onBall: boolean,
+) {
+  const anticipated = anticipatedPlayerPoint(
+    run,
+    player,
+    onBall ? ON_BALL_ANTICIPATION_SECONDS : OFF_BALL_ANTICIPATION_SECONDS,
+    onBall ? ON_BALL_ANTICIPATION_MAX_FEET : OFF_BALL_ANTICIPATION_MAX_FEET,
+  );
+  return pointToward(anticipated, hoop, goalSideGap);
 }
 
 function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
@@ -894,8 +917,8 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     if (!handler || !assignment || strategy === "off") return { ...defender };
     const isOnBall = assignment.id === handler.id;
     const goalSideGap = strategy === "trap-rotate" && drive ? 2.75 : 3.75;
-    const defenderReference = isOnBall ? defenderReactionPoint(run, handler) : assignment;
-    let target = pointToward(defenderReference, hoop, goalSideGap);
+    const playerToGuard = isOnBall ? handler : assignment;
+    let target = defenderContainmentTarget(run, playerToGuard, hoop, goalSideGap, isOnBall);
     if (!isOnBall && strategy === "help") {
       if (drive && index === helperIndex) target = lerpPoint(target, helpSpot, 0.62);
       else if (drive) target = lerpPoint(target, helpSpot, 0.08);
@@ -1105,16 +1128,33 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
       return defender;
     }
     const isRecovering = pointDistanceFeet(defender, target) > 8;
+    const assignment = markerForId(run.players, run.assignments.get(defender.id) ?? null);
+    const assignmentVelocity = assignment
+      ? run.velocities.get(velocityKey("player", assignment.id)) ?? { x: 0, y: 0 }
+      : { x: 0, y: 0 };
+    const isTrackingMovement = Math.hypot(assignmentVelocity.x, assignmentVelocity.y) > 2.5;
     return integrateMarker(
       run,
       "defender",
       defender,
       target,
       dt,
-      isRecovering ? DEFENDER_MAX_SPEED_FT_PER_SECOND : 9,
+      isRecovering ? DEFENDER_MAX_SPEED_FT_PER_SECOND : isTrackingMovement ? 12 : 9,
       DEFENDER_ACCELERATION_FT_PER_SECOND,
     );
   });
+}
+
+function defenderIsGoalSide(defender: CourtPoint, player: CourtPoint, hoop: CourtPoint) {
+  const defenderFeet = toCourtFeet(defender);
+  const playerFeet = toCourtFeet(player);
+  const hoopFeet = toCourtFeet(hoop);
+  const toHoop = { x: hoopFeet.x - playerFeet.x, y: hoopFeet.y - playerFeet.y };
+  const toDefender = { x: defenderFeet.x - playerFeet.x, y: defenderFeet.y - playerFeet.y };
+  const hoopDistance = Math.hypot(toHoop.x, toHoop.y);
+  const defenderDistance = Math.hypot(toDefender.x, toDefender.y);
+  if (hoopDistance < 0.01 || defenderDistance < 0.01) return 0;
+  return clamp((toDefender.x * toHoop.x + toDefender.y * toHoop.y) / (hoopDistance * defenderDistance), -1, 1);
 }
 
 function calculateOffBallQuality(
@@ -1154,11 +1194,15 @@ function calculateDefensiveQuality(
   const handler = markerForId(players, handlerId) ?? players[0];
   const onBall = defenders.find((defender) => assignments.get(defender.id) === handler.id);
   const onBallGap = onBall ? pointDistanceFeet(onBall, handler) : 40;
-  const onBallScore = 1 - Math.min(1, Math.max(0, onBallGap - 2) / 18);
+  const onBallDistanceScore = 1 - Math.min(1, Math.max(0, onBallGap - 2) / 18);
+  const onBallFrontScore = onBall ? (defenderIsGoalSide(onBall, handler, hoop) + 1) / 2 : 0;
+  const onBallScore = onBallDistanceScore * 0.62 + onBallFrontScore * 0.38;
   const assignmentScore = defenders.reduce((total, defender) => {
     const player = markerForId(players, assignments.get(defender.id) ?? null) ?? handler;
     const goalSide = pointToward(player, hoop, 3.75);
-    return total + (1 - Math.min(1, pointDistanceFeet(defender, goalSide) / 22));
+    const positionScore = 1 - Math.min(1, pointDistanceFeet(defender, goalSide) / 22);
+    const frontScore = (defenderIsGoalSide(defender, player, hoop) + 1) / 2;
+    return total + positionScore * 0.72 + frontScore * 0.28;
   }, 0) / defenders.length;
   const helpSpot = helpSpotFor(handler, hoop);
   const helpScore = defenders.length < 2

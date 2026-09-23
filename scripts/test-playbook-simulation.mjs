@@ -53,6 +53,15 @@ function helpSpot(handler) {
   return { x: handler.x + (hoop.x - handler.x) * fraction, y: handler.y + (hoop.y - handler.y) * fraction };
 }
 
+function goalSideAlignment(defender, player) {
+  const toFeetX = (COURT_VIEWBOX.width / 100) / COURT_SCALE;
+  const toFeetY = (COURT_VIEWBOX.height / 100) / COURT_SCALE;
+  const towardHoop = { x: (hoop.x - player.x) * toFeetX, y: (hoop.y - player.y) * toFeetY };
+  const towardDefender = { x: (defender.x - player.x) * toFeetX, y: (defender.y - player.y) * toFeetY };
+  const denominator = Math.hypot(towardHoop.x, towardHoop.y) * Math.hypot(towardDefender.x, towardDefender.y);
+  return denominator > 0 ? (towardHoop.x * towardDefender.x + towardHoop.y * towardDefender.y) / denominator : 0;
+}
+
 // A simulation run must not add temporary defenders to or otherwise mutate the draft.
 const noDefenderDraft = makeDraft({ players: [[50, 76], [27, 60], [73, 60]], ball: [50, 76] });
 const originalDraft = structuredClone(noDefenderDraft);
@@ -119,6 +128,72 @@ orderedRun.players.forEach((player, index) => {
 });
 assert.equal(orderedRun.ballHandlerId, 2, 'possession transfers to the pass recipient at the pass boundary');
 assert.deepEqual(new Map(orderedRun.assignments), orderedAssignments, 'help defense does not recalculate defensive assignments');
+
+// Active defenders anticipate drives, slide with lateral movement, and stay goal-side of off-ball cutters.
+const containmentDraft = makeDraft({
+  players: [[50, 75], [29, 62], [71, 62]],
+  ball: [50, 75],
+  defenders: [[50, 69], [34, 59], [66, 59]],
+  arrows: [{ id: 'containment-drive', kind: 'movement', start: { x: 50, y: 75 }, end: { x: 50, y: 52 }, sequence: 1, timing: 2.4 }],
+});
+const containmentRun = createSimulationRun(containmentDraft, { ...settings, defenseStrategy: 'contain' });
+const containmentGuardId = [...containmentRun.assignments].find(([, playerId]) => playerId === 1)?.[0];
+let previousContainmentDefenders = containmentRun.defenders.map((defender) => ({ ...defender }));
+for (let frame = 0; frame < 27; frame += 1) {
+  advanceSimulationRun(containmentRun, SIMULATION_STEP_MS + 0.001);
+  containmentRun.defenders.forEach((defender, index) => {
+    assert.ok(pointDistanceFeet(previousContainmentDefenders[index], defender) <= DEFENDER_MAX_SPEED_FT_PER_SECOND * SIMULATION_STEP_MS / 1000 + 0.002, 'predictive positioning respects the per-frame speed limit');
+  });
+  previousContainmentDefenders = containmentRun.defenders.map((defender) => ({ ...defender }));
+}
+const containmentHandler = containmentRun.players.find((player) => player.id === 1);
+const containmentGuard = containmentRun.defenders.find((defender) => defender.id === containmentGuardId);
+assert.ok(goalSideAlignment(containmentGuard, containmentHandler) > 0.8, 'the on-ball defender stays goal-side during a straight drive');
+assert.ok(pointDistanceFeet(containmentGuard, containmentHandler) < 7, 'anticipation keeps the on-ball gap compact during a drive');
+assert.equal(containmentRun.ballHandlerId, 1, 'defensive containment does not change possession');
+
+const lateralDriveDraft = makeDraft({
+  players: [[50, 75], [29, 62], [71, 62]],
+  ball: [50, 75],
+  defenders: [[50, 69], [34, 59], [66, 59]],
+  arrows: [{ id: 'lateral-drive', kind: 'movement', start: { x: 50, y: 75 }, end: { x: 66, y: 68 }, sequence: 1, timing: 2.4 }],
+});
+const lateralDriveRun = createSimulationRun(lateralDriveDraft, { ...settings, defenseStrategy: 'contain' });
+const lateralGuardId = [...lateralDriveRun.assignments].find(([, playerId]) => playerId === 1)?.[0];
+const lateralGuardStart = lateralDriveRun.defenders.find((defender) => defender.id === lateralGuardId);
+advance(lateralDriveRun, 900);
+const lateralHandler = lateralDriveRun.players.find((player) => player.id === 1);
+const lateralGuard = lateralDriveRun.defenders.find((defender) => defender.id === lateralGuardId);
+assert.ok(goalSideAlignment(lateralGuard, lateralHandler) > 0.65, 'the on-ball defender keeps a goal-side angle on a lateral drive');
+assert.ok(Math.abs(lateralGuard.x - lateralGuardStart.x) > 1, 'the defender slides laterally to cut off the changed route');
+
+const cutterDraft = makeDraft({
+  players: [[50, 76], [27, 66], [72, 62]],
+  ball: [50, 76],
+  defenders: [[50, 70], [50, 58], [70, 58]],
+  arrows: [{ id: 'basket-cut', kind: 'movement', start: { x: 27, y: 66 }, end: { x: 43, y: 51 }, sequence: 1, timing: 1.8 }],
+});
+const cutterRun = createSimulationRun(cutterDraft, { ...settings, defenseStrategy: 'contain' });
+const cutterDefenderId = [...cutterRun.assignments].find(([, playerId]) => playerId === 2)?.[0];
+advance(cutterRun, 900);
+const cutter = cutterRun.players.find((player) => player.id === 2);
+const cutCoverDefender = cutterRun.defenders.find((defender) => defender.id === cutterDefenderId);
+assert.ok(goalSideAlignment(cutCoverDefender, cutter) > 0.65, 'the off-ball defender moves goal-side as the cutter attacks the basket');
+assert.ok(pointDistanceFeet(cutCoverDefender, cutter) < 7, 'the off-ball defender closes space on the cut without snapping into place');
+
+const frontQualityDraft = makeDraft({
+  players: [[50, 75], [29, 62], [71, 62]],
+  ball: [50, 75],
+  defenders: [[50, 68], [34, 59], [66, 59]],
+});
+const trailingQualityDraft = makeDraft({
+  players: [[50, 75], [29, 62], [71, 62]],
+  ball: [50, 75],
+  defenders: [[50, 82], [34, 59], [66, 59]],
+});
+const frontQuality = createSimulationRun(frontQualityDraft, { ...settings, defenseStrategy: 'contain' }).frame.defensiveQuality;
+const trailingQuality = createSimulationRun(trailingQualityDraft, { ...settings, defenseStrategy: 'contain' }).frame.defensiveQuality;
+assert.ok(frontQuality > trailingQuality + 10, 'defensive quality rewards goal-side positioning over a similarly close trailing defender');
 
 // A drive triggers a consistent helper; once the drive ends, that defender recovers to the original matchup.
 const driveDraft = makeDraft({
