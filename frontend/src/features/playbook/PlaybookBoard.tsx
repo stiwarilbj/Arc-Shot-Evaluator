@@ -672,6 +672,11 @@ export function PlaybookBoard() {
   const simulationComplete = simulationElapsed >= simulationDuration && simulationElapsed > 0;
   const simulationPaused = simulationActive && !simulationPlaying && !simulationComplete;
   const simulationFrame = useMemo(() => simulateDraft(draft, simulationElapsed, simulationSettings), [draft, simulationElapsed, simulationSettings]);
+  const offBallQualityDisplay = draft.players.length === 0
+    ? "—"
+    : simulationActive
+      ? `${simulationFrame.offBallQuality}%`
+      : "70%";
 
   useEffect(() => {
     if (selectedArrow) setArrowFields({ id: selectedArrow.id, sequence: String(selectedArrowSequence ?? 1), timing: clampTiming(selectedArrow.timing ?? 1.2).toFixed(1) });
@@ -1168,7 +1173,7 @@ export function PlaybookBoard() {
           <div className="playbook-simulation-bar" role="region" aria-label="Play simulation controls">
             <span className="simulation-ai-label"><ShieldCheck size={14} /> ARC defensive AI</span>
             <span className="simulation-copy">{simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
-            <span className="simulation-quality" role="status">Off-ball quality <strong>{simulationActive ? `${simulationFrame.offBallQuality}%` : "—"}</strong></span>
+            <span className="simulation-quality" role="status">Off-ball quality <strong>{offBallQualityDisplay}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
             {selectedArrow ? <>

@@ -13,7 +13,7 @@ export interface SimulationSettings {
 export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = {
   offenseOffBall: "read-react",
   defenseOffBall: "help",
-  offBallIntensity: 68,
+  offBallIntensity: 70,
 };
 
 export interface CourtPoint {
