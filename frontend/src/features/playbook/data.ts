@@ -21,7 +21,7 @@ const arrow = (id: string, kind: ArrowKind, start: [number, number], end: [numbe
   timing,
 });
 
-export const READY_SETUP = draft("Ready setup", [[50, 77], [26, 60], [74, 60], [23, 30], [77, 30]], [27, 59]);
+export const READY_SETUP = draft("Ready setup", [[50, 77], [26, 60], [74, 60], [23, 30], [77, 30]], [50, 77]);
 
 export const STARTER_PLAYS: PlaybookDraft[] = [
   draft("Pick and roll", [[50, 78], [29, 57], [71, 36], [22, 29], [78, 29]], [30, 57], [
