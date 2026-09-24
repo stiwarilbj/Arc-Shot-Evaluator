@@ -96,6 +96,7 @@ export function UsageGuide() {
               <li>Use Auto actions in the left rail to choose which screens, handoffs, pick and rolls, and off-ball screens the simulator may add when a matchup allows</li>
               <li>Open Settings to tune offensive cuts or spacing, defensive reads, and movement intensity; pause to edit before resuming</li>
               <li>Use Player skills to set three-point, midrange, and finishing ratings from 1 to 5, then assign badges such as Playmaker, Deep range, Cutter, and Roll threat; the offense and defense respond to those strengths</li>
+              <li>Open Defender skills or select a defender to assign Lockdown, Paint protector, and Helper badges; they guide matchups, zone roles, help, closeouts, and shot contests</li>
               <li>During playback, the offense favors open shots by expected points, can interrupt the drawn sequence for a clear high-quality look, and continues with up to three quick passes or drives when the defense shifts</li>
               <li>Defenders adjust their spacing, help, and closeouts to the live movement and the current ball handler; playback reads and routes are temporary and do not change saved diagrams or exports</li>
               <li>Save play stores the diagram and actions; Saved plays lets you reopen, duplicate, or delete a play</li>

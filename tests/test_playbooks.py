@@ -92,6 +92,28 @@ def test_player_badges_reject_unknown_duplicate_or_malformed_values(tmp_path, mo
         assert client.post("/api/playbooks", json=payload).status_code == 400
 
 
+def test_defender_badges_default_validate_and_round_trip(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Defender badges")
+    payload["defenders"] = [{"id": 1, "x": 55, "y": 60, "badges": ["lockdown", "helper"]}]
+    created = client.post("/api/playbooks", json=payload)
+    assert created.status_code == 200
+    play = created.json()
+    assert play["defenders"][0]["badges"] == ["lockdown", "helper"]
+    assert client.get(f"/api/playbooks/{play['id']}").json()["defenders"][0]["badges"] == ["lockdown", "helper"]
+
+    legacy = _payload("Legacy defenders")
+    legacy["defenders"] = [{"id": 1, "x": 55, "y": 60}]
+    saved_legacy = client.post("/api/playbooks", json=legacy).json()
+    assert saved_legacy["defenders"][0]["badges"] == []
+
+    for badges in ("helper", ["not-a-defender-badge"], ["lockdown", "lockdown"], [1], None, ["playmaker"]):
+        invalid = _payload("Invalid defender badges")
+        invalid["defenders"] = [{"id": 1, "x": 55, "y": 60, "badges": badges}]
+        assert client.post("/api/playbooks", json=invalid).status_code == 400
+
+
 def test_playbook_rejects_out_of_bounds_or_duplicate_markers(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     client = TestClient(app)

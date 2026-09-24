@@ -27,6 +27,7 @@ ALLOWED_PLAYER_BADGES = {
     "playmaker", "off-dribble-creator", "deep-range", "catch-and-shoot", "slasher",
     "rim-finisher", "cutter", "screen-setter", "roll-threat", "post-scorer",
 }
+ALLOWED_DEFENDER_BADGES = {"lockdown", "paint-protector", "helper"}
 
 
 def _now() -> str:
@@ -48,7 +49,14 @@ def _point(value: object, label: str) -> dict[str, float]:
     return {"x": round(x, 4), "y": round(y, 4)}
 
 
-def _markers(value: object, label: str, limit: int, *, player_ratings: bool = False) -> list[dict]:
+def _markers(
+    value: object,
+    label: str,
+    limit: int,
+    *,
+    player_ratings: bool = False,
+    badge_catalog: set[str] | None = None,
+) -> list[dict]:
     if not isinstance(value, list) or len(value) > limit:
         raise HTTPException(400, f"{label} must contain at most {limit} markers")
     result: list[dict] = []
@@ -71,11 +79,13 @@ def _markers(value: object, label: str, limit: int, *, player_ratings: bool = Fa
                     raise HTTPException(400, "Player ratings must be integers from 1 to 5")
                 clean_ratings[key] = rating
             clean_marker["ratings"] = clean_ratings
+        allowed_badges = badge_catalog or (ALLOWED_PLAYER_BADGES if player_ratings else None)
+        if allowed_badges is not None:
             badges = marker.get("badges", [])
-            if not isinstance(badges, list) or any(not isinstance(badge, str) or badge not in ALLOWED_PLAYER_BADGES for badge in badges):
-                raise HTTPException(400, "Player badges must use supported badge ids")
+            if not isinstance(badges, list) or any(not isinstance(badge, str) or badge not in allowed_badges for badge in badges):
+                raise HTTPException(400, f"{label} badges must use supported badge ids")
             if len(badges) != len(set(badges)):
-                raise HTTPException(400, "Player badges must be unique")
+                raise HTTPException(400, f"{label} badges must be unique")
             clean_marker["badges"] = list(badges)
         result.append(clean_marker)
     return result
@@ -88,7 +98,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > MAX_NAME_LENGTH:
         raise HTTPException(400, f"Play name must be 1-{MAX_NAME_LENGTH} characters")
     players = _markers(payload.get("players", []), "Players", MAX_PLAYERS, player_ratings=True)
-    defenders = _markers(payload.get("defenders", []), "Defenders", MAX_DEFENDERS)
+    defenders = _markers(payload.get("defenders", []), "Defenders", MAX_DEFENDERS, badge_catalog=ALLOWED_DEFENDER_BADGES)
     ball = payload.get("ball")
     clean_ball = None if ball is None else _point(ball, "Ball")
     raw_arrows = payload.get("arrows", [])

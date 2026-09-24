@@ -1,5 +1,6 @@
-import type { CourtPoint, DefenseScheme, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
+import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
 import { playerHasBadge } from "./badges.ts";
+import { defenderHasBadge } from "./defensiveBadges.ts";
 import {
   COURT_SCALE,
   COURT_VIEWBOX,
@@ -211,7 +212,18 @@ function zoneAnchors(scheme: ResolvedDefenseScheme, hoop: CourtPoint) {
   return formation.slots.map(({ x, y }) => clampCourt(fromCourtFeet({ x: hoopFeet.x + x, y })));
 }
 
-function assignZoneDefenders(defenders: PlaybookMarker[], anchors: CourtPoint[], excluded = new Set<number>()) {
+function zoneRoleCost(defender: PlaybookMarker, anchor: CourtPoint, anchors: CourtPoint[], hoop: CourtPoint) {
+  let cost = pointDistanceFeet(defender, anchor);
+  const anchorDistance = pointDistanceFeet(anchor, hoop);
+  const distances = anchors.map((candidate) => pointDistanceFeet(candidate, hoop)).sort((a, b) => a - b);
+  const middleDistance = distances[Math.floor(distances.length / 2)] ?? anchorDistance;
+  if (defenderHasBadge(defender, "paint-protector")) cost += anchorDistance <= middleDistance ? -4 : 2;
+  if (defenderHasBadge(defender, "lockdown")) cost += anchorDistance >= middleDistance ? -3 : 1;
+  if (defenderHasBadge(defender, "helper")) cost += anchorDistance >= 8 && anchorDistance <= 21 ? -2.5 : 1;
+  return cost;
+}
+
+function assignZoneDefenders(defenders: PlaybookMarker[], anchors: CourtPoint[], excluded = new Set<number>(), hoop = HOOP_POINT) {
   const available = defenders.filter((defender) => !excluded.has(defender.id)).slice().sort((a, b) => a.id - b.id);
   const roleAssignments = new Map<number, number>();
   const count = Math.min(available.length, anchors.length);
@@ -227,7 +239,7 @@ function assignZoneDefenders(defenders: PlaybookMarker[], anchors: CourtPoint[],
     }
     for (let slot = 0; slot < anchors.length; slot += 1) {
       if (used.has(slot)) continue;
-      const nextCost = cost + pointDistanceFeet(available[defenderIndex], anchors[slot]);
+      const nextCost = cost + zoneRoleCost(available[defenderIndex], anchors[slot], anchors, hoop);
       if (nextCost > bestCost + 1e-7) continue;
       used.add(slot);
       roles.push(slot);
@@ -242,7 +254,7 @@ function assignZoneDefenders(defenders: PlaybookMarker[], anchors: CourtPoint[],
     let closestSlot = 0;
     let closestDistance = Number.POSITIVE_INFINITY;
     anchors.forEach((anchor, slot) => {
-      const distance = pointDistanceFeet(defender, anchor);
+      const distance = zoneRoleCost(defender, anchor, anchors, hoop);
       if (distance < closestDistance) {
         closestDistance = distance;
         closestSlot = slot;
@@ -261,7 +273,13 @@ function assignZoneChasers(defenders: PlaybookMarker[], players: PlaybookMarker[
   for (const threat of threats) {
     const defender = available
       .filter((candidate) => !assignments.has(candidate.id))
-      .sort((a, b) => pointDistanceFeet(a, threat) - pointDistanceFeet(b, threat) || a.id - b.id)[0];
+      .sort((a, b) => {
+        const aCost = pointDistanceFeet(a, threat) - (defenderHasBadge(a, "lockdown") ? 5 : 0)
+          + (defenderHasBadge(a, "paint-protector") ? 3 : 0);
+        const bCost = pointDistanceFeet(b, threat) - (defenderHasBadge(b, "lockdown") ? 5 : 0)
+          + (defenderHasBadge(b, "paint-protector") ? 3 : 0);
+        return aCost - bCost || a.id - b.id;
+      })[0];
     if (defender) assignments.set(defender.id, threat.id);
   }
   return assignments;
@@ -643,6 +661,16 @@ function goalSideGapFor(player: PlaybookMarker, hoop: CourtPoint, baseGap: numbe
   const rating = playerRating(player, skill);
   const weight = skill === "finishing" ? 0.65 : 1.35;
   return clamp(baseGap + (3 - rating) * weight - badgeThreatScore(player, hoop) * 0.72, 1.8, 8.5);
+}
+
+function defenderGoalSideGapFor(defender: PlaybookMarker, player: PlaybookMarker, hoop: CourtPoint, baseGap: number) {
+  const lockdownAdjustment = defenderHasBadge(defender, "lockdown") ? 0.8 : 0;
+  const paintAdjustment = defenderHasBadge(defender, "paint-protector")
+    && shotSkillFor(player, hoop) === "finishing"
+    && pointDistanceFeet(player, hoop) <= 14
+    ? 0.55
+    : 0;
+  return clamp(goalSideGapFor(player, hoop, baseGap) - lockdownAdjustment - paintAdjustment, 1.6, 8.5);
 }
 
 function automaticOffBallArrow(players: PlaybookMarker[], defenders: PlaybookMarker[], handlerId: number | null, sequence: number): PlaybookArrow | null {
@@ -1090,10 +1118,39 @@ function actionOverlapsPlayers(action: BoundAction, start: number, end: number, 
     && (playerIds.has(action.actorId ?? -1) || playerIds.has(action.recipientId ?? -1));
 }
 
-function bestDefensiveMatchups(players: PlaybookMarker[], defenders: PlaybookMarker[]) {
+function bestDefensiveMatchups(players: PlaybookMarker[], defenders: PlaybookMarker[], hoop = HOOP_POINT, handlerId: number | null = null) {
   if (!players.length || !defenders.length) return defenders.map(() => -1);
-  const defenderCount = Math.min(players.length, defenders.length);
-  if (defenderCount > 7) return defenders.map((_, index) => players[index % players.length].id);
+  const orderedPlayers = players.slice().sort((a, b) => a.id - b.id);
+  const orderedDefenders = defenders.slice().sort((a, b) => a.id - b.id);
+  const defenderCount = Math.min(orderedPlayers.length, orderedDefenders.length);
+  if (defenderCount > 7) return defenders.map((_, index) => orderedPlayers[index % orderedPlayers.length].id);
+  const offenseThreat = (player: PlaybookMarker) => playerRating(player, "threePoint")
+    + playerRating(player, "midrange") + playerRating(player, "finishing") + badgeThreatScore(player, hoop);
+  const interiorThreat = (player: PlaybookMarker) => playerRating(player, "finishing")
+    + (playerHasBadge(player, "rim-finisher") ? 1.2 : 0)
+    + (playerHasBadge(player, "slasher") ? 0.8 : 0)
+    + (playerHasBadge(player, "roll-threat") ? 0.8 : 0)
+    + (playerHasBadge(player, "post-scorer") ? 0.5 : 0)
+    - Math.min(2, pointDistanceFeet(player, hoop) * 0.06);
+  const topThreat = orderedPlayers.slice().sort((a, b) => offenseThreat(b) - offenseThreat(a) || a.id - b.id)[0];
+  const interiorThreatPlayer = orderedPlayers.slice().sort((a, b) => interiorThreat(b) - interiorThreat(a) || a.id - b.id)[0];
+  const lowestThreat = orderedPlayers.slice().sort((a, b) => offenseThreat(a) - offenseThreat(b) || a.id - b.id)[0];
+  const assignmentCost = (defender: PlaybookMarker, player: PlaybookMarker) => {
+    let cost = pointDistanceFeet(defender, player);
+    if (defenderHasBadge(defender, "lockdown")) {
+      if (player.id === topThreat.id) cost -= 5;
+      if (player.id === handlerId) cost -= 1.5;
+    }
+    if (defenderHasBadge(defender, "paint-protector")) {
+      if (player.id === interiorThreatPlayer.id) cost -= 5;
+      else if (pointDistanceFeet(player, hoop) <= 17) cost -= 1.5;
+    }
+    if (defenderHasBadge(defender, "helper")) {
+      if (player.id === lowestThreat.id) cost -= 4;
+      if (playerRating(player, "threePoint") >= 4 || playerHasBadge(player, "deep-range") || playerHasBadge(player, "catch-and-shoot")) cost += 2;
+    }
+    return cost;
+  };
   let bestCost = Number.POSITIVE_INFINITY;
   let best: number[] = [];
   const visit = (defenderIndex: number, used: Set<number>, assignments: number[], cost: number) => {
@@ -1104,9 +1161,9 @@ function bestDefensiveMatchups(players: PlaybookMarker[], defenders: PlaybookMar
       }
       return;
     }
-    for (let playerIndex = 0; playerIndex < players.length; playerIndex += 1) {
+    for (let playerIndex = 0; playerIndex < orderedPlayers.length; playerIndex += 1) {
       if (used.has(playerIndex)) continue;
-      const nextCost = cost + pointDistanceFeet(defenders[defenderIndex], players[playerIndex]);
+      const nextCost = cost + assignmentCost(orderedDefenders[defenderIndex], orderedPlayers[playerIndex]);
       if (nextCost >= bestCost) continue;
       used.add(playerIndex);
       assignments.push(playerIndex);
@@ -1116,23 +1173,26 @@ function bestDefensiveMatchups(players: PlaybookMarker[], defenders: PlaybookMar
     }
   };
   visit(0, new Set<number>(), [], 0);
-  return defenders.map((_, index) => {
+  const orderedAssignments = orderedDefenders.map((_, index) => {
     const assigned = best[index % Math.max(1, defenderCount)];
-    return players[assigned]?.id ?? players[index % players.length].id;
+    return orderedPlayers[assigned]?.id ?? orderedPlayers[index % orderedPlayers.length].id;
   });
+  const byDefenderId = new Map(orderedDefenders.map((defender, index) => [defender.id, orderedAssignments[index]]));
+  return defenders.map((defender) => byDefenderId.get(defender.id) ?? -1);
 }
 
 function createGoalSideDefenders(players: PlaybookMarker[], existing: PlaybookMarker[], hoop: CourtPoint) {
   if (existing.length) return existing.map((defender) => ({ ...defender }));
   return players.slice(0, MAX_COURT_PLAYERS).map((player, index) => ({
     id: index + 1,
+    badges: [],
     ...pointToward(player, hoop, 3.5),
   }));
 }
 
 export function placeDefendersGoalSide(players: PlaybookMarker[], defenders: PlaybookMarker[], hoop = HOOP_POINT) {
   const placed = createGoalSideDefenders(players, defenders, hoop);
-  const matchups = bestDefensiveMatchups(players, placed);
+  const matchups = bestDefensiveMatchups(players, placed, hoop);
   return placed.map((defender, index) => {
     const player = players.find((candidate) => candidate.id === matchups[index]);
     return player ? { ...defender, ...pointToward(player, hoop, 3.5) } : defender;
@@ -1238,14 +1298,16 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
   const defenseSchemeResolution = chooseDefenseScheme(runSettings.defenseScheme, defenders.length, players.length);
   const activeDefenseScheme = defenseSchemeResolution.scheme;
   const formation = zoneFormation(activeDefenseScheme);
+  const initialBall = sourceCopy.ball ?? players[0] ?? null;
+  const initialHandlerId = players[nearestPointIndex(players, initialBall ?? hoop)]?.id ?? null;
   const zoneChaserAssignments = formation
     ? assignZoneChasers(defenders, players, formation.chasers, hoop)
     : new Map<number, number>();
   const zoneAssignments = formation
-    ? assignZoneDefenders(defenders, zoneAnchors(activeDefenseScheme, hoop), new Set(zoneChaserAssignments.keys()))
+    ? assignZoneDefenders(defenders, zoneAnchors(activeDefenseScheme, hoop), new Set(zoneChaserAssignments.keys()), hoop)
     : new Map<number, number>();
   const assignments = new Map<number, number>();
-  bestDefensiveMatchups(players, defenders).forEach((playerId, index) => assignments.set(defenders[index].id, playerId));
+  bestDefensiveMatchups(players, defenders, hoop, initialHandlerId).forEach((playerId, index) => assignments.set(defenders[index].id, playerId));
   const initialAssignments = new Map(assignments);
   const manual = buildActions(sourceCopy);
   const actions = [...manual.actions];
@@ -1749,21 +1811,29 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     : -1;
   let helperIndex = -1;
   const helpStyle = strategy === "help" || strategy === "trap-rotate" || strategy === "protect-paint";
+  const badgeHelpAvailable = run.defenders.some((defender) => defenderHasBadge(defender, "helper") || defenderHasBadge(defender, "paint-protector"));
   const finishingRating = handler ? helpFinishingRating(handler) : 3;
   const helpWeight = clamp(0.55 + finishingRating * 0.15, 0.7, 1.3);
   const helpSpot = handler ? helpSpotFor(handler, hoop, finishingRating) : hoop;
-  if (!drive || !helpStyle) run.helpDefenderId = null;
-  if (drive && helpStyle) {
+  if (!drive || (!helpStyle && !badgeHelpAvailable)) run.helpDefenderId = null;
+  if (drive && (helpStyle || badgeHelpAvailable)) {
     const currentHelperIndex = run.defenders.findIndex((defender) => defender.id === run.helpDefenderId);
     const currentHelperDefender = run.defenders[currentHelperIndex];
     const currentHelperAssignment = currentHelperIndex < 0 ? null : run.assignments.get(currentHelperDefender.id);
     const currentHelperIsChaser = currentHelperIndex >= 0 && run.zoneChaserAssignments.has(currentHelperDefender.id);
-    if (currentHelperIndex < 0 || currentHelperIsChaser || (isMan && currentHelperAssignment === handler?.id)) {
-      let helperDistance = Number.POSITIVE_INFINITY;
-      let helperScore = Number.POSITIVE_INFINITY;
+    const currentHelperUnavailable = currentHelperIndex < 0
+      || currentHelperIsChaser
+      || currentHelperIndex === handlerDefenderIndex
+      || coverageByDefender.has(currentHelperDefender?.id ?? -1)
+      || transfer?.recipientId === currentHelperAssignment
+      || (isMan && currentHelperAssignment === handler?.id);
+    if (currentHelperUnavailable) {
+      run.helpDefenderId = null;
+      const helperCandidates: Array<{ index: number; defender: PlaybookMarker; distance: number; helpRange: number; score: number; protectsShooter: boolean }> = [];
       run.defenders.forEach((defender, index) => {
         if (index === handlerDefenderIndex) return;
         if (formation && run.zoneChaserAssignments.has(defender.id)) return;
+        if (coverageByDefender.has(defender.id)) return;
         const assignedPlayerId = run.assignments.get(defender.id);
         if (transfer?.recipientId === assignedPlayerId) return;
         const distance = pointDistanceFeet(defender, helpSpot);
@@ -1773,14 +1843,27 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
             .slice().sort((a, b) => pointDistanceFeet(slotAnchor, a) - pointDistanceFeet(slotAnchor, b) || a.id - b.id)[0]
           : markerForId(run.players, assignedPlayerId ?? null);
         const shootingThreat = assignedPlayer ? defensiveThreatRating(assignedPlayer, hoop) : 3;
-        const score = distance + (shootingThreat - 3) * 1.15;
-        if (score < helperScore) {
-          helperScore = score;
-          helperIndex = index;
-          helperDistance = distance;
-        }
+        const perimeterRisk = assignedPlayer
+          ? Math.max(0, playerRating(assignedPlayer, "threePoint") - 3) * 2
+            + Number(playerHasBadge(assignedPlayer, "deep-range") || playerHasBadge(assignedPlayer, "catch-and-shoot")) * 2
+          : 0;
+        const badgePriority = Number(defenderHasBadge(defender, "helper")) * 4
+          + Number(defenderHasBadge(defender, "paint-protector") && handler != null && pointDistanceFeet(handler, hoop) <= 18) * 2.5;
+        const score = distance + (shootingThreat - 3) * 1.15 + perimeterRisk - badgePriority;
+        const protectsShooter = assignedPlayer != null
+          && pointDistanceFeet(assignedPlayer, hoop) > 19
+          && (playerRating(assignedPlayer, "threePoint") >= 4
+            || playerHasBadge(assignedPlayer, "deep-range")
+            || playerHasBadge(assignedPlayer, "catch-and-shoot"));
+        const helpRange = defenderHasBadge(defender, "helper") ? 21
+          : defenderHasBadge(defender, "paint-protector") ? 19 : 18;
+        helperCandidates.push({ index, defender, distance, helpRange, score, protectsShooter });
       });
-      if (helperDistance <= 18) run.helpDefenderId = run.defenders[helperIndex]?.id ?? null;
+      const safeCandidates = helperCandidates.filter((candidate) => !candidate.protectsShooter && candidate.distance <= candidate.helpRange);
+      const selectedHelper = (safeCandidates.length ? safeCandidates : helperCandidates)
+        .sort((a, b) => a.score - b.score || a.defender.id - b.defender.id)[0];
+      helperIndex = selectedHelper?.index ?? -1;
+      if (selectedHelper && selectedHelper.distance <= selectedHelper.helpRange) run.helpDefenderId = selectedHelper.defender.id;
     } else {
       helperIndex = currentHelperIndex;
     }
@@ -1801,12 +1884,12 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       const chaserId = run.zoneChaserAssignments.get(defender.id);
       if (chaserId != null) {
         const chaser = markerForId(run.players, chaserId) ?? handler;
-        const chaserGap = goalSideGapFor(chaser, hoop, 4.25);
+        const chaserGap = defenderGoalSideGapFor(defender, chaser, hoop, 4.25);
         target = defenderContainmentTarget(run, chaser, hoop, chaserGap, chaser.id === handler.id);
       } else {
         target = zoneShapeTargets.get(defender.id) ?? defender;
         if (isOnBall) {
-          const goalSideGap = goalSideGapFor(handler, hoop, strategy === "trap-rotate" ? 3.25 : 4.2);
+          const goalSideGap = defenderGoalSideGapFor(defender, handler, hoop, strategy === "trap-rotate" ? 3.25 : 4.2);
           target = lerpPoint(target, defenderContainmentTarget(run, handler, hoop, goalSideGap, true), 0.82);
         } else {
           const candidates = run.players
@@ -1819,7 +1902,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
             .sort((a, b) => a.score - b.score || a.player.id - b.player.id);
           const closeout = candidates[0];
           if (closeout && closeout.distance <= 15) {
-            const closeoutGap = goalSideGapFor(closeout.player, hoop, closeout.score < 8 ? 4.5 : 6.5);
+            const closeoutGap = defenderGoalSideGapFor(defender, closeout.player, hoop, closeout.score < 8 ? 4.5 : 6.5);
             const closeoutPoint = defenderContainmentTarget(run, closeout.player, hoop, closeoutGap, false);
             target = lerpPoint(target, closeoutPoint, clamp(0.58 - closeout.distance * 0.018, 0.28, 0.58));
           }
@@ -1828,13 +1911,24 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     } else {
       const playerToGuard = isOnBall ? handler : assignment;
       const baseGoalSideGap = strategy === "trap-rotate" && drive ? 2.75 : 3.75;
-      const goalSideGap = goalSideGapFor(playerToGuard, hoop, baseGoalSideGap);
+      const goalSideGap = defenderGoalSideGapFor(defender, playerToGuard, hoop, baseGoalSideGap);
       target = defenderContainmentTarget(run, playerToGuard, hoop, goalSideGap, isOnBall);
       if (run.activeDefenseScheme === "pack-line" && !isOnBall) {
         const rating = defensiveThreatRating(assignment, hoop);
         const sagSpot = pointToward(assignment, hoop, Math.min(13, pointDistanceFeet(assignment, hoop) * 0.48));
         target = lerpPoint(target, sagSpot, clamp(0.22 + (3 - rating) * 0.1, 0.05, 0.48));
       }
+    }
+    if (!isOnBall && defenderHasBadge(defender, "paint-protector") && !coverageByDefender.has(defender.id) && !run.zoneChaserAssignments.has(defender.id)) {
+      const assignmentDistance = pointDistanceFeet(assignment, hoop);
+      const assignmentThreat = defensiveThreatRating(assignment, hoop);
+      if (assignmentDistance > 12 && assignmentThreat < 5.2) {
+        const paintSpot = pointToward(assignment, hoop, Math.min(9, assignmentDistance * 0.46));
+        target = lerpPoint(target, paintSpot, 0.18);
+      }
+    }
+    if (!isOnBall && defenderHasBadge(defender, "helper") && !coverageByDefender.has(defender.id) && !run.zoneChaserAssignments.has(defender.id)) {
+      target = lerpPoint(target, helpSpot, drive ? 0.12 : 0.06);
     }
     if (!isOnBall && strategy === "help") {
       if (drive && index === helperIndex) target = lerpPoint(target, helpSpot, clamp((formation ? 0.48 : 0.62) * helpWeight, 0.3, 0.84));
@@ -1856,6 +1950,18 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       const paintSpot = pointToward(paintAnchor, hoop, Math.min(10, pointDistanceFeet(paintAnchor, hoop) * 0.4));
       target = lerpPoint(target, paintSpot, clamp((drive && index === helperIndex ? 0.82 : formation ? 0.28 : 0.55) * helpWeight, 0.25, 0.95));
     }
+    if (drive && handler && !isOnBall && !coverageByDefender.has(defender.id) && !run.zoneChaserAssignments.has(defender.id)) {
+      const handlerDistance = pointDistanceFeet(handler, hoop);
+      if (index === helperIndex && defenderHasBadge(defender, "helper")) {
+        const pressureSpot = pointToward(handler, hoop, Math.min(5.5, handlerDistance * 0.34));
+        target = lerpPoint(target, helpSpot, helpStyle ? 0.28 : 0.56);
+        target = lerpPoint(target, pressureSpot, 0.16);
+      }
+      if (handlerDistance <= 16 && defenderHasBadge(defender, "paint-protector")) {
+        const rimSpot = pointToward(handler, hoop, 4.5);
+        target = lerpPoint(target, rimSpot, 0.36);
+      }
+    }
     if (!isOnBall && handler && playerHasBadge(handler, "playmaker")) {
       const likelyReceiver = formation
         ? run.players.filter((player) => player.id !== handler.id && ![...run.zoneChaserAssignments.values()].includes(player.id))
@@ -1873,13 +1979,13 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     const rollAction = activeAction?.arrow.kind === "pick-roll" ? activeAction : null;
     const roller = rollAction ? markerForId(run.players, rollAction.actorId) : null;
     if (roller && playerHasBadge(roller, "roll-threat") && !isOnBall && assignment.id === roller.id) {
-      const rollTarget = defenderContainmentTarget(run, roller, hoop, goalSideGapFor(roller, hoop, 3.1), false);
+      const rollTarget = defenderContainmentTarget(run, roller, hoop, defenderGoalSideGapFor(defender, roller, hoop, 3.1), false);
       target = lerpPoint(target, rollTarget, formation ? 0.22 : 0.3);
     }
     if (formation && transferDefenderIndex === index && transfer?.recipientId != null) {
       const recipient = markerForId(run.players, transfer.recipientId);
       const progress = clamp((timeMs - transfer.startTime) / transfer.durationMs, 0, 1);
-      if (recipient) target = lerpPoint(target, defenderContainmentTarget(run, recipient, hoop, goalSideGapFor(recipient, hoop, 4), false), 0.2 + progress * 0.5);
+      if (recipient) target = lerpPoint(target, defenderContainmentTarget(run, recipient, hoop, defenderGoalSideGapFor(defender, recipient, hoop, 4), false), 0.2 + progress * 0.5);
     } else if (!formation && transfer?.recipientId === assignment.id) {
       const progress = clamp((timeMs - transfer.startTime) / transfer.durationMs, 0, 1);
       target = lerpPoint(target, assignment, 0.3 + progress * 0.4);
@@ -1898,11 +2004,11 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
         if (strategy === "switch") {
           const otherId = coverageRole.role === "screener" ? screenedId : screenerId;
           const other = markerForId(run.players, otherId);
-          if (other) target = lerpPoint(target, defenderContainmentTarget(run, other, hoop, goalSideGapFor(other, hoop, 4), other.id === handler.id), formation ? 0.62 : 0.85);
+          if (other) target = lerpPoint(target, defenderContainmentTarget(run, other, hoop, defenderGoalSideGapFor(defender, other, hoop, 4), other.id === handler.id), formation ? 0.62 : 0.85);
         }
         const handoffScreener = markerForId(run.players, screenerId);
         if (coverageRole.role === "screener" && handoffScreener && playerHasBadge(handoffScreener, "screen-setter")) {
-          target = lerpPoint(target, defenderContainmentTarget(run, handoffScreener, hoop, goalSideGapFor(handoffScreener, hoop, 3), false), formation ? 0.18 : 0.28);
+          target = lerpPoint(target, defenderContainmentTarget(run, handoffScreener, hoop, defenderGoalSideGapFor(defender, handoffScreener, hoop, 3), false), formation ? 0.18 : 0.28);
         }
         return clampCourt(target);
       }
@@ -1911,12 +2017,12 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       const screenedPlayer = markerForId(run.players, screenedId) ?? handler;
       const coverageScreener = markerForId(run.players, screenerId);
       if (coverageRole.role === "screener" && coverageScreener && playerHasBadge(coverageScreener, "screen-setter")) {
-        target = lerpPoint(target, defenderContainmentTarget(run, coverageScreener, hoop, goalSideGapFor(coverageScreener, hoop, 3), false), formation ? 0.18 : 0.28);
+        target = lerpPoint(target, defenderContainmentTarget(run, coverageScreener, hoop, defenderGoalSideGapFor(defender, coverageScreener, hoop, 3), false), formation ? 0.18 : 0.28);
       }
       if (strategy === "switch" && formation) {
         const otherId = coverageRole.role === "screener" ? screenedId : screenerId;
         const other = markerForId(run.players, otherId);
-        if (other) target = lerpPoint(target, defenderContainmentTarget(run, other, hoop, goalSideGapFor(other, hoop, 4), other.id === handler.id), 0.62);
+        if (other) target = lerpPoint(target, defenderContainmentTarget(run, other, hoop, defenderGoalSideGapFor(defender, other, hoop, 4), other.id === handler.id), 0.62);
       } else if (strategy === "fight-over" && coverageRole.role === "screened") {
         const outsideRoute = pointToward(screenPoint, hoop, -3.25);
         const coverageWeight = formation ? 0.72 : 1;
@@ -2116,8 +2222,13 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
       : { x: 0, y: 0 };
     const isTrackingMovement = Math.hypot(assignmentVelocity.x, assignmentVelocity.y) > 2.5;
     const shootingThreat = focusPlayer ? defensiveThreatRating(focusPlayer, HOOP_POINT) : 3;
-    const responseSpeed = clamp((isRecovering ? DEFENDER_MAX_SPEED_FT_PER_SECOND : isTrackingMovement ? 12 : 9) + (shootingThreat - 3) * 1.2, 5, DEFENDER_MAX_SPEED_FT_PER_SECOND);
-    const responseAcceleration = DEFENDER_ACCELERATION_FT_PER_SECOND + (shootingThreat - 3) * 3;
+    const badgeResponse = (defenderHasBadge(defender, "lockdown") ? 1.4 : 0)
+      + (run.helpDefenderId === defender.id && defenderHasBadge(defender, "helper") ? 1.2 : 0);
+    const responseSpeed = clamp((isRecovering ? DEFENDER_MAX_SPEED_FT_PER_SECOND : isTrackingMovement ? 12 : 9)
+      + (shootingThreat - 3) * 1.2 + badgeResponse, 5, DEFENDER_MAX_SPEED_FT_PER_SECOND);
+    const responseAcceleration = DEFENDER_ACCELERATION_FT_PER_SECOND + (shootingThreat - 3) * 3
+      + (defenderHasBadge(defender, "lockdown") ? 3 : 0)
+      + (run.helpDefenderId === defender.id && defenderHasBadge(defender, "helper") ? 2 : 0);
     return integrateMarker(
       run,
       "defender",
@@ -2246,7 +2357,19 @@ function calculateShotQuality(
   const closestDefenderGap = defenders.length
     ? Math.min(...defenders.map((defender) => pointDistanceFeet(defender, shooter)))
     : 19;
-  const contestScore = Math.min(1, closestDefenderGap / 19);
+  const badgeContest = defenders.reduce((best, defender) => {
+    const gap = pointDistanceFeet(defender, shooter);
+    if (gap > 10) return best;
+    const front = (defenderIsGoalSide(defender, shooter, hoop) + 1) / 2;
+    const proximity = clamp((10 - gap) / 5, 0, 1);
+    const lockdown = defenderHasBadge(defender, "lockdown") ? 0.16 * front * proximity : 0;
+    const paintProtection = defenderHasBadge(defender, "paint-protector") && shotSkillFor(shooter, hoop) === "finishing"
+      ? 0.2 * front * proximity
+      : 0;
+    const helperPressure = defenderHasBadge(defender, "helper") ? 0.08 * front * proximity : 0;
+    return Math.max(best, Math.min(0.22, lockdown + paintProtection + helperPressure));
+  }, 0);
+  const contestScore = clamp(Math.min(1, closestDefenderGap / 19) - badgeContest, 0, 1);
   const baseQuality = (rangeScore * 0.52 + contestScore * 0.28 + (offBallQuality / 100) * 0.2) * 100;
   const skill = shotSkillFor(shooter, hoop);
   const rating = playerRating(shooter, skill);

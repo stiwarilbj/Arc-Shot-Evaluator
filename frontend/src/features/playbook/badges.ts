@@ -1,4 +1,4 @@
-import type { OffensiveBadge } from "./types.ts";
+import type { OffensiveBadge, PlayerBadge } from "./types.ts";
 
 export const OFFENSIVE_BADGE_ORDER: OffensiveBadge[] = [
   "playmaker",
@@ -30,6 +30,6 @@ export function isOffensiveBadge(value: unknown): value is OffensiveBadge {
   return typeof value === "string" && (OFFENSIVE_BADGE_ORDER as string[]).includes(value);
 }
 
-export function playerHasBadge(player: { badges?: readonly OffensiveBadge[] }, badge: OffensiveBadge) {
+export function playerHasBadge(player: { badges?: readonly PlayerBadge[] }, badge: OffensiveBadge) {
   return player.badges?.includes(badge) ?? false;
 }

@@ -51,12 +51,15 @@ export type OffensiveBadge =
   | "roll-threat"
   | "post-scorer";
 
+export type DefensiveBadge = "lockdown" | "paint-protector" | "helper";
+export type PlayerBadge = OffensiveBadge | DefensiveBadge;
+
 export interface PlaybookMarker extends CourtPoint {
   id: number;
   /** Optional on legacy version 1 plays; normalized to 3 when loaded. */
   ratings?: PlayerSkillRatings;
   /** Optional on legacy version 1 plays; normalized to an empty list when loaded. */
-  badges?: OffensiveBadge[];
+  badges?: PlayerBadge[];
 }
 
 export interface PlaybookArrow {

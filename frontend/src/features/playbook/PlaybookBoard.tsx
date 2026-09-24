@@ -31,9 +31,10 @@ import {
 import { createPlaybook, deletePlaybook, fetchPlaybooks, updatePlaybook } from "./api";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
+import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -158,6 +159,10 @@ function normalizeDraft(source: PlaybookDraft) {
       midrange: Math.max(1, Math.min(5, Math.round(player.ratings?.midrange ?? 3))),
       finishing: Math.max(1, Math.min(5, Math.round(player.ratings?.finishing ?? 3))),
     },
+  }));
+  next.defenders = next.defenders.map((defender) => ({
+    ...defender,
+    badges: DEFENSIVE_BADGE_ORDER.filter((badge) => (defender.badges ?? []).includes(badge)),
   }));
   next.arrows = next.arrows.map((arrow, index) => {
     const sequence = arrowSequence(arrow, index);
@@ -329,6 +334,8 @@ export function PlaybookBoard() {
   const [backdoorCutterId, setBackdoorCutterId] = useState<number | null>(null);
   const [autoActionsOpen, setAutoActionsOpen] = useState(false);
   const [defenseSchemesOpen, setDefenseSchemesOpen] = useState(false);
+  const [defenderSkillsOpen, setDefenderSkillsOpen] = useState(false);
+  const [defenderSkillsId, setDefenderSkillsId] = useState<number | null>(null);
   const [ratingsOpen, setRatingsOpen] = useState(false);
   const [playerSkillsTab, setPlayerSkillsTab] = useState<"ratings" | "badges">("ratings");
   const [ratingPlayerId, setRatingPlayerId] = useState<number | null>(null);
@@ -353,6 +360,7 @@ export function PlaybookBoard() {
 
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
+  const selectedSkillsDefender = draft.defenders.find((defender) => defender.id === defenderSkillsId) ?? draft.defenders[0] ?? null;
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
   const starterCategories = useMemo(() => ["All plays", ...new Set(STARTER_PLAYS.map((play) => STARTER_PLAY_DETAILS[play.name]?.category ?? "Other"))], []);
   const filteredStarterPlays = useMemo(() => {
@@ -565,6 +573,21 @@ export function PlaybookBoard() {
     commit(next, draft, { preserveSimulation: false });
   }
 
+  function toggleDefenderBadge(defenderId: number, badge: DefensiveBadge) {
+    const next = clonePlaybook(draft);
+    next.defenders = next.defenders.map((defender) => {
+      if (defender.id !== defenderId) return defender;
+      const badges = (defender.badges ?? []).filter((current): current is DefensiveBadge => DEFENSIVE_BADGE_ORDER.includes(current as DefensiveBadge));
+      return {
+        ...defender,
+        badges: badges.includes(badge)
+          ? badges.filter((current) => current !== badge)
+          : DEFENSIVE_BADGE_ORDER.filter((current) => current === badge || badges.includes(current)),
+      };
+    });
+    commit(next, draft, { preserveSimulation: false });
+  }
+
   function adjustTeamRating(key: keyof PlayerSkillRatings, amount: -1 | 1) {
     if (!draft.players.length) return;
     const next = clonePlaybook(draft);
@@ -673,7 +696,7 @@ export function PlaybookBoard() {
     const collection = type === "player" ? draft.players : draft.defenders;
     const id = Math.max(0, ...collection.map((marker) => marker.id)) + 1;
     const next = clonePlaybook(draft);
-    const marker: PlaybookMarker = { id, ...point, ...(type === "player" ? { ratings: { threePoint: 3, midrange: 3, finishing: 3 }, badges: [] } : {}) };
+    const marker: PlaybookMarker = { id, ...point, badges: [], ...(type === "player" ? { ratings: { threePoint: 3, midrange: 3, finishing: 3 } } : {}) };
     if (type === "player") next.players = [...next.players, marker];
     else next.defenders = [...next.defenders, marker];
     commit(next);
@@ -681,6 +704,9 @@ export function PlaybookBoard() {
     if (type === "player") {
       setRatingPlayerId(id);
       setRatingsOpen(true);
+    } else {
+      setDefenderSkillsId(id);
+      setDefenderSkillsOpen(true);
     }
     setTool("select");
   }
@@ -928,6 +954,9 @@ export function PlaybookBoard() {
     if (selection.type === "player") {
       setRatingPlayerId(Number(selection.id));
       setRatingsOpen(true);
+    } else if (selection.type === "defender") {
+      setDefenderSkillsId(Number(selection.id));
+      setDefenderSkillsOpen(true);
     }
     dragRef.current = { type: selection.type, id: selection.id, before: clonePlaybook(draft) };
     svgRef.current?.setPointerCapture(event.pointerId);
@@ -1081,6 +1110,32 @@ export function PlaybookBoard() {
           }}>
             <UserRound size={17} /> <span>Defenders</span><i className={`toggle-dot ${draft.defenders_visible ? "is-on" : ""}`} />
           </button>
+          <button type="button" className={`preset-button ${defenderSkillsOpen ? "is-active" : ""}`} aria-expanded={defenderSkillsOpen} aria-controls="defender-skills-panel" onClick={() => setDefenderSkillsOpen((open) => !open)}>
+            <Shield size={17} /><span>Defender skills</span><i className={`toggle-dot ${defenderSkillsOpen ? "is-on" : ""}`} />
+          </button>
+          {defenderSkillsOpen ? <div id="defender-skills-panel" className="player-ratings-panel defender-skills-panel" role="group" aria-label="Defender skills">
+            <div className="ratings-panel-heading ratings-player-heading"><strong>Defender</strong><span>Choose one</span></div>
+            {draft.defenders.length ? <div className="ratings-player-list" role="group" aria-label="Select defender to edit">
+              {draft.defenders.map((defender) => <button type="button" key={`defender-skill-${defender.id}`} className={selectedSkillsDefender?.id === defender.id ? "is-active" : ""} aria-pressed={selectedSkillsDefender?.id === defender.id} onClick={() => {
+                setDefenderSkillsId(defender.id);
+                setSelected({ type: "defender", id: defender.id });
+              }}>Defender {defender.id}</button>)}
+            </div> : <p className="ratings-empty">Turn on Defenders or use AI defense to add defenders first.</p>}
+            {selectedSkillsDefender ? <>
+              <div className="ratings-panel-heading defender-badge-heading"><strong>Defender {selectedSkillsDefender.id} badges</strong><span>{selectedSkillsDefender.badges?.filter((badge) => DEFENSIVE_BADGE_ORDER.includes(badge as DefensiveBadge)).length ?? 0} selected</span></div>
+              <div className="player-badge-list" role="group" aria-label={`Defender ${selectedSkillsDefender.id} defensive badges`}>
+                {DEFENSIVE_BADGE_ORDER.map((badge) => {
+                  const assigned = selectedSkillsDefender.badges?.includes(badge) ?? false;
+                  const details = DEFENSIVE_BADGES[badge];
+                  return <button type="button" key={badge} className={`player-badge-option defender-badge-option ${assigned ? "is-selected" : ""}`} aria-label={`${details.label}, ${assigned ? "assigned" : "not assigned"} to Defender ${selectedSkillsDefender.id}`} aria-pressed={assigned} title={details.description} onClick={() => toggleDefenderBadge(selectedSkillsDefender.id, badge)}>
+                    <span className="player-badge-copy"><strong>{details.label}</strong><small>{details.description}</small></span>
+                    <span className="player-badge-state" aria-hidden="true">{assigned ? "On" : "Off"}</span>
+                  </button>;
+                })}
+              </div>
+              <small>Badges guide assignments and reactions in the next simulation run.</small>
+            </> : null}
+          </div> : null}
           <button type="button" className={`preset-button ${defenseSchemesOpen ? "is-active" : ""}`} aria-expanded={defenseSchemesOpen} aria-controls="defense-schemes-panel" onClick={() => setDefenseSchemesOpen((open) => !open)}>
             <ShieldCheck size={17} /><span>Defense schemes</span><i className={`toggle-dot ${simulationSettings.defenseScheme !== "auto" ? "is-on" : ""}`} />
           </button>

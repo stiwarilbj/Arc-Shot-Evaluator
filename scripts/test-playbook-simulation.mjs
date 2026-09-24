@@ -1115,4 +1115,96 @@ const holdBadgePositions = holdBadgeRun.defenders.map((defender) => ({ ...defend
 advance(holdBadgeRun, 500);
 assert.deepEqual(holdBadgeRun.defenders, holdBadgePositions, 'Hold positions still freezes defenders around badged players');
 
+const defensiveRolesDraft = makeDraft({
+  players: [[49, 72], [51, 72], [50, 74]],
+  ball: [49, 72],
+  defenders: [[50, 74], [49, 72], [51, 72]],
+});
+defensiveRolesDraft.players[0].ratings = { threePoint: 5, midrange: 4, finishing: 3 };
+defensiveRolesDraft.players[1].ratings = { threePoint: 3, midrange: 3, finishing: 5 };
+defensiveRolesDraft.players[2].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+defensiveRolesDraft.defenders[0].badges = ['lockdown'];
+defensiveRolesDraft.defenders[1].badges = ['paint-protector'];
+defensiveRolesDraft.defenders[2].badges = ['helper'];
+const defensiveRolesRun = createSimulationRun(defensiveRolesDraft, { ...settings, defenseStrategy: 'off' });
+assert.equal(defensiveRolesRun.assignments.get(1), 1, 'Lockdown receives the leading offensive threat assignment');
+assert.equal(defensiveRolesRun.assignments.get(2), 2, 'Paint protector receives the strongest interior threat assignment');
+assert.equal(defensiveRolesRun.assignments.get(3), 3, 'Helper receives the lowest-risk offensive assignment');
+
+const defensiveZoneDraft = makeDraft({
+  players: [[49, 72], [51, 72], [50, 74], [45, 65], [55, 65]],
+  ball: [49, 72],
+  defenders: [[50, 74], [49, 72], [51, 72], [48, 72], [52, 72]],
+});
+defensiveZoneDraft.players[0].ratings = { threePoint: 5, midrange: 4, finishing: 3 };
+defensiveZoneDraft.players[1].ratings = { threePoint: 3, midrange: 3, finishing: 5 };
+defensiveZoneDraft.players[2].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
+defensiveZoneDraft.defenders[0].badges = ['lockdown'];
+defensiveZoneDraft.defenders[1].badges = ['paint-protector'];
+defensiveZoneDraft.defenders[2].badges = ['helper'];
+const boxBadgeRun = createSimulationRun(defensiveZoneDraft, { ...settings, defenseScheme: 'box-and-one', defenseStrategy: 'off' });
+assert.equal(boxBadgeRun.zoneChaserAssignments.get(1), 1, 'Lockdown is selected to chase the leading threat in a box-and-one');
+assert.ok([2, 3, 4].includes(boxBadgeRun.zoneAssignments.get(2)), 'Paint protector is assigned to a lower interior slot in the box');
+const triangleBadgeRun = createSimulationRun(defensiveZoneDraft, { ...settings, defenseScheme: 'triangle-and-two', defenseStrategy: 'off' });
+assert.ok([...triangleBadgeRun.zoneChaserAssignments.keys()].includes(1), 'Lockdown is favored for a triangle-and-two chaser role');
+assert.ok(triangleBadgeRun.zoneAssignments.has(2), 'Paint protector remains in the triangle zone instead of taking an avoidable chaser role');
+
+const helperContainDraft = structuredClone(driveDraft);
+helperContainDraft.defenders = [[50, 68], [32, 59], [68, 59]].map(([x, y], index) => ({ id: index + 1, x, y }));
+helperContainDraft.defenders[1].badges = ['helper'];
+const helperContainRun = createSimulationRun(helperContainDraft, { ...settings, defenseStrategy: 'contain' });
+const noHelperContainRun = createSimulationRun({ ...structuredClone(helperContainDraft), defenders: helperContainDraft.defenders.map(({ badges, ...defender }) => defender) }, { ...settings, defenseStrategy: 'contain' });
+advance(helperContainRun, 430);
+advance(noHelperContainRun, 430);
+assert.ok(helperContainRun.helpDefenderId != null, 'Helper can trigger a secondary rotation during contain coverage');
+assert.equal(noHelperContainRun.helpDefenderId, null, 'contain coverage without a help badge keeps defenders home');
+const badgeHelperBefore = helperContainRun.defenders.find((defender) => defender.id === helperContainRun.helpDefenderId);
+const badgeHandlerBefore = helperContainRun.players.find((player) => player.id === helperContainRun.ballHandlerId);
+const badgeHelperDistanceBefore = pointDistanceFeet(badgeHelperBefore, helpSpot(badgeHandlerBefore));
+const helperStepStart = helperContainRun.defenders.map((defender) => ({ ...defender }));
+advance(helperContainRun, SIMULATION_STEP_MS);
+helperContainRun.defenders.forEach((defender, index) => {
+  assert.ok(pointDistanceFeet(helperStepStart[index], defender) <= DEFENDER_MAX_SPEED_FT_PER_SECOND * SIMULATION_STEP_MS / 1000 + 0.002, 'badged defenders remain within the normal movement speed limit');
+});
+advance(helperContainRun, 350);
+const badgeHelperDuring = helperContainRun.defenders.find((defender) => defender.id === helperContainRun.helpDefenderId);
+const badgeHandlerDuring = helperContainRun.players.find((player) => player.id === helperContainRun.ballHandlerId);
+assert.ok(pointDistanceFeet(badgeHelperDuring, helpSpot(badgeHandlerDuring)) < badgeHelperDistanceBefore, 'Helper pressures the drive lane');
+
+const shooterProtectionDraft = makeDraft({
+  players: [[50, 75], [25, 61], [75, 61]],
+  ball: [50, 75],
+  arrows: [{ id: 'drive-past-helper', kind: 'movement', start: { x: 50, y: 75 }, end: { x: 50, y: 55 }, sequence: 1, timing: 1.2 }],
+  defenders: [[50, 72], [42, 65], [51, 65]],
+});
+shooterProtectionDraft.players[1].ratings = { threePoint: 1, midrange: 3, finishing: 3 };
+shooterProtectionDraft.players[2].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
+shooterProtectionDraft.defenders[2].badges = ['helper'];
+const shooterProtectionRun = createSimulationRun(shooterProtectionDraft, settings);
+shooterProtectionRun.assignments.set(1, 1);
+shooterProtectionRun.assignments.set(2, 2);
+shooterProtectionRun.assignments.set(3, 3);
+advance(shooterProtectionRun, 430);
+assert.equal(shooterProtectionRun.helpDefenderId, 2, 'Helper does not leave a dangerous perimeter shooter when a safe teammate can rotate');
+
+const basketSvg = NBA_COURT_GEOMETRY.basket.center;
+const finishingSpot = courtSvgToPoint({ x: basketSvg.x, y: basketSvg.y + 5 * COURT_SCALE });
+const goalSideSpot = courtSvgToPoint({ x: basketSvg.x, y: basketSvg.y + 3.5 * COURT_SCALE });
+const paintContestQuality = (badge, defenderPoint = goalSideSpot) => {
+  const draft = makeDraft({
+    players: [[finishingSpot.x, finishingSpot.y]],
+    ball: [finishingSpot.x, finishingSpot.y],
+    defenders: [[defenderPoint.x, defenderPoint.y]],
+  });
+  draft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 5 };
+  if (badge) draft.defenders[0].badges = [badge];
+  const run = createSimulationRun(draft, { ...settings, defenseStrategy: 'off' });
+  run.nextEarlyReadMs = Number.POSITIVE_INFINITY;
+  advance(run, run.durationMs);
+  return run.frame.shotQuality;
+};
+const unbadgedPaintQuality = paintContestQuality(null);
+assert.ok(paintContestQuality('paint-protector') < unbadgedPaintQuality, 'Paint protector lowers finishing quality when goal-side and close enough to contest');
+assert.equal(paintContestQuality('paint-protector', { x: 95, y: 90 }), paintContestQuality(null, { x: 95, y: 90 }), 'Paint protector adds no contest when out of position');
+
 console.log('Playbook simulation tests passed: timeline order, live possession, adaptive reads, ratings and badges, spacing, bounded/stable defense, help and recovery, screen coverage, switching, paused edits, settings, draft isolation, and all 24 starters');
