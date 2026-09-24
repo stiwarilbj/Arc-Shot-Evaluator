@@ -336,6 +336,16 @@ const helpThreatRun = createSimulationRun(helpThreatDraft, settings);
 advance(helpThreatRun, 430);
 assert.equal(helpThreatRun.helpDefenderId, [...helpThreatRun.assignments].find(([, playerId]) => playerId === 2)?.[0], 'defense chooses to help from the lower-rated perimeter shooter');
 
+const noSafeHelperDraft = structuredClone(driveDraft);
+noSafeHelperDraft.players[2].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
+noSafeHelperDraft.players[2].badges = ['deep-range'];
+noSafeHelperDraft.defenders = [{ id: 1, x: 50, y: 68 }, { id: 2, x: 50, y: 64, badges: ['helper'] }];
+const noSafeHelperRun = createSimulationRun(noSafeHelperDraft, settings);
+noSafeHelperRun.assignments.set(1, 1);
+noSafeHelperRun.assignments.set(2, 3);
+advance(noSafeHelperRun, 430);
+assert.equal(noSafeHelperRun.helpDefenderId, null, 'defense stays home when the only available helper would abandon an uncovered deep shooter');
+
 const makeFinishThreatRun = (rating) => {
   const draft = structuredClone(driveDraft);
   draft.players[0].ratings = { threePoint: 3, midrange: 3, finishing: rating };
@@ -687,6 +697,23 @@ const paintRun = runCoverage('protect-paint');
 assert.ok(pointDistanceFeet(helpCoverageRun.byAssignment(3), denyRun.byAssignment(3)) > 0.2, 'denial changes the weak-side defender position toward the passing lane');
 assert.ok(pointDistanceFeet(helpCoverageRun.byAssignment(3), paintRun.byAssignment(3)) > 0.2, 'paint protection sinks weak-side defenders toward the basket');
 
+const overlappingScreenDraft = makeDraft({
+  players: [[50, 76], [37, 64], [26, 59]],
+  ball: [50, 76],
+  defenders: [[50, 73], [37, 61], [26, 56]],
+  arrows: [
+    { id: 'priority-screen', kind: 'screen', screener_id: 2, start: { x: 37, y: 64 }, end: { x: 43, y: 69 }, sequence: 1, timing: 1.2 },
+    { id: 'conflicting-screen', kind: 'screen', screener_id: 3, start: { x: 26, y: 59 }, end: { x: 40, y: 69 }, sequence: 1, timing: 1.2 },
+  ],
+});
+const overlappingScreenRun = createSimulationRun(overlappingScreenDraft, { ...settings, defenseStrategy: 'fight-over' });
+advance(overlappingScreenRun, SIMULATION_STEP_MS);
+const priorityScreenLock = overlappingScreenRun.screenCoverageLocks.get('priority-screen');
+assert.ok(priorityScreenLock, 'the first drawn screen holds its defensive participants');
+assert.equal(overlappingScreenRun.screenCoverageLocks.get('conflicting-screen'), null, 'a conflicting simultaneous screen cannot steal defenders from the first drawn action');
+for (let frame = 0; frame < 24; frame += 1) advance(overlappingScreenRun, SIMULATION_STEP_MS);
+assert.deepEqual(overlappingScreenRun.screenCoverageLocks.get('priority-screen'), priorityScreenLock, 'screen coverage participants remain fixed throughout the action');
+
 const offBallSwitchRun = createSimulationRun(offBallDraft, { ...settings, defenseStrategy: 'switch' });
 const offBallBaseline = new Map(offBallSwitchRun.initialAssignments);
 advance(offBallSwitchRun, SIMULATION_STEP_MS);
@@ -784,6 +811,28 @@ zoneRuns.slice(1, 6).forEach((run) => {
   const separation = run.defenders.reduce((total, defender, index) => total + pointDistanceFeet(defender, zone2Positions[index]), 0);
   assert.ok(separation > 0.5, `${run.activeDefenseScheme} has a distinct formation from the 2–3 zone`);
 });
+
+const zoneSlideDraft = makeDraft({
+  players: [[20, 74], [28, 60], [41, 54], [59, 54], [72, 60]],
+  ball: [20, 74],
+  defenders: [[18, 67], [30, 57], [42, 50], [58, 50], [70, 57]],
+  arrows: [{ id: 'zone-cross-court-drive', kind: 'movement', start: { x: 20, y: 74 }, end: { x: 80, y: 67 }, sequence: 1, timing: 4 }],
+});
+const zoneSlideRun = createSimulationRun(zoneSlideDraft, { ...schemeSettings, defenseScheme: 'zone-2-3' });
+let lastZoneBallChangeAt = zoneSlideRun.zoneBallChangedAtMs;
+let lastZoneBallHandler = zoneSlideRun.zoneBallHandlerId;
+let zoneBallRoleChanges = 0;
+for (let frame = 0; frame < 150; frame += 1) {
+  advance(zoneSlideRun, SIMULATION_STEP_MS);
+  if (zoneSlideRun.zoneBallChangedAtMs === lastZoneBallChangeAt) continue;
+  if (zoneSlideRun.zoneBallHandlerId === lastZoneBallHandler) {
+    assert.ok(zoneSlideRun.zoneBallChangedAtMs - lastZoneBallChangeAt >= 320, 'a zone slot cannot take over ball pressure before the current defender has time to react');
+    zoneBallRoleChanges += 1;
+  }
+  lastZoneBallChangeAt = zoneSlideRun.zoneBallChangedAtMs;
+  lastZoneBallHandler = zoneSlideRun.zoneBallHandlerId;
+}
+assert.ok(zoneBallRoleChanges > 0, 'a zone responsibility changes when the ball crosses into another defender’s area');
 
 const ratedSchemeDraft = structuredClone(schemeDraft);
 for (const player of ratedSchemeDraft.players) player.ratings = { threePoint: 3, midrange: 3, finishing: 3 };
