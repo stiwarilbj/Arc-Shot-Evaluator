@@ -46,6 +46,8 @@ type BoundAction = {
   adaptiveReadLabel?: string;
   partnerId?: number | null;
   partnerStart?: CourtPoint | null;
+  transferWaitMs?: number;
+  transferFailed?: boolean;
 };
 
 type Velocity = { x: number; y: number };
@@ -73,12 +75,13 @@ export type SimulationRun = {
   readonly actionStartOverrides: Map<string, PositionOverride>;
   readonly transferStarts: Map<string, CourtPoint>;
   readonly offBallAnchors: Map<number, CourtPoint>;
+  readonly targetFilters: Map<string, CourtPoint>;
   readonly velocities: Map<string, Velocity>;
   readonly recipientStartOverrides: Map<string, PositionOverride>;
   readonly offBallTargetSkills: Map<number, OffBallTargetSkill | null>;
   readonly lastReceiveAtMs: Map<number, number>;
   readonly shotDurationMs: number;
-  readonly plannedActionDurationMs: number;
+  plannedActionDurationMs: number;
   nextEarlyReadMs: number;
   adaptiveActionsTaken: number;
   adaptiveContinuationStartedAtMs: number | null;
@@ -105,10 +108,12 @@ export type SimulationRun = {
   shotPathOverride: PositionOverride | null;
   shotShooterId: number | null;
   shotQualityAtRelease: number;
+  previousFrame: SimulationFrame;
   frame: SimulationFrame;
 };
 
 export const SIMULATION_STEP_MS = 1000 / 30;
+const SIMULATION_FIXED_STEP_MS = 1000 / 60;
 export const SIMULATION_SHOT_MS = 1500;
 export const DEFENDER_MAX_SPEED_FT_PER_SECOND = 15;
 const DEFENDER_ACCELERATION_FT_PER_SECOND = 28;
@@ -126,6 +131,11 @@ const OFF_BALL_ANTICIPATION_SECONDS = 0.14;
 const OFF_BALL_ANTICIPATION_MAX_FEET = 2;
 const BALL_MAX_SPEED_FT_PER_SECOND = 42;
 const BALL_ACCELERATION_FT_PER_SECOND = 90;
+const MAX_SIMULATION_DELTA_MS = 50;
+const TRANSFER_CATCH_RADIUS_FEET = 1.1;
+const MAX_TRANSFER_WAIT_MS = 1200;
+const LOOSE_BALL_CATCH_RADIUS_FEET = 1.15;
+const AI_TARGET_RESPONSE_PER_SECOND = 15;
 const PASS_PREP_MS = 440;
 const MIN_PLAY_DURATION_MS = 1200;
 const EARLY_READ_INTERVAL_MS = 250;
@@ -408,17 +418,17 @@ function defaultControl(start: CourtPoint, end: CourtPoint): CourtPoint {
   });
 }
 
-function routeControl(action: BoundAction, start: CourtPoint) {
-  if (!action.controlOffset) return defaultControl(start, action.arrow.end);
+function routeControl(action: BoundAction, start: CourtPoint, end = action.arrow.end) {
+  if (!action.controlOffset) return defaultControl(start, end);
   return clampCourt({
     x: start.x + action.controlOffset.x,
     y: start.y + action.controlOffset.y,
   });
 }
 
-function routePoint(action: BoundAction, start: CourtPoint, amount: number) {
-  if (action.arrow.path !== "curve") return lerpPoint(start, action.arrow.end, amount);
-  return quadraticPoint(start, action.arrow.end, routeControl(action, start), amount);
+function routePoint(action: BoundAction, start: CourtPoint, amount: number, end = action.arrow.end) {
+  if (action.arrow.path !== "curve") return lerpPoint(start, end, amount);
+  return quadraticPoint(start, end, routeControl(action, start, end), amount);
 }
 
 function routeLength(action: PlaybookArrow, start: CourtPoint) {
@@ -1232,7 +1242,9 @@ function copyFrame(frame: SimulationFrame): SimulationFrame {
 }
 
 function frameFor(run: SimulationRun): SimulationFrame {
-  const activeActions = run.actions.filter((action) => run.elapsedMs >= action.startTime && run.elapsedMs < action.startTime + action.durationMs);
+  const activeActions = run.actions.filter((action) => !action.transferFailed
+    && run.elapsedMs + 1e-6 >= action.startTime
+    && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
   const activeAction = activeActions.find((action) => !action.automatic) ?? activeActions[0];
   const actionLabels = activeActions.map(autoActionLabel);
   const shotElapsed = run.elapsedMs - run.actionDurationMs;
@@ -1402,6 +1414,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     actionStartOverrides: new Map(),
     transferStarts: new Map(),
     offBallAnchors: new Map(players.map((player) => [player.id, { x: player.x, y: player.y }])),
+    targetFilters: new Map(),
     velocities: new Map(),
     recipientStartOverrides: new Map(),
     offBallTargetSkills: new Map(players.map((player) => [player.id, offBallTargetSkill(player, hoop)])),
@@ -1423,6 +1436,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     shotPathOverride: null,
     shotShooterId: null,
     shotQualityAtRelease: 0,
+    previousFrame: createInitialFrame(),
     shotDurationMs: SIMULATION_SHOT_MS,
     plannedActionDurationMs: actionDurationMs,
     nextEarlyReadMs: EARLY_READ_START_MS,
@@ -1446,11 +1460,26 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
     }
   }
   run.frame = frameFor(run);
+  run.previousFrame = run.frame;
   return run;
 }
 
 export function getSimulationFrame(run: SimulationRun) {
-  return copyFrame(run.frame);
+  if (run.elapsedMs >= run.durationMs || !run.previousFrame) return copyFrame(run.frame);
+  const progress = clamp(run.accumulatorMs / SIMULATION_FIXED_STEP_MS, 0, 1);
+  const previousPlayers = new Map(run.previousFrame.players.map((player) => [player.id, player]));
+  const previousDefenders = new Map(run.previousFrame.defenders.map((defender) => [defender.id, defender]));
+  const current = copyFrame(run.frame);
+  current.players = current.players.map((player) => {
+    const previous = previousPlayers.get(player.id);
+    return previous ? { ...player, ...lerpPoint(previous, player, progress) } : player;
+  });
+  current.defenders = current.defenders.map((defender) => {
+    const previous = previousDefenders.get(defender.id);
+    return previous ? { ...defender, ...lerpPoint(previous, defender, progress) } : defender;
+  });
+  if (run.previousFrame.ball && current.ball) current.ball = lerpPoint(run.previousFrame.ball, current.ball, progress);
+  return current;
 }
 
 export function setSimulationRunSettings(run: SimulationRun, settings: SimulationSettings) {
@@ -1525,20 +1554,22 @@ function processActionStart(run: SimulationRun, action: BoundAction) {
 }
 
 function currentActionAt(run: SimulationRun, timeMs: number) {
-  return run.actions.find((action) => timeMs >= action.startTime && timeMs < action.startTime + action.durationMs) ?? null;
+  return run.actions.find((action) => timeMs >= action.startTime - 1e-6 && timeMs < action.startTime + action.durationMs + 1e-6) ?? null;
 }
 
 function currentTransferAt(run: SimulationRun, timeMs: number) {
   return run.actions.find((action) =>
     (action.arrow.kind === "pass" || action.arrow.kind === "handoff")
-    && timeMs >= action.startTime
-    && timeMs < action.startTime + action.durationMs,
+    && action.recipientId != null
+    && !action.transferFailed
+    && timeMs >= action.startTime - 1e-6
+    && timeMs < action.startTime + action.durationMs + 1e-6,
   ) ?? null;
 }
 
 function currentPrepAt(run: SimulationRun, timeMs: number) {
   return run.actions.find((action) => {
-    if (action.recipientId == null || (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff")) return false;
+    if (action.recipientId == null || action.transferFailed || (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff")) return false;
     const prepWindow = Math.min(PASS_PREP_MS, Math.max(180, action.durationMs * 0.42));
     return timeMs >= Math.max(0, action.startTime - prepWindow) && timeMs < action.startTime;
   }) ?? null;
@@ -1578,6 +1609,7 @@ function coverageDefenderIndex(run: SimulationRun, playerId: number, excluded = 
 function screenCoverageActionsAt(run: SimulationRun, timeMs: number) {
   return run.actions
     .filter((action) => {
+      if (action.transferFailed) return false;
       const kind = action.arrow.kind;
       if (kind === "handoff" && (isManScheme(run.activeDefenseScheme) || run.settings.defenseStrategy !== "switch")) return false;
       return (kind === "screen" || kind === "pick-roll" || kind === "pick-pop" || kind === "off-ball-screen" || kind === "pin-down" || kind === "handoff")
@@ -2228,6 +2260,21 @@ function integrateMarker(
   return { ...marker, ...moved.point };
 }
 
+function smoothAITarget(
+  run: SimulationRun,
+  kind: "player" | "defender",
+  marker: PlaybookMarker,
+  target: CourtPoint,
+  dt: number,
+) {
+  const key = velocityKey(kind, marker.id);
+  const previous = run.targetFilters.get(key) ?? { x: marker.x, y: marker.y };
+  const weight = 1 - Math.exp(-AI_TARGET_RESPONSE_PER_SECOND * Math.max(0, dt));
+  const smoothed = lerpPoint(previous, target, weight);
+  run.targetFilters.set(key, smoothed);
+  return smoothed;
+}
+
 function coastMarker(run: SimulationRun, kind: "player" | "defender", marker: PlaybookMarker, dt: number, deceleration: number) {
   const key = velocityKey(kind, marker.id);
   const velocity = run.velocities.get(key) ?? { x: 0, y: 0 };
@@ -2300,6 +2347,7 @@ function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
   const drive = driveThreat(run, hoop);
   run.players = run.players.map((player) => {
     let target: CourtPoint | null = null;
+    let authoredTarget = false;
     let maxSpeed = OFF_BALL_MAX_SPEED_FT_PER_SECOND;
     const movement = activeActions.find((action) => action.actorId === player.id
       && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff");
@@ -2310,15 +2358,18 @@ function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
     if (movement) {
       target = sampleMovementTarget(run, movement, timeMs);
       maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
+      authoredTarget = true;
     } else if (screen?.recipientId === player.id) {
       target = sampleCutterTarget(screen, timeMs);
       maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
+      authoredTarget = true;
     } else if (partner?.partnerId === player.id) {
       const start = partner.partnerStart ?? player;
       const finish = pointToward(partner.arrow.end, hoop, partner.arrow.kind === "pick-roll" ? 10 : 8);
       const progress = easeInOut(clamp((timeMs - partner.startTime) / partner.durationMs, 0, 1));
       target = lerpPoint(start, finish, progress);
       maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
+      authoredTarget = true;
     } else if (prep?.recipientId === player.id) {
       const prepWindow = Math.min(PASS_PREP_MS, Math.max(180, prep.durationMs * 0.42));
       const override = run.recipientStartOverrides.get(prep.arrow.id);
@@ -2327,13 +2378,20 @@ function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
       const progress = clamp((timeMs - prepStart) / (prep.startTime + prep.durationMs - prepStart), 0, 1);
       target = lerpPoint(start, prep.arrow.end, easeInOut(progress));
       maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
+      authoredTarget = true;
     } else if (transfer?.recipientId === player.id) {
       target = transfer.arrow.end;
       maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
+      authoredTarget = true;
     } else if (run.ballHandlerId !== player.id) {
       target = offBallTarget(run, player, ball, timeMs, drive, hoop);
     }
-    if (!target) return coastMarker(run, "player", player, dt, OFFENSE_ACCELERATION_FT_PER_SECOND);
+    if (!target) {
+      run.targetFilters.delete(velocityKey("player", player.id));
+      return coastMarker(run, "player", player, dt, OFFENSE_ACCELERATION_FT_PER_SECOND);
+    }
+    if (authoredTarget) run.targetFilters.delete(velocityKey("player", player.id));
+    else target = smoothAITarget(run, "player", player, target, dt);
     const moved = integrateMarker(run, "player", player, target, dt, maxSpeed, OFFENSE_ACCELERATION_FT_PER_SECOND);
     const completedMovement = movement && timeMs >= movement.startTime + movement.durationMs;
     const completedScreen = screen && timeMs >= screen.startTime + screen.durationMs;
@@ -2350,7 +2408,8 @@ function updateBall(run: SimulationRun, timeMs: number, dt: number) {
     const startTime = startOverride?.atMs ?? transfer.startTime;
     const progress = clamp((timeMs - startTime) / (transfer.startTime + transfer.durationMs - startTime), 0, 1);
     const pathAction = { ...transfer, plannedStart: start, controlOffset: transfer.controlOffset };
-    const target = routePoint(pathAction, start, easeInOut(progress));
+    const receiver = markerForId(run.players, transfer.recipientId);
+    const target = routePoint(pathAction, start, easeInOut(progress), receiver ?? transfer.arrow.end);
     integrateBall(run, target, dt);
     return;
   }
@@ -2358,6 +2417,19 @@ function updateBall(run: SimulationRun, timeMs: number, dt: number) {
   if (handler) {
     run.ball = { x: handler.x, y: handler.y };
     run.ballVelocity = { x: 0, y: 0 };
+    return;
+  }
+  const looseBall = run.ball;
+  if (!looseBall || !run.players.length) return;
+  const recovery = run.players
+    .map((player) => ({ player, gap: pointDistanceFeet(looseBall, player) }))
+    .sort((a, b) => a.gap - b.gap || a.player.id - b.player.id)[0];
+  if (recovery.gap <= LOOSE_BALL_CATCH_RADIUS_FEET) {
+    run.ballHandlerId = recovery.player.id;
+    run.offBallAnchors.set(recovery.player.id, { x: recovery.player.x, y: recovery.player.y });
+    run.ballVelocity = { x: 0, y: 0 };
+  } else {
+    integrateBall(run, recovery.player, dt);
   }
 }
 
@@ -2367,6 +2439,7 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
   run.defenders = run.defenders.map((defender, index) => {
     const target = targets[index] ?? defender;
     if (run.settings.defenseStrategy === "off") {
+      run.targetFilters.delete(velocityKey("defender", defender.id));
       const velocity = run.velocities.get(velocityKey("defender", defender.id)) ?? { x: 0, y: 0 };
       run.velocities.set(velocityKey("defender", defender.id), { x: velocity.x * 0.4, y: velocity.y * 0.4 });
       return defender;
@@ -2393,11 +2466,12 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
     const responseAcceleration = DEFENDER_ACCELERATION_FT_PER_SECOND + (shootingThreat - 3) * 3
       + (defenderHasBadge(defender, "lockdown") ? 3 : 0)
       + (run.helpDefenderId === defender.id && defenderHasBadge(defender, "helper") ? 2 : 0);
+    const movementTarget = smoothAITarget(run, "defender", defender, target, dt);
     return integrateMarker(
       run,
       "defender",
       defender,
-      target,
+      movementTarget,
       dt,
       responseSpeed,
       responseAcceleration,
@@ -2600,19 +2674,49 @@ function nextTimeBoundary(run: SimulationRun, stepEnd: number) {
   );
 }
 
-function transferBallToRecipient(run: SimulationRun, previousTime: number, nextTime: number) {
+function transferBallToRecipient(run: SimulationRun, previousTime: number, nextTime: number, stepMs: number) {
   const transfer = run.actions.find((action) =>
     (action.arrow.kind === "pass" || action.arrow.kind === "handoff")
     && action.recipientId != null
+    && !action.transferFailed
     && previousTime < action.startTime + action.durationMs
-    && nextTime >= action.startTime + action.durationMs,
+    && nextTime >= action.startTime + action.durationMs - 1e-6,
   );
-  if (transfer?.recipientId != null) {
-    run.ballHandlerId = transfer.recipientId;
-    run.lastReceiveAtMs.set(transfer.recipientId, nextTime);
-    const receiver = markerForId(run.players, transfer.recipientId);
-    if (receiver) run.offBallAnchors.set(receiver.id, { x: receiver.x, y: receiver.y });
+  if (!transfer?.recipientId) return;
+  const receiver = markerForId(run.players, transfer.recipientId);
+  if (!receiver) {
+    transfer.transferFailed = true;
+    run.ballHandlerId = null;
+    return;
   }
+  if (run.ball && pointDistanceFeet(run.ball, receiver) <= TRANSFER_CATCH_RADIUS_FEET) {
+    run.ballHandlerId = receiver.id;
+    // Finish the catch at the receiver's live position. The bounded catch
+    // radius prevents a long snap while keeping the ball attached next tick.
+    run.ball = { x: receiver.x, y: receiver.y };
+    run.ballVelocity = { x: 0, y: 0 };
+    run.lastReceiveAtMs.set(receiver.id, nextTime);
+    run.offBallAnchors.set(receiver.id, { x: receiver.x, y: receiver.y });
+    return;
+  }
+
+  const previousEnd = transfer.startTime + transfer.durationMs;
+  const waitMs = (transfer.transferWaitMs ?? 0) + stepMs;
+  if (waitMs > MAX_TRANSFER_WAIT_MS) {
+    transfer.transferFailed = true;
+    run.ballHandlerId = null;
+    return;
+  }
+  transfer.transferWaitMs = waitMs;
+  transfer.durationMs += stepMs;
+  run.actions.forEach((action) => {
+    if (action !== transfer && action.sequence > transfer.sequence && action.startTime >= previousEnd - 1e-6) {
+      action.startTime += stepMs;
+    }
+  });
+  run.actionDurationMs += stepMs;
+  if (previousEnd <= run.plannedActionDurationMs + 1e-6) run.plannedActionDurationMs += stepMs;
+  run.durationMs += stepMs;
 }
 
 function finalizeCompletedMovement(run: SimulationRun, previousTime: number, nextTime: number) {
@@ -2637,8 +2741,11 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   const sampleTime = Math.max(startTime, endTime - 0.001);
   if (startTime < run.actionDurationMs) {
     updateOffense(run, sampleTime, dt, hoop);
+    // Extend an uncaught transfer before sampling the ball path at the action
+    // boundary. Otherwise currentTransferAt sees the old end time and briefly
+    // snaps the ball back to its former handler while the pass waits to be caught.
+    transferBallToRecipient(run, startTime, endTime, endTime - startTime);
     updateBall(run, sampleTime, dt);
-    transferBallToRecipient(run, startTime, endTime);
     finalizeCompletedMovement(run, startTime, endTime);
   } else {
     updateShot(run, sampleTime, dt, hoop);
@@ -2662,17 +2769,25 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
 export function advanceSimulationRun(run: SimulationRun, deltaMs: number, settings: SimulationSettings = run.settings, hoop = HOOP_POINT) {
   if (run.elapsedMs >= run.durationMs || deltaMs <= 0) return getSimulationFrame(run);
   setSimulationRunSettings(run, settings);
-  run.accumulatorMs += deltaMs;
-  while (run.accumulatorMs > 1e-6 && run.elapsedMs < run.durationMs) {
-    const stepEnd = Math.min(run.elapsedMs + Math.min(SIMULATION_STEP_MS, run.accumulatorMs), run.durationMs);
-    const boundary = nextTimeBoundary(run, stepEnd);
-    const stepMs = Math.max(0, boundary - run.elapsedMs);
-    if (stepMs <= 1e-6) {
+  run.accumulatorMs += Math.min(deltaMs, MAX_SIMULATION_DELTA_MS);
+  while (run.elapsedMs < run.durationMs) {
+    const stepMs = Math.min(SIMULATION_FIXED_STEP_MS, run.durationMs - run.elapsedMs);
+    if (run.accumulatorMs + 1e-6 < stepMs) break;
+    const tickStart = run.elapsedMs;
+    const tickEnd = Math.min(run.durationMs, tickStart + stepMs);
+    run.previousFrame = copyFrame(run.frame);
+    while (run.elapsedMs + 1e-6 < tickEnd) {
+      const boundary = nextTimeBoundary(run, tickEnd);
+      const sliceMs = Math.max(0, boundary - run.elapsedMs);
+      if (sliceMs <= 1e-6) break;
+      advanceStep(run, sliceMs, hoop);
+    }
+    const advancedMs = run.elapsedMs - tickStart;
+    if (advancedMs <= 1e-6) {
       run.accumulatorMs = 0;
       break;
     }
-    advanceStep(run, stepMs, hoop);
-    run.accumulatorMs = Math.max(0, run.accumulatorMs - stepMs);
+    run.accumulatorMs = Math.max(0, run.accumulatorMs - advancedMs);
   }
   if (run.durationMs - run.elapsedMs <= 1e-6) {
     run.elapsedMs = run.durationMs;
@@ -2693,6 +2808,7 @@ export function editPausedSimulationMarker(
     run.players = run.players.map((player) => player.id === id ? { ...player, ...nextPoint } : player);
     const playerId = Number(id);
     run.offBallAnchors.set(playerId, { ...nextPoint });
+    run.targetFilters.delete(velocityKey("player", playerId));
     run.velocities.set(velocityKey("player", playerId), { x: 0, y: 0 });
     const action = currentActionAt(run, run.elapsedMs);
     if (action?.actorId === playerId && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") {
@@ -2709,6 +2825,7 @@ export function editPausedSimulationMarker(
   } else if (type === "defender") {
     const defenderId = Number(id);
     run.defenders = run.defenders.map((defender) => defender.id === defenderId ? { ...defender, ...nextPoint } : defender);
+    run.targetFilters.delete(velocityKey("defender", defenderId));
     run.velocities.set(velocityKey("defender", defenderId), { x: 0, y: 0 });
   } else {
     run.ball = { ...nextPoint };
@@ -2729,6 +2846,7 @@ export function editPausedSimulationMarker(
     run.source.ball = { ...nextPoint };
   }
   run.frame = frameFor(run);
+  run.previousFrame = run.frame;
   return getSimulationFrame(run);
 }
 
@@ -2746,6 +2864,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
     const previousDraftPosition = sourceBeforeEdit.players.find((candidate) => candidate.id === player.id);
     if (previousDraftPosition && (edited.x !== previousDraftPosition.x || edited.y !== previousDraftPosition.y)) {
       run.offBallAnchors.set(player.id, { x: edited.x, y: edited.y });
+      run.targetFilters.delete(velocityKey("player", player.id));
       run.velocities.set(velocityKey("player", player.id), { x: 0, y: 0 });
       const action = currentActionAt(run, run.elapsedMs);
       if (action?.actorId === player.id && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") {
@@ -2765,6 +2884,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
     if (!edited) return defender;
     const previousDraftPosition = sourceBeforeEdit.defenders.find((candidate) => candidate.id === defender.id);
     if (previousDraftPosition && (edited.x !== previousDraftPosition.x || edited.y !== previousDraftPosition.y)) {
+      run.targetFilters.delete(velocityKey("defender", defender.id));
       run.velocities.set(velocityKey("defender", defender.id), { x: 0, y: 0 });
       return { ...edited };
     }
@@ -2782,6 +2902,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
   }
   run.source = structuredClone(draft);
   run.frame = frameFor(run);
+  run.previousFrame = run.frame;
   return true;
 }
 

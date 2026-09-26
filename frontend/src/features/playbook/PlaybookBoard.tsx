@@ -391,13 +391,21 @@ export function PlaybookBoard() {
   useEffect(() => {
     if (!simulationPlaying) return;
     let previousTime = performance.now();
+    const resetClock = () => {
+      previousTime = performance.now();
+    };
     const tick = (now: number) => {
       const run = simulationRunRef.current;
       if (!run) {
         setSimulationPlaying(false);
         return;
       }
-      const delta = Math.max(0, Math.min(120, now - previousTime));
+      if (document.hidden) {
+        previousTime = now;
+        simulationFrameRef.current = window.requestAnimationFrame(tick);
+        return;
+      }
+      const delta = Math.max(0, Math.min(50, now - previousTime));
       previousTime = now;
       const before = run.elapsedMs;
       const frame = advanceSimulationRun(run, delta, simulationSettingsRef.current, HOOP_POINT);
@@ -412,8 +420,10 @@ export function PlaybookBoard() {
       }
       simulationFrameRef.current = window.requestAnimationFrame(tick);
     };
+    document.addEventListener("visibilitychange", resetClock);
     simulationFrameRef.current = window.requestAnimationFrame(tick);
     return () => {
+      document.removeEventListener("visibilitychange", resetClock);
       if (simulationFrameRef.current != null) window.cancelAnimationFrame(simulationFrameRef.current);
       simulationFrameRef.current = null;
     };

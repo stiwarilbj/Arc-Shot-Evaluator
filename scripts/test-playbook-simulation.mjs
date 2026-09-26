@@ -49,6 +49,16 @@ function advanceUntil(run, predicate, maxMilliseconds = 6000, runSettings = run.
   assert.ok(predicate(), `simulation reaches the expected state within ${maxMilliseconds}ms`);
 }
 
+function advanceAtRate(run, durationMs, framesPerSecond, runSettings = run.settings) {
+  const frameMs = 1000 / framesPerSecond;
+  let remaining = durationMs;
+  while (remaining > 1e-8) {
+    const delta = Math.min(frameMs, remaining);
+    advanceSimulationRun(run, delta, runSettings);
+    remaining -= delta;
+  }
+}
+
 function assertNear(actual, expected, tolerance = 1e-5, message = 'values should be near') {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: expected ${actual} to be within ${tolerance} of ${expected}`);
 }
@@ -72,6 +82,37 @@ function goalSideAlignment(defender, player) {
   const denominator = Math.hypot(towardHoop.x, towardHoop.y) * Math.hypot(towardDefender.x, towardDefender.y);
   return denominator > 0 ? (towardHoop.x * towardDefender.x + towardHoop.y * towardDefender.y) / denominator : 0;
 }
+
+// Playback motion uses the same fixed simulation clock at common render rates.
+const cadenceDraft = makeDraft({
+  players: [[50, 76], [30, 60]],
+  ball: [50, 76],
+  defenders: [[50, 69], [30, 54]],
+  arrows: [{ id: 'cadence-cut', kind: 'movement', start: { x: 30, y: 60 }, end: { x: 27, y: 45 }, sequence: 1, timing: 2 }],
+});
+const cadenceRuns = [30, 60, 120].map((fps) => {
+  const run = createSimulationRun(cadenceDraft, settings);
+  advanceAtRate(run, 800, fps);
+  return run;
+});
+const cadencePositions = cadenceRuns.map((run) => ({
+  player: run.frame.players.find((player) => player.id === 2),
+  defender: run.frame.defenders.find((defender) => defender.id === 2),
+}));
+for (const position of cadencePositions.slice(1)) {
+  assert.ok(pointDistanceFeet(position.player, cadencePositions[0].player) < 0.12, 'offensive route progress stays consistent at 30, 60, and 120 fps');
+  assert.ok(pointDistanceFeet(position.defender, cadencePositions[0].defender) < 0.12, 'defensive movement stays consistent at 30, 60, and 120 fps');
+}
+const interruptedRun = createSimulationRun(cadenceDraft, settings);
+advanceAtRate(interruptedRun, 300, 60);
+const pausedSnapshot = getSimulationFrame(interruptedRun);
+advanceSimulationRun(interruptedRun, 0, settings);
+assert.deepEqual(getSimulationFrame(interruptedRun), pausedSnapshot, 'a paused simulation does not move while its clock is stopped');
+advanceAtRate(interruptedRun, 500, 60);
+assert.ok(pointDistanceFeet(interruptedRun.frame.players.find((player) => player.id === 2), cadenceRuns[1].frame.players.find((player) => player.id === 2)) < 0.12, 'resuming continues from the same smooth route state');
+const delayedRun = createSimulationRun(cadenceDraft, settings);
+advanceSimulationRun(delayedRun, 5000, settings);
+assert.ok(delayedRun.elapsedMs <= 50 + 1e-6, 'a delayed animation frame cannot advance the simulation by a large jump');
 
 // A simulation run must not add temporary defenders to or otherwise mutate the draft.
 const noDefenderDraft = makeDraft({ players: [[50, 76], [27, 60], [73, 60]], ball: [50, 76] });
@@ -139,6 +180,15 @@ orderedRun.players.forEach((player, index) => {
 });
 assert.equal(orderedRun.ballHandlerId, 2, 'possession transfers to the pass recipient at the pass boundary');
 assert.deepEqual(new Map(orderedRun.assignments), orderedAssignments, 'help defense does not recalculate defensive assignments');
+
+const impossibleTransferRun = createSimulationRun(orderedDraft, settings);
+const impossiblePass = impossibleTransferRun.actions.find((action) => action.arrow.kind === 'pass');
+impossiblePass.recipientId = 99;
+impossibleTransferRun.nextEarlyReadMs = Number.POSITIVE_INFINITY;
+advanceUntil(impossibleTransferRun, () => impossiblePass.transferFailed === true);
+assert.equal(impossibleTransferRun.ballHandlerId, null, 'an impossible pass does not grant possession to a missing player');
+assert.ok(Number.isFinite(impossibleTransferRun.ball.x) && Number.isFinite(impossibleTransferRun.ball.y), 'a failed pass leaves a recoverable ball at a finite live position');
+assert.deepEqual(orderedDraft.arrows, orderedRun.source.arrows, 'simulation transfer failures do not alter the saved diagram');
 
 // Active defenders anticipate drives, slide with lateral movement, and stay goal-side of off-ball cutters.
 const containmentDraft = makeDraft({
@@ -1256,4 +1306,4 @@ const unbadgedPaintQuality = paintContestQuality(null);
 assert.ok(paintContestQuality('paint-protector') < unbadgedPaintQuality, 'Paint protector lowers finishing quality when goal-side and close enough to contest');
 assert.equal(paintContestQuality('paint-protector', { x: 95, y: 90 }), paintContestQuality(null, { x: 95, y: 90 }), 'Paint protector adds no contest when out of position');
 
-console.log('Playbook simulation tests passed: timeline order, live possession, adaptive reads, ratings and badges, spacing, bounded/stable defense, help and recovery, screen coverage, switching, paused edits, settings, draft isolation, and all 24 starters');
+console.log('Playbook simulation tests passed: fixed-rate motion, pause/resume, delayed-frame bounds, timeline order, live possession, adaptive reads, ratings and badges, spacing, bounded/stable defense, help and recovery, screen coverage, switching, paused edits, settings, draft isolation, and all 24 starters');

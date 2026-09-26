@@ -93,6 +93,7 @@ export function UsageGuide() {
             <h3>Simulate and save</h3>
             <ul>
               <li>Choose Play to run the sequence; ARC moves defenders, adjusts help and closeouts, then reads the live defense for an open cut, roll, post, drive, or perimeter pass before the shot</li>
+              <li>Playback advances on a steady clock and blends positions between updates; passes and handoffs travel from the live ball position into a moving receiver's hands, and resuming after a pause or hidden tab does not jump ahead</li>
               <li>Use Auto actions in the left rail to choose which screens, handoffs, pick and rolls, and off-ball screens the simulator may add when a matchup allows</li>
               <li>Open Settings to tune offensive cuts or spacing, defensive reads, and movement intensity; pause to edit before resuming</li>
               <li>Use Player skills to set three-point, midrange, and finishing ratings from 1 to 5, then assign badges such as Playmaker, Deep range, Cutter, and Roll threat; the offense and defense respond to those strengths</li>
