@@ -105,7 +105,7 @@ def run_analysis_job(
     try:
         if cancel_event.is_set():
             raise AnalysisCancelled
-        depth_label = "Deep" if processing_mode == "deep" else "Normal"
+        depth_label = "Fast" if processing_mode == "fast" else "Deep" if processing_mode == "deep" else "Normal"
         update_analysis_job(job_id, status="processing", stage=f"{depth_label} analysis · loading local vision models")
 
         def progress(stage: str, done: int, total: int) -> None:
@@ -211,7 +211,7 @@ def queue_analysis_job(
     court_calibration: dict | None = None,
 ) -> str:
     """Create a queued analysis job for an uploaded file or bundled example."""
-    processing_mode = processing_mode if processing_mode in {"normal", "deep"} else "normal"
+    processing_mode = processing_mode if processing_mode in {"fast", "normal", "deep"} else "normal"
     shot_mode = shot_mode if shot_mode in {"free_throw", "jump_shot"} else "free_throw"
     job_id = uuid.uuid4().hex[:12]
     session_dir = ANALYSIS_SESSIONS_DIR / job_id
@@ -307,8 +307,8 @@ async def create_uploaded_video_job(
     mode: str = "normal",
     shot_mode: str = "free_throw",
 ) -> dict:
-    if mode not in {"normal", "deep"}:
-        raise HTTPException(400, "Analysis mode must be normal or deep")
+    if mode not in {"fast", "normal", "deep"}:
+        raise HTTPException(400, "Analysis mode must be fast, normal, or deep")
     if shot_mode not in {"free_throw", "jump_shot"}:
         raise HTTPException(400, "Shot mode must be free_throw or jump_shot")
     display_name = Path(file.filename or "clip.mp4").name
@@ -356,8 +356,8 @@ def create_example_video_job(
     mode: str = "normal",
     shot_mode: str = "free_throw",
 ) -> dict:
-    if mode not in {"normal", "deep"}:
-        raise HTTPException(400, "Analysis mode must be normal or deep")
+    if mode not in {"fast", "normal", "deep"}:
+        raise HTTPException(400, "Analysis mode must be fast, normal, or deep")
     if shot_mode not in {"free_throw", "jump_shot"}:
         raise HTTPException(400, "Shot mode must be free_throw or jump_shot")
     if not example_id.startswith("example-"):
@@ -662,8 +662,8 @@ def reanalyze_saved_session(session_id: str, mode: str = "normal", shot_mode: st
     """Queue a fresh analysis after a reviewed context correction."""
     if not session_id.replace("-", "").isalnum():
         raise HTTPException(400, "Invalid session id")
-    if mode not in {"normal", "deep"}:
-        raise HTTPException(400, "Analysis mode must be normal or deep")
+    if mode not in {"fast", "normal", "deep"}:
+        raise HTTPException(400, "Analysis mode must be fast, normal, or deep")
     session_dir = ANALYSIS_SESSIONS_DIR / session_id
     analysis_path = session_dir / "analysis.json"
     if not analysis_path.is_file():

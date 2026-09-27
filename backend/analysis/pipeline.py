@@ -131,6 +131,7 @@ def collect_evidence(
     capture = cv2.VideoCapture(str(path))
     evidence: list[FrameDetections] = []
     deep = processing_mode == "deep"
+    fast = processing_mode == "fast"
     batch_size = 6 if deep else 12
     completed = 0
     previous_gray: np.ndarray | None = None
@@ -144,10 +145,10 @@ def collect_evidence(
         # between safe concurrent jobs and two workers competing for a second
         # copy of the Metal graph.
         with _MODEL_INFERENCE_LOCK:
-            detected = suite.infer_detector(frames, deep=deep)
-            pose_stride = 1 if deep else 2
+            detected = suite.infer_detector(frames, deep=deep, fast=fast)
+            pose_stride = 4 if fast else 1 if deep else 2
             pose_frames = frames[::pose_stride]
-            pose_results = suite.infer_pose(pose_frames, deep=deep)
+            pose_results = suite.infer_pose(pose_frames, deep=deep, fast=fast)
         pose_by_offset = {offset: poses for offset, poses in zip(range(0, len(frames), pose_stride), pose_results, strict=True)}
         for offset, (frame, item) in enumerate(zip(frames, detected, strict=True)):
             item.balls = merge_ball_candidates(item.balls, color_ball_candidates(frame))
@@ -2322,7 +2323,7 @@ def analyze_video(
             "player_tracker": "temporal_pose_tracks_v1",
             "jump_prediction": JUMP_MODEL_VERSION if shot_mode == "jump_shot" else "not_applicable",
         },
-        "processing_mode": processing_mode if processing_mode in {"normal", "deep"} else "normal",
+        "processing_mode": processing_mode if processing_mode in {"fast", "normal", "deep"} else "normal",
         "shot_mode": shot_mode,
         "prediction": {
             "status": PREDICTION_STATUS,

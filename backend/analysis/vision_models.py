@@ -29,12 +29,12 @@ class BasketballVisionModels:
         self.pose = YOLO(str(pose_path))
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-    def infer_detector(self, frames: list[np.ndarray], *, deep: bool = False) -> list[FrameDetections]:
+    def infer_detector(self, frames: list[np.ndarray], *, deep: bool = False, fast: bool = False) -> list[FrameDetections]:
         results = self.detector.predict(
             frames,
             conf=0.07,
             iou=0.45,
-            imgsz=1280 if deep else 960,
+            imgsz=1280 if deep else 704 if fast else 960,
             device=self.device,
             verbose=False,
         )
@@ -65,11 +65,11 @@ class BasketballVisionModels:
             evidence.append(item)
         return evidence
 
-    def infer_pose(self, frames: list[np.ndarray], *, deep: bool = False) -> list[list[PlayerPose]]:
+    def infer_pose(self, frames: list[np.ndarray], *, deep: bool = False, fast: bool = False) -> list[list[PlayerPose]]:
         results = self.pose.predict(
             frames,
             conf=0.18,
-            imgsz=960 if deep else 768,
+            imgsz=960 if deep else 576 if fast else 768,
             device=self.device,
             verbose=False,
         )

@@ -7,6 +7,7 @@ import type {
   ShotAnalysis,
   ShotMode,
 } from "../domain/analysisTypes";
+import { browserSamplingPlan } from "../domain/analysisModes";
 
 export type BrowserAnalysisProgress = (progress: number, stage: string) => void;
 
@@ -286,7 +287,7 @@ export async function analyzeVideoInBrowser(
   const fps = poseOverlay?.fps ?? 30;
   const poseFrameCount = poseOverlay?.frames.reduce((maximum, frame) => Math.max(maximum, frame.frame + 1), 0) ?? 0;
   const frameCount = Math.max(1, Math.round(duration * fps), poseFrameCount);
-  const sampleCount = clamp(Math.round(duration * (processingMode === "deep" ? 4 : 2.5)), 12, 72);
+  const { sampleCount, candidateLimit } = browserSamplingPlan(processingMode, duration);
   const canvas = document.createElement("canvas");
   canvas.width = Math.min(320, width);
   canvas.height = Math.max(1, Math.round(canvas.width * (height / width)));
@@ -324,7 +325,7 @@ export async function analyzeVideoInBrowser(
   const selected: typeof candidates = [];
   for (const candidate of candidates) {
     if (selected.every((item) => Math.abs(item.time - candidate.time) > 0.9)) selected.push(candidate);
-    if (selected.length === 5) break;
+    if (selected.length === candidateLimit) break;
   }
   if (!selected.length) {
     const fallback = motion[Math.floor(motion.length / 2)] ?? { time: duration / 2, score: 0, thumbnail: "" };

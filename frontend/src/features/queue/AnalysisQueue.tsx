@@ -11,6 +11,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useRef } from "react";
+import { processingModeLabel } from "../../domain/analysisModes";
 import type { AnalysisQueueItem } from "../../domain/analysisTypes";
 
 interface AnalysisQueueProps {
@@ -125,7 +126,7 @@ export function AnalysisQueue({
                 <span className="queue-index">{String(index + 1).padStart(2, "0")}</span>
                 <span className="queue-item-copy">
                   <strong title={item.filename}>{item.filename}</strong>
-                  <span><StatusIcon status={item.status} />{item.shotMode === "jump_shot" ? "Jump shot · " : "Free throw · "}{item.processingMode === "deep" ? "Deep · " : ""}{item.status === "processing" && item.progress ? `${item.progress}% · ` : ""}{item.error ?? item.stage ?? STATUS_LABEL[item.status]}</span>
+                  <span><StatusIcon status={item.status} />{item.shotMode === "jump_shot" ? "Jump shot · " : "Free throw · "}{processingModeLabel(item.processingMode)} · {item.status === "processing" && item.progress ? `${item.progress}% · ` : ""}{item.error ?? item.stage ?? STATUS_LABEL[item.status]}</span>
                   {item.status === "processing" ? (
                     <span className="queue-progress" aria-label={`${item.progress}% complete`}>
                       <i style={{ width: `${Math.max(3, Math.min(98, item.progress))}%` }} />

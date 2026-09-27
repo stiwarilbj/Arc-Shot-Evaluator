@@ -50,7 +50,30 @@ def test_example_job_rejects_unknown_clip() -> None:
 def test_analysis_mode_is_explicit() -> None:
     response = TestClient(app).post("/api/examples/example-1/jobs?mode=unsupported")
     assert response.status_code == 400
-    assert "normal or deep" in response.json()["detail"]
+    assert "fast, normal, or deep" in response.json()["detail"]
+
+
+def test_fast_analysis_mode_is_accepted_for_example_jobs(tmp_path, monkeypatch) -> None:
+    (tmp_path / "sample.mp4").touch()
+    monkeypatch.setattr(api_module, "EXAMPLE_FILES", ["sample.mp4"])
+    monkeypatch.setattr(api_module, "EXAMPLE_VIDEOS_DIR", tmp_path)
+    received = {}
+
+    def capture_job(source, filename, processing_mode, shot_mode):
+        received.update(source=source, filename=filename, processing_mode=processing_mode, shot_mode=shot_mode)
+        return "queued-fast-job"
+
+    monkeypatch.setattr(api_module, "queue_analysis_job", capture_job)
+    response = TestClient(app).post("/api/examples/example-1/jobs?mode=fast")
+
+    assert response.status_code == 200
+    assert response.json() == {"job_id": "queued-fast-job"}
+    assert received == {
+        "source": tmp_path / "sample.mp4",
+        "filename": "sample.mp4",
+        "processing_mode": "fast",
+        "shot_mode": "free_throw",
+    }
 
 
 def test_persisted_job_status_can_be_reopened_without_memory(tmp_path, monkeypatch) -> None:

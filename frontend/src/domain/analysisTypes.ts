@@ -2,7 +2,7 @@ export type ShotOutcome = "make" | "miss" | "review";
 export type VideoMode = "original" | "annotated" | "pose";
 export type WorkspaceTab = "overview" | "shot" | "tracking";
 export type ThemeMode = "light" | "dark";
-export type ProcessingMode = "normal" | "deep";
+export type ProcessingMode = "fast" | "normal" | "deep";
 export type ShotMode = "free_throw" | "jump_shot";
 
 export type PoseKeypoint = [x: number, y: number, confidence: number];

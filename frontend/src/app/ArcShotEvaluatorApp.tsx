@@ -10,6 +10,7 @@ import { VideoUpload } from "../features/upload/VideoUpload";
 import { PlaybookBoard } from "../features/playbook/PlaybookBoard";
 import { AppHeader, type AppWorkspace } from "../layout/AppHeader";
 import { IS_GITHUB_PAGES } from "../runtime";
+import { isProcessingMode } from "../domain/analysisModes";
 import {
   cancelAnalysisJob,
   fetchAnalysisJob,
@@ -103,9 +104,9 @@ export function ArcShotEvaluatorApp() {
   const [reviewFrame, setReviewFrame] = useState<number | null>(null);
   const [mode, setMode] = useState<VideoMode>("pose");
   const [tab, setTab] = useState<WorkspaceTab>("shot");
-  const [processingMode] = useState<ProcessingMode>("normal");
-  // Free throw is the safest default for a new launch; a selected mode is
-  // captured into each queue item so changing it never mutates an active job.
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>("normal");
+  // The selected analysis depth is captured into each queue item so changing
+  // it never mutates a queued or active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
   const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
   const [playFinderOpened, setPlayFinderOpened] = useState(false);
@@ -241,9 +242,7 @@ export function ArcShotEvaluatorApp() {
 
   async function processQueuedAnalysis(item: AnalysisQueueItem) {
     try {
-      // ARC's original review flow is the normal free-throw pass; keep every
-      // queued clip on that path so the restored examples behave consistently.
-      const analysisMode: ProcessingMode = "normal";
+      const analysisMode: ProcessingMode = isProcessingMode(item.processingMode) ? item.processingMode : "normal";
       const analysisShotMode: ShotMode = "free_throw";
       if (cancelledQueueItemsRef.current.has(item.id)) return;
       updateAnalysisQueueItem(item.id, { status: "processing", stage: IS_GITHUB_PAGES ? "Starting browser analysis" : "Starting analysis", progress: 3, error: null });
@@ -349,12 +348,12 @@ export function ArcShotEvaluatorApp() {
   function enqueueUploadedVideos(files: File[]) {
     if (!files.length) return;
     setError(null);
-    setQueue((current) => [...current, ...files.map((file) => createQueuedAnalysis(file.name, file, undefined, "normal", "free_throw"))]);
+    setQueue((current) => [...current, ...files.map((file) => createQueuedAnalysis(file.name, file, undefined, processingMode, shotMode))]);
   }
 
   function enqueueExampleVideo(example: ExampleVideo) {
     setError(null);
-    setQueue((current) => [...current, createQueuedAnalysis(example.filename, undefined, example.id, "normal", "free_throw")]);
+    setQueue((current) => [...current, createQueuedAnalysis(example.filename, undefined, example.id, processingMode, shotMode)]);
   }
 
   function requestQueueCancellation(item: AnalysisQueueItem) {
@@ -488,6 +487,7 @@ export function ArcShotEvaluatorApp() {
           error={error}
           onFiles={enqueueUploadedVideos}
           processingMode={processingMode}
+          onProcessingModeChange={setProcessingMode}
           shotMode={shotMode}
           onShotModeChange={setShotMode}
         />

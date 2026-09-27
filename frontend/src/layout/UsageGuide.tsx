@@ -54,7 +54,7 @@ export function UsageGuide() {
             <h3>Analyze a video</h3>
             <ol>
               <li>Choose a sample clip or select one or more basketball videos</li>
-              <li>Keep Analysis depth on Normal, then start the analysis</li>
+              <li>Choose Fast for a quick scan, Normal for a standard shot review, or Deep for a more detailed mechanics review, then start the analysis</li>
               <li>Follow progress in the queue; open a completed result when it is ready</li>
             </ol>
           </article>

@@ -1,11 +1,13 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { Film, ScanLine, Upload } from "lucide-react";
+import { PROCESSING_MODE_OPTIONS } from "../../domain/analysisModes";
 import type { ProcessingMode, ShotMode } from "../../domain/analysisTypes";
 
 interface VideoUploadProps {
   error: string | null;
   onFiles: (files: File[]) => void;
   processingMode: ProcessingMode;
+  onProcessingModeChange: (mode: ProcessingMode) => void;
   shotMode: ShotMode;
   onShotModeChange: (mode: ShotMode) => void;
 }
@@ -15,9 +17,27 @@ const VIDEO_TYPES = [
   ".mpeg", ".mpg", ".3gp", ".m2ts", ".mts", ".ts", ".ogv", ".asf",
 ];
 
-export function VideoUpload({ error, onFiles, processingMode, shotMode, onShotModeChange }: VideoUploadProps) {
+export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange }: VideoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const depthOptionsRef = useRef<Array<HTMLButtonElement | null>>([]);
   const [dragging, setDragging] = useState(false);
+
+  function handleDepthKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const nextIndex = event.key === "ArrowRight" || event.key === "ArrowDown"
+      ? (index + 1) % PROCESSING_MODE_OPTIONS.length
+      : event.key === "ArrowLeft" || event.key === "ArrowUp"
+        ? (index - 1 + PROCESSING_MODE_OPTIONS.length) % PROCESSING_MODE_OPTIONS.length
+        : event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? PROCESSING_MODE_OPTIONS.length - 1
+            : -1;
+    if (nextIndex < 0) return;
+    event.preventDefault();
+    const option = PROCESSING_MODE_OPTIONS[nextIndex];
+    onProcessingModeChange(option.value);
+    depthOptionsRef.current[nextIndex]?.focus();
+  }
 
   function accept(files: FileList | File[] | undefined) {
     if (files?.length) onFiles(Array.from(files));
@@ -32,8 +52,25 @@ export function VideoUpload({ error, onFiles, processingMode, shotMode, onShotMo
         </p>
       </section>
       <div className="analysis-depth-control">
-        <span>Analysis depth</span>
-        <output className="analysis-depth-value" aria-label="Analysis depth">{processingMode === "normal" ? "Normal · standard shot review" : processingMode}</output>
+        <span id="analysis-depth-label">Analysis depth</span>
+        <div className="analysis-depth-options" role="radiogroup" aria-labelledby="analysis-depth-label">
+          {PROCESSING_MODE_OPTIONS.map((option, index) => (
+            <button
+              key={option.value}
+              ref={(element) => { depthOptionsRef.current[index] = element; }}
+              className={processingMode === option.value ? "is-active" : ""}
+              type="button"
+              role="radio"
+              aria-checked={processingMode === option.value}
+              tabIndex={processingMode === option.value ? 0 : -1}
+              onClick={() => onProcessingModeChange(option.value)}
+              onKeyDown={(event) => handleDepthKeyDown(event, index)}
+            >
+              <strong>{option.label}</strong>
+              <small>{option.description}</small>
+            </button>
+          ))}
+        </div>
       </div>
       <fieldset className="shot-mode-control">
         <legend>Shot type</legend>
