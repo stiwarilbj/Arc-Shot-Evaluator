@@ -51,3 +51,18 @@ jobs:
           console.log('NBA asset available through ordinary browser', body.resultSets.Meta.videoUrls[0].lurl);
           await browser.close();
           JS
+
+  verify-other-standard-runners:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify production NBA ingestion sources
+        run: python scripts/nba/ingest.py --probe
