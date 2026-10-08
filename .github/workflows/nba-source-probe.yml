@@ -1,0 +1,36 @@
+name: NBA source verification
+on:
+  push:
+    branches: [codex/nba-clip-index]
+    paths: [.github/workflows/nba-source-probe.yml]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify official NBA feeds and reference video
+        shell: python
+        run: |
+          import json, urllib.request
+          sources = {
+            "schedule": "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json",
+            "game": "https://www.nba.com/game/bos-vs-nyk-0042400216/play-by-play",
+            "event": "https://stats.nba.com/stats/videoeventsasset?GameEventID=53&GameID=0042400216",
+            "games": "https://stats.nba.com/stats/leaguegamefinder?LeagueID=00&Season=2023-24&SeasonType=Regular+Season&PlayerOrTeam=T",
+          }
+          failures = []
+          for name, url in sources.items():
+            try:
+              request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.nba.com/", "Origin": "https://www.nba.com"})
+              with urllib.request.urlopen(request, timeout=25) as response:
+                body = response.read()
+              print(name, len(body), "bytes")
+              if name == "event":
+                data = json.loads(body)["resultSets"]
+                assert any(p["gi"] == "0042400216" and p["ei"] == 53 for p in data["playlist"])
+                assert data["Meta"]["videoUrls"][0]["lurl"].startswith("https://videos.nba.com/")
+            except Exception as error:
+              failures.append(name)
+              print(name, type(error).__name__, str(error))
+          if failures:
+            raise SystemExit("Unavailable official sources: " + ", ".join(failures))
