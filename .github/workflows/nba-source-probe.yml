@@ -34,3 +34,20 @@ jobs:
               print(name, type(error).__name__, str(error))
           if failures:
             raise SystemExit("Unavailable official sources: " + ", ".join(failures))
+      - name: Check ordinary NBA page playback in Chromium
+        if: always()
+        run: |
+          npm install playwright@1.56.1
+          npx playwright install --with-deps chromium
+          node --input-type=module <<'JS'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch();
+          const page = await browser.newPage();
+          const asset = page.waitForResponse(r => r.url().includes('/stats/videoeventsasset') && r.status() === 200, {timeout: 60000});
+          await page.goto('https://www.nba.com/stats/events/?GameID=0042400216&GameEventID=53&Season=2024-25&flag=1', {waitUntil: 'domcontentloaded', timeout: 60000});
+          const response = await asset;
+          const body = await response.json();
+          if (!body.resultSets.playlist.some(p => p.gi === '0042400216' && p.ei === 53)) throw new Error('Incorrect NBA event');
+          console.log('NBA asset available through ordinary browser', body.resultSets.Meta.videoUrls[0].lurl);
+          await browser.close();
+          JS
