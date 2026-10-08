@@ -74,6 +74,11 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 - <<'PY'
+          from pathlib import Path
+          size=sum(p.stat().st_size for p in Path('.').rglob('*') if p.is_file() and '.git' not in p.parts)
+          if size>800*1024*1024: raise SystemExit('Generated branch storage budget exceeded; checkpoint publication stopped')
+          PY
           previous=$(git rev-parse HEAD 2>/dev/null || true)
           git checkout --orphan generated-snapshot
           git add state

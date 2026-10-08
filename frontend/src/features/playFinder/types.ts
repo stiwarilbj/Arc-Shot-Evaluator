@@ -5,7 +5,7 @@ export interface PlayClip {
   team: string | null; opponent: string | null; participants: Participant[];
   eventType: string; subType: string; outcome: string; shotDistance: number | null;
   shotValue?: number; period: number; clock: number; scoreHome?: string; scoreAway?: string;
-  mp4?: string; thumbnail?: string; eventUrl: string; semanticText: string;
+  mp4?: string; detailPath?: string; thumbnail?: string; eventUrl: string; semanticText: string;
 }
 export type SearchField = 'player' | 'team' | 'opponent' | 'season' | 'date' | 'phase' | 'eventType' | 'outcome' | 'shotDistance' | 'shotValue' | 'period' | 'clock' | 'role' | 'description';
 export interface PlayCondition {

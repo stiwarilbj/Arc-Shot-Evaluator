@@ -152,7 +152,7 @@ def normalize_game(meta, game, actions, assets):
         semantic = re.sub(r"\d+(?:\.\d+)?'?", "", semantic)
         row["semanticText"] = " ".join(semantic.lower().split())
         rows.append(row)
-    return rows, unresolved
+    return list({row["id"]: row for row in rows}.values()), sorted(set(unresolved))
 
 
 def atomic_json(path, value):
@@ -205,11 +205,15 @@ def publish_index(state, destination, discovered):
         details = {}
         for clip in clips:
             details.setdefault(clip["gameId"], {})[clip["id"]] = clip
+        detail_paths = {}
         for game_id, records in details.items():
-            target = destination / "details" / (game_id + ".json.gz")
+            data = gzip.compress(json.dumps(records, separators=(",", ":")).encode(), mtime=0)
+            digest = hashlib.sha256(data).hexdigest()[:12]
+            detail_paths[game_id] = f"details/{game_id}-{digest}.json.gz"
+            target = destination / detail_paths[game_id]
             target.parent.mkdir(exist_ok=True)
-            target.write_bytes(gzip.compress(json.dumps(records, separators=(",", ":")).encode(), mtime=0))
-        summaries = [{k: v for k, v in clip.items() if k not in ("mp4", "assetDescription")} for clip in clips]
+            target.write_bytes(data)
+        summaries = [{**{k: v for k, v in clip.items() if k not in ("mp4", "assetDescription")}, "detailPath": detail_paths[clip["gameId"]]} for clip in clips]
         payload = json.dumps(summaries, separators=(",", ":")).encode()
         data = gzip.compress(payload, mtime=0)
         digest = hashlib.sha256(data).hexdigest()

@@ -44,14 +44,20 @@ export function parsePlayPrompt(prompt: string, players: ClipManifest['players']
  const quantities:Record<string,string>={one:'1',two:'2',three:'3',four:'4',five:'5',six:'6',ten:'10'};
  const clock=text.match(/\b(under|less than|fewer than|at most|more than|over)\s+(\d+(?:\.\d+)?|one|two|three|four|five|six|ten)\s+seconds?\b/);
  if(clock)add('clock',quantities[clock[2]]??clock[2],/under|less|fewer/.test(clock[1])?'lt':clock[1]==='at most'?'lte':'gt');
- const fractional=text.match(/\b(\d{1,2}):(\d{2}(?:\.\d+)?)\b/);if(fractional)add('clock',String(Number(fractional[1])*60+Number(fractional[2])));
+ const clockRange=text.match(/\bbetween\s+(\d{1,2}):(\d{2}(?:\.\d+)?)\s+and\s+(\d{1,2}):(\d{2}(?:\.\d+)?)\b/);
+ const secondsRange=text.match(/\bbetween\s+(\d+(?:\.\d+)?)\s+and\s+(\d+(?:\.\d+)?)\s+seconds?\b/);
+ const fractional=text.match(/\b(\d{1,2}):(\d{2}(?:\.\d+)?)\b/);
+ if(clockRange)add('clock',`${Number(clockRange[1])*60+Number(clockRange[2])}..${Number(clockRange[3])*60+Number(clockRange[4])}`,'range');
+ else if(secondsRange)add('clock',`${secondsRange[1]}..${secondsRange[2]}`,'range');
+ else if(fractional)add('clock',String(Number(fractional[1])*60+Number(fractional[2])));
+ const dateRange=text.match(/\bbetween\s+(20\d{2}-\d{2}-\d{2})\s+and\s+(20\d{2}-\d{2}-\d{2})\b/);if(dateRange)add('date',`${dateRange[1]}..${dateRange[2]}`,'range');
  const date=text.match(/\b(on|after|before)\s+(20\d{2}-\d{2}-\d{2})\b/);if(date)add('date',date[2],date[1]==='after'?'gt':date[1]==='before'?'lt':'equals');
  const distance=text.match(/\b(under|over|from|within)\s+(\d+(?:\.\d+)?)\s*(?:feet|foot|ft)\b/);if(distance)add('shotDistance',distance[2],distance[1]==='over'?'gt':distance[1]==='from'?'equals':'lte');
- for(const [regex,field,value] of [[/\bthrees?|three pointers?|3 pointers?\b/,'shotValue','3'],[/\bturnovers?\b/,'eventType','turnover'],[/\brebounds?\b/,'eventType','rebound'],[/\bfouls?\b/,'eventType','foul'],[/\bmiss(?:ed|es)?\b/,'outcome','missed'],[/\bmade|makes?\b/,'outcome','made'],[/\bstep back\b/,'description','step back'],[/\bdunks?\b/,'description','dunk'],[/\blayups?\b/,'description','layup']] as [RegExp,SearchField,string][]) {
+ for(const [regex,field,value] of [[/\bthrees?|three pointers?|3 pointers?\b/,'shotValue','3'],[/\bturnovers?\b/,'eventType','turnover'],[/\brebounds?\b/,'eventType','rebound'],[/\bfouls?\b/,'eventType','foul'],[/\bfree throws?\b/,'eventType','free throw'],[/\bmiss(?:ed|es)?\b/,'outcome','missed'],[/\bmade|makes?\b/,'outcome','made'],[/\bstep back\b/,'description','step back'],[/\bdunks?\b/,'description','dunk'],[/\blayups?\b/,'description','layup']] as [RegExp,SearchField,string][]) {
    const match=text.match(regex);if(match){const before=text.slice(Math.max(0,match.index!-20),match.index);add(field,value,/\b(without|excluding|except|not)\s*$/.test(before)?'excludes':field==='description'?'includes':'equals');}
  }
  for(const [term,role] of [['assists?','assister'],['blocks?','blocker'],['steals?','stealer']] as const)if(new RegExp(`\\b${term}\\b`).test(text))add('role',role);
- if(/\b(defender|guarded by|pick and roll|handoff|drop coverage|switching|backdoor)\b/.test(text)){const c=add('description','Tactical / defender evidence is unavailable');c.status='unsupported';}
+ if(/\b(defender|guarded by|pick and roll|pick and pop|handoff|drop coverage|switching|backdoor|off ball|isolation|drive and kick|transition|fast break|contested|uncontested)\b/.test(text)){const c=add('description','Tactical / defender evidence is unavailable');c.status='unsupported';}
  return conditions;
 }
 function compare(actual: unknown, condition: PlayCondition): boolean {

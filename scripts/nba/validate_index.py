@@ -28,7 +28,7 @@ def validate(root):
             if clip['id']!=identity or identity in ids:raise ValueError('Duplicate or wrong event ID')
             ids.add(identity)
             if clip['gameId'] not in detail_cache:
-                detail_cache[clip['gameId']]=json.loads(gzip.decompress((root/'details'/f"{clip['gameId']}.json.gz").read_bytes()))
+                detail_cache[clip['gameId']]=json.loads(gzip.decompress((root/clip['detailPath']).read_bytes()))
                 if len(detail_cache)>128:detail_cache.pop(next(iter(detail_cache)))
             detail=detail_cache[clip['gameId']][identity]
             url=urllib.parse.urlparse(detail['mp4'])
