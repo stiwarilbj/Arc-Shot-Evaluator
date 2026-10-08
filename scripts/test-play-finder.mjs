@@ -16,6 +16,8 @@ assert.equal(matchesClip(clip,parsePlayPrompt('without Brunson',players)),false)
 assert.equal(matchesClip(clip,[makeFilterCondition('shotDistance','15..20','range')]),true);
 assert.equal(matchesClip(clip,[makeFilterCondition('date','2025-05-17','gt')]),false);
 assert.equal(matchesClip(clip,[makeFilterCondition('role','blocker')]),false);
+assert.equal(matchesClip({...clip,shotDistance:null},[makeFilterCondition('shotDistance','17','excludes')]),false);
+assert.equal(makeFilterCondition('clock','not a time').status,'unsupported');
 assert.equal(matchesClip(clip,parsePlayPrompt('Brunson drop coverage',players)),false);
 const shard={season:'2024-25',from:'2025-05-01',to:'2025-05-31',players:[3],teams:['BOS','NYK']};assert.equal(relevantShard(shard,parsePlayPrompt('Brunson in 2022-23',players),players),false);
 const old={id:'collection-original',name:'Legacy',clipIds:['old-catalog-id'],notesByClip:{'old-catalog-id':'keep my note'},createdAt:'2025-01-01',updatedAt:'2025-01-01'};

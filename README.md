@@ -107,7 +107,7 @@ Results contain resolved individual NBA-hosted MP4s and their exact NBA Stats ev
 
 ### Index ingestion and publication
 
-`scripts/nba/ingest.py` discovers completed NBA games from official NBA game records, reads official game rosters and play-by-play, joins batched `videodetailsasset` playlists by recorded game/event IDs, and resolves remaining advertised events with `videoeventsasset`. `actionNumber` is the NBA Stats event ID; array positions and `actionId` are never substituted. Only response-supplied NBA MP4s with matching game/event paths enter the index.
+`scripts/nba/ingest.py` discovers completed NBA games from official seasonal `scheduleleaguev2` schedules, reads official game rosters and play-by-play, joins batched `videodetailsasset` playlists by recorded game/event IDs, and resolves remaining advertised events with `videoeventsasset`. `actionNumber` is the NBA Stats event ID; array positions and `actionId` are never substituted. Only response-supplied NBA MP4s with matching game/event paths enter the index.
 
 The deployment workflow verifies the official sources on `ubuntu-latest` **before** backfill. It checkpoints games on the generated `nba-clip-data` branch, publishes version-2 manifests and compressed monthly shards there, embeds deduplicated descriptions, and deploys only after validation. Manifest coverage reports actual completed games, clips, unresolved video events, and the last successful update. Partial backfills are labeled partial. Requested coverage is 2023–24 onward, regular season, play-in and playoffs; full coverage cannot be claimed until every completed season has been indexed.
 

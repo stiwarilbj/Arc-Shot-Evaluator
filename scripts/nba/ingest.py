@@ -76,28 +76,36 @@ def game_page(game_id):
     return page["game"], page["playByPlay"]["actions"]
 
 
-def batch_assets(game_id, season, phase, category):
+def batch_assets(game_id, season, phase, category, team_id):
     # Parameters match the official NBA Stats event page; omitted optional strings stay empty.
     empty = "AheadBehind CFID CFPARAMS ClutchTime Conference ContextFilter DateFrom DateTo Division GROUP_ID GameEventID GameSegment GroupID GroupMode Location OnOff OppPlayerID Outcome PlayerID1 PlayerID2 PlayerID3 PlayerID4 PlayerID5 PlayerPosition PointDiff Position RookieYear SeasonSegment ShotClockRange StarterBench VsConference VsDivision VsPlayerID1 VsPlayerID2 VsPlayerID3 VsPlayerID4 VsPlayerID5 VsTeamID".split()
     params = dict.fromkeys(empty, "")
-    params.update(ContextMeasure=category, EndPeriod=0, EndRange=28800, GameID=game_id, GroupQuantity=5, LastNGames=0, LeagueID="00", Month=0, OpponentTeamID=0, PORound=0, Period=0, PlayerID=0, RangeType=0, Season=season, SeasonType="Playoffs" if phase == "playoffs" else "Regular Season", StartPeriod=0, StartRange=0, TeamID=0)
+    params.update(ContextMeasure=category, EndPeriod=0, EndRange=28800, GameID=game_id, GroupQuantity=5, LastNGames=0, LeagueID="00", Month=0, OpponentTeamID=0, PORound=0, Period=0, PlayerID=0, RangeType=0, Season=season, SeasonType="Playoffs" if phase == "playoffs" else "Regular Season", StartPeriod=0, StartRange=0, TeamID=team_id)
     return asset_map(stats("videodetailsasset", **params), game_id)
 
 
-def discover(season):
+def parse_schedule(response, season):
+    schedule = response["leagueSchedule"]
+    if schedule["seasonYear"] != season:
+        raise ValueError("NBA schedule returned the wrong season")
     games = {}
-    for phase, season_type in (("regular", "Regular Season"), ("playoffs", "Playoffs"), ("play-in", "PlayIn")):
-        response = stats("leaguegamefinder", LeagueID="00", Season=season, SeasonType=season_type, PlayerOrTeam="T")
-        result = response["resultSets"][0]
-        for values in result["rowSet"]:
-            row = dict(zip(result["headers"], values))
-            game_id = str(row["GAME_ID"])
-            # Exclude exhibitions/preseason and All-Star, retain NBA regular/play-in/playoff IDs.
-            if game_id.startswith(("002", "004", "005")):
-                games[game_id] = {"gameId": game_id, "date": row["GAME_DATE"][:10], "season": season, "phase": "play-in" if game_id.startswith("005") else phase}
+    for date in schedule["gameDates"]:
+        for row in date["games"]:
+            game_id = str(row["gameId"])
+            if row["gameStatus"] != 3 or not game_id.startswith(("002", "004", "005")):
+                continue
+            # NBA's gameCode supplies the game's local calendar date, avoiding UTC date shifts.
+            day = row["gameCode"].split("/")[0]
+            game_date = dt.datetime.strptime(day, "%Y%m%d").date().isoformat()
+            phase = "playoffs" if game_id.startswith("004") else "play-in" if game_id.startswith("005") else "regular"
+            games[game_id] = {"gameId": game_id, "date": game_date, "season": season, "phase": phase}
     if not games and int(season[:4]) < dt.date.today().year:
-        raise ValueError("Season discovery returned no games: " + season)
+        raise ValueError("NBA completed-game schedule returned no games: " + season)
     return sorted(games.values(), key=lambda x: (x["date"], x["gameId"]))
+
+
+def discover(season):
+    return parse_schedule(stats("scheduleleaguev2", LeagueID="00", Season=season), season)
 
 
 def normalize_game(meta, game, actions, assets):
@@ -158,8 +166,9 @@ def ingest_game(meta):
     game, actions = game_page(meta["gameId"])
     assets = {}
     for category in CATEGORIES:
-        assets.update(batch_assets(meta["gameId"], meta["season"], meta["phase"], category))
-        time.sleep(.2)
+        for side in ("homeTeam", "awayTeam"):
+            assets.update(batch_assets(meta["gameId"], meta["season"], meta["phase"], category, game[side]["teamId"]))
+            time.sleep(.2)
     for action in actions:
         event_id = int(action["actionNumber"])
         if action.get("videoAvailable") and event_id not in assets:
@@ -212,7 +221,7 @@ def publish_index(state, destination, discovered):
     for season, total in discovered.items():
         count = coverage.setdefault(season, {"games": 0, "clips": 0, "unresolved": 0, "phases": {}})
         count["scheduledGames"] = total
-        count["complete"] = count["games"] == total
+        count["complete"] = total > 0 and count["games"] == total
     if not shards:
         raise ValueError("Refusing to publish an empty clip index")
     manifest = {"version": 2, "lastSuccessfulUpdate": dt.datetime.now(dt.timezone.utc).isoformat(), "coverage": coverage, "shards": shards, "players": sorted(players.values(), key=lambda p: p["name"]), "model": {"id": "Xenova/all-MiniLM-L6-v2", "dtype": "q8", "dimensions": 384}, "clips": sum(s["count"] for s in shards)}
@@ -233,6 +242,7 @@ def main():
         assert 53 in result
         game_page("0042400216")
         discover("2023-24")
+        assert 53 in batch_assets("0042400216", "2024-25", "playoffs", "FGA", 1610612752)
         print("Official NBA sources verified")
         return
     year = dt.date.today().year - (dt.date.today().month < 10)
@@ -240,7 +250,7 @@ def main():
     discovered, candidates = {}, []
     today = dt.date.today()
     for season in seasons:
-        games = [g for g in discover(season) if g["date"] < today.isoformat()]
+        games = discover(season)
         discovered[season] = len(games)
         for game in games:
             path = args.state / "games" / (game["gameId"] + ".json")

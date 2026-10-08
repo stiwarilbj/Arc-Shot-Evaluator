@@ -6,7 +6,10 @@ export const TEAM_ALIASES: Record<string, string[]> = {
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 export const normalize = (text: string) => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[’']/g,'').replace(/-/g,' ');
 export function makeFilterCondition(field: SearchField, value: string, operator: PlayCondition['operator'] = 'equals'): PlayCondition {
- return {id: `${field}-${Math.random().toString(36).slice(2)}`, field,value:value.trim(),operator,status:'ready',origin:'filter'};
+ const numeric=['shotDistance','shotValue','period','clock'].includes(field);
+ const values=operator==='range'?value.split('..'):[value];
+ const valid=!numeric||(operator!=='includes'&&values.every(v=>/^\d+(?:\.\d+)?$/.test(v.trim()))&&(operator!=='range'||(values.length===2&&Number(values[0])<=Number(values[1]))));
+ return {id: `${field}-${Math.random().toString(36).slice(2)}`, field,value:value.trim(),operator,status:valid?'ready':'unsupported',origin:'filter'};
 }
 export function resolveAmbiguousCondition(condition: PlayCondition, value: string): PlayCondition { return {...condition,value,status:'ready'}; }
 export function parsePlayPrompt(prompt: string, players: ClipManifest['players'] = []): PlayCondition[] {
@@ -65,6 +68,8 @@ function compare(actual: unknown, condition: PlayCondition): boolean {
 export function matchesClip(clip: PlayClip, conditions: PlayCondition[]): boolean {
  return conditions.every(c=>{
   if(c.status!=='ready')return false;
+  if((c.field==='player'||c.field==='role')&&!clip.participants.length)return false;
+  if(c.field!=='player'&&c.field!=='role'&&clip[c.field]==null)return false;
   let matched=false;
   if(c.field==='player')matched=clip.participants.some(p=>compare(p.name,{...c,operator:'equals'}));
   else if(c.field==='role')matched=clip.participants.some(p=>p.role===c.value && conditions.filter(f=>f.field==='player'&&f.operator!=='excludes').every(f=>normalize(p.name)===normalize(f.value)));

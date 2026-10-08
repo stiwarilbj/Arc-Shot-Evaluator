@@ -13,7 +13,7 @@ async function getJson(path:string, signal?:AbortSignal):Promise<unknown>{
  if(path.endsWith('.gz')){
   return readCompressedJson(response);
  }
- return response.json();
+ try{return await response.json();}catch{throw new Error("The NBA clip index could not be read. Retry loading the index.");}
 }
 async function embed(prompt:string,id:number):Promise<number[]>{
  if(!manifest)throw new Error('Index unavailable');
@@ -65,7 +65,7 @@ self.onmessage=async({data}:{data:WorkerRequest})=>{
     vector=await embed(data.prompt,data.id);if(!current())return;
     embeddings??=getJson(manifest.model.embeddings,signal) as Promise<Record<string,number[]>>;
     dictionary=await embeddings;mode='semantic';
-   }catch(error){if(!current())return;extractor=null;embeddings=null;message='Semantic model unavailable. Exact filters and keyword search are working.';}
+   }catch(error){if(!current())return;if(extractor){try{await(await extractor).dispose();}catch{/* Initialization failed. */}}extractor=null;embeddings=null;message='Semantic model unavailable. Exact filters and keyword search are working.';}
   }
   const scores=new Map<string,number>();
   const results:SearchResult[]=rows.map(clip=>{

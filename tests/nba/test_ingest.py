@@ -17,6 +17,20 @@ class IngestionTests(unittest.TestCase):
         with self.assertRaises(ValueError): ingest.asset_map(self.response(), "0022300001")
         response=self.response();response["resultSets"]["Meta"]["videoUrls"]=[]
         with self.assertRaises(ValueError): ingest.asset_map(response, "0042400216")
+    def test_schedule_ids_and_completed_status(self):
+        data={"leagueSchedule":{"seasonYear":"2024-25","gameDates":[{"games":[
+            {"gameId":"0042400216","gameCode":"20250516/BOSNYK","gameStatus":3},
+            {"gameId":"0052400101","gameCode":"20250415/ATLORL","gameStatus":3},
+            {"gameId":"0022400100","gameCode":"20250517/BOSNYK","gameStatus":1},
+        ]}]}}
+        games=ingest.parse_schedule(data,"2024-25")
+        self.assertEqual(len(games),2);self.assertEqual(games[0]["phase"],"play-in")
+        self.assertEqual(games[1]["gameId"],"0042400216");self.assertEqual(games[1]["date"],"2025-05-16")
+        with self.assertRaises(ValueError):ingest.parse_schedule(data,"2023-24")
+    def test_fetch_retry(self):
+        response=unittest.mock.MagicMock();response.__enter__.return_value.read.return_value=b'official'
+        with patch.object(ingest.urllib.request,'urlopen',side_effect=[TimeoutError('delayed'),response]) as request, patch.object(ingest.time,'sleep'):
+            self.assertEqual(ingest.fetch('https://www.nba.com/'),b'official');self.assertEqual(request.call_count,2)
     def test_clock(self):
         self.assertEqual(ingest.clock_seconds("PT07M41.00S"),461)
         self.assertEqual(ingest.clock_seconds("PT00M04.25S"),4.25)
