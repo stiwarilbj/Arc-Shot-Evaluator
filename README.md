@@ -1,6 +1,6 @@
 [Open the live ARC GitHub Pages demo →](https://stiwarilbj.github.io/Arc-Shot-Evaluator/)
 
-The hosted demo opens in ARC Shot Analyzer; Playbook is the second tab for half-court diagrams and saved plays, and Play Finder is the third tab for searching a growing catalog of verified NBA plays
+The hosted demo has Shot Analyzer, Playbook, and Play Finder; the local app has Shot Analyzer and Playbook. The individual-clip upgrade is pending successful NBA feed verification before live deployment.
 
 ```bash
 cd Arc-Shot-Evaluator
@@ -38,7 +38,7 @@ ARC connects detections across frames, keeps track of the rim when the camera mo
 
 ARC also includes **Playbook** as a second tab for drawing half-court diagrams; start with the ready setup, search 24 editable starter plays, or begin on an empty court. Draw movement, passes, screens, dribble handoffs, pick-and-rolls, pick-and-pops, pin-downs, off-ball screens, and backdoor cuts; shape routes with curved control points, run equal-numbered actions together, set timing, and save diagrams or export a high-resolution PNG. Playbook’s deterministic AI moves offense off ball, brings receivers into place before transfers, reacts to screens and handoffs, tracks defensive and off-ball quality, and ends each simulation with a shot. After the drawn and enabled automatic actions, it reads live defender positions to choose an open cutter, roll player, post, drive, or perimeter pass; playback shows the selected read and route without changing the saved diagram. Pause the simulation to edit the board and resume from the same moment. Starter examples include Horns, Flex, Spain pick and roll, Elevator, Shuffle, Triangle, Zipper, Box, and High-low. The hosted demo keeps saved plays in the browser; the development server stores them in the project’s `playbooks/` directory
 
-The third tab, **Play Finder**, searches a growing catalog of reviewed NBA film with natural-language prompts and filters for players, teams, seasons, and verified play actions. Results explain which verified fields matched and link to the official NBA source; unknown clock, score, or coverage details are left unsupported rather than guessed. Save clips and notes in browser-based collections, find similar plays from shared verified features, and export or import collections as JSON. This catalog is a reviewed sample, not a search across every filmed NBA possession.
+Play Finder’s individual-event implementation and deployment requirements are described below.
 
 The overview keeps the observed make rate separate from future prediction. A
 future FT% stays unavailable until a trained model has been evaluated on held
@@ -89,3 +89,28 @@ For terminal analysis, run:
 ```
 
 ARC uses the E-BARD basketball detector and Ultralytics YOLO11 Pose. Their links and license notes are included with the project.
+
+## Play Finder (GitHub Pages target only)
+
+The hosted build supports searching individual NBA play-by-play video events. The local application exposes **Shot Analyzer and Playbook only**, and its build excludes Play Finder, model files, workers, and index assets.
+
+```sh
+cd frontend
+pnpm install --frozen-lockfile
+pnpm build                              # local app: two workspaces
+VITE_DEPLOY_TARGET=github-pages pnpm build # hosted app: three workspaces
+```
+
+Play Finder uses exact player/team/opponent/season/date/event/outcome/distance/period/clock/recorded-role filters. Prompt chips are editable and ambiguous names require selection. English semantic ranking runs in a Web Worker using quantized `Xenova/all-MiniLM-L6-v2` through Transformers.js and WASM. The first semantic search downloads the model; browser caching enables warm searches. If model loading fails, filters and keyword search continue. Tactical and defender-matchup inference are unavailable.
+
+Results contain resolved individual NBA-hosted MP4s and their exact NBA Stats event links. Collections save event snapshots and notes in browser storage; version-1 collection IDs and notes remain as legacy references, without being assigned to unrelated plays. Export/import creates portable backups.
+
+### Index ingestion and publication
+
+`scripts/nba/ingest.py` discovers completed NBA games from official NBA game records, reads official game rosters and play-by-play, joins batched `videodetailsasset` playlists by recorded game/event IDs, and resolves remaining advertised events with `videoeventsasset`. `actionNumber` is the NBA Stats event ID; array positions and `actionId` are never substituted. Only response-supplied NBA MP4s with matching game/event paths enter the index.
+
+The deployment workflow verifies the official sources on `ubuntu-latest` **before** backfill. It checkpoints games on the generated `nba-clip-data` branch, publishes version-2 manifests and compressed monthly shards there, embeds deduplicated descriptions, and deploys only after validation. Manifest coverage reports actual completed games, clips, unresolved video events, and the last successful update. Partial backfills are labeled partial. Requested coverage is 2023–24 onward, regular season, play-in and playoffs; full coverage cannot be claimed until every completed season has been indexed.
+
+Daily updates run at **11:00 UTC**, rechecking the latest seven days for corrections and delayed clips. Workflow dispatch accepts `max_games` (1–500) for resumable backfills. Failed feeds or validation preserve the previous healthy index and site. Publication stops above conservative Pages, generated-data and artifact-storage budgets; no paid API or backend is configured. Provider allowances may change and must be reverified before changing these budgets.
+
+**Verification blocker (2026-10-08):** On the standard public GitHub runner, the NBA schedule feed returned HTTP 403 and the Stats asset and game-discovery endpoints timed out. An ordinary Chromium NBA event-page check also timed out waiting for the asset. The upgrade therefore remains on its implementation branch; automatic backfill and live publication are pending successful source verification. No completed-season coverage is claimed.

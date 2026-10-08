@@ -1,4 +1,4 @@
-import type { CollectionBackup, FilmCollection } from "./types";
+import type { CollectionBackup, FilmCollection, PlayClip } from "./types";
 
 const STORAGE_KEY = "arc-play-finder-collections-v1";
 
@@ -8,7 +8,7 @@ export function readCollections(): FilmCollection[] {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed) || !parsed.every(isCollection)) throw new Error("Saved collection data is unreadable");
-    return parsed;
+    return parsed.map((item) => ({ ...item, snapshots: item.snapshots ?? {} }));
   } catch (error) {
     console.error("Could not read ARC Play Finder collections", error);
     return [];
@@ -35,14 +35,14 @@ export function duplicateCollection(collection: FilmCollection): FilmCollection 
 }
 
 export function exportCollections(collections: FilmCollection[]): CollectionBackup {
-  return { version: 1, exportedAt: new Date().toISOString(), collections };
+  return { version: 2, exportedAt: new Date().toISOString(), collections };
 }
 
 export function parseCollectionBackup(raw: string): FilmCollection[] {
   const parsed: unknown = JSON.parse(raw);
-  const collections = Array.isArray(parsed) ? parsed : (parsed as Partial<CollectionBackup>)?.version === 1 ? (parsed as CollectionBackup).collections : null;
+  const collections = Array.isArray(parsed) ? parsed : [1, 2].includes((parsed as Partial<CollectionBackup>)?.version ?? 0) ? (parsed as CollectionBackup).collections : null;
   if (!Array.isArray(collections) || !collections.every(isCollection)) throw new Error("This file is not a valid ARC Play Finder collection backup");
-  return collections;
+  return collections.map((item) => ({ ...item, snapshots: item.snapshots ?? {} }));
 }
 
 export function isCollection(value: unknown): value is FilmCollection {
@@ -50,9 +50,24 @@ export function isCollection(value: unknown): value is FilmCollection {
   const item = value as Partial<FilmCollection>;
   return typeof item.id === "string" && typeof item.name === "string" && Array.isArray(item.clipIds)
     && item.clipIds.every((id) => typeof id === "string") && Boolean(item.notesByClip && typeof item.notesByClip === "object")
+    && Object.values(item.notesByClip ?? {}).every((note) => typeof note === "string")
+    && (!item.snapshots || (typeof item.snapshots === "object" && Object.values(item.snapshots).every(isClipSnapshot)))
     && typeof item.createdAt === "string" && typeof item.updatedAt === "string";
 }
 
 function makeId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `collection-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function isClipSnapshot(value: unknown): value is PlayClip {
+  if (!value || typeof value !== "object") return false;
+  const clip = value as PlayClip;
+  try {
+    const video = new URL(clip.mp4 ?? ""), event = new URL(clip.eventUrl);
+    return /^\d{10}$/.test(clip.gameId) && Number.isInteger(clip.eventId) && clip.id === `${clip.gameId}:${clip.eventId}`
+      && video.protocol === "https:" && video.hostname === "videos.nba.com" && video.pathname.includes(`/${clip.gameId}/${clip.eventId}/`)
+      && event.protocol === "https:" && event.hostname === "www.nba.com" && event.pathname === "/stats/events/"
+      && event.searchParams.get("GameID") === clip.gameId && event.searchParams.get("GameEventID") === String(clip.eventId)
+      && typeof clip.title === "string" && Array.isArray(clip.participants);
+  } catch { return false; }
 }

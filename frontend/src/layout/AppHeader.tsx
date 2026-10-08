@@ -1,3 +1,4 @@
+import { IS_GITHUB_PAGES } from "../runtime";
 import { CheckCircle2, CircleDot, ClipboardList, Clapperboard, Moon, RotateCw, Sun } from "lucide-react";
 import type { ThemeMode } from "../domain/analysisTypes";
 import { UsageGuide } from "./UsageGuide";
@@ -32,9 +33,9 @@ export function AppHeader({ filename, complete, showReset = false, onReset, them
           <button type="button" className={workspace === "playbook" ? "is-active" : ""} aria-current={workspace === "playbook" ? "page" : undefined} onClick={() => onWorkspaceChange("playbook")}>
             <ClipboardList size={15} /> Playbook
           </button>
-          <button type="button" className={workspace === "play-finder" ? "is-active" : ""} aria-current={workspace === "play-finder" ? "page" : undefined} onClick={() => onWorkspaceChange("play-finder")}>
+          {IS_GITHUB_PAGES ? <button type="button" className={workspace === "play-finder" ? "is-active" : ""} aria-current={workspace === "play-finder" ? "page" : undefined} onClick={() => onWorkspaceChange("play-finder")}>
             <Clapperboard size={15} /> Play Finder
-          </button>
+          </button> : null}
         </nav>
       ) : null}
       {filename ? <div className="header-filename" title={filename}>{filename}</div> : <div />}

@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { loadClipDetails } from "./details";
+import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, BookmarkPlus, Check, ChevronLeft, ChevronRight, Clapperboard, Download, ExternalLink, Filter, FolderOpen, Info, Plus, Search, Share2, Trash2, Upload, X } from "lucide-react";
 import { createCollection, duplicateCollection, exportCollections, parseCollectionBackup, readCollections, writeCollections } from "./collections";
 import { ArcSelect } from "../../components/ArcSelect";
-import { ACTION_LABELS, FIELD_LABELS, findSimilarPlays, makeFilterCondition, parsePlayPrompt, PLAY_FINDER_CATALOG, resolveAmbiguousCondition, searchCatalog } from "./search";
-import type { FilmCollection, PlayAction, PlayClip, PlayCondition, SearchField, SearchResult } from "./types";
+import { FIELD_LABELS, makeFilterCondition, parsePlayPrompt, resolveAmbiguousCondition } from "./search";
+import type { FilmCollection, PlayClip, PlayCondition, SearchField, SearchResult, ClipManifest, WorkerResponse } from "./types";
 import "./playFinder.css";
 
 const PAGE_SIZE = 20;
-const EXAMPLES = ["pick-and-rolls ending in a turnover", "Curry threes against Boston", "handoffs followed by a backdoor cut"];
-const FILTER_FIELDS: SearchField[] = ["player", "team", "opponent", "season", "postseason", "quarter", "gameClock", "scoreMargin", "shotType", "result", "action", "coverage"];
-const ACTIONS: PlayAction[] = ["pick-and-roll", "pick-and-pop", "handoff", "off-ball-screen", "cut", "drive-and-kick", "isolation", "transition"];
+const EXAMPLES = ["Curry threes against Boston", "Brunson step-back jumpers in the 2025 playoffs", "fourth-quarter turnovers with fewer than five seconds remaining"];
+const FILTER_FIELDS = Object.keys(FIELD_LABELS) as SearchField[];
 
 interface PlayFinderProps { active: boolean }
 
@@ -20,9 +20,9 @@ export function PlayFinder({ active }: PlayFinderProps) {
   const [page, setPage] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [filterField, setFilterField] = useState<SearchField>("action");
+  const [filterField, setFilterField] = useState<SearchField>("player");
   const [filterValue, setFilterValue] = useState("");
-  const [filterOperator, setFilterOperator] = useState<"includes" | "excludes">("includes");
+  const [filterOperator, setFilterOperator] = useState<PlayCondition["operator"]>("equals");
   const [collectionDrawer, setCollectionDrawer] = useState(false);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [collections, setCollections] = useState<FilmCollection[]>(() => readCollections());
@@ -31,27 +31,47 @@ export function PlayFinder({ active }: PlayFinderProps) {
   const [toast, setToast] = useState("");
   const [newCollectionName, setNewCollectionName] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [includeCollectionNotes, setIncludeCollectionNotes] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLIFrameElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const lastSubmittedPrompt = useRef("");
 
-  const allResults = useMemo(() => searchCatalog(conditions, sort), [conditions, sort]);
-  const pageCount = Math.max(1, Math.ceil(allResults.length / PAGE_SIZE));
-  const pagedResults = allResults.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const selectedClip = allResults.find((item) => item.clip.id === selectedClipId)?.clip
-    ?? PLAY_FINDER_CATALOG.clips.find((clip) => clip.id === selectedClipId)
-    ?? pagedResults[0]?.clip
-    ?? allResults[0]?.clip
-    ?? null;
+  const [allResults, setResults] = useState<SearchResult[]>([]);
+  const [total, setTotal] = useState(0);
+  const [manifest, setManifest] = useState<ClipManifest | null>(null);
+  const [status, setStatus] = useState("Loading NBA clip index…");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [savedSelection, setSavedSelection] = useState<PlayClip | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const requestId = useRef(0);
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pagedResults = allResults;
+  const selectedClip = savedSelection ?? allResults.find((item) => item.clip.id === selectedClipId)?.clip ?? pagedResults[0]?.clip ?? null;
   const selectedCollection = collections.find((collection) => collection.id === selectedCollectionId) ?? collections[0] ?? null;
-  const collectionClips = (selectedCollection?.clipIds ?? []).map((id) => ({ id, clip: PLAY_FINDER_CATALOG.clips.find((item) => item.id === id) }));
+  const collectionClips = (selectedCollection?.clipIds ?? []).map((id) => ({ id, clip: selectedCollection?.snapshots?.[id] }));
   const missingConditions = conditions.filter((item) => item.status !== "ready");
-  const similar = useMemo(() => selectedClip ? findSimilarPlays(selectedClip) : [], [selectedClip]);
-  const verifiedActionFamilies = new Set(PLAY_FINDER_CATALOG.clips
-    .filter((clip) => isVerified(clip, "actions"))
-    .flatMap((clip) => clip.actions));
-  const sourceCount = new Set(PLAY_FINDER_CATALOG.clips.map((clip) => clip.source.url)).size;
+
+  function runSearch(nextConditions: PlayCondition[], nextPage = 0, nextPrompt = lastSubmittedPrompt.current, nextSort = sort) {
+    if (!workerRef.current || !manifest) return;
+    const id = ++requestId.current;
+    setError(""); setLoading(true); setSavedSelection(null); setPage(nextPage);
+    workerRef.current.postMessage({id, type: "search", prompt: nextPrompt, conditions: nextConditions, sort: nextSort, page: nextPage, pageSize: PAGE_SIZE});
+  }
+  useEffect(() => {
+    const worker = new Worker(new URL("./search.worker.ts", import.meta.url), {type: "module"});
+    workerRef.current = worker;
+    worker.onmessage = ({data}: MessageEvent<WorkerResponse>) => {
+      if (data.type === "ready") {setManifest(data.manifest);setStatus("NBA index ready. Search or browse individual plays.");return;}
+      if (data.id !== requestId.current) return;
+      if (data.type === "status") setStatus(data.message);
+      if (data.type === "error") {setError(data.message);setLoading(false);setStatus("Index search unavailable; saved clips remain accessible.");}
+      if (data.type === "results") {setResults(data.results);setTotal(data.total);setLoading(false);setSelectedClipId(data.results[0]?.clip.id ?? null);setStatus(data.message ?? (data.mode === "semantic" ? "Semantic ranking · exact filters applied" : "Keyword ranking · exact filters applied"));}
+    };
+    worker.onerror = () => {setError("Search worker could not start. Reload to retry.");setLoading(false);};
+    worker.postMessage({id: 0, type: "init", base: new URL(`${import.meta.env.BASE_URL}nba-index/`, window.location.origin).href});
+    return () => {worker.postMessage({id: ++requestId.current, type: "dispose"});worker.terminate();workerRef.current=null;};
+  }, []);
+  useEffect(() => {if (!active) videoRef.current?.pause();}, [active]);
 
   useEffect(() => {
     if (!collectionDrawer) return;
@@ -71,20 +91,20 @@ export function PlayFinder({ active }: PlayFinderProps) {
   }
 
   function submitSearch(nextConditions?: PlayCondition[]) {
-    const queryConditions = nextConditions ?? (prompt === lastSubmittedPrompt.current ? conditions : parsePlayPrompt(prompt));
+    const queryConditions = nextConditions ?? (prompt === lastSubmittedPrompt.current ? conditions : parsePlayPrompt(prompt, manifest?.players));
     lastSubmittedPrompt.current = prompt;
     setConditions(queryConditions);
     setPage(0);
     setSubmitted(true);
-    const first = searchCatalog(queryConditions, sort)[0]?.clip;
-    if (first) setSelectedClipId(first.id);
-    else setSelectedClipId(null);
+    runSearch(queryConditions, 0, prompt);
+
   }
 
   function chooseExample(value: string) {
     setPrompt(value);
     lastSubmittedPrompt.current = value;
-    submitSearch(parsePlayPrompt(value));
+    const next = parsePlayPrompt(value, manifest?.players);
+    setConditions(next); setSubmitted(true); runSearch(next, 0, value);
   }
 
   function removeCondition(id: string) {
@@ -92,7 +112,7 @@ export function PlayFinder({ active }: PlayFinderProps) {
     setConditions(next);
     setPage(0);
     setSubmitted(true);
-    setSelectedClipId(searchCatalog(next, sort)[0]?.clip.id ?? null);
+    runSearch(next);
   }
 
   function addFilter() {
@@ -102,7 +122,7 @@ export function PlayFinder({ active }: PlayFinderProps) {
     setPage(0);
     setSubmitted(true);
     setFilterValue("");
-    setSelectedClipId(searchCatalog(next, sort)[0]?.clip.id ?? null);
+    runSearch(next);
   }
 
   function createNewCollection() {
@@ -119,10 +139,11 @@ export function PlayFinder({ active }: PlayFinderProps) {
     return persist(collections.map((item) => item.id === collectionId ? { ...update(item), updatedAt: new Date().toISOString() } : item));
   }
 
-  function addClipToCollection(collectionId: string, clip: PlayClip) {
+  async function addClipToCollection(collectionId: string, clip: PlayClip) {
+    try {clip = await loadClipDetails(clip);} catch(error) {setToast(error instanceof Error ? error.message : "Could not save video snapshot");return;}
     const target = collections.find((item) => item.id === collectionId);
     if (!target) return;
-    const saved = updateCollection(collectionId, (item) => ({ ...item, clipIds: item.clipIds.includes(clip.id) ? item.clipIds : [...item.clipIds, clip.id] }));
+    const saved = updateCollection(collectionId, (item) => ({ ...item, clipIds: item.clipIds.includes(clip.id) ? item.clipIds : [...item.clipIds, clip.id], snapshots: { ...item.snapshots, [clip.id]: clip } }));
     if (saved) setToast(target.clipIds.includes(clip.id) ? "Already in this collection" : `Added to ${target.name}`);
   }
 
@@ -144,9 +165,11 @@ export function PlayFinder({ active }: PlayFinderProps) {
       const imported = parseCollectionBackup(await file.text());
       const merged = [...collections];
       for (const item of imported) {
-        const existing = merged.findIndex((candidate) => candidate.id === item.id);
-        if (existing >= 0) merged[existing] = { ...item, id: `${item.id}-import-${Date.now()}` };
-        else merged.push(item);
+        const index = merged.findIndex((candidate) => candidate.id === item.id);
+        if (index >= 0) {
+          const current = merged[index];
+          merged[index] = {...current, clipIds: [...new Set([...current.clipIds, ...item.clipIds])], notesByClip: {...item.notesByClip, ...current.notesByClip}, snapshots: {...item.snapshots, ...current.snapshots}};
+        } else merged.push(item);
       }
       if (persist(merged)) setToast(`Imported ${imported.length} collection${imported.length === 1 ? "" : "s"}`);
     } catch (error) {
@@ -157,12 +180,13 @@ export function PlayFinder({ active }: PlayFinderProps) {
   }
 
   function openCollectionClip(id: string) {
-    const clip = PLAY_FINDER_CATALOG.clips.find((item) => item.id === id);
+    const clip = selectedCollection?.snapshots?.[id];
     if (!clip) {
-      setToast("This saved clip is unavailable in the current catalog; its reference ID remains in this collection and exported backups");
+      setToast("This saved clip is unavailable in the current event index; its reference ID remains in this collection and exported backups");
       return;
     }
     setSelectedClipId(clip.id);
+    setSavedSelection(clip);
     setCollectionDrawer(false);
   }
 
@@ -182,7 +206,7 @@ export function PlayFinder({ active }: PlayFinderProps) {
         <div className="play-finder-heading">
           <div className="play-finder-brand"><span className="play-finder-mark"><Clapperboard size={19} /></span><span className="section-kicker">NBA film search</span></div>
           <h1>Find the play</h1>
-          <p>Search a growing, manually reviewed library of official NBA film by action, player, matchup, and situation</p>
+          <p>Search individual NBA play-by-play clips by player, matchup, shot, and game situation</p>
         </div>
         <button className="button button-outline finder-collections-button" type="button" onClick={() => setCollectionDrawer(true)}><FolderOpen size={16} /> Collections <span className="finder-count">{collections.length}</span></button>
       </section>
@@ -191,7 +215,7 @@ export function PlayFinder({ active }: PlayFinderProps) {
         <div className="finder-search-line">
           <Search size={19} aria-hidden="true" />
           <input aria-label="Search NBA plays" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe a play or matchup…" />
-          <button className="button button-primary" type="submit"><Search size={15} /> Search</button>
+          <button className="button button-primary" type="submit" disabled={!manifest}><Search size={15} /> Search</button>{loading ? <button type="button" className="button button-outline" onClick={() => {workerRef.current?.postMessage({id: ++requestId.current, type: "cancel"});setLoading(false);setStatus("Search cancelled");}}>Cancel</button> : null}
         </div>
         <div className="finder-search-actions">
           <button type="button" className={`button button-subtle ${filtersOpen ? "is-active" : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen}><Filter size={15} /> Filters {conditions.length > 0 ? <span className="finder-count">{conditions.length}</span> : null}</button>
@@ -199,11 +223,11 @@ export function PlayFinder({ active }: PlayFinderProps) {
         </div>
         <div className="finder-examples" aria-label="Example searches">
           <span>Try</span>
-          {EXAMPLES.map((example) => <button key={example} type="button" onClick={() => chooseExample(example)}>{example}</button>)}
+          {EXAMPLES.map((example) => <button key={example} type="button" disabled={!manifest} onClick={() => chooseExample(example)}>{example}</button>)}
         </div>
         {conditions.length > 0 ? <div className="finder-chips" aria-label="Search conditions">
           {conditions.map((item) => <span className={`finder-chip ${item.status !== "ready" ? `finder-chip-${item.status}` : ""}`} key={item.id}>
-            {item.status === "ambiguous" ? <><span>{FIELD_LABELS[item.field]}:</span><ArcSelect ariaLabel={`Choose ${FIELD_LABELS[item.field]}`} className="arc-select--compact finder-chip-select" value="" placeholder="Choose a player" options={(item.candidates ?? []).map((candidate) => ({ value: candidate, label: candidate }))} onValueChange={(value) => setConditions((current) => current.map((condition) => condition.id === item.id ? resolveAmbiguousCondition(condition, value) : condition))} /></> : <><span>{item.status === "unsupported" ? "Check:" : item.operator === "excludes" ? "Without:" : `${FIELD_LABELS[item.field]}:`}</span><strong>{formatConditionValue(item)}</strong></>}
+            {item.status === "ambiguous" ? <><span>{FIELD_LABELS[item.field]}:</span><ArcSelect ariaLabel={`Choose ${FIELD_LABELS[item.field]}`} className="arc-select--compact finder-chip-select" value="" placeholder="Choose a player" options={(item.candidates ?? []).map((candidate) => ({ value: candidate, label: candidate }))} onValueChange={(value) => {const next = conditions.map((condition) => condition.id === item.id ? resolveAmbiguousCondition(condition, value) : condition);setConditions(next);runSearch(next);}} /></> : <><span>{item.status === "unsupported" ? "Check:" : item.operator === "excludes" ? "Without:" : `${FIELD_LABELS[item.field]}:`}</span><strong>{formatConditionValue(item)}</strong></>}
             {item.status !== "ready" ? <span title={item.status === "unsupported" ? "This condition is not supported yet; remove it to search" : "Choose the intended player"}><Info size={13} aria-hidden="true" /></span> : null}
             <button type="button" onClick={() => removeCondition(item.id)} aria-label={`Remove ${FIELD_LABELS[item.field]} condition`}><X size={13} /></button>
           </span>)}
@@ -211,30 +235,31 @@ export function PlayFinder({ active }: PlayFinderProps) {
         </div> : null}
         {filtersOpen ? <div className="finder-filter-builder">
           <div className="finder-select-field"><span>Field</span><ArcSelect ariaLabel="Filter field" className="arc-select--full" value={filterField} options={FILTER_FIELDS.map((field) => ({ value: field, label: FIELD_LABELS[field] }))} onValueChange={(value) => setFilterField(value as SearchField)} /></div>
-          <div className="finder-select-field"><span>Condition</span><ArcSelect ariaLabel="Filter condition" className="arc-select--full" value={filterOperator} options={[{ value: "includes", label: "Includes" }, { value: "excludes", label: "Excludes" }]} onValueChange={(value) => setFilterOperator(value as "includes" | "excludes")} /></div>
-          <div className="finder-select-field finder-filter-value"><span>Value</span>{filterField === "action" ? <ArcSelect ariaLabel="Filter action" className="arc-select--full" value={filterValue} placeholder="Choose an action" options={ACTIONS.map((action) => ({ value: action, label: ACTION_LABELS[action] }))} onValueChange={setFilterValue} /> : <input aria-label="Filter value" value={filterValue} onChange={(event) => setFilterValue(event.target.value)} placeholder={filterPlaceholder(filterField)} />}</div>
-          <button className="button button-outline" type="button" onClick={addFilter}><Plus size={14} /> Add condition</button>
-          <p>Filters use the same verified catalog fields as prompt search; unavailable evidence never counts as a match</p>
+          <div className="finder-select-field"><span>Condition</span><ArcSelect ariaLabel="Filter condition" className="arc-select--full" value={filterOperator} options={[{ value: "equals", label: "Equals" }, { value: "excludes", label: "Excludes" }, { value: "includes", label: "Contains" }, { value: "lt", label: "Less than / before" }, { value: "gt", label: "Greater than / after" }, {value: "range", label: "Range (min..max)"}]} onValueChange={(value) => setFilterOperator(value as PlayCondition["operator"])} /></div>
+          <div className="finder-select-field finder-filter-value"><span>Value</span><input aria-label="Filter value" value={filterValue} onChange={(event) => setFilterValue(event.target.value)} placeholder={filterPlaceholder(filterField)} /></div>
+          <button className="button button-outline" type="button" disabled={!manifest} onClick={addFilter}><Plus size={14} /> Add condition</button>
+          <p>Use NBA team codes, full player names, ISO dates, seconds for clocks, and min..max for ranges. Period 5 is the first overtime.</p>
         </div> : null}
       </form>
 
-      <div className="finder-catalog-line"><span><strong>{allResults.length}</strong> verified catalog {allResults.length === 1 ? "match" : "matches"}</span><span>{PLAY_FINDER_CATALOG.clips.length} clip records · {sourceCount} official pages · reviewed {formatDate(PLAY_FINDER_CATALOG.lastReviewed)}</span></div>
-      <details className="finder-coverage-details"><summary>View verified coverage</summary><span>{verifiedActionFamilies.size} action families · {[...verifiedActionFamilies].map((action) => ACTION_LABELS[action]).join(", ")}</span><span>{new Set(PLAY_FINDER_CATALOG.clips.filter((clip) => isVerified(clip, "season")).map((clip) => clip.season).filter(Boolean)).size} seasons · {PLAY_FINDER_CATALOG.clips.filter((clip) => isVerified(clip, "game")).length} clips with a verified game context</span></details>
+      <div className="finder-catalog-line"><span><strong>{total}</strong> individual-play matches</span><span role="status" aria-live="polite">{status}</span></div>
+      {error ? <div className="finder-condition-alert" role="alert">{error} <button type="button" onClick={() => {setError("");workerRef.current?.postMessage({id: requestId.current,type:"init",base:new URL(`${import.meta.env.BASE_URL}nba-index/`,window.location.origin).href});}}>Retry index</button></div> : null}
+      {manifest ? <details className="finder-coverage-details"><summary>Actual indexed coverage · {manifest.clips.toLocaleString()} clips</summary><span>Last successful update: {new Date(manifest.lastSuccessfulUpdate).toLocaleString()}</span>{Object.entries(manifest.coverage).map(([season, coverage]) => <span key={season}>{season}: {coverage.games}/{coverage.scheduledGames} completed games · {coverage.clips.toLocaleString()} clips · {coverage.unresolved} unresolved · {coverage.complete ? "Completed-game backfill finished" : "Partial coverage; backfill in progress"}</span>)}</details> : null}
 
       <section className="finder-results-layout" aria-label="Play Finder results">
         <div className="finder-results-column">
-          <div className="finder-results-heading"><div><span className="section-kicker">Film results</span><h2>{submitted && conditions.length ? "Search results" : "Browse the catalog"}</h2></div><div className="finder-sort"><span>Sort</span><ArcSelect ariaLabel="Sort results" className="arc-select--compact finder-sort-select" value={sort} options={[{ value: "relevance", label: "Relevance" }, { value: "date", label: "Newest first" }]} onValueChange={(value) => { setSort(value as "relevance" | "date"); setPage(0); }} /></div></div>
-          {allResults.length ? <>
+          <div className="finder-results-heading"><div><span className="section-kicker">Film results</span><h2>{submitted && conditions.length ? "Search results" : "NBA plays"}</h2></div><div className="finder-sort"><span>Sort</span><ArcSelect ariaLabel="Sort results" className="arc-select--compact finder-sort-select" value={sort} options={[{ value: "relevance", label: "Relevance" }, { value: "date", label: "Newest first" }]} onValueChange={(value) => { setSort(value as "relevance" | "date"); runSearch(conditions, 0, lastSubmittedPrompt.current, value as "relevance" | "date"); }} /></div></div>
+          {allResults.length && !loading ? <>
             <div className="finder-result-list">
-              {pagedResults.map((result) => <ResultCard key={result.clip.id} result={result} selected={selectedClip?.id === result.clip.id} onSelect={() => setSelectedClipId(result.clip.id)} />)}
+              {pagedResults.map((result) => <ResultCard key={result.clip.id} result={result} selected={selectedClip?.id === result.clip.id} onSelect={() => {setSavedSelection(null);setSelectedClipId(result.clip.id);}} />)}
             </div>
-            {pageCount > 1 ? <div className="finder-pagination"><button className="icon-button" disabled={page === 0} onClick={() => setPage((current) => current - 1)} aria-label="Previous results"><ChevronLeft size={16} /></button><span>Page {page + 1} of {pageCount}</span><button className="icon-button" disabled={page + 1 >= pageCount} onClick={() => setPage((current) => current + 1)} aria-label="Next results"><ChevronRight size={16} /></button></div> : null}
-          </> : <div className="finder-empty"><Search size={20} /><strong>{missingConditions.length ? "Search needs attention" : "No verified matches"}</strong><p>{missingConditions.length ? "Choose an ambiguous player or remove unsupported conditions, then search again" : "The catalog has no clip with all of these confirmed details. Try fewer conditions or adjust the filters"}</p></div>}
-          <div className="finder-coverage-note"><Info size={14} /><span>This is a growing, verified clip library, not a search of every filmed NBA possession. Conditions without source evidence are not treated as matches</span></div>
+            {pageCount > 1 ? <div className="finder-pagination"><button className="icon-button" disabled={page === 0} onClick={() => runSearch(conditions, page - 1)} aria-label="Previous results"><ChevronLeft size={16} /></button><span>Page {page + 1} of {pageCount}</span><button className="icon-button" disabled={page + 1 >= pageCount} onClick={() => runSearch(conditions, page + 1)} aria-label="Next results"><ChevronRight size={16} /></button></div> : null}
+          </> : <div className="finder-empty"><Search size={20} /><strong>{missingConditions.length ? "Search needs attention" : loading ? "Searching NBA plays…" : !submitted ? "Describe a play to start" : "No matching clips"}</strong><p>{missingConditions.length ? "Choose an ambiguous player or remove unsupported conditions, then search again" : "No indexed individual clip satisfies every condition. Check actual coverage or adjust your filters"}</p></div>}
+          <div className="finder-coverage-note"><Info size={14} /><span>Only resolved individual NBA clips appear. Roles come from recorded play-by-play evidence; tactical coverage and defender matchups are unavailable.</span></div>
         </div>
 
         <div className="finder-detail-column">
-          {selectedClip ? <ClipDetail clip={selectedClip} similar={similar} active={active} videoRef={videoRef} onSave={(collectionId) => addClipToCollection(collectionId, selectedClip)} onOpenCollections={() => setCollectionDrawer(true)} onSelectSimilar={(clip) => { setSelectedClipId(clip.id); window.scrollTo({ top: 0, behavior: "smooth" }); }} collections={collections} /> : <div className="finder-detail-empty"><Clapperboard size={22} /><span>Select a result to inspect the play</span></div>}
+          {selectedClip ? <ClipDetail clip={selectedClip} active={active} videoRef={videoRef} onSave={(collectionId, snapshot) => addClipToCollection(collectionId, snapshot)} onOpenCollections={() => setCollectionDrawer(true)} collections={collections} /> : <div className="finder-detail-empty"><Clapperboard size={22} /><span>Select a result to inspect the play</span></div>}
         </div>
       </section>
 
@@ -247,7 +272,7 @@ export function PlayFinder({ active }: PlayFinderProps) {
           {collections.length ? <div className="finder-collections-layout">
             <nav className="finder-collection-list" aria-label="Saved collections">{collections.map((collection) => <button type="button" key={collection.id} className={selectedCollection?.id === collection.id ? "is-active" : ""} onClick={() => setSelectedCollectionId(collection.id)}><span>{collection.name}</span><small>{collection.clipIds.length} clips</small></button>)}</nav>
             {selectedCollection ? <section className="finder-collection-content"><header><div><h3>{selectedCollection.name}</h3><p>Created {formatDate(selectedCollection.createdAt.slice(0, 10))}</p></div><div className="finder-collection-tools"><button type="button" className="icon-button" aria-label="Rename collection" onClick={() => { const nextName = window.prompt("Rename collection", selectedCollection.name); if (nextName?.trim()) updateCollection(selectedCollection.id, (item) => ({ ...item, name: nextName.trim() })); }} title="Rename"><Share2 size={14} /></button><button type="button" className="icon-button" aria-label="Duplicate collection" onClick={() => { const copy = duplicateCollection(selectedCollection); persist([...collections, copy]); setSelectedCollectionId(copy.id); }} title="Duplicate"><BookmarkPlus size={14} /></button><button type="button" className="icon-button danger" aria-label="Delete collection" onClick={() => { if (window.confirm(`Delete “${selectedCollection.name}”?`)) { const next = collections.filter((item) => item.id !== selectedCollection.id); persist(next); setSelectedCollectionId(next[0]?.id ?? null); } }} title="Delete"><Trash2 size={14} /></button></div></header>
-              {collectionClips.length ? <div className="finder-saved-clips">{collectionClips.map(({ id, clip }, index) => <article className="finder-saved-clip" key={`${selectedCollection.id}-${id}`}><div className="finder-saved-clip-top"><button type="button" className="finder-saved-clip-open" onClick={() => openCollectionClip(id)}>{clip ? clip.title : `Unavailable catalog clip · ${id}`}</button><div><button className="icon-button" type="button" disabled={index === 0} aria-label="Move clip up" onClick={() => moveCollectionClip(selectedCollection, index, -1)}><ArrowUp size={13} /></button><button className="icon-button" type="button" disabled={index + 1 === collectionClips.length} aria-label="Move clip down" onClick={() => moveCollectionClip(selectedCollection, index, 1)}><ArrowDown size={13} /></button><button className="icon-button danger" type="button" aria-label="Remove clip from collection" onClick={() => updateCollection(selectedCollection.id, (item) => ({ ...item, clipIds: item.clipIds.filter((clipId) => clipId !== id) }))}><Trash2 size={13} /></button></div></div>{clip ? <small>{verifiedContextLine(clip)}</small> : <small>This clip reference ID remains in this collection and exported backups; its source URL is unavailable</small>}<textarea aria-label={`Notes for ${clip?.title ?? id}`} value={selectedCollection.notesByClip[id] ?? ""} placeholder="Add a personal note" onChange={(event) => updateCollection(selectedCollection.id, (item) => ({ ...item, notesByClip: { ...item.notesByClip, [id]: event.target.value } }))} /></article>)}</div> : <div className="finder-collection-empty"><BookmarkPlus size={19} /><span>No clips yet; save a result from its detail panel</span></div>}
+              {collectionClips.length ? <div className="finder-saved-clips">{collectionClips.map(({ id, clip }, index) => <article className="finder-saved-clip" key={`${selectedCollection.id}-${id}`}><div className="finder-saved-clip-top"><button type="button" className="finder-saved-clip-open" onClick={() => openCollectionClip(id)}>{clip ? clip.title : `Legacy / unavailable clip · ${id}`}</button><div><button className="icon-button" type="button" disabled={index === 0} aria-label="Move clip up" onClick={() => moveCollectionClip(selectedCollection, index, -1)}><ArrowUp size={13} /></button><button className="icon-button" type="button" disabled={index + 1 === collectionClips.length} aria-label="Move clip down" onClick={() => moveCollectionClip(selectedCollection, index, 1)}><ArrowDown size={13} /></button><button className="icon-button danger" type="button" aria-label="Remove clip from collection" onClick={() => updateCollection(selectedCollection.id, (item) => ({ ...item, clipIds: item.clipIds.filter((clipId) => clipId !== id) }))}><Trash2 size={13} /></button></div></div>{clip ? <small>{verifiedContextLine(clip)}</small> : <small>This clip reference ID remains in this collection and exported backups; its source URL is unavailable</small>}<textarea aria-label={`Notes for ${clip?.title ?? id}`} value={selectedCollection.notesByClip[id] ?? ""} placeholder="Add a personal note" onChange={(event) => updateCollection(selectedCollection.id, (item) => ({ ...item, notesByClip: { ...item.notesByClip, [id]: event.target.value } }))} /></article>)}</div> : <div className="finder-collection-empty"><BookmarkPlus size={19} /><span>No clips yet; save a result from its detail panel</span></div>}
             </section> : null}
           </div> : <div className="finder-collection-empty"><FolderOpen size={22} /><strong>No collections yet</strong><span>Create one to save clips and notes</span></div>}
           {selectedClip && collections.length ? <footer className="finder-add-to-collection"><span>Add current clip</span><div>{collections.map((collection) => <button className="button button-outline" type="button" key={collection.id} onClick={() => addClipToCollection(collection.id, selectedClip)}>{collection.name}</button>)}</div></footer> : null}
@@ -257,82 +282,37 @@ export function PlayFinder({ active }: PlayFinderProps) {
   );
 }
 
-function ResultCard({ result, selected, onSelect }: { result: SearchResult; selected: boolean; onSelect: () => void }) {
-  const { clip } = result;
-  const actions = isVerified(clip, "actions") ? clip.actions : [];
-  const context = [
-    isVerified(clip, "game") ? clip.game : undefined,
-    isVerified(clip, "teams") ? clip.teams?.join(" vs ") : isVerified(clip, "team") ? clip.team : undefined,
-    isVerified(clip, "season") ? clip.season : undefined,
-    isVerified(clip, "publishedAt") && clip.publishedAt ? formatDate(clip.publishedAt) : undefined,
-  ].filter(Boolean).join(" · ") || clip.source.publisher;
+function ResultCard({result, selected, onSelect}: {result: SearchResult; selected: boolean; onSelect: () => void}) {
+  const {clip} = result;
   return <button type="button" className={`finder-result-card ${selected ? "is-selected" : ""}`} onClick={onSelect} aria-pressed={selected}>
-    <span className="finder-result-icon"><Clapperboard size={16} /></span>
-    <span className="finder-result-main"><strong>{clip.title}</strong><span>{context}</span><span className="finder-tags">{actions.map((action) => <em key={action}>{ACTION_LABELS[action]}</em>)}{isVerified(clip, "shotType") && clip.shotType ? <em>{clip.shotType}</em> : null}{isVerified(clip, "result") && clip.result ? <em>{clip.result}</em> : null}{!actions.length ? <em>Play type not verified</em> : null}</span><span className="finder-why"><Check size={12} /> Why this matches: {result.why.join(" · ")}</span></span>
-    <ExternalLink size={14} className="finder-result-chevron" aria-hidden="true" />
+    {clip.thumbnail ? <img className="finder-thumbnail" src={clip.thumbnail} alt="" loading="lazy" /> : <Clapperboard size={20} />}
+    <span className="finder-result-main"><strong>{clip.title}</strong><span>{verifiedContextLine(clip)}</span><span className="finder-tags"><em>{clip.outcome}</em><em>{clip.phase}</em></span><span className="finder-why"><Check size={12} /> {result.why.join(" · ")}</span></span>
   </button>;
 }
-
-function ClipDetail({ clip, similar, active, videoRef, onSave, onOpenCollections, onSelectSimilar, collections }: { clip: PlayClip; similar: Array<{ clip: PlayClip; shared: string[] }>; active: boolean; videoRef: React.RefObject<HTMLIFrameElement | null>; onSave: (collectionId: string) => void; onOpenCollections: () => void; onSelectSimilar: (clip: PlayClip) => void; collections: FilmCollection[] }) {
-  const [collectionId, setCollectionId] = useState("");
-  useEffect(() => { if (!collections.some((collection) => collection.id === collectionId)) setCollectionId(collections[0]?.id ?? ""); }, [collections, collectionId]);
-  const facts = verifiedFacts(clip);
-  return <article className="finder-detail-card">
-    <div className="finder-detail-media">{clip.source.embedUrl && active ? <iframe ref={videoRef} title={`Official NBA video: ${clip.title}`} src={clip.source.embedUrl} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen loading="lazy" /> : <div className="finder-media-placeholder"><Clapperboard size={27} /><span>{clip.source.embedUrl ? "Official NBA clip" : "Watch this play on its official source"}</span></div>}</div>
-    <div className="finder-detail-body"><div className="finder-detail-label"><span className="section-kicker">{clip.source.publisher} film</span><span className="finder-evidence-pill">Source checked</span></div><h2>{clip.title}</h2><p className="finder-detail-description">{clip.description}</p>
-      {facts.length ? <div className="finder-detail-context">{facts.map((fact) => <DetailFact key={fact.label} label={fact.label} value={fact.value} />)}</div> : null}
-      <div className="finder-detail-actions">{clip.source.embedUrl ? <a className="button button-primary" href={clip.source.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open official clip</a> : <a className="button button-primary" href={clip.source.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Watch on {clip.source.publisher}</a>}{collections.length ? <><ArcSelect ariaLabel="Choose collection" className="arc-select--compact finder-collection-select" value={collectionId} options={collections.map((collection) => ({ value: collection.id, label: collection.name }))} onValueChange={setCollectionId} /><button className="button button-outline" type="button" onClick={() => collectionId ? onSave(collectionId) : onOpenCollections()}><BookmarkPlus size={14} /> Save</button></> : <button className="button button-outline" type="button" onClick={onOpenCollections}><BookmarkPlus size={14} /> Create collection</button>}</div>
-      <div className="finder-detail-source"><Info size={13} /><span>Verified fields: {clip.evidence.verifiedFields.map(humanizeField).join(" · ") || "title and source"}</span><a href={clip.source.url} target="_blank" rel="noreferrer">{clip.source.label}</a></div>
-      {similar.length ? <section className="finder-similar"><h3>Find similar plays</h3><p>Ranked by shared, verified features; no confidence score is inferred</p>{similar.map(({ clip: other, shared }) => <button type="button" key={other.id} onClick={() => onSelectSimilar(other)}><span>{other.title}</span><small>Shares {shared.join(" · ")}</small></button>)}</section> : null}
-    </div>
-  </article>;
+function ClipDetail({clip, active, videoRef, onSave, onOpenCollections, collections}: {clip: PlayClip; active: boolean; videoRef: React.RefObject<HTMLVideoElement | null>; onSave: (id: string, snapshot: PlayClip) => void; onOpenCollections: () => void; collections: FilmCollection[]}) {
+ const [collectionId,setCollectionId]=useState("");const [failed,setFailed]=useState(false);
+ const [snapshot,setSnapshot]=useState<PlayClip>(clip);
+ const [detailError,setDetailError]=useState("");
+ useEffect(()=>{
+   setSnapshot(clip);setDetailError("");if(clip.mp4)return;
+   let cancelled=false;
+   void loadClipDetails(clip).then(record=>{if(!cancelled)setSnapshot(record);}).catch(error=>{if(!cancelled)setDetailError(error instanceof Error?error.message:"Clip details failed");});
+   return()=>{cancelled=true;};
+ },[clip]);
+ useEffect(()=>{setFailed(false);},[clip.id]);
+ useEffect(()=>{if(!collections.some(c=>c.id===collectionId))setCollectionId(collections[0]?.id??"");},[collections,collectionId]);
+ return <article className="finder-detail-card">
+  <div className="finder-detail-media">{active ? <video key={clip.id} ref={videoRef} src={snapshot.mp4} poster={clip.thumbnail} controls playsInline preload="metadata" onError={()=>setFailed(true)} aria-label={`NBA individual play: ${clip.title}`} /> : null}</div>
+  <div className="finder-detail-body"><span className="section-kicker">Individual NBA play · event {clip.eventId}</span><h2>{clip.title}</h2><p>{verifiedContextLine(clip)}</p>
+  {failed || detailError ? <p role="alert">The NBA video could not play here. Open the exact NBA Stats event below.</p> : null}
+  <div className="finder-detail-context"><DetailFact label="Outcome" value={clip.outcome} /><DetailFact label="Score" value={`${clip.away} ${clip.scoreAway ?? "—"} · ${clip.home} ${clip.scoreHome ?? "—"}`} /><DetailFact label="Participants" value={clip.participants.map(p=>`${p.name} (${p.role})`).join(" · ")} />{clip.shotDistance!=null ? <DetailFact label="Shot distance" value={`${clip.shotDistance} ft`} /> : null}</div>
+  <div className="finder-detail-actions"><a className="button button-primary" href={clip.eventUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> NBA Stats event</a>{collections.length ? <><ArcSelect className="arc-select--compact finder-collection-select" ariaLabel="Choose collection" value={collectionId} options={collections.map(c=>({value:c.id,label:c.name}))} onValueChange={setCollectionId} /><button className="button button-outline" disabled={!snapshot.mp4} onClick={()=>onSave(collectionId,snapshot)}><BookmarkPlus size={14} /> Save</button></> : <button className="button button-outline" onClick={onOpenCollections}>Create collection</button>}</div></div>
+ </article>;
 }
-
-function isVerified(clip: PlayClip, field: string) { return clip.evidence.verifiedFields.includes(field); }
-function verifiedFacts(clip: PlayClip) {
-  const facts: Array<{ label: string; value: string }> = [];
-  if (isVerified(clip, "game") && clip.game) facts.push({ label: "Game", value: clip.game });
-  if (isVerified(clip, "season") && clip.season) facts.push({ label: "Season", value: clip.season });
-  if (isVerified(clip, "players") && clip.players.length) facts.push({ label: "Players", value: clip.players.join(", ") });
-  if (isVerified(clip, "teams") && clip.teams?.length) facts.push({ label: "Teams", value: clip.teams.join(" · ") });
-  else if (isVerified(clip, "team") && clip.team) facts.push({ label: "Team", value: clip.team });
-  if (isVerified(clip, "opponent") && clip.opponent) facts.push({ label: "Opponent", value: clip.opponent });
-  if (isVerified(clip, "quarter") && clip.quarter) facts.push({ label: "Quarter", value: `Q${clip.quarter}` });
-  if (isVerified(clip, "gameClockSeconds") && clip.gameClockSeconds != null) facts.push({ label: "Game clock", value: formatClock(clip.gameClockSeconds) });
-  if (isVerified(clip, "scoreMargin") && clip.scoreMargin != null) facts.push({ label: "Score margin", value: String(clip.scoreMargin) });
-  if (isVerified(clip, "coverage") && clip.coverage) facts.push({ label: "Coverage", value: clip.coverage });
-  if (isVerified(clip, "shotType") && clip.shotType) facts.push({ label: "Shot type", value: clip.shotType });
-  if (isVerified(clip, "result") && clip.result) facts.push({ label: "Result", value: clip.result });
-  return facts;
-}
-function verifiedContextLine(clip: PlayClip) {
-  const context = verifiedFacts(clip).filter((fact) => ["Game", "Season", "Teams", "Team"].includes(fact.label)).map((fact) => fact.value);
-  const actions = isVerified(clip, "actions") ? clip.actions.map((action) => ACTION_LABELS[action]) : [];
-  return [...context, ...actions].join(" · ") || "No play type or game details verified";
-}
-
-function DetailFact({ label, value }: { label: string; value: string }) { return <div><span>{label}</span><strong>{value}</strong></div>; }
-function formatConditionValue(item: PlayCondition) {
-  if (item.field === "action") return ACTION_LABELS[item.value as PlayAction] ?? String(item.value);
-  if (item.field === "sequence") return (item.value as PlayAction[]).map((action) => ACTION_LABELS[action]).join(" → ");
-  return String(item.value);
-}
-function filterPlaceholder(field: SearchField) {
-  return ({ player: "e.g. Stephen Curry", team: "e.g. Boston Celtics", opponent: "e.g. Boston Celtics", season: "e.g. 2023-24", postseason: "true or false", quarter: "1–4", gameClock: "e.g. 2:30", scoreMargin: "e.g. 5", shotType: "three, layup, dunk…", result: "made, missed, turnover…", action: "Choose an action", coverage: "e.g. drop" })[field];
-}
-function humanizeField(field: string) {
-  return ({ actions: "play actions", sequence: "action order", players: "players", teams: "teams", gameClockSeconds: "game clock", scoreMargin: "score margin", shotType: "shot type" } as Record<string, string>)[field] ?? field.replace(/([A-Z])/g, " $1").toLowerCase();
-}
-function formatDate(value: string) {
-  const date = new Date(`${value}T12:00:00`);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
-}
-function formatClock(value: number) { return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`; }
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
+function verifiedContextLine(clip: PlayClip) {return `${clip.away} at ${clip.home} · ${clip.date} · ${clip.season} · ${clip.period <= 4 ? `Q${clip.period}` : `OT${clip.period-4}`} ${formatClock(clip.clock)}`;}
+function DetailFact({label,value}: {label:string;value:string}) {return <div><span>{label}</span><strong>{value}</strong></div>;}
+function formatConditionValue(item:PlayCondition) {return `${['lt','lte','gt','gte'].includes(item.operator)?({lt:'< ',lte:'≤ ',gt:'> ',gte:'≥ '} as Record<string,string>)[item.operator]:''}${item.value}`;}
+function filterPlaceholder(field:SearchField) {return ({player:'Stephen Curry',team:'GSW',opponent:'BOS',season:'2023-24',date:'2025-05-16',phase:'regular, play-in, playoffs',eventType:'turnover, rebound, made shot',outcome:'made, missed, turnover',shotDistance:'17 or 15..20',shotValue:'2 or 3',period:'1–4, 5 for OT1',clock:'4.5 or 0..5',role:'shooter, assister, blocker, stealer',description:'step back, dunk, layup'})[field];}
+function formatDate(value:string) {return value.slice(0,10);}
+function formatClock(value:number) {const seconds=(value%60).toFixed(value%1?2:0).padStart(value%1?5:2,'0');return `${Math.floor(value/60)}:${seconds}`;}
+function downloadBlob(blob:Blob,filename:string) {const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);}

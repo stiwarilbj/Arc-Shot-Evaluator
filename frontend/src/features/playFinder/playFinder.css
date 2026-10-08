@@ -192,3 +192,12 @@
   .workspace-nav button { padding-right: 7px; padding-left: 7px; gap: 4px; font-size: 9px; }
   .workspace-nav button svg { width: 13px; height: 13px; }
 }
+.finder-thumbnail { width: 112px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 7px; flex: 0 0 auto; }
+.finder-detail-media video { width: 100%; aspect-ratio: 16 / 9; display: block; background: #000; }
+@media (max-width: 600px) { .finder-thumbnail { width: 80px; } .finder-search-line { flex-wrap: wrap; } .finder-search-line input { min-width: 0; } }
+.finder-result-card { grid-template-columns: 112px minmax(0, 1fr); }
+.finder-detail-actions > a { white-space: nowrap; }
+@media (max-width: 600px) {
+  .finder-result-card { grid-template-columns: 80px minmax(0, 1fr); }
+  .finder-detail-actions > a.button { flex-basis: 100%; }
+}

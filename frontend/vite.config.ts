@@ -5,8 +5,18 @@ const isGitHubPages = process.env.VITE_DEPLOY_TARGET === "github-pages";
 const repositoryName = process.env.GITHUB_REPOSITORY?.split("/").at(-1) || "Arc-Shot-Evaluator";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), {
+    name: "hosted-play-finder-only",
+    enforce: "pre",
+    resolveId(source) {
+      if (!isGitHubPages && source.endsWith("/features/playFinder/PlayFinder")) return "\0play-finder-disabled";
+    },
+    load(id) {
+      if (id === "\0play-finder-disabled") return "export function PlayFinder() { return null; }";
+    },
+  }],
   base: isGitHubPages ? `/${repositoryName}/` : "/",
+  worker: { format: "es" },
   build: {
     outDir: "dist",
     emptyOutDir: true,

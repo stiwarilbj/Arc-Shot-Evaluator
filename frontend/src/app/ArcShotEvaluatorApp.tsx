@@ -31,7 +31,7 @@ import type {
   WorkspaceTab,
 } from "../domain/analysisTypes";
 
-const PlayFinder = lazy(() => import("../features/playFinder/PlayFinder").then((module) => ({ default: module.PlayFinder })));
+const PlayFinder = import.meta.env.VITE_DEPLOY_TARGET === "github-pages" ? lazy(() => import("../features/playFinder/PlayFinder").then((module) => ({ default: module.PlayFinder }))) : null;
 
 const WAIT_MS = 750;
 const MAX_CONCURRENT_ANALYSES = 1;
@@ -111,6 +111,7 @@ export function ArcShotEvaluatorApp() {
   const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
   const [playFinderOpened, setPlayFinderOpened] = useState(false);
   const changeWorkspace = (next: AppWorkspace) => {
+    if (next === "play-finder" && !IS_GITHUB_PAGES) return;
     if (next === "play-finder") setPlayFinderOpened(true);
     setWorkspace(next);
   };
@@ -505,7 +506,7 @@ export function ArcShotEvaluatorApp() {
       <div className={workspace === "analyzer" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "analyzer"}>
         {analyzerView}
       </div>
-      {playFinderOpened ? <div className={workspace === "play-finder" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "play-finder"}>
+      {IS_GITHUB_PAGES && PlayFinder && playFinderOpened ? <div className={workspace === "play-finder" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "play-finder"}>
         <Suspense fallback={<div className="finder-loading" role="status">Loading Play Finder…</div>}><PlayFinder active={workspace === "play-finder"} /></Suspense>
       </div> : null}
     </div>

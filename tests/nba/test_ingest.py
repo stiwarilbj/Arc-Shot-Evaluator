@@ -1,0 +1,40 @@
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location("ingest", Path(__file__).parents[2] / "scripts/nba/ingest.py")
+ingest = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ingest)
+
+class IngestionTests(unittest.TestCase):
+    def response(self, event=53, path_event=53):
+        return {"resultSets": {"playlist": [{"gi": "0042400216", "ei": event, "dsc": "Brunson jumper"}], "Meta": {"videoUrls": [{"lurl": f"https://videos.nba.com/nba/pbp/media/2025/05/16/0042400216/{path_event}/uuid_1280x720.mp4"}]}}}
+    def test_asset_join(self):
+        self.assertIn(53, ingest.asset_map(self.response(), "0042400216"))
+        with self.assertRaises(ValueError): ingest.asset_map(self.response(path_event=37), "0042400216")
+        with self.assertRaises(ValueError): ingest.asset_map(self.response(), "0022300001")
+        response=self.response();response["resultSets"]["Meta"]["videoUrls"]=[]
+        with self.assertRaises(ValueError): ingest.asset_map(response, "0042400216")
+    def test_clock(self):
+        self.assertEqual(ingest.clock_seconds("PT07M41.00S"),461)
+        self.assertEqual(ingest.clock_seconds("PT00M04.25S"),4.25)
+    def test_event_number_not_action_id(self):
+        game={"homeTeam":{"teamTricode":"NYK","players":[{"personId":1628973,"firstName":"Jalen","familyName":"Brunson"}]},"awayTeam":{"teamTricode":"BOS","players":[]}}
+        action={"actionNumber":53,"actionId":37,"personId":1628973,"description":"Brunson 17' Step Back Jump Shot (2 PTS)","actionType":"Made Shot","subType":"Step Back Jump shot","teamTricode":"NYK","period":1,"clock":"PT07M41.00S","videoAvailable":1,"isFieldGoal":1,"shotDistance":17,"shotValue":2,"shotResult":"Made"}
+        meta={"gameId":"0042400216","season":"2024-25","date":"2025-05-16","phase":"playoffs"}
+        rows,missing=ingest.normalize_game(meta,game,[action],ingest.asset_map(self.response(),meta["gameId"]))
+        self.assertEqual(rows[0]["id"],"0042400216:53");self.assertEqual(missing,[])
+        self.assertIn("GameEventID=53",rows[0]["eventUrl"])
+        self.assertEqual(rows[0]["participants"][0]["role"],"shooter")
+        self.assertEqual(ingest.normalize_game(meta,game,[action],{})[1],[53])
+    def test_empty_publication_preserves_prior_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'output').mkdir();(root/'output/manifest.json').write_text('previous')
+            with self.assertRaises(ValueError):ingest.publish_index(root/'state',root/'output',{})
+            self.assertEqual((root/'output/manifest.json').read_text(),'previous')
+    def test_atomic_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'games/game.json';ingest.atomic_json(path,{"event":53});self.assertEqual(json.loads(path.read_text()),{"event":53});self.assertFalse(path.with_suffix('.json.tmp').exists())
+if __name__ == '__main__': unittest.main()
