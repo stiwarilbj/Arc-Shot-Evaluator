@@ -5,14 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run validate:play-finder && tsc -b && vite build",
+    "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "validate:play-finder": "node ../scripts/validate-play-finder-catalog.mjs",
-    "test:play-finder": "node --experimental-strip-types ../scripts/test-play-finder.mjs",
     "test:analysis-modes": "node --experimental-strip-types ../scripts/test-analysis-modes.mjs",
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
     "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
-    "test": "npm run test:play-finder && npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation"
+    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

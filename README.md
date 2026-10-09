@@ -1,6 +1,6 @@
 [Open the live ARC GitHub Pages demo →](https://stiwarilbj.github.io/Arc-Shot-Evaluator/)
 
-The hosted demo opens in ARC Shot Analyzer; Playbook is the second tab for half-court diagrams and saved plays, and Play Finder is the third tab for searching a growing catalog of verified NBA plays
+The hosted demo and local app have two workspaces: Shot Analyzer and Playbook.
 
 ```bash
 cd Arc-Shot-Evaluator
@@ -37,8 +37,6 @@ The website uses React, TypeScript, and regular CSS; the hosted build runs its n
 ARC connects detections across frames, keeps track of the rim when the camera moves, and uses the visible regulation rim as a conditional 2D scale reference. It reports projected measurements only when the evidence supports them, and marks single-camera geometry as estimated or unavailable when it does not. Portrait video, blur, camera movement, and different resolutions are supported. Clear side views still give the best numbers, of course.
 
 ARC also includes **Playbook** as a second tab for drawing half-court diagrams; start with the ready setup, search 24 editable starter plays, or begin on an empty court. Draw movement, passes, screens, dribble handoffs, pick-and-rolls, pick-and-pops, pin-downs, off-ball screens, and backdoor cuts; shape routes with curved control points, run equal-numbered actions together, set timing, and save diagrams or export a high-resolution PNG. Playbook’s deterministic AI moves offense off ball, brings receivers into place before transfers, reacts to screens and handoffs, tracks defensive and off-ball quality, and ends each simulation with a shot. After the drawn and enabled automatic actions, it reads live defender positions to choose an open cutter, roll player, post, drive, or perimeter pass; playback shows the selected read and route without changing the saved diagram. Pause the simulation to edit the board and resume from the same moment. Starter examples include Horns, Flex, Spain pick and roll, Elevator, Shuffle, Triangle, Zipper, Box, and High-low. The hosted demo keeps saved plays in the browser; the development server stores them in the project’s `playbooks/` directory
-
-The third tab, **Play Finder**, searches a growing catalog of reviewed NBA film with natural-language prompts and filters for players, teams, seasons, and verified play actions. Results explain which verified fields matched and link to the official NBA source; unknown clock, score, or coverage details are left unsupported rather than guessed. Save clips and notes in browser-based collections, find similar plays from shared verified features, and export or import collections as JSON. This catalog is a reviewed sample, not a search across every filmed NBA possession.
 
 The overview keeps the observed make rate separate from future prediction. A
 future FT% stays unavailable until a trained model has been evaluated on held
@@ -89,3 +87,16 @@ For terminal analysis, run:
 ```
 
 ARC uses the E-BARD basketball detector and Ultralytics YOLO11 Pose. Their links and license notes are included with the project.
+
+## Frontend build targets
+
+Both targets include Shot Analyzer and Playbook. The hosted build uses browser analysis and browser storage; the local app connects to the local server.
+
+```sh
+cd frontend
+pnpm install --frozen-lockfile
+pnpm build
+VITE_DEPLOY_TARGET=github-pages pnpm build
+```
+
+GitHub Pages deploys automatically after changes merge into `main`.

@@ -48,7 +48,7 @@ export function UsageGuide() {
           <div><span className="section-kicker">Quick guide</span><h2 id="guide-title">How to use ARC</h2></div>
           <button ref={closeRef} type="button" className="icon-button" onClick={close} aria-label="Close guide"><X size={17} /></button>
         </div>
-        <p className="guide-intro" id="guide-intro">ARC has three workspaces: review real shot footage in Shot Analyzer, draw and test a basketball play in Playbook, or search official NBA clips in Play Finder</p>
+        <p className="guide-intro" id="guide-intro">ARC has two workspaces: Shot Analyzer for footage review and Playbook for drawing and testing plays</p>
         <div className="guide-grid">
           <article className="guide-card">
             <h3>Analyze a video</h3>
@@ -77,16 +77,6 @@ export function UsageGuide() {
               <li>Open Starter plays to search 24 editable sets, including Horns, Flex, Shuffle, Triangle, Zipper, Box, and High-low</li>
               <li>Drag arrows to edit them even while another drawing tool is active; select an arrow to set its order, duration, or curved path</li>
               <li>Use Delete, Undo, and Redo to revise the diagram; touch dragging and arrow-key nudging are supported</li>
-            </ul>
-          </article>
-          <article className="guide-card">
-            <h3>Find a real play</h3>
-            <ul>
-              <li>Describe a basketball action or matchup; the example prompts show the supported style</li>
-              <li>Review the condition chips, choose a player when a name is ambiguous, and remove unsupported details before searching</li>
-              <li>Open a result to see the supporting fields and why it matched; follow the official NBA or team link to watch</li>
-              <li>Use Filters for situation details, find similar plays by shared verified features, and save clips with notes in browser collections</li>
-              <li>The catalog is a growing, reviewed sample; it does not yet search every filmed NBA possession, and unknown fields are left blank</li>
             </ul>
           </article>
           <article className="guide-card">
