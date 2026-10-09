@@ -822,7 +822,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .counter-table-wrap table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .counter-table-wrap th, .counter-table-wrap td { padding: 10px; text-align: left; border-bottom: 1px solid var(--line); }
 .counter-lab-page :is(button, summary, select, input, [tabindex]):focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
-@media (min-width: 861px) and (min-height: 680px) { .counter-lab-app-shell { height: 100dvh; overflow: auto; } }
+@media (min-width: 900px) {
+  .counter-lab-page { width: min(1240px, calc(100% - 40px)); padding: 16px 0 24px; }
+  .counter-lab-header h1 { font-size: 28px; }
+  .counter-lab-header p { margin: 4px 0; }
+  .counter-steps { margin: 14px 0; padding: 8px 0; }
+  .counter-setup { padding: 16px; gap: 20px; }
+  .counter-play-summary h2 { font-size: 23px; }
+  .counter-preview { max-width: 280px; }
+  .counter-preview .counter-court svg { max-height: min(210px, 28dvh); }
+  .counter-empty { margin: 10px 0; padding: 10px 14px; }
+  .counter-settings { margin-top: 12px; padding-top: 6px; }
+  .counter-run-row { margin-top: 10px; }
+  .counter-results { margin-top: 18px; padding: 16px; }
+  .counter-inspect-layout { margin-top: 14px; gap: 16px; }
+  .counter-court svg { max-height: min(340px, 38dvh); }
+  .counter-matchup { padding: 10px; gap: 4px; }
+  .counter-matchup b { font-size: 23px; }
+  .counter-diagnosis { padding: 14px; }
+  .counter-timeline { padding: 10px; }
+  .counter-repairs { margin-top: 18px; padding-top: 14px; }
+  .counter-repair-card { padding: 14px; gap: 7px; }
+}
 @media (max-width: 1100px) { .counter-matchups { grid-template-columns: repeat(3, minmax(0, 1fr)); } .counter-inspect-layout { grid-template-columns: minmax(0, 1fr) 260px; gap: 14px; } }
 @media (max-width: 899px) {
   .counter-lab-page { width: calc(100% - 32px); }
