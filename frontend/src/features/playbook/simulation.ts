@@ -2819,7 +2819,10 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
     // Extend an uncaught transfer before sampling the ball path at the action
     // boundary. Otherwise currentTransferAt sees the old end time and briefly
     // snaps the ball back to its former handler while the pass waits to be caught.
-    transferBallToRecipient(run, startTime, endTime, endTime - startTime);
+    // Event boundaries can split a fixed frame into a tiny slice. A missed
+    // pass must still advance its bounded retry window by at least one fixed
+    // frame, or each retry moves the boundary by a few microseconds forever.
+    transferBallToRecipient(run, startTime, endTime, Math.max(endTime - startTime, SIMULATION_FIXED_STEP_MS));
     updateBall(run, sampleTime, dt);
     finalizeCompletedMovement(run, startTime, endTime);
   } else {

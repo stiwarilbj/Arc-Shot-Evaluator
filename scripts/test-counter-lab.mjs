@@ -3,6 +3,7 @@ import { analyzeCounterLab, runCounterLabTrial } from '../frontend/src/features/
 import { COUNTER_LAB_DEFAULT_PROFILES, createCounterLabRepairs, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
 import { createSimulationRun } from '../frontend/src/features/playbook/simulation.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
+import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 
 const switchSlipFixture = {
   id: 'switch-slip-fixture',
@@ -50,6 +51,13 @@ assert.ok(brokenRun.trace.some((frame) => frame.activeRoutes.length), 'replay fr
 const slipRun = runCounterLabTrial(slip.play, switchProfile, 'adaptive');
 assert.equal(slipRun.firstLostOpeningMs, null, 'the slip repair removes the sustained breakdown in the switch fixture');
 assert.ok(slipRun.trace.some((frame) => frame.activeRoutes.some((route) => route.kind === 'slip-screen')), 'the repair executes as a slip in playback');
+
+const spainPickAndRoll = STARTER_PLAYS.find((play) => play.name === 'Spain pick and roll');
+assert.ok(spainPickAndRoll, 'the adaptive transfer regression uses a shipped starter play');
+const spainSlipRepair = createCounterLabRepairs(spainPickAndRoll).find((repair) => repair.id.startsWith('slip-'));
+assert.ok(spainSlipRepair, 'the Spain pick-and-roll starter offers a slip variant');
+const spainAdaptiveSlip = runCounterLabTrial(spainSlipRepair.play, switchProfile, 'adaptive');
+assert.ok(spainAdaptiveSlip.trace.at(-1).elapsedMs < 20_000, 'an uncaught adaptive transfer ends inside the simulator retry bound');
 
 const analysis = await analyzeCounterLab(switchSlipFixture, COUNTER_LAB_DEFAULT_PROFILES, ['scripted', 'adaptive'], () => {});
 const verifiedSlip = analysis.repairs.find((repair) => repair.id === 'slip-screen-one');
