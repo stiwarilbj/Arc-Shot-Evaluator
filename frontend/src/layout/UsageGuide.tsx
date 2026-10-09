@@ -48,7 +48,7 @@ export function UsageGuide() {
           <div><span className="section-kicker">Quick guide</span><h2 id="guide-title">How to use ARC</h2></div>
           <button ref={closeRef} type="button" className="icon-button" onClick={close} aria-label="Close guide"><X size={17} /></button>
         </div>
-        <p className="guide-intro" id="guide-intro">ARC has two workspaces: Shot Analyzer for footage review and Playbook for drawing and testing plays</p>
+        <p className="guide-intro" id="guide-intro">ARC has three workspaces: Shot Analyzer for footage review, Playbook for drawing plays, and Counter Lab for testing defensive answers.</p>
         <div className="guide-grid">
           <article className="guide-card">
             <h3>Analyze a video</h3>
@@ -94,6 +94,16 @@ export function UsageGuide() {
               <li>Playback reads and routes are temporary and do not change saved diagrams or exports</li>
               <li>Save play stores the diagram and actions; Saved plays lets you reopen, duplicate, or delete a play</li>
               <li>Export PNG downloads a clean court image; hosted plays are saved in this browser, while the local app uses its local server</li>
+            </ul>
+          </article>
+          <article className="guide-card">
+            <h3>Break a play</h3>
+            <ul>
+              <li>From Playbook, choose Test in Counter Lab to carry over the current draft, or import a saved play or starter set</li>
+              <li>Choose defensive responses and compare the authored sequence with the simulator’s adaptive offense</li>
+              <li>Select a matchup to replay it; the timeline marks sustained loss of an opening and reports blocked authored passes separately</li>
+              <li>Repairs appear only after rerunning the changed actions shows a quality gain across the selected tests; compare the results and routes before saving a new Playbook copy</li>
+              <li>Counter Lab scores are simulation outputs, not real-game probabilities; reports stay in memory until you save a repair</li>
             </ul>
           </article>
         </div>

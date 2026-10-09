@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { BarChart3, CircleDot, Waypoints } from "lucide-react";
 import { CoachNotes } from "../features/analysis/CoachNotes";
 import { ShotDataPanel } from "../features/analysis/ShotDataPanel";
@@ -8,6 +8,7 @@ import { AnalysisQueue } from "../features/queue/AnalysisQueue";
 import { ExampleVideoLibrary } from "../features/upload/ExampleVideoLibrary";
 import { VideoUpload } from "../features/upload/VideoUpload";
 import { PlaybookBoard } from "../features/playbook/PlaybookBoard";
+import type { PlaybookDocument, PlaybookDraft } from "../features/playbook/types";
 import { AppHeader, type AppWorkspace } from "../layout/AppHeader";
 import { IS_GITHUB_PAGES } from "../runtime";
 import { isProcessingMode } from "../domain/analysisModes";
@@ -30,6 +31,8 @@ import type {
   VideoMode,
   WorkspaceTab,
 } from "../domain/analysisTypes";
+
+const CounterLab = lazy(() => import("../features/playbook/CounterLab").then((module) => ({ default: module.CounterLab })));
 
 const WAIT_MS = 750;
 const MAX_CONCURRENT_ANALYSES = 1;
@@ -107,7 +110,22 @@ export function ArcShotEvaluatorApp() {
   // it never mutates a queued or active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
   const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
-  const changeWorkspace = (next: AppWorkspace) => setWorkspace(next);
+  function changeWorkspace(next: AppWorkspace) {
+    if (next === "counterlab") setCounterLabHasOpened(true);
+    setWorkspace(next);
+  }
+  const [counterLabHasOpened, setCounterLabHasOpened] = useState(false);
+  const [counterLabPlay, setCounterLabPlay] = useState<PlaybookDraft | null>(null);
+  const [playbookRequest, setPlaybookRequest] = useState<{ requestId: string; play: PlaybookDocument } | null>(null);
+  function testInCounterLab(play: PlaybookDraft) {
+    setCounterLabPlay(play);
+    setCounterLabHasOpened(true);
+    setWorkspace("counterlab");
+  }
+  function openSavedPlayInEditor(play: PlaybookDocument) {
+    setPlaybookRequest({ requestId: createQueueItemId("counter-copy"), play });
+    setWorkspace("playbook");
+  }
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
     return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark";
@@ -491,11 +509,12 @@ export function ArcShotEvaluatorApp() {
   );
 
   return (
-    <div className={`app-shell ${workspace === "playbook" ? "playbook-app-shell" : session ? "analysis-session-shell" : ""}`}>
+    <div className={`app-shell ${workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : session ? "analysis-session-shell" : ""}`}>
       <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={changeWorkspace} />
       <div className={workspace === "playbook" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "playbook"}>
-        <PlaybookBoard />
+        <PlaybookBoard active={workspace === "playbook"} onTestInCounterLab={testInCounterLab} onDraftChange={setCounterLabPlay} requestedPlay={playbookRequest} />
       </div>
+      {counterLabHasOpened ? <div className={workspace === "counterlab" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "counterlab"}><Suspense fallback={<div className="counter-lab-loading" role="status">Loading Counter Lab…</div>}><CounterLab initialPlay={counterLabPlay} onOpenInPlaybook={openSavedPlayInEditor} /></Suspense></div> : null}
       <div className={workspace === "analyzer" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "analyzer"}>
         {analyzerView}
       </div>

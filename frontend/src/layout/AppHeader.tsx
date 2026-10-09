@@ -1,8 +1,8 @@
-import { CheckCircle2, CircleDot, ClipboardList, Moon, RotateCw, Sun } from "lucide-react";
+import { CheckCircle2, CircleDot, ClipboardList, FlaskConical, Moon, RotateCw, Sun } from "lucide-react";
 import type { ThemeMode } from "../domain/analysisTypes";
 import { UsageGuide } from "./UsageGuide";
 
-export type AppWorkspace = "analyzer" | "playbook";
+export type AppWorkspace = "analyzer" | "playbook" | "counterlab";
 
 interface AppHeaderProps {
   filename?: string;
@@ -31,6 +31,9 @@ export function AppHeader({ filename, complete, showReset = false, onReset, them
           </button>
           <button type="button" className={workspace === "playbook" ? "is-active" : ""} aria-current={workspace === "playbook" ? "page" : undefined} onClick={() => onWorkspaceChange("playbook")}>
             <ClipboardList size={15} /> Playbook
+          </button>
+          <button type="button" className={workspace === "counterlab" ? "is-active" : ""} aria-current={workspace === "counterlab" ? "page" : undefined} onClick={() => onWorkspaceChange("counterlab")}>
+            <FlaskConical size={15} /> Counter Lab
           </button>
         </nav>
       ) : null}

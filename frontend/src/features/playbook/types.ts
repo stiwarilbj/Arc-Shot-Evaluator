@@ -1,5 +1,5 @@
-export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut" | "delete";
-export type ArrowKind = "movement" | "pass" | "screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut";
+export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "slip-screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut" | "delete";
+export type ArrowKind = "movement" | "pass" | "screen" | "slip-screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut";
 export type ArrowPath = "straight" | "curve";
 export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
 export type DefenseStrategy = "off" | "contain" | "help" | "switch" | "trap-rotate" | "fight-over" | "go-under" | "drop" | "hedge" | "deny-lanes" | "protect-paint";
@@ -18,6 +18,8 @@ export interface SimulationSettings {
   defenseStrategy: DefenseStrategy;
   offBallIntensity: number;
   automaticActions: AutomaticActionSettings;
+  /** Keep the authored sequence intact for Counter Lab's controlled trials. */
+  offenseMode?: "adaptive" | "scripted";
 }
 
 export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = {

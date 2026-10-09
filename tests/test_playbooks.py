@@ -213,6 +213,15 @@ def test_new_screen_and_cut_actions_round_trip_in_version_one(tmp_path, monkeypa
             "end": {"x": 49, "y": 20},
             "actor_id": 3,
         },
+        {
+            "id": "saved-slip-screen",
+            "kind": "slip-screen",
+            "sequence": 6,
+            "start": {"x": 38, "y": 62},
+            "end": {"x": 44, "y": 66},
+            "screener_id": 2,
+            "handler_id": 1,
+        },
     ]
     client = TestClient(app)
     created = client.post("/api/playbooks", json=payload)
@@ -229,6 +238,9 @@ def test_new_screen_and_cut_actions_round_trip_in_version_one(tmp_path, monkeypa
     assert value["arrows"][3]["cutter_id"] == 3
     assert value["arrows"][3]["exit_target"] == {"x": 30.0, "y": 49.0}
     assert value["arrows"][4]["actor_id"] == 3
+    assert value["arrows"][5]["kind"] == "slip-screen"
+    assert value["arrows"][5]["screener_id"] == 2
+    assert value["arrows"][5]["handler_id"] == 1
     reopened = client.get(f"/api/playbooks/{value['id']}")
     assert reopened.status_code == 200
     assert reopened.json()["arrows"] == value["arrows"]

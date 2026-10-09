@@ -6,6 +6,7 @@ import {
   Check,
   Circle,
   Copy,
+  CornerDownRight,
   Download,
   Eraser,
   FolderOpen,
@@ -61,6 +62,7 @@ const TOOL_LABELS: Record<PlaybookTool, string> = {
   movement: "Draw movement arrow",
   pass: "Draw pass arrow",
   screen: "Add screen action",
+  "slip-screen": "Add a slip screen that rolls straight to the basket",
   handoff: "Add dribble handoff action",
   "pick-roll": "Add pick and roll action",
   "pick-pop": "Add pick and pop action",
@@ -269,6 +271,7 @@ function nearestPlayerId(players: PlaybookMarker[], point: CourtPoint, excludeId
 function actionLabel(kind: ArrowKind) {
   if (kind === "pass") return "Pass";
   if (kind === "screen") return "Screen";
+  if (kind === "slip-screen") return "Slip screen";
   if (kind === "handoff") return "Dribble handoff";
   if (kind === "pick-roll") return "Pick and roll";
   if (kind === "pick-pop") return "Pick and pop";
@@ -281,6 +284,7 @@ function actionLabel(kind: ArrowKind) {
 function actionClass(kind: ArrowKind) {
   if (kind === "pass" || kind === "handoff") return "pass-arrow";
   if (kind === "screen") return "screen-arrow";
+  if (kind === "slip-screen") return "slip-screen-arrow";
   if (kind === "off-ball-screen") return "off-ball-screen-arrow";
   if (kind === "pick-roll") return "pick-roll-arrow";
   if (kind === "pick-pop") return "pick-pop-arrow";
@@ -317,7 +321,12 @@ const EMPTY_SIMULATION_FRAME: SimulationFrame = {
   shotTarget: null,
 };
 
-export function PlaybookBoard() {
+export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay, active = true }: {
+  onTestInCounterLab?: (play: PlaybookDraft) => void;
+  onDraftChange?: (play: PlaybookDraft) => void;
+  requestedPlay?: { requestId: string; play: PlaybookDraft } | null;
+  active?: boolean;
+}) {
   const rootRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -432,6 +441,23 @@ export function PlaybookBoard() {
   useEffect(() => {
     fetchPlaybooks().then(setSaved).catch(() => setError("Saved plays are unavailable until the local server is running."));
   }, []);
+
+  useEffect(() => {
+    onDraftChange?.(clonePlaybook(draft));
+  }, [draft, onDraftChange]);
+
+  useEffect(() => {
+    if (requestedPlay) requestLoad(clonePlaybook(requestedPlay.play));
+    // The request id allows the same saved play to be opened more than once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedPlay?.requestId]);
+
+  useEffect(() => {
+    if (!active && simulationPlaying) {
+      setSimulationPlaying(false);
+      if (simulationRunRef.current) setSimulationFrameState(getSimulationFrame(simulationRunRef.current));
+    }
+  }, [active, simulationPlaying]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -802,7 +828,7 @@ export function PlaybookBoard() {
       }
       return;
     }
-    if (tool === "movement" || tool === "pass" || tool === "screen" || tool === "handoff" || tool === "pick-roll") {
+    if (tool === "movement" || tool === "pass" || tool === "screen" || tool === "slip-screen" || tool === "handoff" || tool === "pick-roll") {
       setDrawStart(point);
       setDrawEnd(point);
       svgRef.current?.setPointerCapture(event.pointerId);
@@ -852,16 +878,16 @@ export function PlaybookBoard() {
     if (drawStart && drawEnd) {
       if (pointDistance(drawStart, drawEnd) > 3) {
         const next = clonePlaybook(draft);
-        const kind: ArrowKind = tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement";
+        const kind: ArrowKind = tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement";
         const newArrow: PlaybookArrow = {
           id: arrowId(),
           kind,
           start: drawStart,
           end: drawEnd,
           path: "straight",
-          timing: kind === "screen" || kind === "pick-roll" ? 1.4 : 1.2,
+          timing: kind === "screen" || kind === "slip-screen" || kind === "pick-roll" ? 1.4 : 1.2,
           sequence: Math.max(0, ...draft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
-          ...(kind === "screen" || kind === "pick-roll" ? {
+          ...(kind === "screen" || kind === "slip-screen" || kind === "pick-roll" ? {
             screener_id: nearestPlayerId(draft.players, drawStart),
             handler_id: draft.ball ? nearestPlayerId(draft.players, draft.ball, nearestPlayerId(draft.players, drawStart)) ?? undefined : undefined,
           } : {}),
@@ -1101,6 +1127,7 @@ export function PlaybookBoard() {
         <div className="playbook-header-actions">
           <button type="button" className="button button-subtle" onClick={() => setSavedOpen(true)}><FolderOpen size={16} />Saved plays</button>
           <button type="button" className="button button-outline" onClick={exportPng}><Download size={16} />Export PNG</button>
+          {onTestInCounterLab ? <button type="button" className="button button-outline" onClick={() => onTestInCounterLab(clonePlaybook(draft))}><ShieldCheck size={16} />Test in Counter Lab</button> : null}
           <button type="button" className="button button-primary" onClick={() => void saveDraft()} disabled={status === "saving"}><Save size={16} />{status === "saving" ? "Saving…" : "Save play"}</button>
         </div>
       </div>
@@ -1237,6 +1264,7 @@ export function PlaybookBoard() {
             <ToolButton active={tool === "movement"} icon={<ArrowUpRight size={15} />} label="Movement" title={TOOL_LABELS.movement} onClick={() => chooseTool("movement")} />
             <ToolButton active={tool === "pass"} icon={<Send size={15} />} label="Pass" title={TOOL_LABELS.pass} onClick={() => chooseTool("pass")} />
             <ToolButton active={tool === "screen"} icon={<Shield size={15} />} label="Screen" title={TOOL_LABELS.screen} onClick={() => chooseTool("screen")} />
+            <ToolButton active={tool === "slip-screen"} icon={<CornerDownRight size={15} />} label="Slip" title={TOOL_LABELS["slip-screen"]} onClick={() => chooseTool("slip-screen")} />
             <ToolButton active={tool === "handoff"} icon={<Hand size={15} />} label="Handoff" title={TOOL_LABELS.handoff} onClick={() => chooseTool("handoff")} />
             <ToolButton active={tool === "pick-roll"} icon={<ArrowUpRight size={15} />} label="Pick & roll" title={TOOL_LABELS["pick-roll"]} onClick={() => chooseTool("pick-roll")} />
             <ToolButton active={tool === "pick-pop"} icon={<ArrowUpRight size={15} />} label="Pick & pop" title={TOOL_LABELS["pick-pop"]} onClick={() => chooseTool("pick-pop")} />
@@ -1318,7 +1346,7 @@ export function PlaybookBoard() {
                 const marker = simulationFrame.adaptiveReadRoute.kind === "pass" ? "pass-arrow" : "movement-arrow";
                 return <path className={`adaptive-read-route adaptive-read-${simulationFrame.adaptiveReadRoute.kind}`} d={`M${start.x} ${start.y} L${end.x} ${end.y}`} markerEnd={`url(#${marker})`}><title>{simulationFrame.adaptiveReadLabel}: {simulationFrame.adaptiveReadReason}</title></path>;
               })() : null}
-              {drawStart && drawEnd ? <path d={actionPath({ id: "preview", kind: tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement", start: drawStart, end: drawEnd, path: "straight" })} className={`drawing-preview ${actionClass(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")}`} markerEnd={`url(#${actionMarker(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")})`} /> : null}
+              {drawStart && drawEnd ? <path d={actionPath({ id: "preview", kind: tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement", start: drawStart, end: drawEnd, path: "straight" })} className={`drawing-preview ${actionClass(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")}`} markerEnd={`url(#${actionMarker(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")})`} /> : null}
               {(draft.defenders_visible || simulationActive) ? (simulationActive ? simulationFrame.defenders : draft.defenders).map((marker) => {
                 const point = markerPoint(marker);
                 const active = selected?.type === "defender" && selected.id === marker.id;
@@ -1382,7 +1410,7 @@ function MiniCourt({ play }: { play: PlaybookDocument | PlaybookDraft }) {
       const sequence = arrowSequence(arrow, index);
       return <g key={arrow.id}>
         {screenCutterPath(arrow, play.players) ? <path d={screenCutterPath(arrow, play.players) as string} className="mini-screen-cutter" /> : null}
-        <path d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" || arrow.kind === "off-ball-screen" || arrow.kind === "pin-down" ? "mini-screen" : arrow.kind === "pick-roll" || arrow.kind === "pick-pop" ? "mini-pick-roll" : "mini-move"} />
+        <path d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" || arrow.kind === "slip-screen" || arrow.kind === "off-ball-screen" || arrow.kind === "pin-down" ? "mini-screen" : arrow.kind === "pick-roll" || arrow.kind === "pick-pop" ? "mini-pick-roll" : "mini-move"} />
         <circle cx={badge.x} cy={badge.y} r="22" className="mini-sequence-badge" />
         <text x={badge.x} y={badge.y + 1} className="mini-sequence-number">{sequence}</text>
       </g>;

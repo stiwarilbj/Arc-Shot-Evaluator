@@ -10,7 +10,8 @@
     "test:analysis-modes": "node --experimental-strip-types ../scripts/test-analysis-modes.mjs",
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
     "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
-    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation"
+    "test:counter-lab": "node --experimental-strip-types ../scripts/test-counter-lab.mjs",
+    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

@@ -21,7 +21,7 @@ MAX_NAME_LENGTH = 80
 MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
-ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"}
+ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "slip-screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"}
 ALLOWED_ARROW_PATHS = {"straight", "curve"}
 ALLOWED_PLAYER_BADGES = {
     "playmaker", "off-dribble-creator", "deep-range", "catch-and-shoot", "slasher",
@@ -127,7 +127,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         control = None if control_value is None else _point(control_value, "Arrow control")
         clean_arrow = {"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "path": path, "timing": round(float(timing), 2), "control": control, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")}
         player_ids = {marker["id"] for marker in players}
-        if arrow["kind"] in {"screen", "pick-roll", "pick-pop"}:
+        if arrow["kind"] in {"screen", "slip-screen", "pick-roll", "pick-pop"}:
             screener_id, handler_id = arrow.get("screener_id"), arrow.get("handler_id")
             if arrow["kind"] == "pick-pop" and (screener_id is None or handler_id is None):
                 raise HTTPException(400, "Pick and pop actions need screener_id and handler_id")
