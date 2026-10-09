@@ -84,7 +84,6 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
             Free throw
           </button>
         </div>
-        <p>{shotMode === "free_throw" ? "Normal free-throw shot review" : "Normal shot review"}</p>
       </fieldset>
       <button
         className={`upload-drop ${dragging ? "is-dragging" : ""}`}
