@@ -29,7 +29,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { createPlaybook, deletePlaybook, fetchPlaybooks, updatePlaybook } from "./api";
+import { createPlaybook, deletePlaybook, fetchPlaybooks, subscribePlaybooks, updatePlaybook } from "./api";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
@@ -439,8 +439,15 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }, [simulationPlaying]);
 
   useEffect(() => {
-    fetchPlaybooks().then(setSaved).catch(() => setError("Saved plays are unavailable until the local server is running."));
+    let mounted = true;
+    const refresh = () => { void fetchPlaybooks().then((plays) => { if (mounted) setSaved(plays); }).catch((caught: unknown) => { if (mounted) setError(caught instanceof Error ? caught.message : "Saved plays are unavailable. Retry when the server is running."); }); };
+    refresh();
+    const unsubscribe = subscribePlaybooks(refresh);
+    return () => { mounted = false; unsubscribe(); };
   }, []);
+  useEffect(() => {
+    if (savedOpen) void fetchPlaybooks().then(setSaved).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Saved plays could not be loaded."));
+  }, [savedOpen]);
 
   useEffect(() => {
     onDraftChange?.(clonePlaybook(draft));

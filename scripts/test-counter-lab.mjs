@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { analyzeCounterLab, runCounterLabTrial } from '../frontend/src/features/playbook/counterLabEngine.ts';
+import { advanceReplay, matchesReplay, replayFrame } from '../frontend/src/features/playbook/counterLabReplay.ts';
+import { analyzeCounterLab, runCounterLabTrial, diagnoseOpenings, repairEvidence, verifiedRecovery } from '../frontend/src/features/playbook/counterLabEngine.ts';
 import { COUNTER_LAB_DEFAULT_PROFILES, createCounterLabRepairs, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
 import { createSimulationRun } from '../frontend/src/features/playbook/simulation.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
@@ -11,18 +12,18 @@ const switchSlipFixture = {
   name: 'Switch slip fixture',
   defenders_visible: false,
   players: [
-    { id: 1, x: 25.78064717890755, y: 77.00569651835197 },
-    { id: 2, x: 21.60192465372563, y: 73.89039527148977 },
-    { id: 3, x: 43.18731441831898, y: 44.00693493243953 },
-    { id: 4, x: 23.89531681490626, y: 38.949288396117545 },
-    { id: 5, x: 69.31848664518304, y: 45.84292722199385 },
+    { id: 1, x: 51.80839931126684, y: 57.520748605020344 },
+    { id: 2, x: 46.11721276305616, y: 59.95294767897576 },
+    { id: 3, x: 52.65480529051274, y: 53.28355757519603 },
+    { id: 4, x: 15.666752534452826, y: 55.878381822258234 },
+    { id: 5, x: 72.6544732763432, y: 53.517179004848 },
   ],
   defenders: [],
-  ball: { x: 25.78064717890755, y: 77.00569651835197 },
+  ball: { x: 51.80839931126684, y: 57.520748605020344 },
   arrows: [{
-    id: 'screen-one', kind: 'screen', sequence: 1, path: 'straight', timing: 3.55377678252177,
-    start: { x: 21.60192465372563, y: 73.89039527148977 },
-    end: { x: 16.111013396746493, y: 65.19622205588615 },
+    id: 'screen-one', kind: 'screen', sequence: 1, path: 'straight', timing: 3.591288176830858,
+    start: { x: 46.11721276305616, y: 59.95294767897576 },
+    end: { x: 57.11684093112126, y: 47.20973610528745 },
     screener_id: 2, handler_id: 1,
   }],
 };
@@ -45,7 +46,9 @@ const repeatedRun = runCounterLabTrial(switchSlipFixture, switchProfile, 'adapti
 assert.deepEqual(repeatedRun, brokenRun, 'explicit Counter Lab matchups produce deterministic replays');
 assert.deepEqual(switchSlipFixture, original, 'trial runs preserve the original fixture');
 assert.ok(brokenRun.firstLostOpeningMs != null, 'the fixture records a sustained loss during a switch');
-assert.match(brokenRun.outcome, /recovered with/i, 'adaptive continuation is distinguished from the authored action');
+assert.ok(brokenRun.firstLostOpeningMs < brokenRun.releasedAtMs, 'the switch breakdown occurs before shot release');
+assert.equal(typeof brokenRun.adaptiveAttempts, 'number', 'adaptive attempts are recorded independently of the outcome');
+assert.doesNotMatch(brokenRun.outcome, /^Recovered/, 'attempts alone do not imply recovery');
 assert.ok(brokenRun.trace.some((frame) => frame.activeRoutes.length), 'replay frames retain the currently executed route');
 
 const slipRun = runCounterLabTrial(slip.play, switchProfile, 'adaptive');
@@ -79,8 +82,10 @@ const blockedPassPlay = {
 };
 const holdProfile = { id: 'hold', label: 'Hold positions', strategy: 'off', scheme: 'man-to-man' };
 const blockedRun = runCounterLabTrial(blockedPassPlay, holdProfile, 'scripted');
-assert.equal(blockedRun.firstBlockedPass?.sequence, 1, 'an obstructed authored pass is diagnosed with its real action sequence');
-assert.equal(blockedRun.firstBlockedPass?.atMs, 0, 'the pass obstruction is tied to the start of that authored action');
+assert.equal(blockedRun.firstUnsafePass?.sequence, 1, 'an unsafe authored pass uses its own action sequence');
+assert.equal(blockedRun.firstUnsafePass?.unsafeAtMs, 0, 'the warning records the actual unsafe window');
+assert.equal(blockedRun.firstBlockedPass, null, 'a contested but delivered pass is not called a failure');
+assert.equal(blockedRun.passDiagnostics[0].status, 'delivered');
 
 const noAdvantagePlay = {
   ...structuredClone(switchSlipFixture),
@@ -109,4 +114,61 @@ await assert.rejects(
   'cancellation stops a comparison after its current simulation',
 );
 
+const forcedShot = runCounterLabTrial(STARTER_PLAYS.find((play) => play.name === 'Pick and pop'), COUNTER_LAB_DEFAULT_PROFILES.find((profile) => profile.id === 'help'), 'adaptive');
+assert.ok(forcedShot.adaptiveAttempts > 0, 'the forced-shot regression actually attempts adaptive reads');
+assert.ok(forcedShot.score < 55);
+assert.equal(forcedShot.recoveredAtMs, null);
+assert.doesNotMatch(forcedShot.outcome, /^Recovered/, 'low-quality improvisation is not claimed as recovery');
+const makeFrame = (time, quality, phase = 'idle') => ({ ...brokenRun.trace[0], elapsedMs: time, shotPhase: phase, opportunities: [{ kind: 'shot', playerId: 1, quality, score: 1, receiverGap: 5, laneGap: 5 }] });
+assert.equal(diagnoseOpenings([makeFrame(0, 70), makeFrame(100, 30), makeFrame(300, 30)]).firstLostOpeningMs, null, 'brief closure is not a sustained breakdown');
+assert.equal(diagnoseOpenings([makeFrame(0, 70), makeFrame(100, 30), makeFrame(400, 30)]).firstLostOpeningMs, 100, '300ms closure is confirmed at its onset');
+assert.equal(diagnoseOpenings([makeFrame(0, 70), makeFrame(100, 30, 'air'), makeFrame(500, 30, 'result')]).firstLostOpeningMs, null, 'released shots cannot create an opening-loss diagnosis');
+assert.equal(verifiedRecovery([makeFrame(300, 65), makeFrame(600, 65)], 200, [], 70), null, 'unexecuted adaptive attempts cannot recover');
+assert.equal(verifiedRecovery([makeFrame(300, 65), makeFrame(600, 65)], 200, [250], 70), 300, 'a completed read followed by sustained eligibility recovers');
+assert.equal(verifiedRecovery([makeFrame(300, 30), makeFrame(600, 30, 'air')], 200, [250], 22), null, 'a low-quality forced shot does not recover');
+assert.equal(verifiedRecovery([makeFrame(600, 30, 'air')], 200, [250], 60), 600, 'a qualifying released shot after a completed read recovers');
+const baseSummary = { ...brokenRun, score: 50, finalShotQuality: 50, createdAdvantage: true, firstLostOpeningMs: 1000, firstBreakdown: { kind: 'opening-lost', atMs: 1000 }, firstBlockedPass: null };
+assert.equal(repairEvidence(baseSummary, { ...baseSummary, firstLostOpeningMs: 1400, firstBreakdown: { kind: 'opening-lost', atMs: 1400 } }).verified, false, 'delay alone is not a verified repair');
+assert.equal(repairEvidence(baseSummary, { ...baseSummary, firstLostOpeningMs: 1400 }).opening, 'delayed');
+assert.equal(repairEvidence(baseSummary, { ...baseSummary, firstLostOpeningMs: null, firstBreakdown: null, createdAdvantage: false }).cleared, false, 'eliminating the advantage is not holding it');
+assert.equal(repairEvidence(baseSummary, { ...baseSummary, firstLostOpeningMs: null, firstBreakdown: null, finalShotQuality: 49 }).cleared, false, 'a resolution must preserve final quality');
+assert.equal(repairEvidence(baseSummary, { ...baseSummary, firstLostOpeningMs: null, firstBreakdown: null }).cleared, true);
+const laterPass = { actionId: 'later-pass', sequence: 3, actorId: 1, playerId: 2, status: 'failed', atMs: 1800, unsafeAtMs: 1700, receiverGap: 1, laneGap: 1 };
+assert.equal(repairEvidence({ ...baseSummary, firstBlockedPass: laterPass }, { ...baseSummary, passDiagnostics: [{ ...laterPass, status: 'delivered' }] }).cleared, false, 'clearing a later pass must not label the first opening loss as cleared');
+
+assert.equal(advanceReplay(0, 1100, 1, 10000), 1100, 'normal replay uses actual elapsed time');
+assert.equal(advanceReplay(0, 1000, .5, 10000), 500);
+assert.equal(advanceReplay(0, 1000, 2, 10000), 2000);
+const detail = { type: 'details', id: 'run', detailId: 'detail', key: 'switch:scripted', repairId: 'original' };
+assert.ok(matchesReplay(detail, detail));
+for (const field of ['id', 'detailId', 'key', 'repairId']) assert.equal(matchesReplay({ ...detail, [field]: 'stale' }, detail), false, `stale ${field} is rejected`);
+const interpolated = replayFrame([{ ...makeFrame(0, 60), players: [{ id: 1, x: 10, y: 20 }] }, { ...makeFrame(100, 60), players: [{ id: 1, x: 30, y: 40 }] }], 50);
+assert.deepEqual(interpolated.players[0], { id: 1, x: 20, y: 30 }, 'motion interpolates between recorded samples');
+assert.equal(replayFrame(null, 50), null);
+let baselineWasFirst = false;
+await analyzeCounterLab(switchSlipFixture, [switchProfile], ['adaptive'], ({ stage }) => { if (stage === 'repairs') assert.ok(baselineWasFirst, 'baseline arrives before candidate trials'); }, () => false, (results, traces) => { baselineWasFirst = true; assert.equal(results.length, 1); assert.ok(traces.has('original:switch:adaptive')); });
+assert.ok(baselineWasFirst);
+const beforeAll = JSON.stringify(STARTER_PLAYS);
+for (const play of STARTER_PLAYS) {
+  for (const mode of ['scripted', 'adaptive']) for (const profile of COUNTER_LAB_DEFAULT_PROFILES) {
+    const result = runCounterLabTrial(play, profile, mode);
+    if (result.firstUnsafePass) assert.ok(play.arrows.some((arrow, index) => arrow.id === result.firstUnsafePass.actionId && (arrow.sequence ?? index + 1) === result.firstUnsafePass.sequence), 'contested-pass mapping survives simultaneous phase boundaries');
+    if (result.firstLostOpeningMs != null && result.releasedAtMs != null) assert.ok(result.firstLostOpeningMs < result.releasedAtMs);
+    const events = [result.firstLostOpeningMs, result.firstBlockedPass?.atMs].filter((time) => time != null);
+    assert.equal(result.firstBreakdown?.atMs ?? null, events.length ? Math.min(...events) : null, 'first breakdown is chronological');
+  }
+  const candidates = createCounterLabRepairs(play);
+  assert.ok(candidates.length <= 8);
+  for (const candidate of candidates) {
+    const originalActions = createSimulationRun(play, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: 'scripted' }).actions;
+    const candidateActions = createSimulationRun(candidate.play, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: 'scripted' }).actions;
+    for (const action of candidateActions) if (candidate.id.startsWith('pass-') && action.arrow.id === candidate.id.slice(5).replace(/-[0-9]+$/, '')) {
+      assert.notEqual(action.recipientId, originalActions.find((original) => original.arrow.id === action.arrow.id).recipientId);
+      assert.notEqual(action.actorId, action.recipientId);
+    }
+  }
+}
+assert.equal(JSON.stringify(STARTER_PLAYS), beforeAll, 'all starter trials and repairs preserve source plays');
+assert.throws(() => runCounterLabTrial({ ...noAdvantagePlay, players: [{ id: 1, x: NaN, y: 10 }] }, holdProfile, 'scripted'), /invalid court positions/);
+assert.throws(() => runCounterLabTrial({ ...noAdvantagePlay, arrows: [{ id: 'bad', kind: 'pass', start: { x: 10, y: 10 }, end: { x: 20, y: 20 }, timing: Infinity }] }, holdProfile, 'scripted'), /invalid action/);
 console.log('Counter Lab tests passed: deterministic comparisons, switch-slip fixture, recovery, action diagnosis, bounded repairs, replay routes, partial rosters, eligibility, and cancellation');

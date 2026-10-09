@@ -102,8 +102,8 @@ export function UsageGuide() {
               <li>From Playbook, choose Test in Counter Lab to carry over the current draft, or import a saved play or starter set</li>
               <li>Choose defensive responses and compare the authored sequence with the simulator’s adaptive offense</li>
               <li>Select a matchup to replay it; the timeline marks sustained loss of an opening and reports blocked authored passes separately</li>
-              <li>Repairs appear only after rerunning the changed actions shows a quality gain across the selected tests; compare the results and routes before saving a new Playbook copy</li>
-              <li>Counter Lab scores are simulation outputs, not real-game probabilities; reports stay in memory until you save a repair</li>
+              <li>Repairs appear only after rerunning the changed actions shows at least five quality points gained or a resolved breakdown without lower final quality; compare the results and routes before saving a new Playbook copy</li>
+              <li>Counter Lab scores are simulation outputs, not real-game probabilities; Playbook edits and repair saves preserve reports until another play is imported or the page reloads</li>
             </ul>
           </article>
         </div>

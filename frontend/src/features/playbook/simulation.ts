@@ -48,6 +48,8 @@ type BoundAction = {
   partnerStart?: CourtPoint | null;
   transferWaitMs?: number;
   transferFailed?: boolean;
+  transferCompletedAtMs?: number;
+  transferFailedAtMs?: number;
 };
 
 type Velocity = { x: number; y: number };
@@ -1012,9 +1014,9 @@ export type CounterLabObservation = {
   ballHandlerId: number | null;
   assignments: Array<{ defenderId: number; playerId: number }>;
   opportunities: Array<{ kind: LiveReadChoice["kind"]; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number }>;
-  blockedPass: { playerId: number; receiverGap: number; laneGap: number } | null;
+  blockedPass: { actionId: string; sequence: number; playerId: number; receiverGap: number; laneGap: number } | null;
   involvedPlayerIds: number[];
-  activeRoutes: Array<{ kind: string; start: CourtPoint; end: CourtPoint; playerId: number }>;
+  activeRoutes: Array<{ kind: string; start: CourtPoint; end: CourtPoint; control?: CourtPoint; via?: CourtPoint; playerId: number }>;
   frame: SimulationFrame;
 };
 
@@ -1033,7 +1035,7 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
     if (recipient && handler) {
       const receiverGap = defenderGap(recipient, run.defenders);
       const laneGap = segmentClearanceFeet(run.ball ?? handler, recipient, run.defenders);
-      if (receiverGap < 3.5 || laneGap < 2.5) blockedPass = { playerId: recipient.id, receiverGap, laneGap };
+      if (receiverGap < 3.5 || laneGap < 2.5) blockedPass = { actionId: authoredPass.arrow.id, sequence: authoredPass.sequence, playerId: recipient.id, receiverGap, laneGap };
     }
   }
   const activeRoutes: CounterLabObservation["activeRoutes"] = [];
@@ -1045,7 +1047,13 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
         : active.arrow.kind === "pick-pop"
           ? active.arrow.exit_target ?? active.arrow.end
           : active.arrow.end;
-      if (actor) activeRoutes.push({ kind: active.arrow.kind, start: { x: actor.x, y: actor.y }, end, playerId: actor.id });
+      if (actor) {
+        const override = run.actionStartOverrides.get(active.arrow.id);
+        const start = override && run.elapsedMs >= override.atMs ? override.point : run.actionStarts.get(active.arrow.id) ?? active.plannedStart ?? active.arrow.start;
+        const twoLegs = ["pick-roll", "pick-pop", "slip-screen"].includes(active.arrow.kind);
+        const control = !twoLegs && active.arrow.path === "curve" ? routeControl(active, start, end) : undefined;
+        activeRoutes.push({ kind: active.arrow.kind, start: { ...start }, end, ...(control ? { control } : {}), ...(twoLegs ? { via: active.arrow.end } : {}), playerId: actor.id });
+      }
     }
     if (active.arrow.kind === "off-ball-screen" || active.arrow.kind === "pin-down") {
       const cutter = markerForId(run.players, active.recipientId);
@@ -2761,10 +2769,12 @@ function transferBallToRecipient(run: SimulationRun, previousTime: number, nextT
   const receiver = markerForId(run.players, transfer.recipientId);
   if (!receiver) {
     transfer.transferFailed = true;
+    transfer.transferFailedAtMs = nextTime;
     run.ballHandlerId = null;
     return;
   }
   if (run.ball && pointDistanceFeet(run.ball, receiver) <= TRANSFER_CATCH_RADIUS_FEET) {
+    transfer.transferCompletedAtMs = nextTime;
     run.ballHandlerId = receiver.id;
     // Finish the catch at the receiver's live position. The bounded catch
     // radius prevents a long snap while keeping the ball attached next tick.
@@ -2779,6 +2789,7 @@ function transferBallToRecipient(run: SimulationRun, previousTime: number, nextT
   const waitMs = (transfer.transferWaitMs ?? 0) + stepMs;
   if (waitMs > MAX_TRANSFER_WAIT_MS) {
     transfer.transferFailed = true;
+    transfer.transferFailedAtMs = nextTime;
     run.ballHandlerId = null;
     return;
   }

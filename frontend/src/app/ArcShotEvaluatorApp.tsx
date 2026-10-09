@@ -116,9 +116,10 @@ export function ArcShotEvaluatorApp() {
   }
   const [counterLabHasOpened, setCounterLabHasOpened] = useState(false);
   const [counterLabPlay, setCounterLabPlay] = useState<PlaybookDraft | null>(null);
+  const [counterLabRequest, setCounterLabRequest] = useState<{ requestId: string; play: PlaybookDraft } | null>(null);
   const [playbookRequest, setPlaybookRequest] = useState<{ requestId: string; play: PlaybookDocument } | null>(null);
   function testInCounterLab(play: PlaybookDraft) {
-    setCounterLabPlay(play);
+    setCounterLabRequest({ requestId: createQueueItemId("counter-import"), play });
     setCounterLabHasOpened(true);
     setWorkspace("counterlab");
   }
@@ -128,7 +129,7 @@ export function ArcShotEvaluatorApp() {
   }
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
-    return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark";
+    try { return window.localStorage.getItem("arc-theme-v2") === "light" ? "light" : "dark"; } catch { return "dark"; }
   });
   const activeQueueItemsRef = useRef<Set<string>>(new Set());
   const cancelledQueueItemsRef = useRef<Set<string>>(new Set());
@@ -137,7 +138,7 @@ export function ArcShotEvaluatorApp() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem("arc-theme-v2", theme);
+    try { window.localStorage.setItem("arc-theme-v2", theme); } catch { /* Theme remains usable without storage. */ }
   }, [theme]);
 
   useEffect(() => {
@@ -514,7 +515,7 @@ export function ArcShotEvaluatorApp() {
       <div className={workspace === "playbook" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "playbook"}>
         <PlaybookBoard active={workspace === "playbook"} onTestInCounterLab={testInCounterLab} onDraftChange={setCounterLabPlay} requestedPlay={playbookRequest} />
       </div>
-      {counterLabHasOpened ? <div className={workspace === "counterlab" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "counterlab"}><Suspense fallback={<div className="counter-lab-loading" role="status">Loading Counter Lab…</div>}><CounterLab initialPlay={counterLabPlay} onOpenInPlaybook={openSavedPlayInEditor} /></Suspense></div> : null}
+      {counterLabHasOpened ? <div className={workspace === "counterlab" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "counterlab"}><Suspense fallback={<div className="counter-lab-loading" role="status">Loading Counter Lab…</div>}><CounterLab active={workspace === "counterlab"} currentDraft={counterLabPlay} requestedPlay={counterLabRequest} onOpenEditor={() => setWorkspace("playbook")} onOpenInPlaybook={openSavedPlayInEditor} /></Suspense></div> : null}
       <div className={workspace === "analyzer" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "analyzer"}>
         {analyzerView}
       </div>
