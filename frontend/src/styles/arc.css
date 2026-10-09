@@ -809,6 +809,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 620px) {
   .workspace-nav button { gap: 4px; padding-right: 6px; padding-left: 6px; font-size: 10px; }
   .counter-lab-page { width: calc(100% - 16px); padding-top: 12px; }
+  .counter-lab-page .button { font-size: 11px; }
   .counter-lab-header { align-items: flex-start; flex-direction: column; }
   .counter-lab-header .button { min-height: 34px; }
   .counter-play-card { align-items: flex-start; flex-direction: column; padding: 11px; }
