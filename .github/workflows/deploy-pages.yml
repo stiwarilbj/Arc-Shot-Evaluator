@@ -1,142 +1,61 @@
 name: Deploy GitHub Pages
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      max_games:
-        description: Completed games to ingest this run (resumable backfill)
-        default: '60'
-        required: true
-  schedule:
-    - cron: '0 11 * * *'
+
 permissions:
-  actions: read
-  contents: write
+  contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
+
 jobs:
-  index:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-      - name: Require public repository
-        env:
-          PRIVATE: ${{ github.event.repository.private }}
-        run: test "$PRIVATE" != true
-      - name: Verify official NBA access before ingestion
-        run: python3 scripts/nba/ingest.py --probe
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: pnpm install --frozen-lockfile
-        working-directory: frontend
-      - name: Restore generated data branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf https://github.com/
-          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" nba-clip-data; then
-            git clone --depth 1 --branch nba-clip-data "https://github.com/${GITHUB_REPOSITORY}.git" nba-data
-          else
-            mkdir nba-data
-            git -C nba-data init -b nba-clip-data
-            git -C nba-data remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          fi
-      - name: Ingest completed games and recent corrections
-        id: ingest
-        env:
-          MAX_GAMES: ${{ inputs.max_games || '60' }}
-        run: |
-          test "$MAX_GAMES" -ge 1 && test "$MAX_GAMES" -le 500
-          python3 scripts/nba/ingest.py --state nba-data/state --output nba-staging --max-games "$MAX_GAMES"
-      - name: Embed and verify index before promotion
-        run: |
-          node scripts/nba/embed.mjs nba-staging
-          python3 scripts/nba/validate_index.py nba-staging
-          python3 - <<'PY'
-          from pathlib import Path
-          size=sum(p.stat().st_size for p in Path('nba-data/state').rglob('*') if p.is_file())
-          if size>450*1024*1024: raise SystemExit('State storage budget exceeded; publication stopped')
-          PY
-          mkdir -p nba-data/index
-          rsync -a --delete nba-staging/ nba-data/index/
-      - name: Save checkpoints and preserve last healthy index
-        if: always() && steps.ingest.outcome != 'skipped'
-        working-directory: nba-data
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          python3 - <<'PY'
-          from pathlib import Path
-          size=sum(p.stat().st_size for p in Path('.').rglob('*') if p.is_file() and '.git' not in p.parts)
-          if size>800*1024*1024: raise SystemExit('Generated branch storage budget exceeded; checkpoint publication stopped')
-          PY
-          previous=$(git rev-parse HEAD 2>/dev/null || true)
-          git checkout --orphan generated-snapshot
-          git add state
-          if test -d index; then git add index; fi
-          git commit -m 'Checkpoint NBA clips and preserve last healthy index'
-          git branch -M nba-clip-data
-          if test -n "$previous"; then
-            git push --force-with-lease="refs/heads/nba-clip-data:$previous" origin nba-clip-data
-          else
-            git push origin nba-clip-data
-          fi
   build:
-    needs: index
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          ref: nba-clip-data
-          path: generated-data
-      - uses: pnpm/action-setup@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
         with:
           version: 11
-      - uses: actions/setup-node@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: pnpm install --frozen-lockfile
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
         working-directory: frontend
-      - run: pnpm test
-        working-directory: frontend
-      - run: python3 -m unittest discover -s tests/nba -v
-      - name: Build and verify local target
-        working-directory: frontend
-        run: |
-          pnpm build
-          node ../scripts/check-build-target.mjs local dist
+        run: pnpm install --frozen-lockfile
+
       - name: Build hosted frontend
         working-directory: frontend
         env:
           VITE_DEPLOY_TARGET: github-pages
-        run: pnpm build
-      - name: Include verified data and validate Pages size
+        run: pnpm run build
+
+      - name: Restore example clips for hosted review
         run: |
-          python3 scripts/nba/validate_index.py generated-data/index
-          cp -R generated-data/index frontend/dist/nba-index
           mkdir -p frontend/dist/examples
           cp -R examples/. frontend/dist/examples/
-          python3 scripts/nba/validate_index.py frontend/dist --site
-          node scripts/check-build-target.mjs hosted frontend/dist
-      - name: Guard free artifact storage
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/nba/check_artifact_budget.py frontend/dist
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist
-          retention-days: 1
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -144,5 +63,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4

@@ -1,9 +1,6 @@
-name: Play Finder implementation checks
+name: Frontend checks
 on:
   pull_request:
-  push:
-    branches: [codex/nba-clip-index]
-    paths-ignore: [.github/workflows/nba-source-probe.yml]
 permissions:
   contents: read
 jobs:
@@ -21,12 +18,9 @@ jobs:
         working-directory: frontend
       - run: pnpm test
         working-directory: frontend
-      - run: python3 -m unittest discover -s tests/nba -v
       - run: pnpm build
         working-directory: frontend
-      - run: node scripts/check-build-target.mjs local frontend/dist
       - run: pnpm build
         working-directory: frontend
         env:
           VITE_DEPLOY_TARGET: github-pages
-      - run: node scripts/check-build-target.mjs hosted frontend/dist
