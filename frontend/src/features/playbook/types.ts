@@ -83,8 +83,10 @@ export interface PlaybookArrow {
   cutter_id?: number;
   /** Ball handler for a named on-ball screen. */
   handler_id?: number;
-  /** Actor for a named cut. */
+  /** Explicit actor for movement, cuts, or a transfer. Optional on legacy plays. */
   actor_id?: number;
+  /** Explicit receiver for a pass or handoff. */
+  recipient_id?: number;
   /** Destination after a pick-and-pop or pin-down screen. */
   exit_target?: CourtPoint;
 }
@@ -117,4 +119,15 @@ export function clonePlaybook(playbook: PlaybookDocument | PlaybookDraft): Playb
 
 export function pointDistance(a: CourtPoint, b: CourtPoint) {
   return Math.hypot(a.x - b.x, ((a.y - b.y) * COURT_HEIGHT) / COURT_WIDTH);
+}
+
+/** Shared validation for optional participant identities in version-1 plays. */
+export function validatePlaybookParticipants(play: PlaybookDraft) {
+  const ids = new Set(play.players.map((player) => player.id));
+  for (const arrow of play.arrows) {
+    for (const id of [arrow.actor_id, arrow.recipient_id, arrow.screener_id, arrow.handler_id, arrow.cutter_id]) {
+      if (id != null && (!Number.isInteger(id) || !ids.has(id))) throw new Error("Action participants must be offensive players on this court.");
+    }
+    if (arrow.recipient_id != null && (arrow.kind !== "pass" && arrow.kind !== "handoff" || arrow.recipient_id === arrow.actor_id)) throw new Error("Passes and handoffs need distinct participants.");
+  }
 }

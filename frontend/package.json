@@ -11,7 +11,8 @@
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
     "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
     "test:counter-lab": "node --experimental-strip-types ../scripts/test-counter-lab.mjs",
-    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab"
+    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab && npm run test:coordinated-movement",
+    "test:coordinated-movement": "node --experimental-strip-types ../scripts/test-coordinated-movement.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

@@ -300,3 +300,23 @@ def test_corrupt_saved_play_is_skipped_from_library(tmp_path, monkeypatch) -> No
     response = TestClient(app).get("/api/playbooks")
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_explicit_action_participants_round_trip_without_version_migration(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Explicit participants")
+    payload["players"].append({"id": 2, "x": 28, "y": 55})
+    payload["arrows"][0]["actor_id"] = 1
+    payload["arrows"][1].update({"actor_id": 1, "recipient_id": 2})
+    response = client.post("/api/playbooks", json=payload)
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["version"] == 1
+    assert saved["arrows"][0]["actor_id"] == 1
+    assert saved["arrows"][1]["recipient_id"] == 2
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["arrows"] == saved["arrows"]
+    for field, value in [("actor_id", 99), ("recipient_id", 99), ("recipient_id", 1), ("actor_id", True)]:
+        invalid = json.loads(json.dumps(payload))
+        invalid["arrows"][1][field] = value
+        assert client.post("/api/playbooks", json=invalid).status_code == 400

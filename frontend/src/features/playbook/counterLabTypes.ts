@@ -1,7 +1,7 @@
 import type { CourtRoute } from "./arrowVisibility";
 import { DEFAULT_SIMULATION_SETTINGS } from "./types.ts";
 import type { CourtPoint, DefenseScheme, DefenseStrategy, PlaybookDraft } from "./types";
-import { createSimulationRun, DEFENSE_SCHEME_ORDER } from "./simulation.ts";
+import { createSimulationRun, DEFENSE_SCHEME_ORDER, type ActionDiagnostic } from "./simulation.ts";
 
 export type CounterLabMode = "scripted" | "adaptive";
 export type CounterLabProfile = { id: string; label: string; strategy: DefenseStrategy; scheme: Exclude<DefenseScheme, "auto"> };
@@ -10,13 +10,14 @@ export type PassDiagnostic = {
   status: "delivered" | "failed" | "interrupted"; atMs: number;
   unsafeAtMs: number | null; receiverGap: number; laneGap: number;
 };
-export type CounterLabEvent = { kind: "opening-lost" | "failed-pass"; atMs: number; sequence: number | null; actionId: string | null; playerId: number | null };
+export type CounterLabEvent = { kind: "opening-lost" | "failed-pass" | "obstructed-action" | "action-conflict"; atMs: number; sequence: number | null; actionId: string | null; playerId: number | null };
 export type CounterLabFrame = {
   elapsedMs: number; sequence: number | null; action: string | null; ballHandlerId: number | null;
   assignments: Array<{ defenderId: number; playerId: number }>;
   opportunities: Array<{ kind: "shot" | "pass" | "drive"; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number }>;
   blockedPass: { actionId: string; sequence: number; playerId: number; receiverGap: number; laneGap: number } | null;
   involvedPlayerIds: number[];
+  execution?: ActionDiagnostic[];
   activeRoutes: CourtRoute[];
   players: Array<{ id: number; x: number; y: number }>;
   defenders: Array<{ id: number; x: number; y: number }>;
@@ -29,6 +30,7 @@ export type CounterLabResult = {
   firstUnsafePass: PassDiagnostic | null; passDiagnostics: PassDiagnostic[];
   firstBreakdown: CounterLabEvent | null; releasedAtMs: number | null;
   adaptiveAttempts: number; adaptiveSuccesses: number; recoveredAtMs: number | null;
+  actionDiagnostics: ActionDiagnostic[];
   actions: string[]; notice: string | null; trace: CounterLabFrame[];
 };
 export type RepairEvidence = { key: string; gain: number; verified: boolean; cleared: boolean; opening: "cleared" | "delayed" | "still failing" | "not created" | "unchanged"; delayMs: number; passCleared: boolean };
@@ -114,7 +116,7 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
       }) : draft.players;
       for (const recipient of positions.filter((player) => player.id !== bound?.actorId && player.id !== originalReceiver).slice(0, 2)) {
         const play = structuredClone(draft);
-        play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id ? { ...candidate, end: point(recipient.x, recipient.y) } : candidate);
+        play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id ? { ...candidate, recipient_id: recipient.id, end: point(recipient.x, recipient.y) } : candidate);
         const redirected = createSimulationRun(play, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: "scripted" }).actions.find((action) => action.arrow.id === arrow.id);
         if (redirected?.recipientId !== recipient.id || redirected.recipientId === originalReceiver || redirected.recipientId === redirected.actorId) continue;
         repairs.push({ id: `pass-${arrow.id}-${recipient.id}`, name: `Pass to Player ${recipient.id} · Move ${move}`, reason: "Test a different receiver against the same starting court and defense.", play });

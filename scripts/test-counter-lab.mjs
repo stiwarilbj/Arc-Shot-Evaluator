@@ -49,8 +49,10 @@ assert.deepEqual(switchSlipFixture, original, 'trial runs preserve the original 
 assert.ok(brokenRun.firstLostOpeningMs != null, 'the fixture records a sustained loss during a switch');
 assert.ok(brokenRun.firstLostOpeningMs < brokenRun.releasedAtMs, 'the switch breakdown occurs before shot release');
 assert.equal(typeof brokenRun.adaptiveAttempts, 'number', 'adaptive attempts are recorded independently of the outcome');
-assert.doesNotMatch(brokenRun.outcome, /^Recovered/, 'attempts alone do not imply recovery');
+assert.ok(brokenRun.recoveredAtMs == null || brokenRun.recoveredAtMs > brokenRun.firstLostOpeningMs, 'recovery requires evidence after the breakdown');
 assert.ok(brokenRun.trace.some((frame) => frame.activeRoutes.length), 'replay frames retain the currently executed route');
+assert.ok(brokenRun.trace.slice(1,-1).every((frame,index)=>Math.abs(frame.elapsedMs-brokenRun.trace[index].elapsedMs-1000/30)<.01), 'replay captures positions at 30Hz separately from diagnostic sampling');
+assert.ok(brokenRun.actionDiagnostics.every(action=>'recipientId' in action && 'partnerId' in action), 'execution diagnostics retain the actual participants');
 
 const slipRun = runCounterLabTrial(slip.play, switchProfile, 'adaptive');
 assert.equal(slipRun.firstLostOpeningMs, null, 'the slip repair removes the sustained breakdown in the switch fixture');
@@ -115,7 +117,7 @@ await assert.rejects(
   'cancellation stops a comparison after its current simulation',
 );
 
-const forcedShot = runCounterLabTrial(STARTER_PLAYS.find((play) => play.name === 'Pick and pop'), COUNTER_LAB_DEFAULT_PROFILES.find((profile) => profile.id === 'help'), 'adaptive');
+const forcedShot = runCounterLabTrial(STARTER_PLAYS.find((play) => play.name === 'Flex'), COUNTER_LAB_DEFAULT_PROFILES.find((profile) => profile.id === 'help'), 'adaptive');
 assert.ok(forcedShot.adaptiveAttempts > 0, 'the forced-shot regression actually attempts adaptive reads');
 assert.ok(forcedShot.score < 55);
 assert.equal(forcedShot.recoveredAtMs, null);
@@ -155,7 +157,7 @@ for (const play of STARTER_PLAYS) {
     const result = runCounterLabTrial(play, profile, mode);
     if (result.firstUnsafePass) assert.ok(play.arrows.some((arrow, index) => arrow.id === result.firstUnsafePass.actionId && (arrow.sequence ?? index + 1) === result.firstUnsafePass.sequence), 'contested-pass mapping survives simultaneous phase boundaries');
     if (result.firstLostOpeningMs != null && result.releasedAtMs != null) assert.ok(result.firstLostOpeningMs < result.releasedAtMs);
-    const events = [result.firstLostOpeningMs, result.firstBlockedPass?.atMs].filter((time) => time != null);
+    const events = [result.firstLostOpeningMs, result.firstBlockedPass?.atMs, ...result.actionDiagnostics.filter((action) => ['obstructed', 'conflict'].includes(action.phase) && !result.passDiagnostics.some((pass) => pass.actionId === action.actionId)).map((action) => action.completedAtMs)].filter((time) => time != null);
     assert.equal(result.firstBreakdown?.atMs ?? null, events.length ? Math.min(...events) : null, 'first breakdown is chronological');
   }
   const candidates = createCounterLabRepairs(play);

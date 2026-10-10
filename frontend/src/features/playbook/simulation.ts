@@ -1,3 +1,4 @@
+import { coordinateMovement, interpolatePosition, type MotionIntent } from "./coordinatedMovement.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
 import { playerHasBadge } from "./badges.ts";
@@ -11,6 +12,8 @@ import {
 } from "./courtGeometry.ts";
 
 export type SimulationFrame = {
+  execution?: ActionDiagnostic[];
+  ballHandlerId?: number | null;
   routes: CourtRoute[];
   players: PlaybookMarker[];
   defenders: PlaybookMarker[];
@@ -34,7 +37,16 @@ export type SimulationFrame = {
   shotTarget: CourtPoint | null;
 };
 
+export type ActionDiagnostic = {
+  actionId: string; sequence: number; actorId: number | null; recipientId: number | null; partnerId: number | null;
+  setAtMs?: number; usedAtMs?: number;
+  phase: "pending" | "approach" | "set" | "use" | "release" | "transfer" | "completed" | "obstructed" | "conflict" | "interrupted";
+  startedAtMs: number | null; completedAtMs: number | null; progress: number; notice: string | null;
+};
+type ExecutionPath = { points: CourtPoint[]; lengths: number[]; length: number; progress: number; closest: CourtPoint };
+type ActionRuntime = ActionDiagnostic & { paths: Map<number, ExecutionPath>; setAtMs?: number; usedAtMs?: number; waitMs: number };
 type BoundAction = {
+  execution?: ActionRuntime;
   onBall?: boolean;
   arrow: PlaybookArrow;
   sequence: number;
@@ -60,6 +72,9 @@ type PositionOverride = { atMs: number; point: CourtPoint };
 type ScreenCoverageLock = { screenerDefenderId: number; screenedDefenderId: number } | null;
 
 export type SimulationRun = {
+  motionIntents?: Map<string, MotionIntent>;
+  phaseWaitMs?: Map<number, number>;
+  offBallDecisions?: Map<number, { target: CourtPoint; sinceMs: number; cutting: boolean }>;
   routeHistory?: Array<{ atMs: number; players: PlaybookMarker[]; onBallIds: number[] }>;
   actions: BoundAction[];
   actionDurationMs: number;
@@ -491,7 +506,7 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
       const usesNamedScreener = arrow.screener_id != null && (isOffBallScreen || isScreen);
       const actorIndex = usesNamedScreener
         ? phasePositions.findIndex((player) => player.id === arrow.screener_id)
-        : isCut && arrow.actor_id != null
+        : arrow.actor_id != null && (isCut || arrow.kind === "movement" || isTransfer)
           ? phasePositions.findIndex((player) => player.id === arrow.actor_id)
           : isTransfer && phaseHandlerId != null
             ? phasePositions.findIndex((player) => player.id === phaseHandlerId)
@@ -499,7 +514,7 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
       const actor = phasePositions[actorIndex] ?? null;
       const recipientIndex = isOffBallScreen && arrow.cutter_id != null
         ? phasePositions.findIndex((player) => player.id === arrow.cutter_id)
-        : isTransfer ? nearestPointIndex(phasePositions, arrow.end, actor?.id) : -1;
+        : isTransfer ? (arrow.recipient_id != null ? phasePositions.findIndex((player) => player.id === arrow.recipient_id) : nearestPointIndex(phasePositions, arrow.end, actor?.id)) : -1;
       const recipient = phasePositions[recipientIndex] ?? null;
       // A saved play can name a screen partner, but possession only changes
       // on a pass or handoff. Keep the live handler attached to the ball if
@@ -531,7 +546,14 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
             (receiverFeet * 1.5 / OFFENSE_MAX_SPEED_FT_PER_SECOND) * 1000 - PASS_PREP_MS,
           )
         : 0;
-      const durationMs = Math.max(authoredDuration, minimumMovementDuration, minimumTransferDuration);
+      const screenUser = isOffBallScreen ? recipient : handler;
+      const screenUserEnd = isOffBallScreen ? exitTarget : pointToward(arrow.end, HOOP_POINT, arrow.kind === "pick-roll" || isSlip ? 10 : 8);
+      const screenTravel = screenUser ? pointDistanceFeet(screenUser, arrow.end) + pointDistanceFeet(arrow.end, screenUserEnd) + 2.4 : 0;
+      const releaseFeet = arrow.kind === "pick-roll" || isSlip ? 8 : extraPathFeet;
+      const minimumScreenDuration = isScreen || isOffBallScreen
+        ? (pathFeet / 8 + screenTravel / 7 + releaseFeet / 8) * 1000 + (isSlip ? 250 : 520)
+        : 0;
+      const durationMs = Math.max(authoredDuration, minimumMovementDuration, minimumTransferDuration, minimumScreenDuration);
       const partnerId = isScreen && actor?.id !== handler?.id ? handler?.id ?? null : null;
       const boundAction: BoundAction = {
         onBall: isTransfer || actor?.id === phaseHandlerId || (isScreen && handlerId != null),
@@ -584,11 +606,11 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
 
 function normalizeSettings(settings: SimulationSettings): SimulationSettings {
   return {
-    offenseOffBall: settings.offenseOffBall,
+    offenseOffBall: settings.offenseMode === "scripted" ? "off" : settings.offenseOffBall,
     defenseScheme: settings.defenseScheme ?? "auto",
     defenseStrategy: settings.defenseStrategy,
     offBallIntensity: settings.offBallIntensity,
-    automaticActions: { ...settings.automaticActions },
+    automaticActions: settings.offenseMode === "scripted" ? { screen: false, handoff: false, pickRoll: false, offBallScreen: false } : { ...settings.automaticActions },
     offenseMode: settings.offenseMode ?? "adaptive",
   };
 }
@@ -1030,13 +1052,23 @@ function routesForAction(action: BoundAction, run?: SimulationRun, hoop = HOOP_P
   if ((arrow.kind === "off-ball-screen" || arrow.kind === "pin-down") && action.recipientId != null && action.recipientStart) {
     routes.push({ ...common, id: `${arrow.id}:${action.sequence}:cutter`, kind: "cutter", scope: "off-ball", playerId: action.recipientId, start: { ...action.recipientStart }, via: { ...arrow.end }, end: arrow.exit_target ?? offBallCutterTarget(arrow.end, hoop) });
   }
+  if (run && action.execution) {
+    for (const route of routes) {
+      const path = action.execution.paths.get(route.playerId);
+      if (path && arrow.kind !== "pass" && arrow.kind !== "handoff") {
+        route.points = path.points.map((point) => ({ ...point }));
+        route.start = { ...path.points[0] }; route.end = { ...path.points.at(-1)! };
+        delete route.via; delete route.control;
+      }
+    }
+  }
   return routes;
 }
 export function authoredCourtRoutes(source: PlaybookDraft): CourtRoute[] {
   return buildActions(source).actions.flatMap((action) => routesForAction(action));
 }
 function getRunRoutes(run: SimulationRun, hoop = HOOP_POINT): CourtRoute[] {
-  const active = run.actions.filter((action) => !action.transferFailed && run.elapsedMs + 1e-6 >= action.startTime && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
+  const active = run.actions.filter((action) => actionIsMoving(action) && !action.transferFailed && run.elapsedMs + 1e-6 >= action.startTime && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
   const routes = active.flatMap((action) => routesForAction(action, run, hoop));
   // Recorded recent movement exposes small receiving, spacing, and coasting
   // adjustments without introducing new actions or changing possession.
@@ -1074,7 +1106,7 @@ export type CounterLabObservation = {
 /** Return a compact, evidence-based view of the current possession for Counter Lab. */
 export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): CounterLabObservation {
   const { choices } = liveReadChoices(run, hoop);
-  const activeActions = run.actions.filter((candidate) => !candidate.transferFailed
+  const activeActions = run.actions.filter((candidate) => actionIsMoving(candidate) && !candidate.transferFailed
     && run.elapsedMs >= candidate.startTime - 1e-6
     && run.elapsedMs < candidate.startTime + candidate.durationMs + 1e-6);
   const action = activeActions.find((candidate) => !candidate.automatic && !candidate.adaptiveReadLabel) ?? activeActions[0] ?? null;
@@ -1111,7 +1143,7 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
       ...(blockedPass ? [blockedPass.playerId] : []),
     ])],
     activeRoutes,
-    frame: getSimulationFrame(run),
+    frame: copyFrame(run.frame),
   };
 }
 
@@ -1121,6 +1153,8 @@ function stopAuthoredActionsAt(run: SimulationRun, timeMs: number) {
     if (action.startTime >= timeMs - 1e-6) return [];
     const endTime = action.startTime + action.durationMs;
     if (endTime <= timeMs) return [action];
+    const state = executionFor(action);
+    if (actionIsMoving(action)) { state.phase = "interrupted"; state.completedAtMs = timeMs; state.notice = "An adaptive read replaced the remaining action."; }
     return [{ ...action, durationMs: Math.max(0, timeMs - action.startTime) }];
   });
   run.offBallAnchors.clear();
@@ -1340,6 +1374,7 @@ function velocityKey(kind: "player" | "defender", id: number) {
 function copyFrame(frame: SimulationFrame): SimulationFrame {
   return {
     ...frame,
+    execution: frame.execution?.map((action) => ({ ...action })),
     routes: frame.routes.map((route) => ({ ...route, start: { ...route.start }, end: { ...route.end }, control: route.control ? { ...route.control } : undefined, via: route.via ? { ...route.via } : undefined, points: route.points?.map((point) => ({ ...point })) })),
     players: frame.players.map((player) => ({ ...player })),
     defenders: frame.defenders.map((defender) => ({ ...defender })),
@@ -1355,7 +1390,7 @@ function copyFrame(frame: SimulationFrame): SimulationFrame {
 }
 
 function frameFor(run: SimulationRun): SimulationFrame {
-  const activeActions = run.actions.filter((action) => !action.transferFailed
+  const activeActions = run.actions.filter((action) => actionIsMoving(action) && !action.transferFailed
     && run.elapsedMs + 1e-6 >= action.startTime
     && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
   const activeAction = activeActions.find((action) => !action.automatic) ?? activeActions[0];
@@ -1374,6 +1409,8 @@ function frameFor(run: SimulationRun): SimulationFrame {
   const shooter = markerForId(run.players, run.shotShooterId ?? run.ballHandlerId);
   const shotQuality = shooter ? run.shotQualityAtRelease || calculateShotQuality(run.players, run.defenders, shooter, 70) : 0;
   return {
+    execution: actionDiagnostics(run),
+    ballHandlerId: run.ballHandlerId,
     players: run.players.map((player) => ({ ...player })),
     defenders: run.defenders.map((defender) => ({ ...defender })),
     ball: run.ball ? { ...run.ball } : null,
@@ -1574,6 +1611,8 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
           || a[0] - b[0])[0]?.[0] ?? null;
     }
   }
+  run.actions.forEach((action) => action.execution?.paths.clear());
+  run.offBallDecisions?.clear();
   run.routeHistory = [];
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
@@ -1586,15 +1625,16 @@ export function getSimulationFrame(run: SimulationRun) {
   const previousPlayers = new Map(run.previousFrame.players.map((player) => [player.id, player]));
   const previousDefenders = new Map(run.previousFrame.defenders.map((defender) => [defender.id, defender]));
   const current = copyFrame(run.frame);
+  if (run.previousFrame.activeSequence !== current.activeSequence || run.previousFrame.activeActionLabel !== current.activeActionLabel || run.previousFrame.ballHandlerId !== current.ballHandlerId) return current;
   current.players = current.players.map((player) => {
     const previous = previousPlayers.get(player.id);
-    return previous ? { ...player, ...lerpPoint(previous, player, progress) } : player;
+    return previous ? { ...player, ...interpolatePosition(previous, player, progress) } : player;
   });
   current.defenders = current.defenders.map((defender) => {
     const previous = previousDefenders.get(defender.id);
-    return previous ? { ...defender, ...lerpPoint(previous, defender, progress) } : defender;
+    return previous ? { ...defender, ...interpolatePosition(previous, defender, progress) } : defender;
   });
-  if (run.previousFrame.ball && current.ball) current.ball = lerpPoint(run.previousFrame.ball, current.ball, progress);
+  if (run.previousFrame.ball && current.ball && run.previousFrame.ballHandlerId === current.ballHandlerId && run.previousFrame.shotPhase === current.shotPhase) current.ball = interpolatePosition(run.previousFrame.ball, current.ball, progress);
   return current;
 }
 
@@ -1623,10 +1663,10 @@ function moveToward(
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const distance = Math.hypot(dx, dy);
-  if (distance < 0.02) return { point: { ...target }, velocity: { x: 0, y: 0 } };
+  if (distance < 0.02 && Math.hypot(velocity.x, velocity.y) < accelerationFeetPerSecond * deltaSeconds) return { point: { ...point }, velocity: { x: 0, y: 0 } };
   const brakingSpeed = Math.sqrt(2 * accelerationFeetPerSecond * distance);
-  const desiredSpeed = Math.min(maxSpeedFeetPerSecond, brakingSpeed);
-  const desired = { x: (dx / distance) * desiredSpeed, y: (dy / distance) * desiredSpeed };
+  const desiredSpeed = Math.min(maxSpeedFeetPerSecond, brakingSpeed, distance * 5);
+  const desired = distance > .001 ? { x: (dx / distance) * desiredSpeed, y: (dy / distance) * desiredSpeed } : { x: 0, y: 0 };
   const deltaVelocity = { x: desired.x - velocity.x, y: desired.y - velocity.y };
   const change = Math.hypot(deltaVelocity.x, deltaVelocity.y);
   const maxChange = accelerationFeetPerSecond * deltaSeconds;
@@ -1657,20 +1697,35 @@ function swapAssignments(run: SimulationRun, firstPlayerId: number | null, secon
 }
 
 function processActionStart(run: SimulationRun, action: BoundAction) {
-  if (run.switchedActions.has(action.arrow.id)) return;
-  run.switchedActions.add(action.arrow.id);
-  if (run.settings.defenseStrategy !== "switch" || !isManScheme(run.activeDefenseScheme)) return;
-  if (action.arrow.kind === "screen" || action.arrow.kind === "pick-roll" || action.arrow.kind === "pick-pop") {
-    swapAssignments(run, action.actorId, action.partnerId ?? run.ballHandlerId);
-  } else if (action.arrow.kind === "handoff") {
-    swapAssignments(run, action.actorId, action.recipientId);
-  } else if (action.arrow.kind === "off-ball-screen" || action.arrow.kind === "pin-down") {
-    swapAssignments(run, action.actorId, action.recipientId);
+  if (action.execution?.startedAtMs != null) return;
+  const state = executionFor(action);
+  state.startedAtMs = run.elapsedMs;
+  state.phase = action.arrow.kind === "pass" || action.arrow.kind === "handoff" ? "transfer" : "approach";
+  // Legacy transfers were bound once during ingestion of the diagram. Check
+  // actual possession instead of granting the expected player a phantom ball.
+  if ((action.arrow.kind === "pass" || action.arrow.kind === "handoff") && (action.actorId !== run.ballHandlerId || action.actorId == null || action.actorId === action.recipientId)) {
+    state.phase = "obstructed"; state.notice = action.actorId === action.recipientId ? "A transfer needs a different receiver." : "The intended passer does not hold the ball.";
+    state.completedAtMs = run.elapsedMs; action.transferFailed = true; action.transferFailedAtMs = run.elapsedMs;
+  }
+  if (action.partnerId != null && action.partnerId !== run.ballHandlerId) {
+    action.partnerId = run.ballHandlerId;
+    action.partnerStart = markerForId(run.players, run.ballHandlerId) ?? null;
   }
 }
 
+function switchAtInteraction(run: SimulationRun, action: BoundAction, screenedId: number | null) {
+  if (run.switchedActions.has(action.arrow.id) || run.settings.defenseStrategy !== "switch" || !isManScheme(run.activeDefenseScheme)) return;
+  if (action.arrow.kind === "slip-screen") return;
+  const actor = markerForId(run.players, action.actorId), user = markerForId(run.players, screenedId);
+  if (!actor || !user || pointDistanceFeet(actor, user) > 4) return;
+  const state = executionFor(action);
+  if (action.arrow.kind !== "handoff" && state.phase !== "use" && state.phase !== "release") return;
+  swapAssignments(run, action.actorId, screenedId);
+  run.switchedActions.add(action.arrow.id);
+}
+
 function currentActionAt(run: SimulationRun, timeMs: number) {
-  return run.actions.find((action) => timeMs >= action.startTime - 1e-6 && timeMs < action.startTime + action.durationMs + 1e-6) ?? null;
+  return run.actions.find((action) => actionIsMoving(action) && timeMs >= action.startTime - 1e-6 && timeMs < action.startTime + action.durationMs + 1e-6) ?? null;
 }
 
 function currentTransferAt(run: SimulationRun, timeMs: number) {
@@ -1678,6 +1733,7 @@ function currentTransferAt(run: SimulationRun, timeMs: number) {
     (action.arrow.kind === "pass" || action.arrow.kind === "handoff")
     && action.recipientId != null
     && !action.transferFailed
+    && action.transferCompletedAtMs == null
     && timeMs >= action.startTime - 1e-6
     && timeMs < action.startTime + action.durationMs + 1e-6,
   ) ?? null;
@@ -1725,7 +1781,7 @@ function coverageDefenderIndex(run: SimulationRun, playerId: number, excluded = 
 function screenCoverageActionsAt(run: SimulationRun, timeMs: number) {
   return run.actions
     .filter((action) => {
-      if (action.transferFailed) return false;
+      if (action.transferFailed || !actionIsMoving(action)) return false;
       const kind = action.arrow.kind;
       if (kind === "slip-screen") return false;
       if (kind === "handoff" && (isManScheme(run.activeDefenseScheme) || run.settings.defenseStrategy !== "switch")) return false;
@@ -1820,6 +1876,7 @@ function screenCoveragesAt(run: SimulationRun, timeMs: number) {
   const usedDefenders = new Set<number>();
   const coverages: ScreenCoverage[] = [];
   for (const action of screenCoverageActionsAt(run, timeMs)) {
+    if (action.arrow.kind !== "handoff" && !["set", "use", "release"].includes(action.execution?.phase ?? "pending")) continue;
     const lock = run.screenCoverageLocks.get(action.arrow.id);
     const screenerId = action.actorId;
     const screenedId = action.arrow.kind === "handoff"
@@ -1862,8 +1919,8 @@ function separateDefenderTargets(
         const bTarget = separated[b.index];
         const distance = pointDistanceFeet(aTarget, bTarget);
         if (distance >= DEFENDER_SOFT_SPACING_FEET) continue;
-        let dx = aTarget.x - bTarget.x;
-        let dy = aTarget.y - bTarget.y;
+        let dx = toCourtFeet(aTarget).x - toCourtFeet(bTarget).x;
+        let dy = toCourtFeet(aTarget).y - toCourtFeet(bTarget).y;
         let length = Math.hypot(dx, dy);
         if (length < 0.001) {
           dx = a.defender.id < b.defender.id ? 1 : -1;
@@ -1930,22 +1987,12 @@ function offBallTarget(run: SimulationRun, player: PlaybookMarker, ball: CourtPo
     target = pointToward(anchor, ball, Math.min(maxOffset, ballGap - 27));
   }
   if (driveThreat && style !== "spacing") {
-    const cycle = (timeMs / 1000 + player.id * 0.47) % 5.5;
-    const cutAmount = cycle < 1.5
-      ? cycle / 1.5
-      : cycle < 3.2
-        ? 1
-        : clamp(1 - (cycle - 3.2) / 2.3, 0, 1);
-    const cutPoint = pointToward(anchor, hoop, maxOffset * 0.8);
-    const cutterWeight = clamp(
-      clamp((playerRating(player, "finishing") - 1) / 2, 0, 1) * 0.55
-        + (playerHasBadge(player, "cutter") ? 0.36 : 0)
-        + (playerHasBadge(player, "slasher") ? 0.24 : 0)
-        + (playerHasBadge(player, "rim-finisher") ? 0.18 : 0),
-      0,
-      0.82,
-    );
-    target = lerpPoint(target, cutPoint, cutAmount * cutterWeight);
+    const cutPoint = pointToward(anchor, hoop, maxOffset * .8);
+    const eligible = playerRating(player, "finishing") >= 4 || playerHasBadge(player, "cutter") || playerHasBadge(player, "slasher");
+    const clear = segmentClearanceFeet(player, cutPoint, run.players.filter((other) => other.id !== player.id)) >= 2.4
+      && segmentClearanceFeet(player, cutPoint, run.defenders) >= 2.4;
+    const reserved = [...(run.offBallDecisions ?? new Map()).entries()].some(([id, decision]) => id !== player.id && decision.cutting && pointDistanceFeet(decision.target, cutPoint) < 5);
+    if (eligible && clear && !reserved) target = cutPoint;
   }
 
   const targetSkill = run.offBallTargetSkills.get(player.id) ?? null;
@@ -1977,9 +2024,15 @@ function offBallTarget(run: SimulationRun, player: PlaybookMarker, ball: CourtPo
     target = lerpPoint(target, openLocation, roleWeight);
   }
   const offset = pointDistanceFeet(anchor, target);
-  return offset > maxOffset && offset > 0
-    ? pointToward(anchor, target, maxOffset)
-    : clampCourt(target);
+  target = offset > maxOffset && offset > 0 ? pointToward(anchor, target, maxOffset) : clampCourt(target);
+  const decisions = run.offBallDecisions ??= new Map();
+  const previous = decisions.get(player.id);
+  if (previous && timeMs - previous.sinceMs < 700) return previous.target;
+  if (previous && pointDistanceFeet(previous.target, target) < 1.5) return previous.target;
+  const occupied = [...decisions.entries()].some(([id, decision]) => id !== player.id && pointDistanceFeet(decision.target, target) < 4);
+  if (occupied) target = { ...anchor };
+  decisions.set(player.id, { target, sinceMs: timeMs, cutting: driveThreat && style !== "spacing" && pointDistanceFeet(target, hoop) < pointDistanceFeet(anchor, hoop) - 2 });
+  return target;
 }
 
 function driveThreat(run: SimulationRun, hoop: CourtPoint) {
@@ -2373,6 +2426,14 @@ function integrateMarker(
   const key = velocityKey(kind, marker.id);
   const currentVelocity = run.velocities.get(key) ?? { x: 0, y: 0 };
   const moved = moveToward(marker, target, currentVelocity, maxSpeed, acceleration, dt);
+  if (run.motionIntents) {
+    const existing = run.motionIntents.get(key);
+    run.motionIntents.set(key, { key, point: toCourtFeet(marker), velocity: moved.velocity, previousVelocity: currentVelocity,
+      speed: maxSpeed, acceleration, priority: kind === "defender" ? 2 : existing?.priority ?? 1,
+      frozen: existing?.priority === 100 && Math.hypot(currentVelocity.x, currentVelocity.y) < .5,
+      corridor: existing?.corridor });
+    return marker;
+  }
   run.velocities.set(key, moved.velocity);
   return { ...marker, ...moved.point };
 }
@@ -2393,20 +2454,7 @@ function smoothAITarget(
 }
 
 function coastMarker(run: SimulationRun, kind: "player" | "defender", marker: PlaybookMarker, dt: number, deceleration: number) {
-  const key = velocityKey(kind, marker.id);
-  const velocity = run.velocities.get(key) ?? { x: 0, y: 0 };
-  const speed = Math.hypot(velocity.x, velocity.y);
-  if (speed < 0.02) {
-    run.velocities.set(key, { x: 0, y: 0 });
-    return marker;
-  }
-  const nextSpeed = Math.max(0, speed - deceleration * dt);
-  const distance = ((speed + nextSpeed) / 2) * dt;
-  run.velocities.set(key, { x: (velocity.x / speed) * nextSpeed, y: (velocity.y / speed) * nextSpeed });
-  return {
-    ...marker,
-    ...addFeet(marker, { x: (velocity.x / speed) * distance, y: (velocity.y / speed) * distance }),
-  };
+  return integrateMarker(run, kind, marker, marker, dt, kind === "player" ? OFFENSE_MAX_SPEED_FT_PER_SECOND : DEFENDER_MAX_SPEED_FT_PER_SECOND, deceleration);
 }
 
 function integrateBall(run: SimulationRun, target: CourtPoint, dt: number) {
@@ -2416,110 +2464,206 @@ function integrateBall(run: SimulationRun, target: CourtPoint, dt: number) {
   run.ballVelocity = moved.velocity;
 }
 
-function sampleMovementTarget(run: SimulationRun, action: BoundAction, timeMs: number) {
-  const start = actionStartFor(run, action);
-  const override = run.actionStartOverrides.get(action.arrow.id);
-  const effectiveStart = override && timeMs >= override.atMs ? override : null;
-  const progress = effectiveStart
-    ? clamp((timeMs - effectiveStart.atMs) / (action.startTime + action.durationMs - effectiveStart.atMs), 0, 1)
-    : clamp((timeMs - action.startTime) / action.durationMs, 0, 1);
-  const easedProgress = easeInOut(progress);
-  if (action.arrow.kind === "pick-roll" || action.arrow.kind === "pick-pop" || action.arrow.kind === "slip-screen") {
-    const screen = action.arrow.end;
-    const roll = action.arrow.kind === "pick-pop"
-      ? action.arrow.exit_target ?? screen
-      : pointToward(screen, HOOP_POINT, 8);
-    return easedProgress < 0.45
-      ? lerpPoint(effectiveStart?.point ?? start, screen, easedProgress / 0.45)
-      : lerpPoint(screen, roll, (easedProgress - 0.45) / 0.55);
+function executionFor(action: BoundAction): ActionRuntime {
+  return action.execution ??= { actionId: action.arrow.id, sequence: action.sequence, actorId: action.actorId,
+    recipientId: action.recipientId, partnerId: action.partnerId ?? null,
+    phase: "pending", startedAtMs: null, completedAtMs: null, progress: 0, notice: null, paths: new Map(), waitMs: 0 };
+}
+function actionDiagnostics(run: SimulationRun): ActionDiagnostic[] {
+  return run.actions.filter((action) => action.execution).map((action) => {
+    const { actionId, sequence, actorId, recipientId, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs } = action.execution!;
+    return { actionId, sequence, actorId, recipientId, partnerId: action.partnerId ?? null, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs };
+  });
+}
+function actionIsMoving(action: BoundAction) {
+  return action.execution?.phase !== "interrupted" && action.execution?.phase !== "obstructed" && action.execution?.phase !== "conflict" && action.execution?.phase !== "completed";
+}
+function executionPath(points: CourtPoint[]): ExecutionPath {
+  const lengths = [0];
+  for (let i = 1; i < points.length; i++) lengths.push(lengths[i - 1] + pointDistanceFeet(points[i - 1], points[i]));
+  return { points, lengths, length: lengths.at(-1) ?? 0, progress: 0, closest: points[0] };
+}
+function authoredPath(action: BoundAction, start: CourtPoint, end = action.arrow.end) {
+  return Array.from({ length: 33 }, (_, index) => routePoint(action, start, index / 32, end));
+}
+function pathPoint(path: ExecutionPath, distance: number) {
+  for (let i = 1; i < path.points.length; i++) if (path.lengths[i] >= distance) {
+    return lerpPoint(path.points[i - 1], path.points[i], clamp((distance - path.lengths[i - 1]) / Math.max(.001, path.lengths[i] - path.lengths[i - 1]), 0, 1));
   }
-  return routePoint(action, effectiveStart?.point ?? start, easedProgress);
+  return path.points.at(-1)!;
 }
-
-function sampleCutterTarget(action: BoundAction, timeMs: number) {
-  const progress = easeInOut(clamp((timeMs - action.startTime) / action.durationMs, 0, 1));
-  const start = action.recipientStart ?? action.arrow.start;
-  const screen = action.arrow.end;
-  const finish = action.arrow.kind === "pin-down"
-    ? action.arrow.exit_target ?? screen
-    : action.arrow.exit_target ?? offBallCutterTarget(screen);
-  return progress < 0.5
-    ? lerpPoint(start, screen, progress * 2)
-    : lerpPoint(screen, finish, (progress - 0.5) * 2);
+function followPath(run: SimulationRun, action: BoundAction, player: PlaybookMarker, points: CourtPoint[], priority = 3) {
+  const state = executionFor(action);
+  let path = state.paths.get(player.id);
+  if (!path) { path = executionPath(points); state.paths.set(player.id, path); }
+  const feet = toCourtFeet(player); let closestGap = Infinity, progress = path.progress, closest = path.closest;
+  for (let i = 1; i < path.points.length; i++) {
+    if (path.lengths[i] < path.progress - .25 || path.lengths[i - 1] > path.progress + 6) continue;
+    const a = toCourtFeet(path.points[i - 1]), b = toCourtFeet(path.points[i]);
+    const dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
+    const t = length2 ? clamp(((feet.x - a.x) * dx + (feet.y - a.y) * dy) / length2, 0, 1) : 0;
+    const point = lerpPoint(path.points[i - 1], path.points[i], t), gap = pointDistanceFeet(point, player);
+    if (gap < closestGap - 1e-6) { closestGap = gap; closest = point; progress = path.lengths[i - 1] + (path.lengths[i] - path.lengths[i - 1]) * t; }
+  }
+  path.progress = Math.max(path.progress, progress); path.closest = closest;
+  const velocity = run.velocities.get(velocityKey("player", player.id)) ?? { x: 0, y: 0 };
+  const lookAhead = isScreenAction(action) ? .8 + Math.hypot(velocity.x, velocity.y) * .05 : 1.3 + Math.hypot(velocity.x, velocity.y) * .12;
+  const target = pathPoint(path, Math.min(path.length, path.progress + lookAhead));
+  const key = velocityKey("player", player.id);
+  run.motionIntents?.set(key, { key, point: feet, previousVelocity: velocity, velocity, speed: OFFENSE_MAX_SPEED_FT_PER_SECOND,
+    acceleration: OFFENSE_ACCELERATION_FT_PER_SECOND, priority: pointDistanceFeet(player, path.points.at(-1)!) < .8 ? 8 : priority, corridor: { point: toCourtFeet(closest), radius: 3 } });
+  state.progress = Math.max(state.progress, path.length ? Math.min(1, path.progress / path.length) : 1);
+  return target;
 }
-
-function actionActorTarget(run: SimulationRun, timeMs: number) {
-  const action = currentActionAt(run, timeMs);
-  if (!action || action.actorId == null) return null;
-  if (action.arrow.kind === "pass" || action.arrow.kind === "handoff") return null;
-  return { action, target: sampleMovementTarget(run, action, timeMs) };
+function routeSpeed(action: BoundAction, playerId: number, maximum: number) {
+  const path = action.execution?.paths.get(playerId);
+  if (!path) return maximum;
+  // Brake before deliberate corners rather than overshooting and reversing.
+  for (let i = 1; i < path.points.length - 1; i++) {
+    const remaining = path.lengths[i] - path.progress;
+    if (remaining < -.1 || remaining > 4) continue;
+    const a = toCourtFeet(path.points[i - 1]), b = toCourtFeet(path.points[i]), c = toCourtFeet(path.points[i + 1]);
+    const first = { x: b.x - a.x, y: b.y - a.y }, second = { x: c.x - b.x, y: c.y - b.y };
+    const cosine = (first.x * second.x + first.y * second.y) / Math.max(.001, Math.hypot(first.x, first.y) * Math.hypot(second.x, second.y));
+    if (cosine < .8) maximum = Math.min(maximum, 3 + Math.max(0, remaining) * 2);
+  }
+  return maximum;
+}
+function screenUserPoints(action: BoundAction, start: CourtPoint, finish: CourtPoint) {
+  const screen = toCourtFeet(action.arrow.end), from = toCourtFeet(start), to = toCourtFeet(finish);
+  const dx = screen.x - from.x, dy = screen.y - from.y, length = Math.max(.01, Math.hypot(dx, dy));
+  const side = action.actorId != null && action.actorId % 2 === 0 ? 1 : -1;
+  const offset = { x: -dy / length * 2.4 * side, y: dx / length * 2.4 * side };
+  const endDx = to.x - screen.x, endDy = to.y - screen.y, endLength = Math.max(.01, Math.hypot(endDx, endDy));
+  return [start,
+    clampCourt(fromCourtFeet({ x: screen.x - dx / length * 3 + offset.x, y: screen.y - dy / length * 3 + offset.y })),
+    clampCourt(fromCourtFeet({ x: screen.x + offset.x, y: screen.y + offset.y })),
+    clampCourt(fromCourtFeet({ x: screen.x + endDx / endLength * 3 + offset.x, y: screen.y + endDy / endLength * 3 + offset.y })), finish];
+}
+function screenUserId(action: BoundAction) {
+  return action.arrow.kind === "off-ball-screen" || action.arrow.kind === "pin-down" ? action.recipientId : action.partnerId ?? null;
+}
+function isScreenAction(action: BoundAction) {
+  return ["screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "slip-screen"].includes(action.arrow.kind);
+}
+function screenFinish(action: BoundAction, hoop: CourtPoint) {
+  return action.arrow.kind === "pick-pop" ? action.arrow.exit_target ?? action.arrow.end : pointToward(action.arrow.end, hoop, 8);
+}
+function screenUserFinish(action: BoundAction, hoop: CourtPoint) {
+  return action.arrow.kind === "off-ball-screen" || action.arrow.kind === "pin-down"
+    ? action.arrow.exit_target ?? offBallCutterTarget(action.arrow.end, hoop)
+    : pointToward(action.arrow.end, hoop, action.arrow.kind === "pick-roll" || action.arrow.kind === "slip-screen" ? 10 : 8);
+}
+function prepareScreen(run: SimulationRun, action: BoundAction, timeMs: number, hoop: CourtPoint) {
+  const state = executionFor(action), actor = markerForId(run.players, action.actorId), user = markerForId(run.players, screenUserId(action));
+  if (!actor || !actionIsMoving(action)) return;
+  if (action.arrow.kind === "slip-screen") { state.phase = "release"; return; }
+  const velocity = run.velocities.get(velocityKey("player", actor.id)) ?? { x: 0, y: 0 };
+  if (state.phase === "approach" && pointDistanceFeet(actor, action.arrow.end) <= .45 && Math.hypot(velocity.x, velocity.y) <= 1.5) {
+    state.phase = "set"; state.setAtMs = timeMs;
+  }
+  if (state.phase === "set" && timeMs - (state.setAtMs ?? timeMs) >= 120) {
+    state.phase = "use";
+    if (user) state.paths.delete(user.id);
+  }
+  if (state.phase === "use") {
+    if (user && pointDistanceFeet(user, actor) <= 4 && state.usedAtMs == null) state.usedAtMs = timeMs;
+    switchAtInteraction(run, action, screenUserId(action));
+    const path = user ? state.paths.get(user.id) : null;
+    if (!user || (state.usedAtMs != null && pointDistanceFeet(user, actor) > 3 && ((path && path.progress >= path.length * .6) || (!path && timeMs - state.usedAtMs >= 150)))) {
+      state.phase = "release";
+      if (action.arrow.kind === "pick-roll" || action.arrow.kind === "pick-pop") state.paths.delete(actor.id);
+    }
+  }
+}
+function movementPoints(run: SimulationRun, action: BoundAction, player: PlaybookMarker, hoop: CourtPoint) {
+  const state = executionFor(action), start = actionStartFor(run, action);
+  if (!isScreenAction(action)) return authoredPath(action, start);
+  if (action.arrow.kind === "slip-screen") return [start, action.arrow.end, screenFinish(action, hoop)];
+  if (state.phase === "release" && (action.arrow.kind === "pick-roll" || action.arrow.kind === "pick-pop")) return [player, screenFinish(action, hoop)];
+  return authoredPath(action, start);
 }
 
 function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: CourtPoint) {
-  const transfer = currentTransferAt(run, timeMs);
-  const prep = currentPrepAt(run, timeMs);
-  const activeActions = run.actions.filter((action) => timeMs >= action.startTime && timeMs < action.startTime + action.durationMs);
-  const handler = markerForId(run.players, run.ballHandlerId);
-  const ball = run.ball ?? handler ?? HOOP_POINT;
-  const drive = driveThreat(run, hoop);
+  const transfer = currentTransferAt(run, timeMs), prep = currentPrepAt(run, timeMs);
+  const activeActions = run.actions.filter((action) => actionIsMoving(action) && timeMs >= action.startTime && timeMs < action.startTime + action.durationMs);
+  activeActions.forEach((action) => { if (isScreenAction(action)) prepareScreen(run, action, timeMs, hoop); });
+  const handler = markerForId(run.players, run.ballHandlerId), ball = run.ball ?? handler ?? HOOP_POINT, drive = driveThreat(run, hoop);
+  const owners = new Map<number, BoundAction>();
+  for (const action of activeActions.filter((action) => action.arrow.kind !== "pass" && action.arrow.kind !== "handoff").sort((a, b) => Number(Boolean(a.automatic || a.adaptiveReadLabel)) - Number(Boolean(b.automatic || b.adaptiveReadLabel)))) {
+    if (action.actorId == null) continue;
+    if (owners.has(action.actorId)) {
+      const state = executionFor(action); state.phase = "conflict"; state.notice = `Move ${action.sequence} conflicts with another route for player ${action.actorId}.`; state.completedAtMs = timeMs;
+    } else owners.set(action.actorId, action);
+  }
   run.players = run.players.map((player) => {
-    let target: CourtPoint | null = null;
-    let authoredTarget = false;
-    let maxSpeed = OFF_BALL_MAX_SPEED_FT_PER_SECOND;
-    const movement = activeActions.find((action) => action.actorId === player.id
-      && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff");
-    const screen = activeActions.find((action) => (action.arrow.kind === "off-ball-screen" || action.arrow.kind === "pin-down")
-      && (action.actorId === player.id || action.recipientId === player.id));
-    const partner = activeActions.find((action) => action.partnerId === player.id
-      && (action.arrow.kind === "screen" || action.arrow.kind === "slip-screen" || action.arrow.kind === "pick-roll" || action.arrow.kind === "pick-pop"));
+    let target: CourtPoint | null = null, authoredTarget = false, maxSpeed = OFF_BALL_MAX_SPEED_FT_PER_SECOND;
+    const movement = owners.get(player.id);
+    const screen = activeActions.find((action) => actionIsMoving(action) && isScreenAction(action) && screenUserId(action) === player.id);
     if (movement) {
-      target = sampleMovementTarget(run, movement, timeMs);
-      maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
+      target = followPath(run, movement, player, movementPoints(run, movement, player, hoop));
+      const state = executionFor(movement);
+      if (isScreenAction(movement) && movement.arrow.kind !== "slip-screen" && (state.phase === "set" || state.phase === "use")) {
+        target = movement.arrow.end;
+        const intent = run.motionIntents?.get(velocityKey("player", player.id)); if (intent) intent.priority = 100;
+      }
+      maxSpeed = Math.min(OFFENSE_MAX_SPEED_FT_PER_SECOND, Math.max(5, (state.paths.get(player.id)?.length ?? 0) / Math.max(.5, (movement.arrow.timing ?? 1.2)) * 1.3));
+      maxSpeed = routeSpeed(movement, player.id, maxSpeed);
       authoredTarget = true;
-    } else if (screen?.recipientId === player.id) {
-      target = sampleCutterTarget(screen, timeMs);
-      maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
-      authoredTarget = true;
-    } else if (partner?.partnerId === player.id) {
-      const start = partner.partnerStart ?? player;
-      const finish = pointToward(partner.arrow.end, hoop, partner.arrow.kind === "pick-roll" || partner.arrow.kind === "slip-screen" ? 10 : 8);
-      const progress = easeInOut(clamp((timeMs - partner.startTime) / partner.durationMs, 0, 1));
-      target = lerpPoint(start, finish, progress);
-      maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
-      authoredTarget = true;
-    } else if (prep?.recipientId === player.id) {
-      const prepWindow = Math.min(PASS_PREP_MS, Math.max(180, prep.durationMs * 0.42));
-      const override = run.recipientStartOverrides.get(prep.arrow.id);
-      const prepStart = override && timeMs >= override.atMs ? override.atMs : Math.max(0, prep.startTime - prepWindow);
-      const start = override && timeMs >= override.atMs ? override.point : prep.recipientStart ?? player;
-      const progress = clamp((timeMs - prepStart) / (prep.startTime + prep.durationMs - prepStart), 0, 1);
-      target = lerpPoint(start, prep.arrow.end, easeInOut(progress));
-      maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
-      authoredTarget = true;
-    } else if (transfer?.recipientId === player.id) {
-      target = transfer.arrow.end;
-      maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND;
-      authoredTarget = true;
+    } else if (screen) {
+      const state = executionFor(screen), finish = screenUserFinish(screen, hoop);
+      const start = screen.arrow.kind === "off-ball-screen" || screen.arrow.kind === "pin-down" ? screen.recipientStart ?? player : screen.partnerStart ?? player;
+      const points = screenUserPoints(screen, start, finish);
+      target = followPath(run, screen, player, state.phase === "approach" || state.phase === "set" ? [start, points[1]] : [player, ...points.slice(1)]);
+      maxSpeed = routeSpeed(screen, player.id, 10); authoredTarget = true;
+    } else if (transfer?.recipientId === player.id || prep?.recipientId === player.id) {
+      const action = transfer?.recipientId === player.id ? transfer : prep!;
+      const override = run.recipientStartOverrides.get(action.arrow.id);
+      const start = override?.point ?? action.recipientStart ?? player;
+      target = followPath(run, action, player, [start, action.arrow.end]);
+      maxSpeed = OFFENSE_MAX_SPEED_FT_PER_SECOND; authoredTarget = true;
+    } else if (transfer?.arrow.kind === "handoff" && transfer.actorId === player.id) {
+      const receiver = markerForId(run.players, transfer.recipientId);
+      if (receiver) target = pointToward(receiver, player, 2.2);
+      maxSpeed = OFF_BALL_MAX_SPEED_FT_PER_SECOND; authoredTarget = true;
     } else if (run.ballHandlerId !== player.id) {
-      target = offBallTarget(run, player, ball, timeMs, drive, hoop);
+      const recoveringId = run.ballHandlerId == null && run.settings.offenseMode !== "scripted" && run.ball ? run.players.slice().sort((a, b) => pointDistanceFeet(a, ball) - pointDistanceFeet(b, ball) || a.id - b.id)[0]?.id : null;
+      target = recoveringId === player.id ? ball : offBallTarget(run, player, ball, timeMs, drive, hoop);
     }
-    if (!target) {
-      run.targetFilters.delete(velocityKey("player", player.id));
-      return coastMarker(run, "player", player, dt, OFFENSE_ACCELERATION_FT_PER_SECOND);
-    }
+    if (!target) { run.targetFilters.delete(velocityKey("player", player.id)); return coastMarker(run, "player", player, dt, OFFENSE_ACCELERATION_FT_PER_SECOND); }
     if (authoredTarget) run.targetFilters.delete(velocityKey("player", player.id));
     else target = smoothAITarget(run, "player", player, target, dt);
-    const moved = integrateMarker(run, "player", player, target, dt, maxSpeed, OFFENSE_ACCELERATION_FT_PER_SECOND);
-    const completedMovement = movement && timeMs >= movement.startTime + movement.durationMs;
-    const completedScreen = screen && timeMs >= screen.startTime + screen.durationMs;
-    if (completedMovement || completedScreen) run.offBallAnchors.set(player.id, { x: moved.x, y: moved.y });
-    return moved;
+    return integrateMarker(run, "player", player, target, dt, maxSpeed, OFFENSE_ACCELERATION_FT_PER_SECOND);
   });
+}
+
+function coordinateCourt(run: SimulationRun, dt: number) {
+  const intents = [...(run.motionIntents?.values() ?? [])];
+  const topLeft = toCourtFeet(courtSvgToPoint({ x: NBA_COURT_GEOMETRY.boundary.left, y: NBA_COURT_GEOMETRY.boundary.top }));
+  const bottomRight = toCourtFeet(courtSvgToPoint({ x: NBA_COURT_GEOMETRY.boundary.right, y: NBA_COURT_GEOMETRY.boundary.bottom }));
+  const resolved = coordinateMovement(intents, dt, { left: topLeft.x, right: bottomRight.x, top: topLeft.y, bottom: bottomRight.y });
+  intents.forEach((intent, index) => {
+    const point = Math.hypot(resolved[index].velocity.x, resolved[index].velocity.y) < 1e-10 ? null : fromCourtFeet(resolved[index].point), id = Number(intent.key.split(":")[1]);
+    run.velocities.set(intent.key, resolved[index].velocity);
+    if (!point) return;
+    if (intent.key.startsWith("player:")) run.players = run.players.map((player) => player.id === id ? { ...player, ...point } : player);
+    else run.defenders = run.defenders.map((defender) => defender.id === id ? { ...defender, ...point } : defender);
+  });
+  run.motionIntents = undefined;
 }
 
 function updateBall(run: SimulationRun, timeMs: number, dt: number) {
   const transfer = currentTransferAt(run, timeMs);
   if (transfer) {
+    if (transfer.arrow.kind === "handoff") {
+      const giver = markerForId(run.players, transfer.actorId), receiver = markerForId(run.players, transfer.recipientId);
+      if (!giver || !receiver || pointDistanceFeet(giver, receiver) > 2.8) {
+        if (giver) run.ball = { x: giver.x, y: giver.y };
+        run.ballVelocity = { x: 0, y: 0 };
+        return;
+      }
+      switchAtInteraction(run, transfer, transfer.recipientId);
+    }
     const start = activeTransferStart(run, transfer);
     const startOverride = run.actionStartOverrides.get("ball:" + transfer.arrow.id);
     const startTime = startOverride?.atMs ?? transfer.startTime;
@@ -2546,7 +2690,11 @@ function updateBall(run: SimulationRun, timeMs: number, dt: number) {
     run.offBallAnchors.set(recovery.player.id, { x: recovery.player.x, y: recovery.player.y });
     run.ballVelocity = { x: 0, y: 0 };
   } else {
-    integrateBall(run, recovery.player, dt);
+    const speed = Math.hypot(run.ballVelocity.x, run.ballVelocity.y), nextSpeed = Math.max(0, speed - BALL_ACCELERATION_FT_PER_SECOND * dt);
+    if (speed > .01) {
+      run.ball = addFeet(looseBall, { x: run.ballVelocity.x / speed * nextSpeed * dt, y: run.ballVelocity.y / speed * nextSpeed * dt });
+      run.ballVelocity = { x: run.ballVelocity.x / speed * nextSpeed, y: run.ballVelocity.y / speed * nextSpeed };
+    }
   }
 }
 
@@ -2558,7 +2706,9 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
     if (run.settings.defenseStrategy === "off") {
       run.targetFilters.delete(velocityKey("defender", defender.id));
       const velocity = run.velocities.get(velocityKey("defender", defender.id)) ?? { x: 0, y: 0 };
-      run.velocities.set(velocityKey("defender", defender.id), { x: velocity.x * 0.4, y: velocity.y * 0.4 });
+      run.velocities.set(velocityKey("defender", defender.id), { x: 0, y: 0 });
+      const key = velocityKey("defender", defender.id);
+      run.motionIntents?.set(key, { key, point: toCourtFeet(defender), velocity: { x: 0, y: 0 }, previousVelocity: velocity, speed: 0, acceleration: 0, priority: 5, frozen: true });
       return defender;
     }
     const isRecovering = pointDistanceFeet(defender, target) > 8;
@@ -2759,8 +2909,12 @@ function parabolicPoint(start: CourtPoint, end: CourtPoint, amount: number) {
 
 function updateShot(run: SimulationRun, timeMs: number, dt: number, hoop: CourtPoint) {
   if (!run.shotStart) {
-    const shooter = markerForId(run.players, run.ballHandlerId) ?? run.players[nearestPointIndex(run.players, run.ball ?? hoop)] ?? null;
-    if (!shooter) return;
+    const shooter = markerForId(run.players, run.ballHandlerId);
+    if (!shooter) {
+      run.adaptiveReadLabel = "No controlled shot";
+      run.adaptiveReadReason = "No player controlled the ball when the possession ended.";
+      return;
+    }
     run.shotStart = run.ball ? { ...run.ball } : { x: shooter.x, y: shooter.y };
     run.shotShooterId = shooter.id;
     const offBall = calculateOffBallQuality(run.players, run.shotStart, run.settings, run.defenders, shooter.id);
@@ -2771,8 +2925,7 @@ function updateShot(run: SimulationRun, timeMs: number, dt: number, hoop: CourtP
   const pathStart = path?.point ?? run.shotStart;
   const shotProgress = clamp((timeMs - pathStartTime) / Math.max(1, run.actionDurationMs + run.shotDurationMs - pathStartTime), 0, 1);
   run.ball = parabolicPoint(pathStart, hoop, shotProgress);
-  const shooter = markerForId(run.players, run.shotShooterId);
-  if (shooter) updateDefense(run, timeMs, dt, hoop);
+
 }
 
 function nextTimeBoundary(run: SimulationRun, stepEnd: number) {
@@ -2796,6 +2949,7 @@ function transferBallToRecipient(run: SimulationRun, previousTime: number, nextT
     (action.arrow.kind === "pass" || action.arrow.kind === "handoff")
     && action.recipientId != null
     && !action.transferFailed
+    && action.transferCompletedAtMs == null
     && previousTime < action.startTime + action.durationMs
     && nextTime >= action.startTime + action.durationMs - 1e-6,
   );
@@ -2804,11 +2958,15 @@ function transferBallToRecipient(run: SimulationRun, previousTime: number, nextT
   if (!receiver) {
     transfer.transferFailed = true;
     transfer.transferFailedAtMs = nextTime;
-    run.ballHandlerId = null;
+    const state = executionFor(transfer); state.phase = "obstructed"; state.completedAtMs = nextTime; state.notice = "The selected receiver is unavailable.";
+    if (transfer.arrow.kind !== "handoff") run.ballHandlerId = null;
     return;
   }
-  if (run.ball && pointDistanceFeet(run.ball, receiver) <= TRANSFER_CATCH_RADIUS_FEET) {
+  const giver = markerForId(run.players, transfer.actorId);
+  const handoffReady = transfer.arrow.kind !== "handoff" || Boolean(giver && pointDistanceFeet(giver, receiver) <= 2.8);
+  if (handoffReady && run.ball && pointDistanceFeet(run.ball, receiver) <= TRANSFER_CATCH_RADIUS_FEET) {
     transfer.transferCompletedAtMs = nextTime;
+    const state = executionFor(transfer); state.phase = "completed"; state.progress = 1; state.completedAtMs = nextTime;
     run.ballHandlerId = receiver.id;
     // Finish the catch at the receiver's live position. The bounded catch
     // radius prevents a long snap while keeping the ball attached next tick.
@@ -2819,34 +2977,50 @@ function transferBallToRecipient(run: SimulationRun, previousTime: number, nextT
     return;
   }
 
-  const previousEnd = transfer.startTime + transfer.durationMs;
-  const waitMs = (transfer.transferWaitMs ?? 0) + stepMs;
-  if (waitMs > MAX_TRANSFER_WAIT_MS) {
-    transfer.transferFailed = true;
-    transfer.transferFailedAtMs = nextTime;
-    run.ballHandlerId = null;
-    return;
-  }
-  transfer.transferWaitMs = waitMs;
-  transfer.durationMs += stepMs;
-  run.actions.forEach((action) => {
-    if (action !== transfer && action.sequence > transfer.sequence && action.startTime >= previousEnd - 1e-6) {
-      action.startTime += stepMs;
-    }
-  });
-  run.actionDurationMs += stepMs;
-  if (previousEnd <= run.plannedActionDurationMs + 1e-6) run.plannedActionDurationMs += stepMs;
-  run.durationMs += stepMs;
+  transfer.transferWaitMs = (transfer.transferWaitMs ?? 0) + stepMs;
+  if (extendPhase(run, transfer, stepMs)) return;
+  transfer.transferFailed = true; transfer.transferFailedAtMs = nextTime;
+  const state = executionFor(transfer); state.phase = "obstructed"; state.completedAtMs = nextTime;
+  state.notice = transfer.arrow.kind === "handoff" ? "The players could not meet for the handoff." : "The receiver could not complete the catch.";
+  if (transfer.arrow.kind !== "handoff") run.ballHandlerId = null;
+}
+
+function extendPhase(run: SimulationRun, action: BoundAction, delta: number) {
+  const waits = run.phaseWaitMs ??= new Map(), waited = waits.get(action.sequence) ?? 0;
+  if (waited + delta > MAX_TRANSFER_WAIT_MS + 1e-6) return false;
+  if (run.adaptiveContinuationStartedAtMs != null && (action.adaptiveReadLabel || action.automatic) && run.actionDurationMs + delta - run.adaptiveContinuationStartedAtMs > MAX_ADAPTIVE_WINDOW_MS) return false;
+  waits.set(action.sequence, waited + delta);
+  const phase = run.actions.filter((candidate) => candidate.sequence === action.sequence);
+  const end = Math.max(...phase.map((candidate) => candidate.startTime + candidate.durationMs));
+  phase.forEach((candidate) => { candidate.durationMs += delta; if (candidate.execution) candidate.execution.waitMs = waited + delta; });
+  run.actions.forEach((candidate) => { if (candidate.sequence > action.sequence && candidate.startTime >= end - 1e-6) candidate.startTime += delta; });
+  run.actionDurationMs += delta;
+  if (end <= run.plannedActionDurationMs + 1e-6) run.plannedActionDurationMs += delta;
+  run.durationMs += delta;
+  return true;
 }
 
 function finalizeCompletedMovement(run: SimulationRun, previousTime: number, nextTime: number) {
-  run.actions.forEach((action) => {
-    if (action.arrow.kind === "pass" || action.arrow.kind === "handoff") return;
-    const endTime = action.startTime + action.durationMs;
-    if (previousTime >= endTime || nextTime < endTime || action.actorId == null) return;
-    const actor = markerForId(run.players, action.actorId);
+  for (const action of run.actions) {
+    if (action.arrow.kind === "pass" || action.arrow.kind === "handoff" || !actionIsMoving(action)) continue;
+    const end = action.startTime + action.durationMs;
+    if (previousTime >= end || nextTime < end - 1e-6) continue;
+    const state = executionFor(action), actor = markerForId(run.players, action.actorId);
+    const target = isScreenAction(action) && (action.arrow.kind === "pick-roll" || action.arrow.kind === "pick-pop" || action.arrow.kind === "slip-screen") ? screenFinish(action, HOOP_POINT) : action.arrow.end;
+    const user = isScreenAction(action) ? markerForId(run.players, screenUserId(action)) : null;
+    const velocity = actor ? run.velocities.get(velocityKey("player", actor.id)) : null;
+    const complete = actor && pointDistanceFeet(actor, target) <= .6 && Math.hypot(velocity?.x ?? 0, velocity?.y ?? 0) <= 2
+      && (!isScreenAction(action) || (state.phase === "release" && (!user || pointDistanceFeet(user, screenUserFinish(action, HOOP_POINT)) <= .8)));
+    if (complete) { state.phase = "completed"; state.completedAtMs = nextTime; state.progress = 1; }
+    else if (extendPhase(run, action, SIMULATION_FIXED_STEP_MS)) continue;
+    else {
+      state.phase = "obstructed"; state.completedAtMs = nextTime;
+      const traffic = [actor, user].some((participant) => participant && [...run.players.filter((player) => player.id !== participant.id), ...run.defenders].some((other) => pointDistanceFeet(participant, other) < 2.5));
+      state.notice = traffic ? `Move ${action.sequence} was blocked by nearby player traffic.` : `Move ${action.sequence} did not finish within the allowed time.`;
+    }
     if (actor) run.offBallAnchors.set(actor.id, { x: actor.x, y: actor.y });
-  });
+    if (user) run.offBallAnchors.set(user.id, { x: user.x, y: user.y });
+  }
 }
 
 function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
@@ -2859,8 +3033,11 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   });
   recordActionStarts(run, startTime);
   const sampleTime = Math.max(startTime, endTime - 0.001);
+  run.motionIntents = new Map();
   if (startTime < run.actionDurationMs) {
     updateOffense(run, sampleTime, dt, hoop);
+    updateDefense(run, sampleTime, dt, hoop);
+    coordinateCourt(run, dt);
     // Extend an uncaught transfer before sampling the ball path at the action
     // boundary. Otherwise currentTransferAt sees the old end time and briefly
     // snaps the ball back to its former handler while the pass waits to be caught.
@@ -2871,12 +3048,14 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
     updateBall(run, sampleTime, dt);
     finalizeCompletedMovement(run, startTime, endTime);
   } else {
+    run.players.forEach((player) => coastMarker(run, "player", player, dt, OFFENSE_ACCELERATION_FT_PER_SECOND));
+    updateDefense(run, sampleTime, dt, hoop);
+    coordinateCourt(run, dt);
     updateShot(run, sampleTime, dt, hoop);
   }
-  if (startTime < run.actionDurationMs) updateDefense(run, sampleTime, dt, hoop);
   run.elapsedMs = endTime;
   if (run.settings.offenseMode !== "scripted" && !run.shotStart && run.elapsedMs + 1e-6 >= run.nextEarlyReadMs) {
-    startEarlyRead(run, hoop);
+    if (!run.actions.some((action) => !action.automatic && action.startTime <= run.elapsedMs && action.startTime + action.durationMs > run.elapsedMs && isScreenAction(action) && action.execution?.phase !== "release")) startEarlyRead(run, hoop);
     if (!run.earlyReadInterrupted) run.nextEarlyReadMs += EARLY_READ_INTERVAL_MS;
   }
   const authoredActionsEnded = run.elapsedMs + 1e-6 >= run.plannedActionDurationMs
@@ -2969,6 +3148,8 @@ export function editPausedSimulationMarker(
   } else {
     run.source.ball = { ...nextPoint };
   }
+  run.actions.forEach((action) => action.execution?.paths.clear());
+  run.offBallDecisions?.clear();
   run.routeHistory = [];
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
@@ -3026,6 +3207,8 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
     }
   }
   run.source = structuredClone(draft);
+  run.actions.forEach((action) => action.execution?.paths.clear());
+  run.offBallDecisions?.clear();
   run.routeHistory = [];
   run.frame = frameFor(run);
   run.previousFrame = run.frame;

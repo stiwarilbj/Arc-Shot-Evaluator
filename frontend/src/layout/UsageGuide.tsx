@@ -89,6 +89,8 @@ export function UsageGuide() {
               <li>Use Player skills to set three-point, midrange, and finishing ratings from 1 to 5, then assign badges such as Playmaker, Deep range, Cutter, and Roll threat; the offense and defense respond to those strengths</li>
               <li>Open Defender skills or select a defender to assign Lockdown, Paint protector, and Helper badges; they guide matchups, zone roles, help, closeouts, and shot contests</li>
               <li>During playback, the offense favors open shots by expected points, can interrupt the drawn sequence for a clear high-quality look, and continues with up to three quick passes or drives when the defense shifts</li>
+              <li>Movement follows actual route progress with braking and collision avoidance. Screens set before use; rolls and pops follow the interaction. Handoffs require close players and passes require a catch.</li>
+              <li>Timing is a minimum. A phase may wait up to 1.2 seconds; blocked or conflicting moves show an explanation instead of forcing players through one another.</li>
               <li>Defenders keep stable assignments and scheme shape, hold screen coverage through each action, help only when a safe rotation is available, and recover with speed-limited movement</li>
               <li>Zone ball pressure changes with possession or a clear advantage; Lockdown, Paint protector, and Helper badges shape assignments and rotations without overriding screen or chaser duties</li>
               <li>Playback reads and routes are temporary and do not change saved diagrams or exports</li>

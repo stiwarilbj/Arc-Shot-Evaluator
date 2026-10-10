@@ -149,6 +149,14 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
                 raise HTTPException(400, "Off-ball screen players must be distinct offensive players")
             clean_arrow["screener_id"] = screener_id
             clean_arrow["cutter_id"] = cutter_id
+        for field in ("actor_id", "recipient_id"):
+            participant = arrow.get(field)
+            if participant is not None:
+                if not isinstance(participant, int) or isinstance(participant, bool) or participant not in player_ids:
+                    raise HTTPException(400, "Action participants must be offensive players")
+                clean_arrow[field] = participant
+        if arrow.get("recipient_id") is not None and (arrow["kind"] not in {"pass", "handoff"} or arrow.get("recipient_id") == arrow.get("actor_id")):
+            raise HTTPException(400, "Transfer participants must be distinct")
         if arrow["kind"] == "backdoor-cut":
             actor_id = arrow.get("actor_id")
             if not isinstance(actor_id, int) or isinstance(actor_id, bool) or actor_id not in player_ids:

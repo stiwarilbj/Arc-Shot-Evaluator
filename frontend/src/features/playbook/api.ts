@@ -1,3 +1,4 @@
+import { validatePlaybookParticipants } from "./types";
 import type { PlaybookDocument, PlaybookDraft } from "./types";
 import { IS_GITHUB_PAGES } from "../../runtime";
 
@@ -46,6 +47,7 @@ function localId() {
 }
 
 function persistLocalPlaybook(playbook: PlaybookDraft, id = playbook.id.startsWith("draft-") ? localId() : playbook.id): PlaybookDocument {
+  validatePlaybookParticipants(playbook);
   const now = new Date().toISOString();
   const saved: PlaybookDocument = {
     version: 1,

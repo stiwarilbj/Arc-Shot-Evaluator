@@ -133,7 +133,7 @@ function removeSelection(draft: PlaybookDraft, selection: Selection): PlaybookDr
   const next = clonePlaybook(draft);
   if (selection.type === "player") {
     next.players = next.players.filter((marker) => marker.id !== selection.id);
-    next.arrows = next.arrows.filter((arrow) => arrow.screener_id !== selection.id && arrow.cutter_id !== selection.id && arrow.handler_id !== selection.id && arrow.actor_id !== selection.id);
+    next.arrows = next.arrows.filter((arrow) => arrow.screener_id !== selection.id && arrow.cutter_id !== selection.id && arrow.handler_id !== selection.id && arrow.actor_id !== selection.id && arrow.recipient_id !== selection.id);
   }
   if (selection.type === "defender") next.defenders = next.defenders.filter((marker) => marker.id !== selection.id);
   if (selection.type === "ball") next.ball = null;
@@ -369,6 +369,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
   const selectedSkillsDefender = draft.defenders.find((defender) => defender.id === defenderSkillsId) ?? draft.defenders[0] ?? null;
+  const selectedParticipants = useMemo(() => selectedArrow ? createSimulationRun(draft, { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: "man-to-man", offenseMode: "scripted" }).actions.find((action) => action.arrow.id === selectedArrow.id) : null, [draft, selectedArrow?.id]);
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
   const starterCategories = useMemo(() => ["All plays", ...new Set(STARTER_PLAYS.map((play) => STARTER_PLAY_DETAILS[play.name]?.category ?? "Other"))], []);
   const filteredStarterPlays = useMemo(() => {
@@ -699,6 +700,17 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setSelected({ type: "arrow", id: arrowIdValue });
   }
 
+  function changeArrowParticipant(id: string, field: "actor_id" | "recipient_id", value: string) {
+    const next = clonePlaybook(draft);
+    next.arrows = next.arrows.map((arrow) => {
+      if (arrow.id !== id) return arrow;
+      const updated = { ...arrow, [field]: value === "auto" ? undefined : Number(value) };
+      if (updated.actor_id != null && updated.actor_id === updated.recipient_id) updated.recipient_id = undefined;
+      return updated;
+    });
+    commit(next);
+  }
+
   function changeArrowTiming(arrowIdValue: string, requestedTiming: number) {
     if (!Number.isFinite(requestedTiming)) return;
     const next = clonePlaybook(draft);
@@ -898,6 +910,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             handler_id: draft.ball ? nearestPlayerId(draft.players, draft.ball, nearestPlayerId(draft.players, drawStart)) ?? undefined : undefined,
           } : {}),
         };
+        const binding = createSimulationRun({ ...draft, arrows: [...draft.arrows, newArrow] }, { ...simulationSettings, offenseMode: "scripted" }).actions.find((action) => action.arrow.id === newArrow.id);
+        if (binding?.actorId != null) newArrow.actor_id = binding.actorId;
+        if ((kind === "pass" || kind === "handoff") && binding?.recipientId != null) newArrow.recipient_id = binding.recipientId;
         next.arrows = [...next.arrows, newArrow];
         commit(next);
         setSelected({ type: "arrow", id: newArrow.id });
@@ -1070,9 +1085,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     clone.setAttribute("height", "1152");
     clone.style.setProperty("--orange", "#ee733f");
     clone.style.setProperty("--muted", "#b3b9b5");
-    clone.querySelectorAll(".selection-handle, .drawing-preview, .adaptive-read-route").forEach((node) => node.remove());
+    clone.querySelectorAll(".selection-handle, .drawing-preview, .adaptive-read-route, .marker-hit-target").forEach((node) => node.remove());
     const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
-    style.textContent = `.shared-court-route{fill:none;stroke:#ee733f;stroke-width:2;stroke-dasharray:6 4}.shared-court-route.route-adjustment{stroke:#b3b9b5;stroke-width:1.5;stroke-dasharray:2 4}.shared-court-route.route-shot{stroke-dasharray:3 5}.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-caption{fill:#b3b9b5;stroke:none;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
+    style.textContent = `.shared-court-route{fill:none;stroke:#ee733f;stroke-width:2;stroke-dasharray:6 4}.shared-court-route.route-adjustment{stroke:#b3b9b5;stroke-width:1.5;stroke-dasharray:2 4}.shared-court-route.route-shot{stroke-dasharray:3 5}.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.simulation-defender-number{fill:#73bff0;stroke:none;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-caption{fill:#b3b9b5;stroke:none;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
+    if (simulationActive) style.textContent += ".marker-number,.simulation-defender-number{font-size:26px}";
     clone.prepend(style);
     const serialized = new XMLSerializer().serializeToString(clone);
     const image = new Image();
@@ -1191,6 +1207,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <label><span>Scheme</span><ArcSelect ariaLabel="Defensive scheme" className="arc-select--compact arc-select--full defense-scheme-select" value={simulationSettings.defenseScheme} options={DEFENSE_SCHEME_OPTIONS} onValueChange={(value) => changeSimulationSetting("defenseScheme", value as DefenseScheme)} /></label>
             <small>{simulationSettings.defenseScheme === "auto" ? "Auto draws an eligible scheme at random when a run starts." : `${DEFENSE_SCHEME_LABELS[simulationSettings.defenseScheme]} is set for the next run.`}</small>
             {simulationActive ? <small className="defense-scheme-active">Current: {currentDefenseSchemeLabel}</small> : null}
+            {simulationActive && simulationFrame.execution?.some((action) => action.notice) ? <span className="simulation-movement-notice" role="status">{simulationFrame.execution.filter((action) => action.notice).at(-1)?.notice}</span> : null}
             {simulationActive && simulationFrame.defenseSchemeNotice ? <small className="defense-scheme-notice" role="status">{simulationFrame.defenseSchemeNotice}</small> : null}
           </div> : null}
           <button type="button" className={`preset-button ${autoActionsOpen ? "is-active" : ""}`} aria-expanded={autoActionsOpen} aria-controls="automatic-actions-panel" onClick={() => setAutoActionsOpen((open) => !open)}>
@@ -1267,7 +1284,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           </div> : null}
           <p className="playbook-help">Drag markers to set positions. Select an arrow to adjust its endpoint. Use Delete or the toolbar to clean up.</p>
         </aside>
-        <main className="playbook-editor">
+        <main className={`playbook-editor ${simulationActive ? "is-simulating" : ""}`}>
           <div className="playbook-toolbar" role="toolbar" aria-label="Playbook drawing tools">
             <ToolButton active={tool === "select"} icon={<MousePointer2 size={15} />} label="Select" title={TOOL_LABELS.select} onClick={() => chooseTool("select")} />
             <ToolButton active={tool === "player"} icon={<UserRound size={15} />} label="Add player" title={TOOL_LABELS.player} onClick={() => chooseTool("player")} />
@@ -1304,8 +1321,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
             {selectedArrow ? <>
               <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>Same number runs together</small></label>
+              {["movement", "backdoor-cut", "pass", "handoff"].includes(selectedArrow.kind) ? <div className="sequence-editor"><span>{selectedArrow.kind === "pass" || selectedArrow.kind === "handoff" ? "Passer" : "Player"}</span><ArcSelect ariaLabel="Action player" className="arc-select--compact playbook-path-select" value={String(selectedArrow.actor_id ?? "auto")} options={[...(selectedArrow.kind === "backdoor-cut" ? [] : [{ value: "auto", label: `Auto · Player ${selectedParticipants?.actorId ?? "?"}` }]), ...draft.players.map((player) => ({ value: String(player.id), label: `Player ${player.id}` }))]} onValueChange={(value) => changeArrowParticipant(selectedArrow.id, "actor_id", value)} /></div> : null}
+              {selectedArrow.kind === "pass" || selectedArrow.kind === "handoff" ? <div className="sequence-editor"><span>Receiver</span><ArcSelect ariaLabel="Action receiver" className="arc-select--compact playbook-path-select" value={String(selectedArrow.recipient_id ?? "auto")} options={[{ value: "auto", label: `Auto · Player ${selectedParticipants?.recipientId ?? "?"}` }, ...draft.players.filter((player) => player.id !== (selectedArrow.actor_id ?? selectedParticipants?.actorId)).map((player) => ({ value: String(player.id), label: `Player ${player.id}` }))]} onValueChange={(value) => changeArrowParticipant(selectedArrow.id, "recipient_id", value)} /></div> : null}
               <div className="sequence-editor"><span>Path</span><ArcSelect ariaLabel="Arrow path" className="arc-select--compact playbook-path-select" value={selectedArrow.path ?? "straight"} options={[{ value: "straight", label: "Straight" }, { value: "curve", label: "Curved" }]} onValueChange={(value) => changeArrowPath(selectedArrow.id, value as "straight" | "curve")} /></div>
-              <label className="sequence-editor"><span>Seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
+              <label className="sequence-editor"><span>Min. seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
             </> : null}
           </div>
           {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
@@ -1357,7 +1376,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 const point = markerPoint(marker);
                 const active = selected?.type === "defender" && selected.id === marker.id;
                 return <g key={`defender-${marker.id}`} className={`defense-marker ${active ? "is-selected" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "defender", id: marker.id })}>
-                  <circle cx={point.x} cy={point.y} r="24" className="defense-marker-ring" /><path d={`M${point.x - 10} ${point.y - 10}l20 20M${point.x + 10} ${point.y - 10}l-20 20`} className="defense-marker" /><text x={point.x} y={point.y + 39} className="marker-caption">D{marker.id}</text>
+                  <circle cx={point.x} cy={point.y} r="30" className="marker-hit-target" />
+                  <circle cx={point.x} cy={point.y} r={simulationActive ? 18 : 24} className="defense-marker-ring" />{simulationActive ? <text x={point.x} y={point.y + 1} className="simulation-defender-number">{marker.id}</text> : <><path d={`M${point.x - 10} ${point.y - 10}l20 20M${point.x + 10} ${point.y - 10}l-20 20`} className="defense-marker" /><text x={point.x} y={point.y + 39} className="marker-caption">D{marker.id}</text></>}
                 </g>;
               }) : null}
               {(simulationActive ? simulationFrame.players : draft.players).map((marker) => {
@@ -1365,12 +1385,20 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 const active = selected?.type === "player" && selected.id === marker.id;
                 const role = offBallScreenSelection.screenerId === marker.id ? "is-screen-screener" : offBallScreenSelection.cutterId === marker.id ? "is-screen-cutter" : pickPopSelection.screenerId === marker.id ? "is-screen-screener" : pickPopSelection.handlerId === marker.id ? "is-screen-cutter" : backdoorCutterId === marker.id ? "is-screen-cutter" : "";
                 return <g key={`player-${marker.id}`} className={`offense-marker-group ${active ? "is-selected" : ""} ${role}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "player", id: marker.id })}>
-                  <circle cx={point.x} cy={point.y} r="25" className="offense-marker" /><text x={point.x} y={point.y + 1} className="marker-number">{marker.id}</text>
+                  <circle cx={point.x} cy={point.y} r="30" className="marker-hit-target" /><circle cx={point.x} cy={point.y} r={simulationActive ? 18 : 25} className="offense-marker" /><text x={point.x} y={point.y + 1} className="marker-number">{marker.id}</text>
                 </g>;
               })}
-              {(simulationActive ? simulationFrame.ball : draft.ball) ? <g className={`ball-marker-group ${selected?.type === "ball" ? "is-selected" : ""}`} style={{ pointerEvents: ["pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"].includes(tool) ? "none" : undefined }} onPointerDown={(event) => onMarkerPointerDown(event, { type: "ball", id: "ball" })}>
-                <circle cx={markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x} cy={markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y} r="14" className="ball-marker" /><path d={`M${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x - 11} ${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y}h22M${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).x} ${markerPoint((simulationActive ? simulationFrame.ball : draft.ball) as CourtPoint).y - 11}v22`} className="ball-seam" />
-              </g> : null}
+              {(() => {
+                const ball = simulationActive ? simulationFrame.ball : draft.ball;
+                if (!ball) return null;
+                const point = markerPoint(ball), holder = simulationFrame.players.find((player) => player.id === simulationFrame.ballHandlerId);
+                const attached = simulationActive && holder && pointDistance(ball, holder) < .2;
+                if (attached) { point.x += 14; point.y -= 14; }
+                const radius = simulationActive ? 8 : 14;
+                return <g className={`ball-marker-group ${selected?.type === "ball" ? "is-selected" : ""}`} style={{ pointerEvents: ["pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"].includes(tool) ? "none" : undefined }} onPointerDown={(event) => onMarkerPointerDown(event, { type: "ball", id: "ball" })}>
+                  <circle cx={point.x} cy={point.y} r="24" className="marker-hit-target" /><circle cx={point.x} cy={point.y} r={radius} className="ball-marker" /><path d={`M${point.x - radius + 3} ${point.y}h${radius * 2 - 6}M${point.x} ${point.y - radius + 3}v${radius * 2 - 6}`} className="ball-seam" />
+                </g>;
+              })()}
             </svg>
             <div className="court-hint">{tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "pick-pop" ? pickPopSelection.screenerId == null ? "Select the screener" : pickPopSelection.handlerId == null ? "Select the ball handler" : pickPopSelection.screenPoint == null ? "Click the screen location" : "Click the pop destination" : tool === "pin-down" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : offBallScreenSelection.screenPoint == null ? "Click the screen location" : "Click the cutter destination" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : tool === "backdoor-cut" ? backdoorCutterId == null ? "Select the cutter" : "Click the basket route destination" : "Drag across the court to draw"}</div>
           </div>

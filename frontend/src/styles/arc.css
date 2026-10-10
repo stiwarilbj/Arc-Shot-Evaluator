@@ -1152,3 +1152,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 1100px) {
   .saved-plays-panel:not(.is-open) { visibility: hidden; pointer-events: none; }
 }
+
+/* Playback bodies match the engine footprint; editor hit targets stay generous. */
+.marker-hit-target { fill: transparent; stroke: none; pointer-events: all; }
+.simulation-defender-number { fill: #73bff0; stroke: none; font: 700 26px ui-monospace, monospace; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+:root[data-theme="light"] .simulation-defender-number { fill: #17658c; }
+.counter-court.is-replay .counter-player-number, .counter-court.is-replay .counter-defender-number { font-size: 26px; }
+.simulation-movement-notice { color: var(--muted); font-size: 12px; flex-basis: 100%; }
+
+.playbook-editor.is-simulating .marker-number { font-size: 26px; }

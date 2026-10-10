@@ -1,5 +1,5 @@
 import type { PlaybookDraft, SimulationSettings } from "./types.ts";
-import { DEFAULT_SIMULATION_SETTINGS } from "./types.ts";
+import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from "./types.ts";
 import { advanceSimulationRun, createSimulationRun, observeCounterLabRun, pointDistanceFeet, SIMULATION_STEP_MS } from "./simulation.ts";
 import { createCounterLabRepairs, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabResult, type CounterLabSummary, type CounterLabProgress, type PassDiagnostic, type RepairEvidence } from "./counterLabTypes.ts";
 
@@ -47,18 +47,20 @@ export function repairEvidence(original: CounterLabSummary, repaired: CounterLab
     : delayMs >= 300 ? "delayed" : "still failing";
   const passCleared = Boolean(original.firstBlockedPass && repaired.passDiagnostics.some((pass) => pass.actionId === original.firstBlockedPass?.actionId && pass.status === "delivered") && !repaired.firstBlockedPass);
   const noEarlierFailure = !repaired.firstBreakdown || Boolean(original.firstBreakdown && repaired.firstBreakdown.atMs >= original.firstBreakdown.atMs);
-  const resolvedFirst = original.firstBreakdown?.kind === "opening-lost" ? opening === "cleared" : original.firstBreakdown?.kind === "failed-pass" ? passCleared : false;
+  const actionCleared = Boolean(original.firstBreakdown?.actionId && repaired.actionDiagnostics?.some((action) => action.actionId === original.firstBreakdown!.actionId && action.phase === "completed"));
+  const resolvedFirst = original.firstBreakdown?.kind === "opening-lost" ? opening === "cleared" : original.firstBreakdown?.kind === "failed-pass" ? passCleared : actionCleared;
   const cleared = gain >= 0 && noEarlierFailure && resolvedFirst;
   return { key: repaired.key, gain, verified: gain >= 5 || cleared, cleared, opening, delayMs, passCleared };
 }
 
 export function validateCounterLabInput(draft: PlaybookDraft, profiles: CounterLabProfile[], modes: CounterLabMode[]) {
   if (!draft || !Array.isArray(draft.players) || !Array.isArray(draft.defenders) || !Array.isArray(draft.arrows) || !draft.players.length) throw new Error("Choose a play with offensive players before testing defenses.");
+  validatePlaybookParticipants(draft);
   const validPoint = (point: { x: number; y: number }) => point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.x <= 100 && point.y >= 0 && point.y <= 100;
   if ([...draft.players, ...draft.defenders].some((player) => !validPoint(player)) || (draft.ball && !validPoint(draft.ball))) throw new Error("This play has invalid court positions. Open it in Playbook to correct them.");
   for (const roster of [draft.players, draft.defenders]) if (new Set(roster.map((player) => player.id)).size !== roster.length || roster.some((player) => !Number.isInteger(player.id) || player.id < 1)) throw new Error("Player IDs must be unique positive numbers within each team.");
   const kinds = new Set(["movement", "pass", "screen", "slip-screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"]);
-  if (new Set(draft.arrows.map((arrow) => arrow.id)).size !== draft.arrows.length || draft.arrows.some((arrow) => !arrow.id || !kinds.has(arrow.kind) || !validPoint(arrow.start) || !validPoint(arrow.end) || (arrow.control && !validPoint(arrow.control)) || (arrow.exit_target && !validPoint(arrow.exit_target)) || (arrow.timing != null && (!Number.isFinite(arrow.timing) || arrow.timing < .5 || arrow.timing > 4)) || (arrow.sequence != null && (!Number.isInteger(arrow.sequence) || arrow.sequence < 1)) || [arrow.actor_id, arrow.screener_id, arrow.cutter_id, arrow.handler_id].some((id) => id != null && !draft.players.some((player) => player.id === id)))) throw new Error("This play contains an invalid action or participant. Correct it in Playbook before testing.");
+  if (new Set(draft.arrows.map((arrow) => arrow.id)).size !== draft.arrows.length || draft.arrows.some((arrow) => !arrow.id || !kinds.has(arrow.kind) || !validPoint(arrow.start) || !validPoint(arrow.end) || (arrow.control && !validPoint(arrow.control)) || (arrow.exit_target && !validPoint(arrow.exit_target)) || (arrow.timing != null && (!Number.isFinite(arrow.timing) || arrow.timing < .5 || arrow.timing > 4)) || (arrow.sequence != null && (!Number.isInteger(arrow.sequence) || arrow.sequence < 1)) || [arrow.actor_id, arrow.recipient_id, arrow.screener_id, arrow.cutter_id, arrow.handler_id].some((id) => id != null && !draft.players.some((player) => player.id === id)))) throw new Error("This play contains an invalid action or participant. Correct it in Playbook before testing.");
   if (!profiles.length || !modes.length || modes.some((mode) => mode !== "scripted" && mode !== "adaptive")) throw new Error("Choose at least one defense and offense behavior.");
 }
 
@@ -68,6 +70,8 @@ export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProf
     automaticActions: mode === "scripted" ? { screen: false, handoff: false, pickRoll: false, offBallScreen: false } : { screen: true, handoff: true, pickRoll: true, offBallScreen: true } };
   const run = createSimulationRun(draft, settings);
   const trace: CounterLabFrame[] = [];
+  const diagnosticTrace: CounterLabFrame[] = [];
+  let nextDiagnosticMs = 0;
   const passes = new Map<string, PassDiagnostic>();
   const successfulReads = new Map<string, number>();
   function captureActions() {
@@ -84,7 +88,7 @@ export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProf
       }
       if (action.adaptiveReadLabel && !action.transferFailed && !successfulReads.has(action.arrow.id)) {
         const actor = run.players.find((player) => player.id === action.actorId);
-        const success = action.transferCompletedAtMs != null || (action.arrow.kind === "movement" && run.elapsedMs >= action.startTime + action.durationMs && actor && pointDistanceFeet(actor, action.arrow.end) <= 3);
+        const success = action.transferCompletedAtMs != null || (action.arrow.kind === "movement" && action.execution?.phase === "completed" && actor && pointDistanceFeet(actor, action.arrow.end) <= .6);
         if (success) successfulReads.set(action.arrow.id, action.transferCompletedAtMs ?? run.elapsedMs);
       }
     }
@@ -98,23 +102,25 @@ export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProf
       if (pass && pass.unsafeAtMs == null) Object.assign(pass, { unsafeAtMs: run.elapsedMs, receiverGap: unsafe.receiverGap, laneGap: unsafe.laneGap });
     }
     const frame = observation.frame;
-    trace.push({ elapsedMs: run.elapsedMs, sequence: observation.sequence, action: observation.action, ballHandlerId: observation.ballHandlerId,
+    const sample: CounterLabFrame = { elapsedMs: run.elapsedMs, sequence: observation.sequence, action: observation.action, ballHandlerId: observation.ballHandlerId,
       assignments: observation.assignments, opportunities: observation.opportunities, blockedPass: observation.blockedPass,
       involvedPlayerIds: observation.involvedPlayerIds, activeRoutes: observation.activeRoutes,
-      players: frame.players.map(({ id, x, y }) => ({ id, x, y })), defenders: frame.defenders.map(({ id, x, y }) => ({ id, x, y })), ball: frame.ball, shotPhase: frame.shotPhase });
+      players: frame.players.map(({ id, x, y }) => ({ id, x, y })), defenders: frame.defenders.map(({ id, x, y }) => ({ id, x, y })), ball: frame.ball, shotPhase: frame.shotPhase, execution: frame.execution };
+    trace.push(sample);
+    if (run.elapsedMs + 1e-6 >= nextDiagnosticMs || run.elapsedMs >= run.durationMs) { diagnosticTrace.push(sample); nextDiagnosticMs += 100; }
   };
   append();
-  let nextSample = 100;
+  let nextSample = SIMULATION_STEP_MS;
   let steps = 0;
   while (run.elapsedMs < run.durationMs && steps++ < 20_000) {
     if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
     advanceSimulationRun(run, SIMULATION_STEP_MS, settings);
     captureActions();
-    if (run.elapsedMs >= nextSample) { append(); nextSample += 100; }
+    if (run.elapsedMs + 1e-6 >= nextSample) { append(); nextSample += SIMULATION_STEP_MS; }
   }
   if (run.elapsedMs < run.durationMs) throw new Error("This possession exceeded the simulation limit. Shorten the play and try again.");
   if (trace.at(-1)?.elapsedMs !== run.elapsedMs) append();
-  const { createdAdvantage, firstLostOpeningMs } = diagnoseOpenings(trace);
+  const { createdAdvantage, firstLostOpeningMs } = diagnoseOpenings(diagnosticTrace);
   const passDiagnostics = [...passes.values()].sort((a, b) => a.atMs - b.atMs);
   const failed = passDiagnostics.find((pass) => pass.status === "failed" && pass.playerId != null);
   const firstBlockedPass = failed ? { ...failed, playerId: failed.playerId! } : null;
@@ -123,9 +129,14 @@ export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProf
   const events: NonNullable<CounterLabResult["firstBreakdown"]>[] = [];
   if (lossFrame) events.push({ kind: "opening-lost", atMs: firstLostOpeningMs!, sequence: lossFrame.sequence, actionId: null, playerId: lossFrame.ballHandlerId });
   if (firstBlockedPass) events.push({ kind: "failed-pass", atMs: firstBlockedPass.atMs, sequence: firstBlockedPass.sequence, actionId: firstBlockedPass.actionId, playerId: firstBlockedPass.playerId });
+  const actionDiagnostics = run.frame.execution ?? [];
+  for (const action of actionDiagnostics) if (action.phase === "obstructed" || action.phase === "conflict") {
+    if (passDiagnostics.some((pass) => pass.actionId === action.actionId)) continue;
+    events.push({ kind: action.phase === "conflict" ? "action-conflict" : "obstructed-action", atMs: action.completedAtMs ?? action.startedAtMs ?? 0, sequence: action.sequence, actionId: action.actionId, playerId: action.actorId });
+  }
   const firstBreakdown = events.sort((a, b) => a.atMs - b.atMs)[0] ?? null;
   const releasedAtMs = trace.find((frame) => frame.shotPhase === "air" || frame.shotPhase === "result")?.elapsedMs ?? null;
-  const recoveredAtMs = verifiedRecovery(trace, firstBreakdown?.atMs ?? null, [...successfulReads.values()], run.frame.shotQuality);
+  const recoveredAtMs = verifiedRecovery(diagnosticTrace, firstBreakdown?.atMs ?? null, [...successfulReads.values()], run.frame.shotQuality);
 
   const outcome = mode === "scripted" ? "Drawn actions only. Improvisation is off."
     : recoveredAtMs != null ? `Recovered after improvisation at ${(recoveredAtMs / 1000).toFixed(1)}s.`
@@ -134,7 +145,7 @@ export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProf
   const actions = [...new Set(run.actions.filter((action) => !action.automatic && !action.adaptiveReadLabel).map((action) => action.arrow.kind.replaceAll("-", " ")))];
   return { key: `${profile.id}:${mode}`, profile, mode, score: Math.round(run.frame.shotQuality), finalShotQuality: run.frame.shotQuality, createdAdvantage, outcome,
     firstLostOpeningMs, firstBlockedPass, firstUnsafePass, passDiagnostics, firstBreakdown, releasedAtMs, adaptiveAttempts: run.adaptiveActionsTaken, adaptiveSuccesses: successfulReads.size, recoveredAtMs,
-    actions, notice: lossFrame?.action ? `The opening closed during ${lossFrame.action}.` : null, trace };
+    actionDiagnostics, actions, notice: lossFrame?.action ? `The opening closed during ${lossFrame.action}.` : null, trace };
 }
 
 export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterLabProfile[], modes: CounterLabMode[], onProgress: (progress: CounterLabProgress) => void,

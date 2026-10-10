@@ -1,0 +1,22 @@
+{
+  "bodyRadiusFeet": 1,
+  "measurement": "Live authored action positions from 300ms onward; imported overlaps separate gradually.",
+  "before": {
+    "trials": 288,
+    "trialsWithCentersBelowOneFoot": 261
+  },
+  "after": {
+    "trials": 288,
+    "trialsWithCentersBelowOneFoot": 0,
+    "minimumGapFeet": 1.939478,
+    "minimumGapTrial": "Elevator / contain / scripted"
+  },
+  "additional": {
+    "trials": 674
+  },
+  "outcomes": {
+    "completed": 3233,
+    "obstructed": 839,
+    "conflict": 0
+  }
+}

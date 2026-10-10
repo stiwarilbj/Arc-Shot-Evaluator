@@ -178,7 +178,8 @@ advance(orderedRun, SIMULATION_STEP_MS * 3);
 orderedRun.players.forEach((player, index) => {
   assert.ok(pointDistanceFeet(playersBeforePassEnd[index], player) < 3, 'players remain continuous as possession changes');
 });
-assert.equal(orderedRun.ballHandlerId, 2, 'possession transfers to the pass recipient at the pass boundary');
+advanceUntil(orderedRun, () => orderedRun.actions[1].transferCompletedAtMs != null, 1600);
+assert.equal(orderedRun.ballHandlerId, 2, 'possession transfers after the recorded catch, including a bounded timing delay');
 assert.deepEqual(new Map(orderedRun.assignments), orderedAssignments, 'help defense does not recalculate defensive assignments');
 
 const impossibleTransferRun = createSimulationRun(orderedDraft, settings);
@@ -370,7 +371,8 @@ assert.equal(driveRun.helpDefenderId, helperId, 'the helper does not switch matc
 const helperDuring = driveRun.defenders.find((defender) => defender.id === helperId);
 const handlerDuring = driveRun.players.find((player) => player.id === driveRun.ballHandlerId);
 assert.ok(pointDistanceFeet(helperDuring, helpSpot(handlerDuring)) < helpDistanceBefore, 'the helper moves toward the drive lane');
-advance(driveRun, driveRun.actions[0].startTime + driveRun.actions[0].durationMs - driveRun.elapsedMs + 550);
+advanceUntil(driveRun, () => ['completed', 'obstructed', 'interrupted'].includes(driveRun.actions[0].execution?.phase), 12000);
+advanceUntil(driveRun, () => driveRun.helpDefenderId == null, 12000);
 assert.equal(driveRun.helpDefenderId, null, 'help assignment clears when the drive ends');
 assert.deepEqual(new Map(driveRun.assignments), stableAssignments, 'help and recovery preserve each defender’s original matchup');
 
@@ -488,7 +490,7 @@ for (const play of [READY_SETUP, ...STARTER_PLAYS, EMPTY_COURT]) {
   const snapshot = structuredClone(play);
   const run = createSimulationRun(play, settings);
   assert.deepEqual(play, snapshot, `${play.name} stays unchanged when it starts`);
-  advance(run, run.durationMs + 4000);
+  advanceUntil(run, () => run.elapsedMs === run.durationMs, 30000);
   assert.equal(run.elapsedMs, run.durationMs, `${play.name} reaches the end of its automatic-shot timeline`);
   assert.equal(run.frame.shotPhase, 'result', `${play.name} finishes with a shot result`);
   assert.equal(run.adaptiveReadResolved, true, `${play.name} resolves its read from live defender positions`);
@@ -508,9 +510,10 @@ const openRollReadDraft = makeDraft({
   defenders: [[8, 8], [91, 8], [8, 91]],
   arrows: [{ id: 'read-roll-screen', kind: 'pick-roll', screener_id: 2, handler_id: 1, start: { x: 56, y: 68 }, end: { x: 53, y: 66 }, sequence: 1, timing: 1.2 }],
 });
+openRollReadDraft.players[0].ratings = { threePoint: 1, midrange: 1, finishing: 1 };
 const openRollSnapshot = structuredClone(openRollReadDraft);
 const openRollRun = createSimulationRun(openRollReadDraft, { ...settings, defenseStrategy: 'off' });
-advance(openRollRun, openRollRun.plannedActionDurationMs);
+advanceUntil(openRollRun, () => openRollRun.adaptiveReadResolved, 12000);
 assert.equal(openRollRun.adaptiveReadResolved, true, 'the read is evaluated after the drawn and automatic actions end');
 assert.equal(openRollRun.actions.at(-1).arrow.kind, 'pass', 'an open roller receives the adaptive continuation');
 assert.equal(openRollRun.actions.at(-1).recipientId, 2, 'the open roll recipient is identified from the screen action');
@@ -543,6 +546,10 @@ advance(closeoutRun, 600);
 assert.match(closeoutRun.adaptiveReadLabel ?? '', /early read/i);
 assert.equal(closeoutRun.actions.at(-1).arrow.kind, 'pass', 'the first read sends the ball to the high-rated shooter');
 assert.equal(closeoutRun.actions.at(-1).recipientId, 2);
+// Stage a completed closeout while the ball is still in flight. The test is
+// about reevaluating a live catch, rather than relying on old defender travel.
+advanceUntil(closeoutRun, () => pointDistanceFeet(closeoutRun.ball, closeoutRun.players[1]) < 2.5);
+editPausedSimulationMarker(closeoutRun, 'defender', 1, { x: closeoutRun.players[1].x, y: closeoutRun.players[1].y - 6 });
 advanceUntil(closeoutRun, () => closeoutRun.ballHandlerId === 2);
 assert.ok(Math.min(...closeoutRun.defenders.map((defender) => pointDistanceFeet(defender, closeoutRun.players[1]))) < initialShooterGap, 'the defender closes toward the receiver during the pass');
 advanceUntil(closeoutRun, () => closeoutRun.frame.shotPhase === 'setup');
@@ -603,7 +610,7 @@ assert.equal(coveredReadRun.adaptiveReadLabel, 'No safe continuation');
 assert.match(coveredReadRun.adaptiveReadReason, /takes the shot/i);
 
 const repeatReadRun = createSimulationRun(structuredClone(openRollReadDraft), { ...settings, defenseStrategy: 'off' });
-advance(repeatReadRun, repeatReadRun.plannedActionDurationMs);
+advanceUntil(repeatReadRun, () => repeatReadRun.adaptiveReadResolved, 12000);
 assert.equal(repeatReadRun.adaptiveReadLabel, initialOpenRollReadLabel, 'identical live reads resolve deterministically');
 assert.deepEqual(repeatReadRun.adaptiveReadRoute, initialOpenRollReadRoute, 'identical runs select the same temporary route');
 
@@ -646,6 +653,9 @@ for (let frame = 0; frame < 42; frame += 1) {
   assert.ok(pointDistanceFeet(lastPickPopScreener, screener) <= 19 * SIMULATION_STEP_MS / 1000 + 0.002, 'the pop route stays within the offensive movement limit');
   lastPickPopScreener = { ...screener };
 }
+advanceUntil(pickPopRun, () => pickPopAction.execution?.phase === 'release', 12000);
+advance(pickPopRun, 700);
+lastPickPopScreener = pickPopRun.players.find((player) => player.id === 2);
 assert.ok(pointDistanceFeet(lastPickPopScreener, pickPopDraft.arrows[0].exit_target) < pointDistanceFeet(pickPopDraft.players[1], pickPopDraft.arrows[0].exit_target), 'the screener moves through the screen spot toward the pop destination');
 assert.equal(pickPopRun.ballHandlerId, 1, 'pick and pop keeps possession with the current handler');
 assert.equal(pickPopRun.assignments.get([...pickPopAssignments].find(([, playerId]) => playerId === 1)[0]), 2, 'switching applies to the pick-and-pop screen participants');
@@ -657,22 +667,26 @@ const pinDownDraft = makeDraft({
   ball: [50, 76],
   arrows: [{ id: 'pin-down', kind: 'pin-down', screener_id: 2, cutter_id: 3, start: { x: 38, y: 62 }, end: { x: 34, y: 58 }, exit_target: { x: 30, y: 49 }, sequence: 1, timing: 1.4 }],
 });
-const pinDownRun = createSimulationRun(pinDownDraft, settings);
+const pinDownRun = createSimulationRun({ ...pinDownDraft, defenders: [{id: 1, x: 80, y: 90}, {id: 2, x: 85, y: 90}, {id: 3, x: 90, y: 90}], defenders_visible: true }, { ...settings, defenseStrategy: 'off' });
 assert.equal(pinDownRun.actions[0].actorId, 2);
 assert.equal(pinDownRun.actions[0].recipientId, 3);
 advance(pinDownRun, 700);
 assert.ok(pointDistanceFeet(pinDownRun.players.find((player) => player.id === 3), pinDownDraft.arrows[0].end) < pointDistanceFeet(pinDownDraft.players[2], pinDownDraft.arrows[0].end), 'the pin-down cutter runs to the screen before turning');
-advance(pinDownRun, 600);
+advanceUntil(pinDownRun, () => ['use', 'release', 'completed'].includes(pinDownRun.actions[0].execution?.phase), 12000);
+advanceUntil(pinDownRun, () => pointDistanceFeet(pinDownRun.players.find((player) => player.id === 3), pinDownDraft.arrows[0].exit_target) < 1, 12000);
 assert.ok(pointDistanceFeet(pinDownRun.players.find((player) => player.id === 3), pinDownDraft.arrows[0].exit_target) < pointDistanceFeet(pinDownDraft.players[2], pinDownDraft.arrows[0].exit_target), 'the pin-down cutter continues to the authored destination');
 assert.equal(pinDownRun.ballHandlerId, 1);
 const pinDownSwitchRun = createSimulationRun(pinDownDraft, { ...settings, defenseStrategy: 'switch' });
 const pinDownAssignments = new Map(pinDownSwitchRun.initialAssignments);
 advance(pinDownSwitchRun, SIMULATION_STEP_MS);
 const pinDownCutterDefender = pinDownSwitchRun.defenders.find((defender) => pinDownAssignments.get(defender.id) === 3);
-assert.equal(pinDownSwitchRun.assignments.get(pinDownCutterDefender.id), 2, 'Switch screens exchanges matchups for a pin-down action');
+assert.deepEqual(pinDownSwitchRun.assignments, pinDownAssignments, 'pin-down approach preserves matchups');
+advanceUntil(pinDownSwitchRun, () => pinDownSwitchRun.switchedActions.has('pin-down'), 12000);
+assert.equal(pinDownSwitchRun.assignments.get(pinDownCutterDefender.id), 2, 'Switch exchanges matchups when the cutter uses the set pin-down');
 const pinDownCoverage = (defenseStrategy) => {
   const run = createSimulationRun(pinDownDraft, { ...settings, defenseStrategy });
-  advance(run, 650);
+  advanceUntil(run, () => ['use', 'release'].includes(run.actions[0].execution?.phase), 12000);
+  advance(run, 300);
   const defenderId = [...run.assignments].find(([, playerId]) => playerId === 3)?.[0];
   return run.defenders.find((defender) => defender.id === defenderId);
 };
@@ -705,7 +719,8 @@ const sharedOrderRun = createSimulationRun(sharedOrderDraft, { ...settings, defe
 assert.ok(sharedOrderRun.actions.every((action) => action.startTime === 0), 'all actions with the same sequence share a start time');
 const sharedBaseline = new Map(sharedOrderRun.initialAssignments);
 advance(sharedOrderRun, SIMULATION_STEP_MS);
-assert.equal(sharedOrderRun.assignments.get([...sharedBaseline].find(([, playerId]) => playerId === 3)[0]), 2, 'the screen switches coverage even while its cutter follows a separate drawn route');
+assert.deepEqual(sharedOrderRun.assignments, sharedBaseline, 'a scheduled screen does not switch before actual interaction');
+assert.equal(sharedOrderRun.actions.find((action) => action.arrow.id === 'losing-route').execution.phase, 'conflict', 'the losing simultaneous route records an explicit conflict');
 advance(sharedOrderRun, 450);
 const routeCutter = sharedOrderRun.players.find((player) => player.id === 3);
 assert.ok(routeCutter.x > sharedOrderDraft.players[2].x, 'diagram order gives the first conflicting route control of the player');
@@ -723,13 +738,16 @@ const switchBaseline = new Map(switchRun.initialAssignments);
 advance(switchRun, SIMULATION_STEP_MS);
 const handlerDefender = switchRun.defenders.find((defender) => switchBaseline.get(defender.id) === 1);
 const screenerDefender = switchRun.defenders.find((defender) => switchBaseline.get(defender.id) === 2);
-assert.equal(switchRun.assignments.get(handlerDefender.id), 2, 'Switch screens exchanges the handler and screener matchups at screen start');
+assert.deepEqual(switchRun.assignments, switchBaseline, 'screen approach does not immediately exchange assignments');
+advanceUntil(switchRun, () => switchRun.switchedActions.has('coverage-screen'), 12000);
+assert.equal(switchRun.assignments.get(handlerDefender.id), 2, 'Switch exchanges the handler and screener matchups at actual interaction');
 assert.equal(switchRun.assignments.get(screenerDefender.id), 1, 'both defenders receive the new matchup');
 
 const runCoverage = (defenseStrategy) => {
   const run = createSimulationRun(coverageDraft, { ...settings, defenseStrategy });
   const before = run.defenders.map((defender) => ({ ...defender }));
-  advance(run, 650);
+  advanceUntil(run, () => ['use', 'release'].includes(run.actions[0].execution?.phase), 12000);
+  advance(run, 300);
   return { run, before, byAssignment: (playerId) => {
     const defenderId = [...run.assignments].find(([, assigned]) => assigned === playerId)?.[0];
     return run.defenders.find((defender) => defender.id === defenderId);
@@ -768,7 +786,8 @@ const offBallSwitchRun = createSimulationRun(offBallDraft, { ...settings, defens
 const offBallBaseline = new Map(offBallSwitchRun.initialAssignments);
 advance(offBallSwitchRun, SIMULATION_STEP_MS);
 const cutterDefender = offBallSwitchRun.defenders.find((defender) => offBallBaseline.get(defender.id) === 3);
-assert.equal(offBallSwitchRun.assignments.get(cutterDefender.id), 2, 'Switch screens exchanges matchups on a drawn off-ball screen');
+advanceUntil(offBallSwitchRun, () => offBallSwitchRun.switchedActions.size > 0, 12000);
+assert.equal(offBallSwitchRun.assignments.get(cutterDefender.id), 2, 'Switch exchanges matchups during actual off-ball screen use');
 
 const missingDefenderDraft = { ...coverageDraft, defenders: coverageDraft.defenders.slice(0, 1) };
 const missingDefenderRun = createSimulationRun(missingDefenderDraft, { ...settings, defenseStrategy: 'switch' });
@@ -788,7 +807,9 @@ const handoffSwitchRun = createSimulationRun(switchingHandoffDraft, { ...setting
 const handoffBaseline = new Map(handoffSwitchRun.initialAssignments);
 advance(handoffSwitchRun, SIMULATION_STEP_MS);
 const handoffHandlerDefender = handoffSwitchRun.defenders.find((defender) => handoffBaseline.get(defender.id) === 1);
-assert.equal(handoffSwitchRun.assignments.get(handoffHandlerDefender.id), 2, 'Switch screens also exchanges matchups when a handoff starts');
+assert.deepEqual(handoffSwitchRun.assignments, handoffBaseline, 'handoff approach does not exchange matchups');
+advanceUntil(handoffSwitchRun, () => handoffSwitchRun.switchedActions.size > 0, 12000);
+assert.equal(handoffSwitchRun.assignments.get(handoffHandlerDefender.id), 2, 'a close handoff exchanges matchups at the transfer');
 const switchedPositions = handoffSwitchRun.defenders.map((defender) => ({ ...defender }));
 setSimulationRunSettings(handoffSwitchRun, { ...settings, defenseStrategy: 'help' });
 assert.deepEqual(handoffSwitchRun.assignments, handoffBaseline, 'leaving Switch screens restores original matchups');
@@ -812,7 +833,7 @@ setSimulationRunSettings(liveSwitchRun, { ...settings, defenseStrategy: 'switch'
 assert.deepEqual(liveSwitchRun.assignments, baselineAssignments, 'enabling Switch screens mid-action does not swap the active matchup');
 assert.deepEqual(liveSwitchRun.defenders, livePositionsBeforeToggle, 'changing strategy mid-action preserves defender positions');
 const secondScreenStart = liveSwitchRun.actions.find((action) => action.arrow.id === 'second-screen').startTime;
-advance(liveSwitchRun, secondScreenStart - liveSwitchRun.elapsedMs + SIMULATION_STEP_MS);
+advanceUntil(liveSwitchRun, () => liveSwitchRun.switchedActions.has('second-screen'), 15000);
 const defenderOnScreener = liveSwitchRun.defenders.find((defender) => baselineAssignments.get(defender.id) === 3);
 assert.equal(liveSwitchRun.assignments.get(defenderOnScreener.id), 1, 'the next screen uses the newly selected switching strategy');
 
@@ -954,7 +975,7 @@ assert.notEqual(handoffRun.ballHandlerId, 1, 'automatic handoffs transfer posses
 const autoHandoffSwitchRun = createSimulationRun(autoHandoffDraft, { ...autoSettings({ handoff: true }), defenseStrategy: 'switch' });
 const autoHandoffAction = autoHandoffSwitchRun.actions.find((action) => action.automatic && action.arrow.kind === 'handoff');
 const autoHandoffBaseline = new Map(autoHandoffSwitchRun.initialAssignments);
-advance(autoHandoffSwitchRun, autoHandoffAction.startTime + SIMULATION_STEP_MS);
+advanceUntil(autoHandoffSwitchRun, () => autoHandoffSwitchRun.switchedActions.has(autoHandoffAction.arrow.id), 12000);
 const autoHandlerDefender = autoHandoffSwitchRun.defenders.find((defender) => autoHandoffBaseline.get(defender.id) === autoHandoffAction.actorId);
 assert.equal(autoHandoffSwitchRun.assignments.get(autoHandlerDefender.id), autoHandoffAction.recipientId, 'Switch screens applies to an automatic handoff');
 
@@ -969,7 +990,7 @@ assert.ok(autoOffBallRun.actions.some((action) => action.automatic && action.arr
 const autoOffBallSwitchRun = createSimulationRun(autoOffBallDraft, { ...autoSettings({ screen: false, handoff: false, pickRoll: false, offBallScreen: true }), defenseStrategy: 'switch' });
 const autoOffBallAction = autoOffBallSwitchRun.actions.find((action) => action.automatic && action.arrow.kind === 'off-ball-screen');
 const autoOffBallBaseline = new Map(autoOffBallSwitchRun.initialAssignments);
-advance(autoOffBallSwitchRun, autoOffBallAction.startTime + SIMULATION_STEP_MS);
+advanceUntil(autoOffBallSwitchRun, () => autoOffBallSwitchRun.switchedActions.has(autoOffBallAction.arrow.id), 12000);
 const autoCutterDefender = autoOffBallSwitchRun.defenders.find((defender) => autoOffBallBaseline.get(defender.id) === autoOffBallAction.recipientId);
 assert.equal(autoOffBallSwitchRun.assignments.get(autoCutterDefender.id), autoOffBallAction.actorId, 'Switch screens also exchanges matchups on an automatic off-ball screen');
 
@@ -1001,7 +1022,7 @@ assert.equal(ratingPickRollRun.actions.find((action) => action.automatic && acti
 const autoPickRollSwitchRun = createSimulationRun(autoPickRollDraft, { ...autoSettings({ screen: false, handoff: false, pickRoll: true, offBallScreen: false }), defenseStrategy: 'switch' });
 const autoPickRollAction = autoPickRollSwitchRun.actions.find((action) => action.automatic && action.arrow.kind === 'pick-roll');
 const autoPickRollBaseline = new Map(autoPickRollSwitchRun.initialAssignments);
-advance(autoPickRollSwitchRun, autoPickRollAction.startTime + SIMULATION_STEP_MS);
+advanceUntil(autoPickRollSwitchRun, () => autoPickRollSwitchRun.switchedActions.has(autoPickRollAction.arrow.id), 12000);
 const autoScreenerDefender = autoPickRollSwitchRun.defenders.find((defender) => autoPickRollBaseline.get(defender.id) === autoPickRollAction.actorId);
 assert.equal(autoPickRollSwitchRun.assignments.get(autoScreenerDefender.id), autoPickRollAction.partnerId, 'Switch screens applies to an automatic pick and roll');
 
@@ -1010,7 +1031,7 @@ assert.ok(autoScreenRun.actions.some((action) => action.automatic && action.arro
 const autoScreenSwitchRun = createSimulationRun(autoPickRollDraft, { ...autoSettings({ screen: true, handoff: false, pickRoll: false, offBallScreen: false }), defenseStrategy: 'switch' });
 const autoScreenAction = autoScreenSwitchRun.actions.find((action) => action.automatic && action.arrow.kind === 'screen');
 const autoScreenBaseline = new Map(autoScreenSwitchRun.initialAssignments);
-advance(autoScreenSwitchRun, autoScreenAction.startTime + SIMULATION_STEP_MS);
+advanceUntil(autoScreenSwitchRun, () => autoScreenSwitchRun.switchedActions.has(autoScreenAction.arrow.id), 12000);
 const autoScreenScreenerDefender = autoScreenSwitchRun.defenders.find((defender) => autoScreenBaseline.get(defender.id) === autoScreenAction.actorId);
 assert.equal(autoScreenSwitchRun.assignments.get(autoScreenScreenerDefender.id), autoScreenAction.partnerId, 'Switch screens applies to an automatic on-ball screen');
 
