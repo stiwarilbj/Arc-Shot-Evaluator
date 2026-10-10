@@ -1,3 +1,7 @@
+import { ArrowVisibilityControl, useArrowVisibility } from "./ArrowVisibilityControl";
+import { routeVisible } from "./arrowVisibility";
+import { CourtRoutes } from "./CourtRoutes";
+import { authoredCourtRoutes } from "./simulation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDownToLine,
@@ -195,13 +199,6 @@ function parabolicPoint(start: CourtPoint, end: CourtPoint, amount: number) {
   return { x: clamp(result.x), y: clamp(result.y) };
 }
 
-function shotArcPath(start: CourtPoint, end: CourtPoint) {
-  const from = markerPoint(start);
-  const to = markerPoint(end);
-  const control = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 105 };
-  return `M${from.x} ${from.y} Q${control.x} ${control.y} ${to.x} ${to.y}`;
-}
-
 function defaultArrowControl(start: CourtPoint, end: CourtPoint): CourtPoint {
   const from = courtPointToSvg(start);
   const to = courtPointToSvg(end);
@@ -299,6 +296,7 @@ function actionMarker(kind: ArrowKind) {
 
 
 const EMPTY_SIMULATION_FRAME: SimulationFrame = {
+  routes: [],
   players: [],
   defenders: [],
   ball: null,
@@ -327,6 +325,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   requestedPlay?: { requestId: string; play: PlaybookDraft } | null;
   active?: boolean;
 }) {
+  const arrowVisibility = useArrowVisibility();
   const rootRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -1069,9 +1068,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     clone.setAttribute("width", "1600");
     clone.setAttribute("height", "1152");
+    clone.style.setProperty("--orange", "#ee733f");
+    clone.style.setProperty("--muted", "#b3b9b5");
     clone.querySelectorAll(".selection-handle, .drawing-preview, .adaptive-read-route").forEach((node) => node.remove());
     const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
-    style.textContent = `.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
+    style.textContent = `.shared-court-route{fill:none;stroke:#ee733f;stroke-width:2;stroke-dasharray:6 4}.shared-court-route.route-adjustment{stroke:#b3b9b5;stroke-width:1.5;stroke-dasharray:2 4}.shared-court-route.route-shot{stroke-dasharray:3 5}.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-caption{fill:#b3b9b5;stroke:none;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
     clone.prepend(style);
     const serialized = new XMLSerializer().serializeToString(clone);
     const image = new Image();
@@ -1106,7 +1107,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     image.src = svgUrl;
   }
 
-  const visibleArrows = useMemo(() => draft.arrows, [draft.arrows]);
+  const authoredRoutes = useMemo(() => authoredCourtRoutes(draft), [draft]);
+  const editingArrowId = !simulationPlaying && selected?.type === "arrow" ? selected.id : null;
+  const visibleArrows = draft.arrows.filter((arrow) => arrow.id === editingArrowId || (!simulationActive && authoredRoutes.some((route) => route.actionId === arrow.id && route.id.endsWith(":actor") && routeVisible(route, arrowVisibility))));
   const currentDefenseSchemeLabel = simulationFrame.activeDefenseScheme
     ? `${simulationFrame.defenseSchemeWasAutomatic ? "Auto · " : ""}${DEFENSE_SCHEME_LABELS[simulationFrame.activeDefenseScheme]}`
     : "No possession running";
@@ -1144,6 +1147,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           <PresetButton active={draft.name === "Ready setup" && !draft.arrows.length} icon={<Shield size={17} />} label="Ready setup" onClick={() => requestLoad(clonePlaybook(READY_SETUP))} />
           <PresetButton active={starterOpen} icon={<FolderOpen size={17} />} label="Starter plays" onClick={() => setStarterOpen(true)} />
           <PresetButton active={!draft.players.length && !draft.ball} icon={<Circle size={17} />} label="Empty court" onClick={() => requestLoad(clonePlaybook(EMPTY_COURT))} />
+          <details className="playbook-action-list"><summary>Actions · {draft.arrows.length}</summary><div role="group" aria-label="Edit play actions">{draft.arrows.map((arrow, index) => <button key={arrow.id} type="button" aria-pressed={selected?.type === "arrow" && selected.id === arrow.id} onClick={() => { setSimulationPlaying(false); chooseTool("select"); setSelected({ type: "arrow", id: arrow.id }); }}><strong>Move {arrowSequence(arrow, index)}</strong><span>{actionLabel(arrow.kind)}</span></button>)}</div>{!draft.arrows.length ? <p>No actions drawn yet.</p> : <p>Select an action to edit it, even when its arrow is hidden.</p>}</details>
           <button type="button" className={`preset-button ${draft.defenders_visible ? "is-active" : ""}`} onClick={() => {
             const next = clonePlaybook(draft);
             next.defenders_visible = !next.defenders_visible;
@@ -1289,6 +1293,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <ToolButton disabled={!future.length} icon={<Redo2 size={15} />} label="Redo" title="Redo last edit" onClick={redo} />
           </div>
           <div className="playbook-simulation-bar" role="region" aria-label="Play simulation controls">
+            <ArrowVisibilityControl />
             <span className="simulation-ai-label"><ShieldCheck size={14} /> ARC defensive AI</span>
             {simulationActive && simulationFrame.activeDefenseScheme ? <span className="simulation-scheme-label" role="status"><ShieldCheck size={13} />{currentDefenseSchemeLabel}</span> : null}
             <span className="simulation-copy">{simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeActionLabel ? `${simulationFrame.activeActionLabel} in progress` : simulationFrame.adaptiveReadLabel ? `Read: ${simulationFrame.adaptiveReadLabel}` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
@@ -1330,13 +1335,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               </defs>
               <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} rx="8" className="court-floor" fill="url(#court-boards)" />
               <CourtMarkings />
-              {simulationFrame.shotPhase !== "idle" && simulationFrame.shotStart && simulationFrame.shotTarget ? <path d={shotArcPath(simulationFrame.shotStart, simulationFrame.shotTarget)} className="shot-arc" /> : null}
-              {visibleArrows.map((arrow, arrowIndex) => {
+              {simulationActive ? <CourtRoutes routes={simulationFrame.routes.filter((route) => route.actionId !== editingArrowId || editingArrowId == null)} visibility={arrowVisibility} labels /> : <CourtRoutes routes={authoredRoutes.filter((route) => !route.id.endsWith(":actor") && route.kind === "handler-support")} visibility={arrowVisibility} />}
+              {visibleArrows.map((arrow) => {
                 const start = markerPoint(arrow.start);
                 const end = markerPoint(arrow.end);
                 const control = markerPoint(arrowControl(arrow));
                 const active = selected?.type === "arrow" && selected.id === arrow.id;
-                const sequence = arrowSequence(arrow, arrowIndex);
+                const sequence = arrowSequence(arrow, draft.arrows.findIndex((original) => original.id === arrow.id));
                 const badgePoint = actionPointAt(arrow, 0.5);
                 const badge = markerPoint(badgePoint);
                 return <g key={arrow.id} onPointerDown={(event) => onMarkerPointerDown(event, { type: "arrow", id: arrow.id })} className={`play-arrow-group ${active ? "is-selected" : ""}`}>
@@ -1347,12 +1352,6 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                   {active ? <><circle cx={start.x} cy={start.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "start")} /><circle cx={end.x} cy={end.y} r="8" className="selection-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "end")} />{arrow.exit_target ? <circle cx={markerPoint(arrow.exit_target).x} cy={markerPoint(arrow.exit_target).y} r="8" className="selection-handle exit-target-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "exit")} /> : null}{arrow.path === "curve" ? <circle cx={control.x} cy={control.y} r="7" className="curve-handle" onPointerDown={(event) => onArrowEndpointPointerDown(event, arrow, "control")} /> : null}</> : null}
                 </g>;
               })}
-              {simulationActive && simulationFrame.adaptiveReadRoute ? (() => {
-                const start = markerPoint(simulationFrame.adaptiveReadRoute.start);
-                const end = markerPoint(simulationFrame.adaptiveReadRoute.end);
-                const marker = simulationFrame.adaptiveReadRoute.kind === "pass" ? "pass-arrow" : "movement-arrow";
-                return <path className={`adaptive-read-route adaptive-read-${simulationFrame.adaptiveReadRoute.kind}`} d={`M${start.x} ${start.y} L${end.x} ${end.y}`} markerEnd={`url(#${marker})`}><title>{simulationFrame.adaptiveReadLabel}: {simulationFrame.adaptiveReadReason}</title></path>;
-              })() : null}
               {drawStart && drawEnd ? <path d={actionPath({ id: "preview", kind: tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement", start: drawStart, end: drawEnd, path: "straight" })} className={`drawing-preview ${actionClass(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")}`} markerEnd={`url(#${actionMarker(tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement")})`} /> : null}
               {(draft.defenders_visible || simulationActive) ? (simulationActive ? simulationFrame.defenders : draft.defenders).map((marker) => {
                 const point = markerPoint(marker);
@@ -1409,12 +1408,14 @@ function SavedPlayCard({ play, active, deletePending, onOpen, onDuplicate, onDel
 }
 
 function MiniCourt({ play }: { play: PlaybookDocument | PlaybookDraft }) {
+  const visibility = useArrowVisibility();
+  const routes = useMemo(() => authoredCourtRoutes(play), [play]);
   return <svg className="mini-court" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} aria-hidden="true">
     <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} rx="5" className="mini-floor" />
     <CourtMarkings mini />
-    {play.arrows.map((arrow, index) => {
+    {play.arrows.filter((arrow) => routes.some((route) => route.actionId === arrow.id && routeVisible(route, visibility))).map((arrow) => {
       const badge = markerPoint(actionPointAt(arrow, 0.5));
-      const sequence = arrowSequence(arrow, index);
+      const sequence = arrowSequence(arrow, play.arrows.findIndex((original) => original.id === arrow.id));
       return <g key={arrow.id}>
         {screenCutterPath(arrow, play.players) ? <path d={screenCutterPath(arrow, play.players) as string} className="mini-screen-cutter" /> : null}
         <path d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" || arrow.kind === "slip-screen" || arrow.kind === "off-ball-screen" || arrow.kind === "pin-down" ? "mini-screen" : arrow.kind === "pick-roll" || arrow.kind === "pick-pop" ? "mini-pick-roll" : "mini-move"} />

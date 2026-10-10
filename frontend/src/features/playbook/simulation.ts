@@ -1,3 +1,4 @@
+import type { CourtRoute } from "./arrowVisibility";
 import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
 import { playerHasBadge } from "./badges.ts";
 import { defenderHasBadge } from "./defensiveBadges.ts";
@@ -10,6 +11,7 @@ import {
 } from "./courtGeometry.ts";
 
 export type SimulationFrame = {
+  routes: CourtRoute[];
   players: PlaybookMarker[];
   defenders: PlaybookMarker[];
   ball: CourtPoint | null;
@@ -33,6 +35,7 @@ export type SimulationFrame = {
 };
 
 type BoundAction = {
+  onBall?: boolean;
   arrow: PlaybookArrow;
   sequence: number;
   actorId: number | null;
@@ -57,6 +60,7 @@ type PositionOverride = { atMs: number; point: CourtPoint };
 type ScreenCoverageLock = { screenerDefenderId: number; screenedDefenderId: number } | null;
 
 export type SimulationRun = {
+  routeHistory?: Array<{ atMs: number; players: PlaybookMarker[]; onBallIds: number[] }>;
   actions: BoundAction[];
   actionDurationMs: number;
   durationMs: number;
@@ -530,6 +534,7 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
       const durationMs = Math.max(authoredDuration, minimumMovementDuration, minimumTransferDuration);
       const partnerId = isScreen && actor?.id !== handler?.id ? handler?.id ?? null : null;
       const boundAction: BoundAction = {
+        onBall: isTransfer || actor?.id === phaseHandlerId || (isScreen && handlerId != null),
         arrow,
         sequence,
         actorId: actor?.id ?? null,
@@ -872,6 +877,7 @@ function appendAdaptiveAction(
     end: { ...target },
   };
   const action: BoundAction = {
+    onBall: true,
     arrow,
     sequence,
     actorId: handler.id,
@@ -1007,6 +1013,51 @@ function liveReadChoices(run: SimulationRun, hoop: CourtPoint) {
   return { handler, choices };
 }
 
+function routesForAction(action: BoundAction, run?: SimulationRun, hoop = HOOP_POINT): CourtRoute[] {
+  if (action.actorId == null) return [];
+  const arrow = action.arrow;
+  const scope = (action.onBall ?? (action.actorId === run?.ballHandlerId || (action.partnerId != null && action.partnerId === run?.ballHandlerId) || arrow.kind === "pass" || arrow.kind === "handoff")) ? "on-ball" : "off-ball";
+  const override = run?.actionStartOverrides.get(arrow.id);
+  const start = override && run && run.elapsedMs >= override.atMs ? override.point : run?.actionStarts.get(arrow.id) ?? action.plannedStart ?? arrow.start;
+  const twoLegs = ["pick-roll", "pick-pop", "slip-screen"].includes(arrow.kind);
+  const end = arrow.kind === "pick-roll" || arrow.kind === "slip-screen" ? pointToward(arrow.end, hoop, 8) : arrow.kind === "pick-pop" ? arrow.exit_target ?? arrow.end : arrow.end;
+  const control = !twoLegs && arrow.path === "curve" ? routeControl(action, start, end) : undefined;
+  const common = { actionId: arrow.id, sequence: action.sequence, importance: "main" as const };
+  const routes: CourtRoute[] = [{ ...common, id: `${arrow.id}:${action.sequence}:actor`, kind: arrow.kind, scope, playerId: action.actorId, start: { ...start }, end: { ...end }, ...(control ? { control } : {}), ...(twoLegs ? { via: { ...arrow.end } } : {}) }];
+  if (action.partnerId != null && action.partnerStart) {
+    routes.push({ ...common, id: `${arrow.id}:${action.sequence}:handler`, kind: "handler-support", scope: "on-ball", playerId: action.partnerId, start: { ...action.partnerStart }, end: pointToward(arrow.end, hoop, arrow.kind === "pick-roll" || arrow.kind === "slip-screen" ? 10 : 8) });
+  }
+  if ((arrow.kind === "off-ball-screen" || arrow.kind === "pin-down") && action.recipientId != null && action.recipientStart) {
+    routes.push({ ...common, id: `${arrow.id}:${action.sequence}:cutter`, kind: "cutter", scope: "off-ball", playerId: action.recipientId, start: { ...action.recipientStart }, via: { ...arrow.end }, end: arrow.exit_target ?? offBallCutterTarget(arrow.end, hoop) });
+  }
+  return routes;
+}
+export function authoredCourtRoutes(source: PlaybookDraft): CourtRoute[] {
+  return buildActions(source).actions.flatMap((action) => routesForAction(action));
+}
+function getRunRoutes(run: SimulationRun, hoop = HOOP_POINT): CourtRoute[] {
+  const active = run.actions.filter((action) => !action.transferFailed && run.elapsedMs + 1e-6 >= action.startTime && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
+  const routes = active.flatMap((action) => routesForAction(action, run, hoop));
+  // Recorded recent movement exposes small receiving, spacing, and coasting
+  // adjustments without introducing new actions or changing possession.
+  const history = run.routeHistory ?? [];
+  const latest = history.at(-1);
+  if (latest) for (const player of run.players) {
+    const onBall = latest.onBallIds.includes(player.id);
+    const since = history.map((sample) => sample.onBallIds.includes(player.id) !== onBall).lastIndexOf(true) + 1;
+    const points = history.slice(since).map((sample) => sample.players.find((p) => p.id === player.id)).filter((p): p is PlaybookMarker => Boolean(p)).map(({ x, y }) => ({ x, y }));
+    if (points.length > 1 && points.reduce((distance, point, index) => distance + (index ? pointDistanceFeet(points[index - 1], point) : 0), 0) >= .25) routes.push({ id: `adjustment:${player.id}`, actionId: null, sequence: null, kind: "adjustment", playerId: player.id, scope: onBall ? "on-ball" : "off-ball", importance: "adjustment", start: points[0], end: points.at(-1)!, points });
+  }
+  if (run.shotStart) routes.push({ id: "shot", actionId: null, sequence: null, kind: "shot", playerId: run.shotShooterId ?? run.ballHandlerId ?? 0, scope: "on-ball", importance: "main", start: { ...run.shotStart }, end: { ...hoop } });
+  return routes;
+}
+function recordRouteHistory(run: SimulationRun) {
+  const supports = run.actions.filter((action) => !action.transferFailed && run.elapsedMs >= action.startTime - PASS_PREP_MS && run.elapsedMs < action.startTime + action.durationMs)
+    .flatMap((action) => [action.partnerId, ...((action.onBall || (action.partnerId != null && action.partnerId === run.ballHandlerId)) ? [action.actorId] : []), ...(action.arrow.kind === "pass" || action.arrow.kind === "handoff" ? [action.actorId, action.recipientId] : [])]);
+  const onBallIds = [...new Set([run.ballHandlerId, ...supports].filter((id): id is number => id != null))];
+  run.routeHistory = [...(run.routeHistory ?? []).filter((sample) => run.elapsedMs - sample.atMs <= 300).slice(-23), { atMs: run.elapsedMs, players: run.players.map((p) => ({ ...p })), onBallIds }];
+}
+
 export type CounterLabObservation = {
   elapsedMs: number;
   sequence: number | null;
@@ -1016,7 +1067,7 @@ export type CounterLabObservation = {
   opportunities: Array<{ kind: LiveReadChoice["kind"]; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number }>;
   blockedPass: { actionId: string; sequence: number; playerId: number; receiverGap: number; laneGap: number } | null;
   involvedPlayerIds: number[];
-  activeRoutes: Array<{ kind: string; start: CourtPoint; end: CourtPoint; control?: CourtPoint; via?: CourtPoint; playerId: number }>;
+  activeRoutes: CourtRoute[];
   frame: SimulationFrame;
 };
 
@@ -1038,28 +1089,7 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
       if (receiverGap < 3.5 || laneGap < 2.5) blockedPass = { actionId: authoredPass.arrow.id, sequence: authoredPass.sequence, playerId: recipient.id, receiverGap, laneGap };
     }
   }
-  const activeRoutes: CounterLabObservation["activeRoutes"] = [];
-  for (const active of activeActions) {
-    if (active.actorId != null) {
-      const actor = markerForId(run.players, active.actorId);
-      const end = active.arrow.kind === "pick-roll" || active.arrow.kind === "slip-screen"
-        ? pointToward(active.arrow.end, hoop, 8)
-        : active.arrow.kind === "pick-pop"
-          ? active.arrow.exit_target ?? active.arrow.end
-          : active.arrow.end;
-      if (actor) {
-        const override = run.actionStartOverrides.get(active.arrow.id);
-        const start = override && run.elapsedMs >= override.atMs ? override.point : run.actionStarts.get(active.arrow.id) ?? active.plannedStart ?? active.arrow.start;
-        const twoLegs = ["pick-roll", "pick-pop", "slip-screen"].includes(active.arrow.kind);
-        const control = !twoLegs && active.arrow.path === "curve" ? routeControl(active, start, end) : undefined;
-        activeRoutes.push({ kind: active.arrow.kind, start: { ...start }, end, ...(control ? { control } : {}), ...(twoLegs ? { via: active.arrow.end } : {}), playerId: actor.id });
-      }
-    }
-    if (active.arrow.kind === "off-ball-screen" || active.arrow.kind === "pin-down") {
-      const cutter = markerForId(run.players, active.recipientId);
-      if (cutter) activeRoutes.push({ kind: "cutter", start: { x: cutter.x, y: cutter.y }, end: active.arrow.exit_target ?? offBallCutterTarget(active.arrow.end, hoop), playerId: cutter.id });
-    }
-  }
+  const activeRoutes = getRunRoutes(run, hoop);
   return {
     elapsedMs: run.elapsedMs,
     sequence: action?.sequence ?? null,
@@ -1310,6 +1340,7 @@ function velocityKey(kind: "player" | "defender", id: number) {
 function copyFrame(frame: SimulationFrame): SimulationFrame {
   return {
     ...frame,
+    routes: frame.routes.map((route) => ({ ...route, start: { ...route.start }, end: { ...route.end }, control: route.control ? { ...route.control } : undefined, via: route.via ? { ...route.via } : undefined, points: route.points?.map((point) => ({ ...point })) })),
     players: frame.players.map((player) => ({ ...player })),
     defenders: frame.defenders.map((defender) => ({ ...defender })),
     ball: frame.ball ? { ...frame.ball } : null,
@@ -1346,6 +1377,7 @@ function frameFor(run: SimulationRun): SimulationFrame {
     players: run.players.map((player) => ({ ...player })),
     defenders: run.defenders.map((defender) => ({ ...defender })),
     ball: run.ball ? { ...run.ball } : null,
+    routes: getRunRoutes(run),
     activeSequence: activeAction?.sequence ?? null,
     activeActionLabel: actionLabels.length ? [...new Set(actionLabels)].join(" · ") : null,
     adaptiveReadLabel: run.adaptiveReadLabel,
@@ -1372,6 +1404,7 @@ function frameFor(run: SimulationRun): SimulationFrame {
 
 function createInitialFrame(): SimulationFrame {
   return {
+    routes: [],
     players: [],
     defenders: [],
     ball: null,
@@ -1541,6 +1574,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
           || a[0] - b[0])[0]?.[0] ?? null;
     }
   }
+  run.routeHistory = [];
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
   return run;
@@ -2852,6 +2886,7 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   if (run.settings.offenseMode !== "scripted" && !run.shotStart && (authoredActionsEnded || liveActionEnded)) {
     resolveAdaptiveRead(run, hoop);
   }
+  recordRouteHistory(run);
   run.frame = frameFor(run);
 }
 
@@ -2934,6 +2969,7 @@ export function editPausedSimulationMarker(
   } else {
     run.source.ball = { ...nextPoint };
   }
+  run.routeHistory = [];
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
   return getSimulationFrame(run);
@@ -2990,6 +3026,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
     }
   }
   run.source = structuredClone(draft);
+  run.routeHistory = [];
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
   return true;

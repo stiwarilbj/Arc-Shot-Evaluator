@@ -1,3 +1,4 @@
+import type { CourtRoute } from "./arrowVisibility";
 import { DEFAULT_SIMULATION_SETTINGS } from "./types.ts";
 import type { CourtPoint, DefenseScheme, DefenseStrategy, PlaybookDraft } from "./types";
 import { createSimulationRun, DEFENSE_SCHEME_ORDER } from "./simulation.ts";
@@ -16,7 +17,7 @@ export type CounterLabFrame = {
   opportunities: Array<{ kind: "shot" | "pass" | "drive"; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number }>;
   blockedPass: { actionId: string; sequence: number; playerId: number; receiverGap: number; laneGap: number } | null;
   involvedPlayerIds: number[];
-  activeRoutes: Array<{ kind: string; start: CourtPoint; end: CourtPoint; control?: CourtPoint; via?: CourtPoint; playerId: number }>;
+  activeRoutes: CourtRoute[];
   players: Array<{ id: number; x: number; y: number }>;
   defenders: Array<{ id: number; x: number; y: number }>;
   ball: CourtPoint | null; shotPhase: "idle" | "setup" | "air" | "result";

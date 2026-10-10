@@ -1,8 +1,9 @@
+import { routeVisible, normalizeArrowVisibility, ARROW_VISIBILITY_OPTIONS } from '../frontend/src/features/playbook/arrowVisibility.ts';
 import assert from 'node:assert/strict';
 import { advanceReplay, matchesReplay, replayFrame } from '../frontend/src/features/playbook/counterLabReplay.ts';
 import { analyzeCounterLab, runCounterLabTrial, diagnoseOpenings, repairEvidence, verifiedRecovery } from '../frontend/src/features/playbook/counterLabEngine.ts';
 import { COUNTER_LAB_DEFAULT_PROFILES, createCounterLabRepairs, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
-import { createSimulationRun } from '../frontend/src/features/playbook/simulation.ts';
+import { createSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame } from '../frontend/src/features/playbook/simulation.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 
@@ -172,3 +173,53 @@ assert.equal(JSON.stringify(STARTER_PLAYS), beforeAll, 'all starter trials and r
 assert.throws(() => runCounterLabTrial({ ...noAdvantagePlay, players: [{ id: 1, x: NaN, y: 10 }] }, holdProfile, 'scripted'), /invalid court positions/);
 assert.throws(() => runCounterLabTrial({ ...noAdvantagePlay, arrows: [{ id: 'bad', kind: 'pass', start: { x: 10, y: 10 }, end: { x: 20, y: 20 }, timing: Infinity }] }, holdProfile, 'scripted'), /invalid action/);
 console.log('Counter Lab tests passed: deterministic comparisons, switch-slip fixture, recovery, action diagnosis, bounded repairs, replay routes, partial rosters, eligibility, and cancellation');
+
+
+assert.equal(normalizeArrowVisibility(null), 'main-on-ball');
+assert.equal(normalizeArrowVisibility('invalid'), 'main-on-ball');
+const routeCases = [
+  { scope: 'on-ball', importance: 'main' },
+  { scope: 'off-ball', importance: 'main' },
+  { scope: 'on-ball', importance: 'adjustment' },
+  { scope: 'off-ball', importance: 'adjustment' },
+];
+assert.deepEqual(ARROW_VISIBILITY_OPTIONS.map(({value}) => routeCases.map(route => routeVisible(route, value))), [
+  [false,false,false,false], [true,false,false,false], [true,true,false,false], [true,false,true,false], [true,true,true,true],
+]);
+const visibilityFixture = {
+  version: 1, id: 'visibility-fixture', name: 'Visibility', defenders_visible: false,
+  players: [{id:1,x:50,y:70},{id:2,x:70,y:60},{id:3,x:20,y:60}],
+  defenders: [], ball: {x:50,y:70},
+  arrows: [
+    {id:'offball', kind:'movement', start:{x:20,y:60}, end:{x:20.2,y:60}, sequence:1},
+    {id:'transfer', kind:'pass', start:{x:50,y:70}, end:{x:70,y:60}, sequence:2},
+    {id:'after-catch', kind:'movement', start:{x:70,y:60}, end:{x:70.1,y:60}, sequence:3},
+    {id:'support',kind:'pick-roll',screener_id:1,handler_id:2,start:{x:50,y:70},end:{x:65,y:50},sequence:4},
+    {id:'cut',kind:'off-ball-screen',screener_id:1,cutter_id:3,start:{x:65,y:50},end:{x:25,y:45},exit_target:{x:40,y:30},sequence:5},
+  ],
+};
+const routes = authoredCourtRoutes(visibilityFixture);
+assert.equal(routes.find(r=>r.actionId==='offball').scope,'off-ball');
+assert.equal(routes.find(r=>r.actionId==='offball').importance,'main','short authored actions remain main');
+assert.equal(routes.find(r=>r.actionId==='after-catch').scope,'on-ball','binding follows possession changes');
+assert.equal(routes.find(r=>r.actionId==='after-catch').sequence,3,'filtering preserves original move numbers');
+assert.equal(routes.find(r=>r.actionId==='support' && r.kind==='pick-roll').scope,'on-ball');
+assert(routes.some(r=>r.actionId==='support' && r.kind==='handler-support' && r.playerId===2));
+assert(routes.some(r=>r.actionId==='support' && r.via),'screen/roll preserves both legs');
+assert(routes.some(r=>r.actionId==='cut' && r.kind==='cutter' && r.scope==='off-ball' && r.via));
+const trailRun=createSimulationRun(STARTER_PLAYS[0],DEFAULT_SIMULATION_SETTINGS);
+for(let i=0;i<50;i++)advanceSimulationRun(trailRun,20);
+const trailFrame=getSimulationFrame(trailRun);
+assert(trailFrame.routes.some(r=>r.importance==='adjustment' && r.points.length>1),'small movements are recorded');
+assert(trailFrame.routes.filter(r=>routeVisible(r,'main-on-ball')).every(r=>r.scope==='on-ball'&&r.importance==='main'));
+assert(trailRun.routeHistory.length<=24,'recent movement history is bounded');
+const snapshot=JSON.stringify(trailRun.players);
+for(const {value} of ARROW_VISIBILITY_OPTIONS)trailFrame.routes.filter(r=>routeVisible(r,value));
+assert.equal(JSON.stringify(trailRun.players),snapshot,'filtering cannot change simulation');
+for(const play of STARTER_PLAYS){
+ const before=JSON.stringify(play);const rs=authoredCourtRoutes(play);
+ assert.equal(JSON.stringify(play),before);
+ assert.equal(new Set(rs.map(r=>r.id)).size,rs.length,'route IDs are unique');
+ assert(rs.every(r=>r.actionId && r.sequence>=1));
+}
+console.log('Arrow visibility tests passed: five modes, default fallback, possession binding, connected support, short authored actions, stable sequence numbers, trails and all starters');

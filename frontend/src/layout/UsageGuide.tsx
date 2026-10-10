@@ -103,6 +103,7 @@ export function UsageGuide() {
               <li>Choose defensive responses and compare the authored sequence with the simulator’s adaptive offense</li>
               <li>Select a matchup to replay it; the timeline marks sustained loss of an opening and reports blocked authored passes separately</li>
               <li>Repairs appear only after rerunning the changed actions shows at least five quality points gained or a resolved breakdown without lower final quality; compare the results and routes before saving a new Playbook copy</li>
+              <li>Use Arrows in either workspace to hide routes, show main on-ball actions, include off-ball actions, or include small movement trails. The preference applies to both workspaces; select a hidden Playbook action from Actions to edit it.</li>
               <li>Counter Lab scores are simulation outputs, not real-game probabilities; Playbook edits and repair saves preserve reports until another play is imported or the page reloads</li>
             </ul>
           </article>

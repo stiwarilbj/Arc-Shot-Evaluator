@@ -694,7 +694,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .defense-marker.is-selected .defense-marker-ring { stroke: #73bff0; }
 .ball-marker { fill: #d96b38; stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .ball-seam { fill: none; stroke: #fff3e8; stroke-width: 1.6; vector-effect: non-scaling-stroke; pointer-events: none; }
-.marker-caption { fill: var(--muted); font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; pointer-events: none; }
+.marker-caption { stroke: none; fill: var(--muted); font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; pointer-events: none; }
 .court-hint { position: absolute; right: 22px; bottom: 20px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--overlay-bg); color: var(--dim); font-size: 10px; pointer-events: none; }
 .playbook-simulation-bar { display: flex; align-items: center; gap: 10px; min-height: 43px; padding: 6px 9px; border: 1px solid var(--line); border-top: 0; background: var(--surface-2); color: var(--muted); font-size: 10px; flex-wrap: wrap; }
 .slip-screen-arrow { stroke: #7fd2a1; stroke-width: 4; stroke-dasharray: 2 5; }
@@ -1129,4 +1129,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .playbook-layout > .saved-plays-panel.is-open { transform: translateX(0); }
   .playbook-layout > .saved-plays-panel .saved-play-list { max-height: calc(100dvh - 160px); }
   .playbook-layout > .saved-plays-panel .saved-plays-heading .icon-button { display: grid; }
+}
+
+
+/* Shared display preference; court routes do not affect interaction or simulation. */
+.arrow-visibility-control { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: 12px; }
+.arrow-visibility-control select { min-height: 40px; min-width: 0; max-width: 100%; padding: 6px 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text); font: inherit; }
+.counter-sidebar > .arrow-visibility-control { display: grid; gap: 5px; margin-top: 14px; }
+.counter-sidebar .arrow-visibility-control select { width: 100%; min-height: 44px; }
+.shared-court-route { fill: none; stroke: var(--orange); stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+.shared-court-route.route-adjustment { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 2 4; opacity: .75; }
+.shared-court-route.route-shot { stroke-dasharray: 3 5; }
+@media (max-width: 620px) { .playbook-simulation-bar .arrow-visibility-control { width: 100%; } .playbook-simulation-bar .arrow-visibility-control select { flex: 1; } }
+
+.playbook-action-list { border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px; }
+.playbook-action-list summary { min-height: 36px; cursor: pointer; display: list-item; }
+.playbook-action-list > div { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; scrollbar-width: thin; }
+.playbook-action-list button { display: flex; flex-wrap: wrap; gap: 6px; min-height: 40px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--surface-2); text-align: left; cursor: pointer; font: inherit; }
+.playbook-action-list button[aria-pressed="true"] { border-color: var(--orange); }
+.playbook-action-list p { color: var(--muted); line-height: 1.5; }
+
+@media (max-width: 1100px) {
+  .saved-plays-panel:not(.is-open) { visibility: hidden; pointer-events: none; }
 }
