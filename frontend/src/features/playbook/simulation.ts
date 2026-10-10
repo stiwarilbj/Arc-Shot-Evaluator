@@ -2706,9 +2706,12 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
     if (run.settings.defenseStrategy === "off") {
       run.targetFilters.delete(velocityKey("defender", defender.id));
       const velocity = run.velocities.get(velocityKey("defender", defender.id)) ?? { x: 0, y: 0 };
-      run.velocities.set(velocityKey("defender", defender.id), { x: 0, y: 0 });
+      const overlapping = [...run.players, ...run.defenders.filter((other) => other.id !== defender.id)].some((other) => pointDistanceFeet(defender, other) < 2);
+      const correcting = overlapping || Math.hypot(velocity.x, velocity.y) > .001;
       const key = velocityKey("defender", defender.id);
-      run.motionIntents?.set(key, { key, point: toCourtFeet(defender), velocity: { x: 0, y: 0 }, previousVelocity: velocity, speed: 0, acceleration: 0, priority: 5, frozen: true });
+      // Hold positions suppresses defensive reactions, but imported body
+      // overlaps still need a gradual, bounded correction and braking.
+      run.motionIntents?.set(key, { key, point: toCourtFeet(defender), velocity: { x: 0, y: 0 }, previousVelocity: velocity, speed: correcting ? Math.max(2, Math.hypot(velocity.x, velocity.y)) : 0, acceleration: correcting ? DEFENDER_ACCELERATION_FT_PER_SECOND : 0, priority: 5, frozen: !correcting });
       return defender;
     }
     const isRecovering = pointDistanceFeet(defender, target) > 8;

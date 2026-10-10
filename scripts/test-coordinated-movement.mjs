@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { coordinateMovement, PLAYER_BODY_RADIUS_FEET } from '../frontend/src/features/playbook/coordinatedMovement.ts';
-import { createSimulationRun, advanceSimulationRun, SIMULATION_STEP_MS, pointDistanceFeet, getSimulationFrame } from '../frontend/src/features/playbook/simulation.ts';
+import { createSimulationRun, advanceSimulationRun, SIMULATION_STEP_MS, pointDistanceFeet, getSimulationFrame, setSimulationRunSettings } from '../frontend/src/features/playbook/simulation.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from '../frontend/src/features/playbook/types.ts';
 import { COUNTER_LAB_DEFAULT_PROFILES, COUNTER_LAB_EXTRA_STRATEGIES, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
@@ -36,6 +36,26 @@ assert.deepEqual(coordinateMovement([free],0,bounds)[0].point,free.point,'zero t
 const settings={...DEFAULT_SIMULATION_SETTINGS,defenseScheme:'man-to-man',defenseStrategy:'off',offenseMode:'scripted'};
 const draft=(players,arrows,ball=players[0])=>({version:1,id:'motion-fixture',name:'Motion fixture',players,arrows,ball:ball?{x:ball.x,y:ball.y}:null,defenders:[{id:1,x:85,y:85}],defenders_visible:true});
 const finish=(run)=>{for(let i=0;i<2000&&run.elapsedMs<run.durationMs;i++)advanceSimulationRun(run,SIMULATION_STEP_MS,run.settings);assert.equal(run.elapsedMs,run.durationMs);return run;};
+const heldOverlap=draft([{id:1,x:20,y:85}],[]);
+heldOverlap.defenders=[{id:1,x:80,y:85},{id:2,x:80,y:85}];
+const heldRun=createSimulationRun(heldOverlap,settings);
+let prior=heldRun.defenders.map(p=>({...p}));
+for(let i=0;i<180&&heldRun.elapsedMs<heldRun.durationMs;i++) {
+ const time=heldRun.elapsedMs;advanceSimulationRun(heldRun,SIMULATION_STEP_MS,settings);
+ heldRun.defenders.forEach((p,j)=>assert.ok(pointDistanceFeet(p,prior[j])<=2*(heldRun.elapsedMs-time)/1000+.001,'held defenders separate without teleporting'));
+ prior=heldRun.defenders.map(p=>({...p}));
+}
+assert.ok(pointDistanceFeet(...heldRun.defenders)>1.99,'held defenders gradually resolve exact imported overlaps');
+const liveHold=createSimulationRun(draft([{id:1,x:20,y:70}],[]),{...settings,defenseStrategy:'contain'});
+for(let i=0;i<20;i++)advanceSimulationRun(liveHold,1000/60,liveHold.settings);
+const movingVelocity={...liveHold.velocities.get('defender:1')};
+assert.ok(Math.hypot(movingVelocity.x,movingVelocity.y)>2,'live hold fixture begins with a moving defender');
+setSimulationRunSettings(liveHold,{...settings,defenseStrategy:'off'});
+advanceSimulationRun(liveHold,1000/60,liveHold.settings);
+const brakingVelocity=liveHold.velocities.get('defender:1');
+assert.ok(Math.hypot(brakingVelocity.x-movingVelocity.x,brakingVelocity.y-movingVelocity.y)<=28/60+1e-6,'switching to hold brakes within the acceleration limit');
+
+
 const curved=draft([{id:1,x:20,y:70},{id:2,x:70,y:85}],[{id:'curve',kind:'movement',actor_id:1,path:'curve',control:{x:55,y:60},start:{x:20,y:70},end:{x:60,y:40},sequence:1,timing:3.5}]);
 const snapshot=structuredClone(curved), curvedRun=createSimulationRun(curved,settings);
 finish(curvedRun);
@@ -76,6 +96,8 @@ const conflictRun=createSimulationRun(conflict,settings);advanceSimulationRun(co
 assert.equal(conflictRun.actions[1].execution.phase,'conflict');
 assert.match(conflictRun.actions[1].execution.notice,/Move 1/);
 assert.throws(()=>validatePlaybookParticipants({...curved,arrows:[{...curved.arrows[0],actor_id:99}]}));
+
+if(process.env.ARC_MOVEMENT_FIXTURES_ONLY==='1'){console.log('Coordinated movement fixtures passed');process.exit(0);}
 
 // Reproduce the original 288-trial audit, then cover every extra tactic and eligible zone.
 const report={bodyRadiusFeet:PLAYER_BODY_RADIUS_FEET,measurement:"Live authored action positions from 300ms onward; imported overlaps separate gradually.",before:{trials:288,trialsWithCentersBelowOneFoot:261},after:{trials:0,trialsWithCentersBelowOneFoot:0,minimumGapFeet:Infinity,minimumGapTrial:null},additional:{trials:0},outcomes:{completed:0,obstructed:0,conflict:0}};
