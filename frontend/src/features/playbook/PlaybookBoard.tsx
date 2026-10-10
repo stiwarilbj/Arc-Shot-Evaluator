@@ -1332,7 +1332,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <div className="simulation-setting simulation-defense-setting"><span>Coverage & emphasis</span><ArcSelect ariaLabel="Coverage and defensive emphasis" className="arc-select--compact playbook-defense-select" value={simulationSettings.defenseStrategy} options={[
               { value: "help", label: "Help & recover", description: "Send weak-side help to drives, then recover." },
               { value: "contain", label: "Contain & deny", description: "Contain the handler and stay close to each assignment." },
-              { value: "switch", label: "Switch screens", description: "Exchange matchups when a screen or handoff starts." },
+              { value: "switch", label: "Switch screens", description: "Exchange matchups at screen use or a close handoff." },
               { value: "fight-over", label: "Fight over top", description: "Keep matchups and route the screened defender over the screen." },
               { value: "go-under", label: "Go under", description: "Keep matchups and route the screened defender below the screen." },
               { value: "drop", label: "Drop coverage", description: "The screener's defender protects the lane while the handler is covered." },
@@ -1340,7 +1340,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               { value: "trap-rotate", label: "Trap & rotate", description: "Bring extra pressure and rotate help behind the screen or drive." },
               { value: "deny-lanes", label: "Deny passing lanes", description: "Shade off-ball defenders toward passing lanes and close on receivers." },
               { value: "protect-paint", label: "Protect paint", description: "Keep help defenders closer to the basket and drive lane." },
-              { value: "off", label: "Hold positions", description: "Keep defenders where they are drawn." },
+              { value: "off", label: "Hold positions", description: "Stay in place; overlapping players still separate." },
             ]} onValueChange={(value) => changeSimulationSetting("defenseStrategy", value as SimulationSettings["defenseStrategy"])} /></div>
             <label className="simulation-setting simulation-setting-range"><span>Off-ball intensity <output>{simulationSettings.offBallIntensity}%</output></span><input aria-label="Off-ball intensity" type="range" min={0} max={100} step={1} value={simulationSettings.offBallIntensity} onChange={(event) => changeSimulationSetting("offBallIntensity", Number(event.currentTarget.value))} /></label>
             <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior.</span>
