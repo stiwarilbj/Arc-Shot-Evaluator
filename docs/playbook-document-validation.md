@@ -81,3 +81,26 @@ same save boundary.
 for exact ties, adjacent binary values, tiny coordinates, bounds, and seeded
 samples. Run `npm run test:playbook-precision`,
 `npm run test:playbook-document-validation`, and the Python persistence tests.
+
+## Successful save results
+
+A fresh save result is checked before announcing a library change, replacing an
+editor draft/baseline, or registering a Counter Lab repair copy. HTTP 2xx alone
+is insufficient. It must include an explicit version 1, a complete valid court
+(name, roster/action arrays, ball and boolean defender visibility), valid
+participant references, a non-provisional persisted ID, and readable creation
+and update timestamps. IDs use the local API's lowercase alphanumeric/hyphen
+format (8–64 characters). An update must return the requested ID; a new copy
+must return an ID different from its source. Optional legacy action defaults
+remain supported. Empty drawings and partial rosters remain valid.
+
+The browser-generated result passes the same check before any storage write.
+Malformed JSON, incomplete bodies, and mismatched identities use the existing
+save-error flow. No success notification is sent and the pending save is
+released without clearing unsaved edits, so a valid retry can complete normally.
+A server may already have stored a document before returning a damaged response;
+response validation does not claim to roll back that server write. Existing
+library loads retain their separate, backward-compatible validation rules.
+
+Run `npm run test:playbook-save-results` for malformed 2xx responses, ID/version
+checks, browser pre-write guards, preserved draft state, and retry coverage.

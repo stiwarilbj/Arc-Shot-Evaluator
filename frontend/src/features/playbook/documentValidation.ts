@@ -75,3 +75,18 @@ export function validateSavedPlaybook(value: unknown): asserts value is Playbook
   validatePlaybookDocument(value);
   check(object(value) && typeof value.id === "string" && value.id.length > 0 && typeof value.name === "string" && Array.isArray(value.players) && Array.isArray(value.defenders) && Array.isArray(value.arrows), "Saved play is incomplete.");
 }
+
+export type PlaybookSaveIdentity = { operation: "create"; sourceId: string } | { operation: "update"; id: string };
+export const INVALID_PLAYBOOK_SAVE = "The save returned an invalid play. Your draft is still in memory; retry saving.";
+
+/** Fresh save results must be complete. Legacy load defaults are deliberately
+ * more permissive; never treat a missing version/identity as save success. */
+export function validatePlaybookSaveResult(value: unknown, identity: PlaybookSaveIdentity): asserts value is PlaybookDocument {
+  try {
+    validateSavedPlaybook(value);
+    check(value.version === 1 && /^[a-z0-9][a-z0-9-]{7,63}(?![\s\S])/.test(value.id) && !value.id.startsWith("draft-"), "Invalid saved identity.");
+    check(identity.operation === "update" ? value.id === identity.id : value.id !== identity.sourceId, "Unexpected saved identity.");
+    check(typeof value.defenders_visible === "boolean" && value.ball !== undefined, "Incomplete saved court.");
+    for (const timestamp of [value.created_at, value.updated_at]) check(typeof timestamp === "string" && timestamp.trim().length > 0 && Number.isFinite(Date.parse(timestamp)), "Invalid save timestamp.");
+  } catch { throw new Error(INVALID_PLAYBOOK_SAVE); }
+}

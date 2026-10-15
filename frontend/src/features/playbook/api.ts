@@ -1,5 +1,5 @@
 import { normalizePlaybookPrecision } from "./documentPrecision.ts";
-import { validatePlaybookDocument, validateSavedPlaybook } from "./documentValidation.ts";
+import { INVALID_PLAYBOOK_SAVE, validatePlaybookDocument, validateSavedPlaybook, validatePlaybookSaveResult, type PlaybookSaveIdentity } from "./documentValidation.ts";
 import type { PlaybookDocument, PlaybookDraft } from "./types";
 import { IS_GITHUB_PAGES } from "../../runtime";
 import { createSharedLibraryRead } from "./sharedLibraryRead.ts";
@@ -13,6 +13,15 @@ async function parse<T>(response: Response): Promise<T> {
     throw new Error(body.detail ?? `Request failed (${response.status})`);
   }
   return response.json() as Promise<T>;
+}
+
+async function parseSave(response: Response, identity: PlaybookSaveIdentity): Promise<PlaybookDocument> {
+  if (!response.ok) return parse<never>(response);
+  let saved: unknown;
+  try { saved = await response.json(); }
+  catch { throw new Error(INVALID_PLAYBOOK_SAVE); }
+  validatePlaybookSaveResult(saved, identity);
+  return saved;
 }
 
 const CHANGE_EVENT = "arc-playbooks-changed";
@@ -63,7 +72,7 @@ function localId() {
   return `local-${suffix}`;
 }
 
-function persistLocalPlaybook(playbook: PlaybookDraft, id = playbook.id.startsWith("draft-") ? localId() : playbook.id): PlaybookDocument {
+function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identity: PlaybookSaveIdentity): PlaybookDocument {
   const now = new Date().toISOString();
   const saved: PlaybookDocument = {
     version: 1,
@@ -77,6 +86,7 @@ function persistLocalPlaybook(playbook: PlaybookDraft, id = playbook.id.startsWi
     ball: playbook.ball ? structuredClone(playbook.ball) : null,
     arrows: structuredClone(playbook.arrows),
   };
+  validatePlaybookSaveResult(saved, identity);
   const current = readLocalPlaybooks().filter((item) => item.id !== id);
   writeLocalPlaybooks([saved, ...current]);
   return saved;
@@ -88,23 +98,23 @@ export async function fetchPlaybooks() {
 export async function createPlaybook(playbook: PlaybookDraft) {
   validatePlaybookDocument(playbook);
   playbook = normalizePlaybookPrecision(playbook);
+  const identity: PlaybookSaveIdentity = { operation: "create", sourceId: playbook.id };
   return libraryReads.mutate(async () => {
-    if (IS_GITHUB_PAGES) return persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, localId());
-    const saved = await fetch("/api/playbooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parse<PlaybookDocument>(response));
-    validateSavedPlaybook(saved);
+    if (IS_GITHUB_PAGES) return persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, localId(), identity);
+    const saved = await fetch("/api/playbooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parseSave(response, identity));
     announceChange(); return saved;
   });
 }
 export async function updatePlaybook(playbook: PlaybookDraft) {
   validatePlaybookDocument(playbook);
   playbook = normalizePlaybookPrecision(playbook);
+  const identity: PlaybookSaveIdentity = { operation: "update", id: playbook.id };
   return libraryReads.mutate(async () => {
     if (IS_GITHUB_PAGES) {
       if (!readLocalPlaybooks().some((item) => item.id === playbook.id)) throw new Error("Saved play not found");
-      return persistLocalPlaybook(playbook);
+      return persistLocalPlaybook(playbook, playbook.id, identity);
     }
-    const saved = await fetch(`/api/playbooks/${encodeURIComponent(playbook.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parse<PlaybookDocument>(response));
-    validateSavedPlaybook(saved);
+    const saved = await fetch(`/api/playbooks/${encodeURIComponent(playbook.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parseSave(response, identity));
     announceChange(); return saved;
   });
 }
