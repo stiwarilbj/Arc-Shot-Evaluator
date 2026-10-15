@@ -9,7 +9,7 @@ import { createPlaybook, fetchPlaybooks, subscribePlaybooks } from "./api";
 import { STARTER_PLAYS } from "./data";
 import { COUNTER_LAB_DEFAULT_PROFILES, COUNTER_LAB_EXTRA_SCHEMES, COUNTER_LAB_EXTRA_STRATEGIES, eligibleCounterLabSchemes, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabSummary, type CounterLabMessage, type CounterLabProgress } from "./counterLabTypes";
 import { advanceReplay, matchesReplay, replayFrame } from "./counterLabReplay";
-import { unpackReplay } from "./counterLabReplayArchive.ts";
+import { decodeReplayForPlayback } from "./counterLabReplayValidation.ts";
 import { createDecodedReplayCache } from "./decodedReplayCache.ts";
 import { COURT_VIEWBOX, courtPointToSvg } from "./courtGeometry";
 import { CourtMarkings } from "./CourtMarkings";
@@ -147,7 +147,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
         expectedDetail.current = null;
         if (!message.original || (message.repairId !== "original" && !message.repaired)) { setDetailError("This replay is unavailable. Test defenses again to regenerate it."); return; }
         try {
-          const original = unpackReplay(message.original), repaired = message.repaired ? unpackReplay(message.repaired) : null;
+          const original = decodeReplayForPlayback(message.original), repaired = message.repaired ? decodeReplayForPlayback(message.repaired) : null;
           replayCache.set(message, { original, repaired });
           showReplay({ original, repaired });
         } catch (caught) { setDetailError(messageOf(caught)); }

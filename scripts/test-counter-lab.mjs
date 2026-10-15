@@ -7,6 +7,7 @@ import { bindAuthoredActions, createSimulationRun, prepareSimulationRun, authore
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 import { counterLabTrialKey, createCompletedTrialCache } from '../frontend/src/features/playbook/counterLabTrialCache.ts';
+import { decodeReplayForPlayback } from '../frontend/src/features/playbook/counterLabReplayValidation.ts';
 import { packReplay, unpackReplay } from '../frontend/src/features/playbook/counterLabReplayArchive.ts';
 
 const switchSlipFixture = {
@@ -165,7 +166,7 @@ for (const variant of [{ id: 'original', play: switchSlipFixture, results: analy
     const expected = runCounterLabTrial(variant.play, result.profile, result.mode);
     const { trace, ...summary } = expected;
     assert.deepEqual(result, summary, 'packing leaves repair evidence and diagnostics unchanged');
-    assert.deepEqual(unpackReplay(analysis.detailArchives.get(key)), trace, 'all selectable comparisons retain every exact replay sample');
+    assert.deepEqual(decodeReplayForPlayback(analysis.detailArchives.get(key)), trace, 'all selectable comparisons retain every exact replay sample');
   }
 }
 assert.deepEqual([...analysis.detailArchives.keys()].sort(), expectedArchiveKeys.sort(), 'only baseline and qualifying repair archives are retained');
@@ -426,7 +427,7 @@ const beforeAll = JSON.stringify(STARTER_PLAYS);
 for (const play of STARTER_PLAYS) {
   for (const mode of ['scripted', 'adaptive']) for (const profile of COUNTER_LAB_DEFAULT_PROFILES) {
     const result = runCounterLabTrial(play, profile, mode);
-    assert.deepEqual(unpackReplay(packReplay(result.trace)), result.trace, 'every starter replay retains exact samples, routes and diagnostics');
+    assert.deepEqual(decodeReplayForPlayback(packReplay(result.trace)), result.trace, 'every starter replay retains exact samples, routes and diagnostics');
     assert.equal(result.trace[0].elapsedMs, 0, 'action capture retains the initial sample');
     assert.deepEqual(result.trace.at(-1).execution, result.actionDiagnostics, 'the final sample includes the final action outcomes');
     for (const pass of result.passDiagnostics) {

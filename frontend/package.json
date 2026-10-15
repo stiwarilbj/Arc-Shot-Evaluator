@@ -11,12 +11,13 @@
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
     "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
     "test:counter-lab": "node --experimental-strip-types ../scripts/test-counter-lab.mjs",
-    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:coordinated-movement && npm run test:playbook-performance && npm run test:playbook-draft-save",
+    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:playbook-performance && npm run test:playbook-draft-save",
     "test:playbook-draft-save": "node --experimental-strip-types ../scripts/test-playbook-draft-save.mjs",
     "test:playbook-performance": "node --experimental-strip-types ../scripts/test-playbook-performance.mjs",
     "test:coordinated-movement": "node --experimental-strip-types ../scripts/test-coordinated-movement.mjs",
     "test:counter-lab-requests": "node --experimental-strip-types ../scripts/test-counter-lab-requests.mjs",
-    "test:counter-lab-boundaries": "node --experimental-test-module-mocks --experimental-strip-types ../scripts/test-counter-lab-boundaries.mjs"
+    "test:counter-lab-boundaries": "node --experimental-test-module-mocks --experimental-strip-types ../scripts/test-counter-lab-boundaries.mjs",
+    "test:counter-lab-replay-validation": "node --experimental-strip-types ../scripts/test-counter-lab-replay-validation.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",
