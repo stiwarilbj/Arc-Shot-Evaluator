@@ -1,7 +1,6 @@
 import type { CourtRoute } from "./arrowVisibility";
-import { DEFAULT_SIMULATION_SETTINGS } from "./types.ts";
 import type { CourtPoint, DefenseScheme, DefenseStrategy, PlaybookDraft } from "./types";
-import { createSimulationRun, DEFENSE_SCHEME_ORDER, type ActionDiagnostic } from "./simulation.ts";
+import { bindAuthoredActions, DEFENSE_SCHEME_ORDER, type ActionDiagnostic } from "./simulation.ts";
 
 export type CounterLabMode = "scripted" | "adaptive";
 export type CounterLabProfile = { id: string; label: string; strategy: DefenseStrategy; scheme: Exclude<DefenseScheme, "auto"> };
@@ -78,7 +77,7 @@ const clamp = (value: number) => Math.max(4, Math.min(96, value));
 
 export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<CounterLabRepair, "id" | "name" | "reason" | "play">> {
   const repairs: Array<Pick<CounterLabRepair, "id" | "name" | "reason" | "play">> = [];
-  const authored = createSimulationRun(draft, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: "scripted" }).actions;
+  const authored = bindAuthoredActions(draft);
   for (const [index, arrow] of draft.arrows.entries()) {
     const move = arrow.sequence ?? index + 1;
     if ((arrow.kind === "screen" || arrow.kind === "pick-roll") && arrow.screener_id != null) {
@@ -109,15 +108,15 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
       const originalReceiver = bound?.recipientId;
       // Build-time participant binding uses predicted positions at this phase,
       // so use those positions rather than the initial roster coordinates.
-      const phasePositions = createSimulationRun({ ...draft, arrows: draft.arrows.filter((item, i) => (item.sequence ?? i + 1) < move) }, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: "scripted" });
-      const positions = phasePositions.actions.length ? draft.players.map((player) => {
-        const route = [...phasePositions.actions].reverse().find((action) => action.actorId === player.id && action.arrow.kind === "movement");
+      const phasePositions = bindAuthoredActions({ ...draft, arrows: draft.arrows.filter((item, i) => (item.sequence ?? i + 1) < move) });
+      const positions = phasePositions.length ? draft.players.map((player) => {
+        const route = [...phasePositions].reverse().find((action) => action.actorId === player.id && action.arrow.kind === "movement");
         return route ? { ...player, ...route.arrow.end } : player;
       }) : draft.players;
       for (const recipient of positions.filter((player) => player.id !== bound?.actorId && player.id !== originalReceiver).slice(0, 2)) {
         const play = structuredClone(draft);
         play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id ? { ...candidate, recipient_id: recipient.id, end: point(recipient.x, recipient.y) } : candidate);
-        const redirected = createSimulationRun(play, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: "scripted" }).actions.find((action) => action.arrow.id === arrow.id);
+        const redirected = bindAuthoredActions(play).find((action) => action.arrow.id === arrow.id);
         if (redirected?.recipientId !== recipient.id || redirected.recipientId === originalReceiver || redirected.recipientId === redirected.actorId) continue;
         repairs.push({ id: `pass-${arrow.id}-${recipient.id}`, name: `Pass to Player ${recipient.id} · Move ${move}`, reason: "Test a different receiver against the same starting court and defense.", play });
       }
@@ -133,7 +132,7 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
   }
   const unique = new Map<string, Pick<CounterLabRepair, "id" | "name" | "reason" | "play">>();
   repairs.forEach((repair) => { if (!unique.has(JSON.stringify(repair.play.arrows))) unique.set(JSON.stringify(repair.play.arrows), repair); });
-  const signature = (play: PlaybookDraft) => JSON.stringify(createSimulationRun(play, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: "scripted" }).actions.map((action) => ({ kind: action.arrow.kind, actor: action.actorId, recipient: action.recipientId, start: action.startTime, duration: action.durationMs, end: action.arrow.end, exit: action.arrow.exit_target, control: action.arrow.control })));
+  const signature = (play: PlaybookDraft) => JSON.stringify(bindAuthoredActions(play).map((action) => ({ kind: action.arrow.kind, actor: action.actorId, recipient: action.recipientId, start: action.startTime, duration: action.durationMs, end: action.arrow.end, exit: action.arrow.exit_target, control: action.arrow.control })));
   const original = signature(draft);
   const effective = [...unique.values()].filter((repair) => signature(repair.play) !== original);
   // Reserve space for different edit families instead of filling the budget

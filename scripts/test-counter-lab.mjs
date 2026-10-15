@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { advanceReplay, matchesReplay, replayFrame } from '../frontend/src/features/playbook/counterLabReplay.ts';
 import { analyzeCounterLab, runCounterLabTrial, diagnoseOpenings, repairEvidence, verifiedRecovery } from '../frontend/src/features/playbook/counterLabEngine.ts';
 import { COUNTER_LAB_DEFAULT_PROFILES, createCounterLabRepairs, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
-import { createSimulationRun, prepareSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame, observeCounterLabRun } from '../frontend/src/features/playbook/simulation.ts';
+import { bindAuthoredActions, createSimulationRun, prepareSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame, observeCounterLabRun } from '../frontend/src/features/playbook/simulation.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 
@@ -48,16 +48,25 @@ for (const play of [...STARTER_PLAYS,
   { ...switchSlipFixture, name: 'Legacy participant binding', arrows: [{ id: 'legacy-pass', kind: 'pass', start: { ...switchSlipFixture.players[0] }, end: { ...switchSlipFixture.players[1] } }] },
 ]) {
   const createPreparedRun = prepareSimulationRun(play);
+  const bindings = bindAuthoredActions(play);
   for (const profile of [...COUNTER_LAB_DEFAULT_PROFILES, { scheme: 'zone-2-3', strategy: 'help' }]) for (const offenseMode of ['scripted', 'adaptive']) {
     const settings = { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: profile.scheme, defenseStrategy: profile.strategy, offenseMode };
     const prepared = createPreparedRun(settings);
     const fresh = createSimulationRun(play, settings);
+    if (offenseMode === 'scripted') assert.deepEqual(bindings, fresh.actions, `${play.name}: inspection uses the same participants, sequence, geometry, and duration as execution`);
     assert.deepEqual(prepared, fresh, `${play.name}: prepared initialization matches fresh bindings for ${profile.scheme}/${profile.strategy}/${offenseMode}`);
     for (let step = 0; step < 3; step++) {
       assert.deepEqual(advanceSimulationRun(prepared, 1000 / 30), advanceSimulationRun(fresh, 1000 / 30), 'prepared execution preserves frames and automatic actions');
     }
   }
 }
+const inspected = bindAuthoredActions(switchSlipFixture);
+const inspectedSnapshot = structuredClone(inspected);
+inspected[0].arrow.end.x += 1;
+inspected[0].plannedStart.y += 1;
+inspected[0].partnerStart.x += 1;
+assert.deepEqual(switchSlipFixture, original, 'inspection owns its geometry and leaves the draft unchanged');
+assert.deepEqual(bindAuthoredActions(switchSlipFixture), inspectedSnapshot, 'mutating inspection results cannot affect later bindings');
 const templateSource = structuredClone(switchSlipFixture);
 templateSource.players[0].ratings = { threePoint: 4, midrange: 3, finishing: 5 };
 const templateSnapshot = structuredClone(templateSource);

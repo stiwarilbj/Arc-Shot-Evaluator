@@ -1474,6 +1474,11 @@ function createInitialFrame(): SimulationFrame {
   };
 }
 
+/** Inspect authored bindings with the engine's rules, without initializing execution or defense. */
+export function bindAuthoredActions(source: PlaybookDraft): BoundAction[] {
+  return buildActions(structuredClone(source)).actions;
+}
+
 export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT): SimulationRun {
   return initializeSimulationRun(structuredClone(source), settings, hoop);
 }
