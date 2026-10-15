@@ -90,6 +90,53 @@ const cadenceDraft = makeDraft({
   defenders: [[50, 69], [30, 54]],
   arrows: [{ id: 'cadence-cut', kind: 'movement', start: { x: 30, y: 60 }, end: { x: 27, y: 45 }, sequence: 1, timing: 2 }],
 });
+
+// Settings updates compare effective values, including nested flags and defaults.
+const unchangedSettingsRun = createSimulationRun(cadenceDraft, settings);
+const originalSettings = unchangedSettingsRun.settings;
+const originalFrame = unchangedSettingsRun.frame;
+setSimulationRunSettings(unchangedSettingsRun, structuredClone(settings));
+setSimulationRunSettings(unchangedSettingsRun, { ...settings, offenseMode: 'adaptive', defenseScheme: 'zone-3-2' });
+assert.equal(unchangedSettingsRun.settings, originalSettings, 'equivalent settings retain the normalized settings object');
+assert.equal(unchangedSettingsRun.frame, originalFrame, 'equivalent settings do not rebuild the frame');
+advanceSimulationRun(unchangedSettingsRun, 1, structuredClone(settings));
+assert.equal(unchangedSettingsRun.frame, originalFrame, 'advancing less than a fixed step does not rebuild a frame for unchanged settings');
+
+for (const change of [
+  { defenseStrategy: 'contain' },
+  { offenseOffBall: 'spacing' },
+  { offBallIntensity: 35 },
+  { offenseMode: 'scripted' },
+  ...Object.keys(settings.automaticActions).map((flag) => ({ automaticActions: { ...settings.automaticActions, [flag]: true } })),
+]) {
+  const run = createSimulationRun(cadenceDraft, settings);
+  const before = run.frame;
+  const requested = { ...structuredClone(settings), ...change };
+  setSimulationRunSettings(run, requested);
+  assert.notEqual(run.frame, before, `changed settings rebuild the frame immediately: ${JSON.stringify(change)}`);
+  for (const [key, value] of Object.entries(change)) assert.deepEqual(run.settings[key], value, `changed ${key} applies immediately`);
+  const updatedFrame = run.frame;
+  setSimulationRunSettings(run, structuredClone(requested));
+  assert.equal(run.frame, updatedFrame, 'repeating a changed setting becomes a no-op');
+}
+
+const scriptedSettingsRun = createSimulationRun(cadenceDraft, { ...settings, offenseMode: 'scripted' });
+const scriptedFrame = scriptedSettingsRun.frame;
+setSimulationRunSettings(scriptedSettingsRun, { ...settings, offenseMode: 'scripted', offenseOffBall: 'cuts',
+  automaticActions: { screen: true, handoff: true, pickRoll: true, offBallScreen: true } });
+assert.equal(scriptedSettingsRun.frame, scriptedFrame, 'scripted mode ignores disabled improvisation settings when comparing effective values');
+setSimulationRunSettings(scriptedSettingsRun, settings);
+assert.equal(scriptedSettingsRun.settings.offenseMode, 'adaptive', 'leaving scripted mode restores adaptive settings immediately');
+assert.equal(scriptedSettingsRun.settings.offenseOffBall, settings.offenseOffBall);
+
+const mutableSettings = structuredClone(settings);
+const mutableSettingsRun = createSimulationRun(cadenceDraft, mutableSettings);
+const mutableFrame = mutableSettingsRun.frame;
+mutableSettings.automaticActions.screen = true;
+setSimulationRunSettings(mutableSettingsRun, mutableSettings);
+assert.notEqual(mutableSettingsRun.frame, mutableFrame, 'nested changes are detected even when the caller reuses its settings object');
+assert.equal(mutableSettingsRun.settings.automaticActions.screen, true);
+
 const cadenceRuns = [30, 60, 120].map((fps) => {
   const run = createSimulationRun(cadenceDraft, settings);
   advanceAtRate(run, 800, fps);

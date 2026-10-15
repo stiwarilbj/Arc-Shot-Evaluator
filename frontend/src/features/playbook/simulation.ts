@@ -1639,6 +1639,18 @@ export function getSimulationFrame(run: SimulationRun) {
 }
 
 export function setSimulationRunSettings(run: SimulationRun, settings: SimulationSettings) {
+  const current = run.settings;
+  const scripted = settings.offenseMode === "scripted";
+  // Compare effective values before allocating normalized settings or rebuilding
+  // the frame. The defense scheme is fixed for the lifetime of this run.
+  if (current.offenseMode === (settings.offenseMode ?? "adaptive")
+    && current.offenseOffBall === (scripted ? "off" : settings.offenseOffBall)
+    && current.defenseStrategy === settings.defenseStrategy
+    && current.offBallIntensity === settings.offBallIntensity
+    && current.automaticActions.screen === (scripted ? false : settings.automaticActions.screen)
+    && current.automaticActions.handoff === (scripted ? false : settings.automaticActions.handoff)
+    && current.automaticActions.pickRoll === (scripted ? false : settings.automaticActions.pickRoll)
+    && current.automaticActions.offBallScreen === (scripted ? false : settings.automaticActions.offBallScreen)) return;
   const previousStrategy = run.settings.defenseStrategy;
   const nextSettings = normalizeSettings(settings);
   if (previousStrategy === "switch" && nextSettings.defenseStrategy !== "switch") {
