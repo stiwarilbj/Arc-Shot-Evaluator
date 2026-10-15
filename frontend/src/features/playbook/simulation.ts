@@ -1,4 +1,4 @@
-import { coordinateMovement, interpolatePosition, type MotionIntent } from "./coordinatedMovement.ts";
+import { coordinateMovement, createMovementOrder, interpolatePosition, type MotionIntent, type MovementOrder } from "./coordinatedMovement.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
 import { playerHasBadge } from "./badges.ts";
@@ -73,6 +73,7 @@ type ScreenCoverageLock = { screenerDefenderId: number; screenedDefenderId: numb
 
 export type SimulationRun = {
   motionIntents?: Map<string, MotionIntent>;
+  movementOrder: MovementOrder;
   phaseWaitMs?: Map<number, number>;
   offBallDecisions?: Map<number, { target: CourtPoint; sinceMs: number; cutting: boolean }>;
   routeHistory?: Array<{ atMs: number; players: PlaybookMarker[]; onBallIds: number[] }>;
@@ -1589,6 +1590,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, settings: Simulation
       : null;
   const ballHandlerId = players[nearestPointIndex(players, ball ?? hoop)]?.id ?? null;
   const run: SimulationRun = {
+    movementOrder: createMovementOrder([...players.map((player) => velocityKey("player", player.id)), ...defenders.map((defender) => velocityKey("defender", defender.id))]),
     actions,
     actionDurationMs,
     durationMs: actionDurationMs + SIMULATION_SHOT_MS,
@@ -2696,7 +2698,7 @@ function coordinateCourt(run: SimulationRun, dt: number) {
   const intents = [...(run.motionIntents?.values() ?? [])];
   const topLeft = toCourtFeet(courtSvgToPoint({ x: NBA_COURT_GEOMETRY.boundary.left, y: NBA_COURT_GEOMETRY.boundary.top }));
   const bottomRight = toCourtFeet(courtSvgToPoint({ x: NBA_COURT_GEOMETRY.boundary.right, y: NBA_COURT_GEOMETRY.boundary.bottom }));
-  const resolved = coordinateMovement(intents, dt, { left: topLeft.x, right: bottomRight.x, top: topLeft.y, bottom: bottomRight.y });
+  const resolved = coordinateMovement(intents, dt, { left: topLeft.x, right: bottomRight.x, top: topLeft.y, bottom: bottomRight.y }, run.movementOrder);
   const playerPositions = new Map<number, CourtPoint>();
   const defenderPositions = new Map<number, CourtPoint>();
   intents.forEach((intent, index) => {

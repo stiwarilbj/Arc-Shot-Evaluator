@@ -1,12 +1,24 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
-import { coordinateMovement, PLAYER_BODY_RADIUS_FEET } from '../frontend/src/features/playbook/coordinatedMovement.ts';
+import { coordinateMovement, createMovementOrder, PLAYER_BODY_RADIUS_FEET } from '../frontend/src/features/playbook/coordinatedMovement.ts';
 import { createSimulationRun, advanceSimulationRun, SIMULATION_STEP_MS, pointDistanceFeet, getSimulationFrame, setSimulationRunSettings } from '../frontend/src/features/playbook/simulation.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from '../frontend/src/features/playbook/types.ts';
 import { COUNTER_LAB_DEFAULT_PROFILES, COUNTER_LAB_EXTRA_STRATEGIES, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
 const dt = 1 / 60, bounds = { left: 0, right: 50, top: 0, bottom: 47 };
 const intent = (key, point, velocity = {x:0,y:0}) => ({key, point, velocity, previousVelocity:{x:0,y:0}, speed:19, acceleration:34, priority:3});
+const participants = ['player:2', 'player:10', 'defender:2', 'defender:10'].map((key, index) => intent(key, { x: 25 + index * .2, y: 20 }, { x: index - 2, y: 2 - index }));
+const movementOrder = createMovementOrder(participants.map((item) => item.key));
+for (const active of [participants, participants, participants.slice(1, 3), [...participants].reverse(), [], [participants[0]], participants,
+  [...participants, intent('player:1', { x: 25, y: 20 })], participants,
+  [participants[0], { ...participants[1], key: participants[0].key }], participants]) {
+  assert.deepEqual(coordinateMovement(active, dt, bounds, movementOrder), coordinateMovement(active, dt, bounds), 'cached ordering preserves resolution across subsets, reordering, new identities, and duplicate keys');
+}
+const tied = [intent('é', { x: 25, y: 20 }), intent('e\u0301', { x: 25, y: 20 })];
+const tiedOrder = createMovementOrder(tied.map((item) => item.key));
+for (const active of [tied, [...tied].reverse(), tied]) assert.deepEqual(coordinateMovement(active, dt, bounds, tiedOrder), coordinateMovement(active, dt, bounds), 'locale-equivalent keys retain stable input tie-breaking');
+assert.deepEqual(coordinateMovement(participants, 0, bounds, movementOrder), coordinateMovement(participants, 0, bounds), 'zero-time resolution ignores ordering');
+assert.notEqual(createMovementOrder(participants.map((item) => item.key)).keys, movementOrder.keys, 'each possession owns its order');
 const sweptGap = (a, b, nextA, nextB) => {
   const r={x:b.x-a.x,y:b.y-a.y}, v={x:(nextB.x-b.x)-(nextA.x-a.x),y:(nextB.y-b.y)-(nextA.y-a.y)};
   const t=Math.max(0,Math.min(1,-(r.x*v.x+r.y*v.y)/Math.max(1e-12,v.x*v.x+v.y*v.y)));

@@ -5,6 +5,35 @@ export type MotionIntent = {
   speed: number; acceleration: number; priority: number; frozen?: boolean;
   corridor?: { point: MotionPoint; radius: number };
 };
+export type MovementOrder = { keys: string[]; inputKeys?: string[]; indices?: number[] };
+export function createMovementOrder(keys: Iterable<string>): MovementOrder {
+  return { keys: [...new Set(keys)].sort((a, b) => a.localeCompare(b)) };
+}
+
+function movementIndices(intents: MotionIntent[], prepared?: MovementOrder): number[] {
+  if (prepared) {
+    if (prepared.indices && prepared.inputKeys?.length === intents.length && intents.every((intent, index) => intent.key === prepared.inputKeys![index])) return prepared.indices;
+    const indices = new Map<string, number>();
+    for (let index = 0; index < intents.length; index++) indices.set(intents[index].key, index);
+    if (indices.size === intents.length) {
+      let changed = false;
+      for (const key of indices.keys()) if (!prepared.keys.includes(key)) { prepared.keys.push(key); changed = true; }
+      if (changed) prepared.keys.sort((a, b) => a.localeCompare(b));
+      const order: number[] = [];
+      for (const key of prepared.keys) {
+        const index = indices.get(key);
+        if (index !== undefined) order.push(index);
+      }
+      // Distinct locale-equivalent keys must retain the current input's stable tie order.
+      if (prepared.keys.some((key, index) => index > 0 && key.localeCompare(prepared.keys[index - 1]) === 0)) order.sort((a, b) => intents[a].key.localeCompare(intents[b].key) || a - b);
+      prepared.inputKeys = intents.map((intent) => intent.key);
+      prepared.indices = order;
+      return order;
+    }
+  }
+  // Preserve stable input order for duplicate keys and callers without a cache.
+  return intents.map((_, index) => index).sort((a, b) => intents[a].key.localeCompare(intents[b].key));
+}
 export const PLAYER_BODY_RADIUS_FEET = 1;
 export const PLAYER_PREFERRED_GAP_FEET = 2.2;
 const BODY_GAP = PLAYER_BODY_RADIUS_FEET * 2;
@@ -16,12 +45,12 @@ function limit(p: MotionPoint, maximum: number): MotionPoint {
 }
 
 /** Reciprocal steering followed by swept, joint body constraints. No position snaps. */
-export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: { left: number; right: number; top: number; bottom: number }) {
+export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: { left: number; right: number; top: number; bottom: number }, preparedOrder?: MovementOrder) {
   if (dt <= 0) return intents.map((i) => ({ point: { ...i.point }, velocity: { ...i.previousVelocity } }));
-  const order = intents.map((intent, index) => ({ intent, index })).sort((a, b) => a.intent.key.localeCompare(b.intent.key));
+  const order = movementIndices(intents, preparedOrder);
   const desired = intents.map((i) => i.frozen ? { x: 0, y: 0 } : { ...i.velocity });
   for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
-    const ai = order[a].index, bi = order[b].index, A = intents[ai], B = intents[bi];
+    const ai = order[a], bi = order[b], A = intents[ai], B = intents[bi];
     const r = { x: B.point.x - A.point.x, y: B.point.y - A.point.y }, distance = norm(r);
     const n = distance > 1e-6 ? { x: r.x / distance, y: r.y / distance } : { x: 1, y: 0 };
     const relative = { x: desired[ai].x - desired[bi].x, y: desired[ai].y - desired[bi].y };
@@ -46,7 +75,7 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
   });
   for (let pass = 0; pass < 16; pass++) {
     for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
-      const ai = order[a].index, bi = order[b].index, A = intents[ai], B = intents[bi];
+      const ai = order[a], bi = order[b], A = intents[ai], B = intents[bi];
       const r = { x: B.point.x - A.point.x, y: B.point.y - A.point.y }, distance = norm(r);
       if (distance > BODY_GAP + (A.speed + B.speed) * dt) continue;
       const n = distance > 1e-6 ? { x: r.x / distance, y: r.y / distance } : { x: 1, y: 0 };
@@ -82,7 +111,7 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
   // Clip travel, never positions, so the final swept segment remains safe.
   for (let pass = 0; pass < 12; pass++) {
     for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
-      const ai = order[a].index, bi = order[b].index;
+      const ai = order[a], bi = order[b];
       const dx = intents[bi].point.x - intents[ai].point.x, dy = intents[bi].point.y - intents[ai].point.y, distance = Math.hypot(dx, dy);
       if (distance < 1e-8) continue;
       const closing = ((velocities[ai].x - velocities[bi].x) * dx + (velocities[ai].y - velocities[bi].y) * dy) / Math.max(.001, distance);
