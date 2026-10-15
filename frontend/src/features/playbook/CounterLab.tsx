@@ -9,6 +9,7 @@ import { createPlaybook, fetchPlaybooks, subscribePlaybooks } from "./api";
 import { STARTER_PLAYS } from "./data";
 import { COUNTER_LAB_DEFAULT_PROFILES, COUNTER_LAB_EXTRA_SCHEMES, COUNTER_LAB_EXTRA_STRATEGIES, eligibleCounterLabSchemes, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabSummary, type CounterLabMessage, type CounterLabProgress } from "./counterLabTypes";
 import { advanceReplay, matchesReplay, replayFrame } from "./counterLabReplay";
+import { unpackReplay } from "./counterLabReplayArchive.ts";
 import { COURT_VIEWBOX, courtPointToSvg } from "./courtGeometry";
 import { CourtMarkings } from "./CourtMarkings";
 const requestId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -47,6 +48,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   const [savedCopies, setSavedCopies] = useState<Record<string, PlaybookDocument>>({});
   const [saveMessage, setSaveMessage] = useState("");
   const reportWorker = useRef<Worker | null>(null), pendingWorker = useRef<Worker | null>(null);
+  const simulationWorker = useRef<Worker | null>(null);
   const reportId = useRef(""), pendingId = useRef("");
   const expectedDetail = useRef<{ id: string; detailId: string; key: string; repairId: string } | null>(null);
   const libraryVersion = useRef(0), saveLock = useRef(false), positionRef = useRef(0);
@@ -68,7 +70,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   }, []);
   useEffect(() => {
     refreshLibrary(); const unsubscribe = subscribePlaybooks(refreshLibrary);
-    return () => { ++libraryVersion.current; unsubscribe(); reportWorker.current?.terminate(); pendingWorker.current?.terminate(); };
+    return () => { ++libraryVersion.current; unsubscribe(); simulationWorker.current?.terminate(); simulationWorker.current = null; reportWorker.current = null; pendingWorker.current = null; };
   }, [refreshLibrary]);
   useEffect(() => { if (active) refreshLibrary(); }, [active, refreshLibrary]);
   useEffect(() => { if (requestedPlay) loadPlay(requestedPlay.play, "Playbook draft"); }, [requestedPlay?.requestId]);
@@ -97,7 +99,9 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
 
   function pauseAndSeek(time: number) { setPlaying(false); positionRef.current = Math.max(0, Math.min(time, duration)); setPosition(positionRef.current); }
   function clearReport() {
-    pendingWorker.current?.terminate(); reportWorker.current?.terminate(); pendingWorker.current = null; reportWorker.current = null;
+    if (pendingId.current) pendingWorker.current?.postMessage({ type: "cancel", id: pendingId.current });
+    if (reportId.current) reportWorker.current?.postMessage({ type: "release", id: reportId.current });
+    pendingWorker.current = null; reportWorker.current = null;
     pendingId.current = ""; reportId.current = ""; expectedDetail.current = null;
     setProgress(null); setResults(null); setRepairs([]); setRepairId("original"); setBaselineTrace(null); setRepairTrace(null); setPlaying(false); setPosition(0); positionRef.current = 0;
     setSavedCopies({}); setSaveMessage(""); setError(""); setDetailError("");
@@ -112,14 +116,13 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   function toggleMode(mode: CounterLabMode) { clearReport(); setModes((current) => current.includes(mode) ? current.filter((item) => item !== mode) : [...current, mode]); }
   function cancel() {
     const worker = pendingWorker.current; if (worker) worker.postMessage({ type: "cancel", id: pendingId.current });
-    if (worker !== reportWorker.current) worker?.terminate();
     pendingWorker.current = null; pendingId.current = ""; setProgress(null); setSaveMessage("Comparison cancelled. Completed results remain available.");
   }
   function runAnalysis() {
     if (pendingWorker.current || !draft.players.length || !draft.arrows.length || !profiles.length || !modes.length) return;
     setPlaying(false); setError(""); setSaveMessage("");
     const id = requestId(); let worker: Worker;
-    try { worker = new Worker(new URL("./counterLab.worker.ts", import.meta.url), { type: "module" }); }
+    try { worker = simulationWorker.current ??= new Worker(new URL("./counterLab.worker.ts", import.meta.url), { type: "module" }); }
     catch { setError("Analysis could not start. Reload Counter Lab and retry; your play is unchanged."); return; }
     pendingWorker.current = worker; pendingId.current = id;
     worker.onmessage = (event: MessageEvent<CounterLabMessage>) => {
@@ -128,24 +131,29 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
         if (!matchesReplay(message, expectedDetail.current) || message.id !== reportId.current) return;
         expectedDetail.current = null;
         if (!message.original || (message.repairId !== "original" && !message.repaired)) { setDetailError("This replay is unavailable. Test defenses again to regenerate it."); return; }
-        setBaselineTrace(message.original); setRepairTrace(message.repaired); setDetailError("");
-        positionRef.current = Math.min(positionRef.current, Math.max(message.original.at(-1)?.elapsedMs ?? 0, message.repaired?.at(-1)?.elapsedMs ?? 0)); setPosition(positionRef.current); return;
+        try {
+          const original = unpackReplay(message.original), repaired = message.repaired ? unpackReplay(message.repaired) : null;
+          setBaselineTrace(original); setRepairTrace(repaired); setDetailError("");
+          positionRef.current = Math.min(positionRef.current, Math.max(original.at(-1)?.elapsedMs ?? 0, repaired?.at(-1)?.elapsedMs ?? 0)); setPosition(positionRef.current);
+        } catch (caught) { setDetailError(messageOf(caught)); }
+        return;
       }
       if (message.id !== pendingId.current) return;
       if (message.type === "progress") setProgress(message);
       if (message.type === "baseline") {
-        if (reportWorker.current !== worker) reportWorker.current?.terminate(); reportWorker.current = worker; reportId.current = id;
+        if (reportId.current && reportId.current !== message.id) reportWorker.current?.postMessage({ type: "release", id: reportId.current });
+        reportWorker.current = worker; reportId.current = message.id;
         setResults(message.results); setRepairs([]); setRepairId("original"); setSavedCopies({}); setPosition(0); positionRef.current = 0;
         const mode = modes.includes("scripted") ? "scripted" : modes[0];
         const candidates = message.results.filter((result) => result.mode === mode).sort((a, b) => Number(Boolean(b.firstBreakdown)) - Number(Boolean(a.firstBreakdown)) || a.score - b.score);
         setSelection({ profileId: candidates[0]?.profile.id ?? profiles[0].id, mode });
       }
       if (message.type === "complete") { setRepairs(message.repairs); setProgress(null); pendingWorker.current = null; pendingId.current = ""; }
-      if (message.type === "error") { setError(message.message); setProgress(null); pendingWorker.current = null; pendingId.current = ""; if (worker !== reportWorker.current) worker.terminate(); }
+      if (message.type === "error") { setError(message.message); setProgress(null); pendingWorker.current = null; pendingId.current = ""; }
       if (message.type === "cancelled") { setProgress(null); pendingWorker.current = null; pendingId.current = ""; }
     };
     worker.onerror = () => {
-      if (worker !== reportWorker.current && worker !== pendingWorker.current) return; worker.terminate();
+      if (worker !== simulationWorker.current) return; worker.terminate(); simulationWorker.current = null;
       if (worker === pendingWorker.current) { pendingWorker.current = null; pendingId.current = ""; setProgress(null); }
       if (worker === reportWorker.current) { reportWorker.current = null; expectedDetail.current = null; setDetailError("The replay worker stopped. Test defenses again to restore replay."); }
       setError("Analysis stopped unexpectedly. Your play and completed results are unchanged; try again.");

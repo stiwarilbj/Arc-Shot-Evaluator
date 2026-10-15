@@ -1,4 +1,5 @@
 import type { CourtRoute } from "./arrowVisibility";
+import type { ReplayArchive } from "./counterLabReplayArchive.ts";
 import type { CourtPoint, DefenseScheme, DefenseStrategy, PlaybookDraft } from "./types";
 import { bindAuthoredActions, DEFENSE_SCHEME_ORDER, type ActionDiagnostic } from "./simulation.ts";
 
@@ -39,13 +40,14 @@ export type CounterLabProgress = { completed: number; total: number; label: stri
 export type CounterLabRequest =
   | { type: "analyze"; id: string; draft: PlaybookDraft; profiles: CounterLabProfile[]; modes: CounterLabMode[] }
   | { type: "details"; id: string; detailId: string; key: string; repairId: string }
-  | { type: "cancel"; id: string };
+  | { type: "cancel"; id: string }
+  | { type: "release"; id: string };
 export type CounterLabMessage =
   | ({ type: "progress"; id: string } & CounterLabProgress)
   | { type: "baseline"; id: string; results: CounterLabSummary[] }
   | { type: "complete"; id: string; results: CounterLabSummary[]; repairs: CounterLabRepair[] }
   | { type: "cancelled"; id: string }
-  | { type: "details"; id: string; detailId: string; key: string; repairId: string; original: CounterLabFrame[] | null; repaired: CounterLabFrame[] | null }
+  | { type: "details"; id: string; detailId: string; key: string; repairId: string; original: ReplayArchive | null; repaired: ReplayArchive | null }
   | { type: "error"; id: string; message: string };
 
 export const COUNTER_LAB_DEFAULT_PROFILES: CounterLabProfile[] = [

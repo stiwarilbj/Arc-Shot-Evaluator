@@ -2,6 +2,7 @@ import type { PlaybookDraft, SimulationSettings } from "./types.ts";
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from "./types.ts";
 import { advanceSimulationState, createSimulationRun, observeCounterLabRun, pointDistanceFeet, prepareSimulationRun, SIMULATION_STEP_MS } from "./simulation.ts";
 import { createCounterLabRepairs, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabResult, type CounterLabSummary, type CounterLabProgress, type PassDiagnostic, type RepairEvidence } from "./counterLabTypes.ts";
+import { counterLabTrialKey, createCompletedTrialCache } from "./counterLabTrialCache.ts";
 
 export type CounterLabAnalysis = { results: CounterLabSummary[]; repairs: CounterLabRepair[]; detailTraces: Map<string, CounterLabFrame[]> };
 export type { CounterLabProgress } from "./counterLabTypes.ts";
@@ -66,12 +67,25 @@ export function validateCounterLabInput(draft: PlaybookDraft, profiles: CounterL
 
 export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean = () => false): CounterLabResult {
   validateCounterLabInput(draft, [profile], [mode]);
-  return simulateCounterLabTrial(profile, mode, shouldCancel, (settings) => createSimulationRun(draft, settings));
+  return completedCounterLabTrial(draft, profile, mode, shouldCancel, (settings) => createSimulationRun(draft, settings));
 }
 
-function simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>): CounterLabResult {
+// Reserve half the budget for chosen plays so repair sweeps cannot evict every
+// baseline before the user repeats an analysis. Both partitions remain bounded.
+const reuseCompletedTrial = createCompletedTrialCache(8 * 1024 * 1024, 24);
+const reuseCompletedRepair = createCompletedTrialCache(8 * 1024 * 1024, 128);
+function completedCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>, isRepair = false): CounterLabResult {
   const settings: SimulationSettings = { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: profile.scheme, defenseStrategy: profile.strategy, offenseMode: mode,
     automaticActions: mode === "scripted" ? { screen: false, handoff: false, pickRoll: false, offBallScreen: false } : { screen: true, handoff: true, pickRoll: true, offBallScreen: true } };
+  if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
+  return (isRepair ? reuseCompletedRepair : reuseCompletedTrial)(counterLabTrialKey(draft, profile, mode, settings), () => {
+    const result = simulateCounterLabTrial(profile, mode, settings, shouldCancel, createRun);
+    if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
+    return result;
+  });
+}
+
+function simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMode, settings: SimulationSettings, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>): CounterLabResult {
   const run = createRun(settings);
   const trace: CounterLabFrame[] = [];
   const diagnosticTrace: CounterLabFrame[] = [];
@@ -181,7 +195,7 @@ export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterL
         if (variant.id !== "original") validateCounterLabInput(variant.play, profiles, modes);
         createRun = prepareSimulationRun(variant.play);
       }
-      const { trace, ...result } = simulateCounterLabTrial(profile, mode, shouldCancel, createRun);
+      const { trace, ...result } = completedCounterLabTrial(variant.play, profile, mode, shouldCancel, createRun, variant.id !== "original");
       results.push(result); traces.set(`${variant.id}:${result.key}`, trace);
       onProgress({ completed: ++completed, total, label: `${profile.label} · ${mode === "scripted" ? "Drawn play" : "Adaptive offense"}`, stage: variant.id === "original" ? "defenses" : "repairs" });
       await new Promise<void>((resolve) => setTimeout(resolve, 0));

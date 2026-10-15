@@ -6,6 +6,8 @@ import { COUNTER_LAB_DEFAULT_PROFILES, createCounterLabRepairs, eligibleCounterL
 import { bindAuthoredActions, createSimulationRun, prepareSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame, observeCounterLabRun } from '../frontend/src/features/playbook/simulation.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
+import { counterLabTrialKey, createCompletedTrialCache } from '../frontend/src/features/playbook/counterLabTrialCache.ts';
+import { packReplay, unpackReplay } from '../frontend/src/features/playbook/counterLabReplayArchive.ts';
 
 const switchSlipFixture = {
   id: 'switch-slip-fixture',
@@ -184,6 +186,88 @@ const noAdvantagePlay = {
 const noAdvantage = runCounterLabTrial(noAdvantagePlay, holdProfile, 'scripted');
 assert.equal(noAdvantage.createdAdvantage, false, 'a covered low-skill shot is not mislabeled as an advantage');
 
+// Completed trials own cached snapshots, obey both limits, and retry failures.
+const completedCache = createCompletedTrialCache(16 * 1024 * 1024, 2);
+let computations = 0;
+const cachedTrial = (key) => completedCache(key, () => { computations++; return structuredClone(noAdvantage); });
+const firstCached = cachedTrial('a'), expectedCached = structuredClone(firstCached);
+firstCached.trace[0].players[0].x = -99;
+firstCached.profile.label = 'caller edit';
+const secondCached = cachedTrial('a');
+assert.deepEqual(secondCached, expectedCached, 'the initial caller cannot mutate the retained cache');
+secondCached.trace[0].players[0].x = -88;
+assert.deepEqual(cachedTrial('a'), expectedCached, 'cache hits also receive independent replay data');
+assert.equal(computations, 1);
+cachedTrial('b'); cachedTrial('a'); cachedTrial('c'); cachedTrial('b');
+assert.equal(computations, 4, 'entry eviction retains the most recently used trial');
+for (const error of [new Error('failed simulation'), new DOMException('cancelled', 'AbortError')]) {
+  assert.throws(() => completedCache('failed', () => { throw error; }), (actual) => actual === error);
+}
+cachedTrial('failed');
+assert.equal(computations, 5, 'errors and cancelled runs never become cache hits');
+cachedTrial(undefined); cachedTrial(undefined);
+assert.equal(computations, 7, 'unsupported keys bypass reuse');
+const byteCache = createCompletedTrialCache(2400, 24);
+let byteComputations = 0;
+const byteTrial = (key, length = 200) => byteCache(key, () => { byteComputations++; return { trace: [], outcome: 'x'.repeat(length) }; });
+byteTrial('a'); byteTrial('a');
+assert.equal(byteComputations, 1);
+byteTrial('b'); byteTrial('a');
+assert.equal(byteComputations, 3, 'the byte budget evicts entries before the entry limit');
+byteTrial('large', 2000); byteTrial('large', 2000);
+assert.equal(byteComputations, 5, 'oversized results are usable but are not retained');
+byteTrial('a');
+assert.equal(byteComputations, 5, 'an oversized trial does not evict a fitting completed trial');
+
+const baseKey = counterLabTrialKey(noAdvantagePlay, holdProfile, 'scripted', DEFAULT_SIMULATION_SETTINGS);
+assert.equal(baseKey, counterLabTrialKey(structuredClone(noAdvantagePlay), { ...holdProfile }, 'scripted', { ...DEFAULT_SIMULATION_SETTINGS }));
+assert.equal(counterLabTrialKey({ a: 1, b: 2 }), counterLabTrialKey({ b: 2, a: 1 }), 'property order does not change trial identity');
+for (const value of [undefined, null, NaN, Infinity, -Infinity, -0, 0, 'NaN', ['number', 'NaN']]) {
+  for (const other of [undefined, null, NaN, Infinity, -Infinity, -0, 0, 'NaN']) if (!Object.is(value, other)) assert.notEqual(counterLabTrialKey(value), counterLabTrialKey(other));
+}
+const cyclicKey = {}; cyclicKey.self = cyclicKey;
+assert.equal(counterLabTrialKey(cyclicKey), undefined);
+assert.equal(counterLabTrialKey('x'.repeat(70_000)), undefined);
+for (const change of [
+  (play) => { play.players[0].x += 1; },
+  (play) => { play.players[0].ratings.threePoint = 5; },
+  (play) => { play.players[0].badges = ['slasher']; },
+  (play) => { play.defenders[0].x += 1; },
+  (play) => { play.defenders[0].badges = ['lockdown']; },
+  (play) => { play.ball.x += 1; },
+  (play) => { play.arrows = [{ id: 'new', kind: 'movement', start: { x: 50, y: 45 }, end: { x: 40, y: 40 }, sequence: 1, timing: 1 }]; },
+]) {
+  const changed = structuredClone(noAdvantagePlay); change(changed);
+  assert.notEqual(baseKey, counterLabTrialKey(changed, holdProfile, 'scripted', DEFAULT_SIMULATION_SETTINGS), 'changed simulation inputs cannot hit the old trial');
+}
+assert.notEqual(baseKey, counterLabTrialKey(noAdvantagePlay, { ...holdProfile, strategy: 'help' }, 'scripted', DEFAULT_SIMULATION_SETTINGS));
+assert.notEqual(baseKey, counterLabTrialKey(noAdvantagePlay, { ...holdProfile, scheme: 'zone-2-3' }, 'scripted', DEFAULT_SIMULATION_SETTINGS));
+assert.notEqual(baseKey, counterLabTrialKey(noAdvantagePlay, holdProfile, 'adaptive', DEFAULT_SIMULATION_SETTINGS));
+assert.notEqual(baseKey, counterLabTrialKey(noAdvantagePlay, holdProfile, 'scripted', { ...DEFAULT_SIMULATION_SETTINGS, offBallIntensity: 25 }));
+assert.throws(() => runCounterLabTrial(noAdvantagePlay, holdProfile, 'scripted', () => true), (error) => error.name === 'AbortError', 'warm cache hits still honor cancellation');
+const trialProbe = { ...structuredClone(noAdvantagePlay), id: 'completed-cache-probe' };
+let trialPolls = 0;
+const probeTrial = () => { trialPolls = 0; return runCounterLabTrial(trialProbe, holdProfile, 'scripted', () => { trialPolls++; return false; }); };
+const freshProbe = probeTrial();
+assert.ok(trialPolls > 1, 'a new input actually executes the simulation');
+assert.deepEqual(probeTrial(), freshProbe);
+assert.equal(trialPolls, 1, 'a completed identical trial bypasses simulation execution');
+trialProbe.players[0].x += 1;
+probeTrial();
+assert.ok(trialPolls > 1, 'editing a player forces fresh execution');
+const previousIntensity = DEFAULT_SIMULATION_SETTINGS.offBallIntensity;
+try {
+  DEFAULT_SIMULATION_SETTINGS.offBallIntensity = 25;
+  probeTrial();
+  assert.ok(trialPolls > 1, 'effective default settings are part of the cache identity');
+} finally { DEFAULT_SIMULATION_SETTINGS.offBallIntensity = previousIntensity; }
+trialProbe.id = 'cancelled-cache-probe'; trialPolls = 0;
+assert.throws(() => runCounterLabTrial(trialProbe, holdProfile, 'scripted', () => ++trialPolls === 3), (error) => error.name === 'AbortError');
+probeTrial();
+assert.ok(trialPolls > 1, 'cancelled partial execution must be simulated again');
+probeTrial();
+assert.equal(trialPolls, 1, 'the successful retry becomes reusable');
+
 const requestPlay = structuredClone(noAdvantagePlay);
 const requestProfiles = [structuredClone(holdProfile)];
 const requestModes = ['scripted', 'adaptive'];
@@ -255,10 +339,24 @@ assert.equal(replayFrame(null, 50), null);
 let baselineWasFirst = false;
 await analyzeCounterLab(switchSlipFixture, [switchProfile], ['adaptive'], ({ stage }) => { if (stage === 'repairs') assert.ok(baselineWasFirst, 'baseline arrives before candidate trials'); }, () => false, (results, traces) => { baselineWasFirst = true; assert.equal(results.length, 1); assert.ok(traces.has('original:switch:adaptive')); });
 assert.ok(baselineWasFirst);
+// A complete repair sweep must not evict every baseline and make repeat tests
+// simulate the entire chosen play again. Request progress stays independent.
+const repeatedPlay = { ...structuredClone(STARTER_PLAYS[0]), id: 'full-analysis-cache-probe' };
+const analyses = [], progressSequences = [], pollCounts = [];
+for (let repeat = 0; repeat < 2; repeat++) {
+  let polls = 0; const progress = [];
+  analyses.push(await analyzeCounterLab(repeatedPlay, COUNTER_LAB_DEFAULT_PROFILES, ['scripted', 'adaptive'],
+    (value) => progress.push(value), () => { polls++; return false; }));
+  progressSequences.push(progress); pollCounts.push(polls);
+}
+assert.deepEqual(analyses[1], analyses[0], 'warm full analyses preserve all reports and replay samples');
+assert.deepEqual(progressSequences[1], progressSequences[0], 'cached trials still publish the same request progress');
+assert.ok(pollCounts[1] < pollCounts[0], 'repeat analyses skip simulation work despite a repair sweep');
 const beforeAll = JSON.stringify(STARTER_PLAYS);
 for (const play of STARTER_PLAYS) {
   for (const mode of ['scripted', 'adaptive']) for (const profile of COUNTER_LAB_DEFAULT_PROFILES) {
     const result = runCounterLabTrial(play, profile, mode);
+    assert.deepEqual(unpackReplay(packReplay(result.trace)), result.trace, 'every starter replay retains exact samples, routes and diagnostics');
     assert.equal(result.trace[0].elapsedMs, 0, 'action capture retains the initial sample');
     assert.deepEqual(result.trace.at(-1).execution, result.actionDiagnostics, 'the final sample includes the final action outcomes');
     for (const pass of result.passDiagnostics) {
