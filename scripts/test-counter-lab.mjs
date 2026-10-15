@@ -305,6 +305,44 @@ await assert.rejects(
   'cancellation stops a comparison after its current simulation',
 );
 
+// Cancellation must arrive from a macrotask while the first trial is still
+// running, rather than relying on a progress callback after it has finished.
+const chunkPlay = { ...structuredClone(switchSlipFixture), id: 'chunk-cancel-probe' };
+let chunkCancelled = false, chunkProgress = 0, chunkPolls = 0;
+const cancelTimer = setTimeout(() => { chunkCancelled = true; }, 0);
+try {
+  await assert.rejects(analyzeCounterLab(chunkPlay, [switchProfile], ['scripted'], () => { chunkProgress++; },
+    () => { chunkPolls++; return chunkCancelled; }), (error) => error.name === 'AbortError');
+} finally { clearTimeout(cancelTimer); }
+assert.equal(chunkProgress, 0, 'an event-loop cancellation interrupts the first trial before completion');
+assert.ok(chunkPolls > 2 && chunkPolls < 20, 'cancellation is observed at the first bounded chunk');
+
+// Separate cold cache identities ensure this compares actual chunked execution
+// with synchronous execution, not two reads of an already cached result.
+for (const mode of ['scripted', 'adaptive']) {
+  const play = { ...structuredClone(switchSlipFixture), id: `chunk-parity-${mode}` };
+  const analysis = await analyzeCounterLab(play, [switchProfile], [mode], () => {});
+  const expected = runCounterLabTrial({ ...play, id: `${play.id}-sync` }, switchProfile, mode);
+  const { trace, ...summary } = expected;
+  assert.deepEqual(analysis.results[0], summary, 'chunking preserves exact diagnostics and outcomes');
+  assert.deepEqual(analysis.detailTraces.get(`original:${expected.key}`), trace, 'chunking preserves every full-precision replay sample');
+}
+let retainedBaseline;
+let stopRepairs = false;
+await assert.rejects(analyzeCounterLab({ ...structuredClone(switchSlipFixture), id: 'chunk-retain-baseline' }, [switchProfile], ['scripted'], () => {},
+  () => stopRepairs, (results, traces) => {
+    retainedBaseline = structuredClone({ results, traces });
+    setTimeout(() => { stopRepairs = true; }, 0);
+  }), (error) => error.name === 'AbortError');
+assert.equal(retainedBaseline.results.length, 1, 'completed baseline remains available when repairs are cancelled');
+assert.ok(retainedBaseline.traces.get('original:switch:scripted').length > 1);
+const asyncCache = createCompletedTrialCache();
+let asyncComputations = 0;
+await assert.rejects(asyncCache.async('cancelled', async () => { throw new DOMException('cancelled', 'AbortError'); }), (error) => error.name === 'AbortError');
+await asyncCache.async('cancelled', async () => { asyncComputations++; return brokenRun; });
+await asyncCache.async('cancelled', async () => { asyncComputations++; return brokenRun; });
+assert.equal(asyncComputations, 1, 'cancelled async trials are retried, completed async trials are cached');
+
 const forcedShot = runCounterLabTrial(STARTER_PLAYS.find((play) => play.name === 'Flex'), COUNTER_LAB_DEFAULT_PROFILES.find((profile) => profile.id === 'help'), 'adaptive');
 assert.ok(forcedShot.adaptiveAttempts > 0, 'the forced-shot regression actually attempts adaptive reads');
 assert.ok(forcedShot.score < 55);

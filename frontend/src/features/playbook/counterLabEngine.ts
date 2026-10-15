@@ -75,17 +75,41 @@ export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProf
 const reuseCompletedTrial = createCompletedTrialCache(8 * 1024 * 1024, 24);
 const reuseCompletedRepair = createCompletedTrialCache(8 * 1024 * 1024, 128);
 function completedCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>, isRepair = false): CounterLabResult {
-  const settings: SimulationSettings = { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: profile.scheme, defenseStrategy: profile.strategy, offenseMode: mode,
-    automaticActions: mode === "scripted" ? { screen: false, handoff: false, pickRoll: false, offBallScreen: false } : { screen: true, handoff: true, pickRoll: true, offBallScreen: true } };
+  const settings = trialSettings(profile, mode);
   if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
   return (isRepair ? reuseCompletedRepair : reuseCompletedTrial)(counterLabTrialKey(draft, profile, mode, settings), () => {
-    const result = simulateCounterLabTrial(profile, mode, settings, shouldCancel, createRun);
-    if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
-    return result;
+    const trial = simulateCounterLabTrial(profile, mode, settings, shouldCancel, createRun);
+    let step = trial.next();
+    while (!step.done) step = trial.next();
+    return step.value;
   });
 }
 
-function simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMode, settings: SimulationSettings, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>): CounterLabResult {
+function trialSettings(profile: CounterLabProfile, mode: CounterLabMode): SimulationSettings {
+  return { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: profile.scheme, defenseStrategy: profile.strategy, offenseMode: mode,
+    automaticActions: mode === "scripted" ? { screen: false, handoff: false, pickRoll: false, offBallScreen: false } : { screen: true, handoff: true, pickRoll: true, offBallScreen: true } };
+}
+
+const yieldToWorker = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+async function completedCounterLabTrialAsync(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>, isRepair: boolean): Promise<CounterLabResult> {
+  const settings = trialSettings(profile, mode);
+  if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
+  const result = await (isRepair ? reuseCompletedRepair : reuseCompletedTrial).async(counterLabTrialKey(draft, profile, mode, settings), async () => {
+    const trial = simulateCounterLabTrial(profile, mode, settings, shouldCancel, createRun);
+    let step = trial.next();
+    while (!step.done) {
+      // A macrotask lets the worker receive cancellation messages. A resolved
+      // promise alone would only yield to microtasks and keep messages blocked.
+      await yieldToWorker();
+      step = trial.next();
+    }
+    return step.value;
+  });
+  if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
+  return result;
+}
+
+function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMode, settings: SimulationSettings, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>): Generator<void, CounterLabResult, void> {
   const run = createRun(settings);
   const trace: CounterLabFrame[] = [];
   const diagnosticTrace: CounterLabFrame[] = [];
@@ -135,12 +159,21 @@ function simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMod
   append();
   let nextSample = SIMULATION_STEP_MS;
   let steps = 0;
+  let chunkStarted = performance.now();
   while (run.elapsedMs < run.durationMs && steps++ < 20_000) {
     if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
     advanceSimulationState(run, SIMULATION_STEP_MS, settings);
     captureActions();
     if (run.elapsedMs + 1e-6 >= nextSample) { append(); nextSample += SIMULATION_STEP_MS; }
+    // Keep every fixed step and sample; only scheduling changes. Bound chunks
+    // by both step count and wall time, with at most one step over the budget.
+    if (steps % 8 === 0 || performance.now() - chunkStarted >= 8) {
+      yield;
+      if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
+      chunkStarted = performance.now();
+    }
   }
+  if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
   if (run.elapsedMs < run.durationMs) throw new Error("This possession exceeded the simulation limit. Shorten the play and try again.");
   if (trace.at(-1)?.elapsedMs !== run.elapsedMs) append();
   const { createdAdvantage, firstLostOpeningMs } = diagnoseOpenings(diagnosticTrace);
@@ -195,10 +228,10 @@ export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterL
         if (variant.id !== "original") validateCounterLabInput(variant.play, profiles, modes);
         createRun = prepareSimulationRun(variant.play);
       }
-      const { trace, ...result } = completedCounterLabTrial(variant.play, profile, mode, shouldCancel, createRun, variant.id !== "original");
+      const { trace, ...result } = await completedCounterLabTrialAsync(variant.play, profile, mode, shouldCancel, createRun, variant.id !== "original");
       results.push(result); traces.set(`${variant.id}:${result.key}`, trace);
       onProgress({ completed: ++completed, total, label: `${profile.label} · ${mode === "scripted" ? "Drawn play" : "Adaptive offense"}`, stage: variant.id === "original" ? "defenses" : "repairs" });
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      await yieldToWorker();
     }
     if (variant.id === "original") {
       originals.push(...results); traces.forEach((trace, key) => detailTraces.set(key, trace));

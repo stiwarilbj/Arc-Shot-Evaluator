@@ -52,19 +52,22 @@ function retainedBytes(value: unknown, limit: number, seen = new Set<object>()):
 export function createCompletedTrialCache(maxBytes = 16 * 1024 * 1024, maxEntries = 128) {
   const entries = new Map<string, { summary: Omit<CounterLabResult, "trace">; replay: ReplayArchive; bytes: number }>();
   let bytes = 0;
-  return (key: string | undefined, compute: () => CounterLabResult): CounterLabResult => {
+  function read(key: string | undefined): CounterLabResult | undefined {
     const cached = key === undefined ? undefined : entries.get(key);
     if (cached && key !== undefined) {
       entries.delete(key); entries.set(key, cached);
       return { ...structuredClone(cached.summary), trace: structuredClone(unpackReplay(cached.replay)) };
     }
-    const result = compute(); // Exceptions, including cancellation, never enter the cache.
+  }
+  function store(key: string | undefined, result: CounterLabResult): CounterLabResult {
     if (key === undefined || maxEntries <= 0) return result;
     const { trace, ...summary } = result;
     const replay = packReplay(trace);
     const size = key.length * 2 + retainedBytes({ summary, replay }, maxBytes - key.length * 2);
     if (size > maxBytes) return result;
     const copy = structuredClone(summary);
+    const previous = entries.get(key);
+    if (previous) { bytes -= previous.bytes; entries.delete(key); }
     while (entries.size >= maxEntries || bytes + size > maxBytes) {
       const oldest = entries.keys().next().value;
       if (oldest === undefined) break;
@@ -73,5 +76,10 @@ export function createCompletedTrialCache(maxBytes = 16 * 1024 * 1024, maxEntrie
     }
     entries.set(key, { summary: copy, replay, bytes: size }); bytes += size;
     return result;
-  };
+  }
+  const reuse = (key: string | undefined, compute: () => CounterLabResult): CounterLabResult => read(key) ?? store(key, compute());
+  // Store only resolved, successful computations; never retain an in-flight or
+  // rejected trial. Concurrent requests keep independent cancellation ownership.
+  reuse.async = async (key: string | undefined, compute: () => Promise<CounterLabResult>): Promise<CounterLabResult> => read(key) ?? store(key, await compute());
+  return reuse;
 }
