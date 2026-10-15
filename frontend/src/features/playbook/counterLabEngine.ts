@@ -78,7 +78,12 @@ function simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMod
   let nextDiagnosticMs = 0;
   const passes = new Map<string, PassDiagnostic>();
   const successfulReads = new Map<string, number>();
+  let capturedRevision: number | undefined;
   function captureActions() {
+    // Execution revisions cover movement, possession, and action transitions.
+    // append() may sample this state after the advance loop already captured it.
+    if (capturedRevision === run.routeRevision) return;
+    capturedRevision = run.routeRevision;
     for (const action of run.actions) {
       if (run.elapsedMs + 1e-6 < action.startTime) continue;
       if (!action.automatic && !action.adaptiveReadLabel && (action.arrow.kind === "pass" || action.arrow.kind === "handoff")) {

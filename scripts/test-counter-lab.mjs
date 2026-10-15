@@ -259,6 +259,14 @@ const beforeAll = JSON.stringify(STARTER_PLAYS);
 for (const play of STARTER_PLAYS) {
   for (const mode of ['scripted', 'adaptive']) for (const profile of COUNTER_LAB_DEFAULT_PROFILES) {
     const result = runCounterLabTrial(play, profile, mode);
+    assert.equal(result.trace[0].elapsedMs, 0, 'action capture retains the initial sample');
+    assert.deepEqual(result.trace.at(-1).execution, result.actionDiagnostics, 'the final sample includes the final action outcomes');
+    for (const pass of result.passDiagnostics) {
+      if (pass.status === 'delivered' || pass.status === 'failed') {
+        const action = result.actionDiagnostics.find((action) => action.actionId === pass.actionId);
+        assert.equal(pass.atMs, action.completedAtMs, 'transfer diagnostics retain the exact execution timestamp');
+      }
+    }
     if (result.firstUnsafePass) assert.ok(play.arrows.some((arrow, index) => arrow.id === result.firstUnsafePass.actionId && (arrow.sequence ?? index + 1) === result.firstUnsafePass.sequence), 'contested-pass mapping survives simultaneous phase boundaries');
     if (result.firstLostOpeningMs != null && result.releasedAtMs != null) assert.ok(result.firstLostOpeningMs < result.releasedAtMs);
     const events = [result.firstLostOpeningMs, result.firstBlockedPass?.atMs, ...result.actionDiagnostics.filter((action) => ['obstructed', 'conflict'].includes(action.phase) && !result.passDiagnostics.some((pass) => pass.actionId === action.actionId)).map((action) => action.completedAtMs)].filter((time) => time != null);
