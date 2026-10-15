@@ -1,11 +1,18 @@
 import { analyzeCounterLab } from "./counterLabEngine.ts";
 import type { CounterLabRequest, CounterLabMessage, CounterLabFrame } from "./counterLabTypes.ts";
 import { packReplay, replayResponse, type ReplayArchive } from "./counterLabReplayArchive.ts";
+import { createCounterLabDetailQueue } from "./counterLabDetailQueue.ts";
 
 const cancelled = new Set<string>();
 const active = new Set<string>();
 const details = new Map<string, Map<string, ReplayArchive>>();
 const post = (message: CounterLabMessage, transfer: Transferable[] = []) => self.postMessage(message, { transfer });
+const detailQueue = createCounterLabDetailQueue((request) => {
+  const traces = details.get(request.id);
+  const original = traces?.get(`original:${request.key}`), repaired = request.repairId === "original" ? undefined : traces?.get(`${request.repairId}:${request.key}`);
+  const a = original ? replayResponse(original) : null, b = repaired ? replayResponse(repaired) : null;
+  post({ ...request, original: a?.archive ?? null, repaired: b?.archive ?? null }, [...(a?.transfer ?? []), ...(b?.transfer ?? [])]);
+});
 function storeDetails(id: string, traces: Map<string, CounterLabFrame[]>) {
   const stored = details.get(id) ?? new Map<string, ReplayArchive>();
   for (const [key, trace] of traces) if (!stored.has(key)) stored.set(key, packReplay(trace));
@@ -14,12 +21,9 @@ function storeDetails(id: string, traces: Map<string, CounterLabFrame[]>) {
 self.onmessage = (event: MessageEvent<CounterLabRequest>) => {
   const request = event.data;
   if (request.type === "cancel") { if (active.has(request.id)) cancelled.add(request.id); return; }
-  if (request.type === "release") { details.delete(request.id); return; }
+  if (request.type === "release") { detailQueue.release(request.id); details.delete(request.id); return; }
   if (request.type === "details") {
-    const traces = details.get(request.id);
-    const original = traces?.get(`original:${request.key}`), repaired = request.repairId === "original" ? undefined : traces?.get(`${request.repairId}:${request.key}`);
-    const a = original ? replayResponse(original) : null, b = repaired ? replayResponse(repaired) : null;
-    post({ ...request, original: a?.archive ?? null, repaired: b?.archive ?? null }, [...(a?.transfer ?? []), ...(b?.transfer ?? [])]);
+    detailQueue.request(request);
     return;
   }
   cancelled.delete(request.id);

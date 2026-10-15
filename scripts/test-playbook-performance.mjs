@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createCounterLabDetailQueue } from '../frontend/src/features/playbook/counterLabDetailQueue.ts';
 import { packReplay, unpackReplay, replayResponse } from '../frontend/src/features/playbook/counterLabReplayArchive.ts';
 import { createSharedLibraryRead } from '../frontend/src/features/playbook/sharedLibraryRead.ts';
 import { createParsedLibraryCache } from '../frontend/src/features/playbook/parsedLibraryCache.ts';
@@ -334,7 +335,42 @@ for (let i = 0; i < 2; i++) {
   assert.deepEqual(unpackReplay(received), frames);
   assert.deepEqual([archive.roots.byteLength, archive.offsets.byteLength, archive.tokens.byteLength, archive.numbers.byteLength], retainedSizes, 'transfer never detaches reusable source data');
 }
+// Superseded selections never reach the response allocator. The final request
+// retains its complete identity and both full-precision comparison replays.
+const detailResponses = [], allocations = [];
+const detailQueue = createCounterLabDetailQueue(request => {
+  allocations.push(request.detailId);
+  const original = replayResponse(archive);
+  const repaired = request.repairId === 'original' ? null : replayResponse(archive);
+  detailResponses.push(structuredClone({ ...request, original: original.archive, repaired: repaired?.archive ?? null },
+    { transfer: [...original.transfer, ...(repaired?.transfer ?? [])] }));
+});
+const settleDetails = () => new Promise(resolve => setTimeout(resolve, 10));
+const detailRequest = { type: 'details', id: 'report', detailId: 'first', key: 'switch:scripted', repairId: 'original' };
+for (let i = 0; i < 100; i++) detailQueue.request({ ...detailRequest, detailId: `superseded-${i}`, key: `defense-${i}:adaptive`, repairId: `repair-${i}` });
+const finalRequest = { ...detailRequest, detailId: 'latest', key: 'drop:adaptive', repairId: 'slip-screen' };
+detailQueue.request(finalRequest);
+assert.equal(allocations.length, 0, 'no outgoing buffers are allocated before yielding to selection messages');
+await settleDetails();
+assert.deepEqual(allocations, ['latest'], 'only the latest pending replay allocates response buffers');
+assert.deepEqual(detailResponses[0], { ...finalRequest, original: archive, repaired: archive });
+assert.deepEqual(unpackReplay(detailResponses[0].original), frames);
+assert.deepEqual(unpackReplay(detailResponses[0].repaired), frames);
+assert.deepEqual(unpackReplay(archive), frames, 'coalescing and transfer preserve reusable worker archives');
+detailQueue.request({ ...detailRequest, detailId: 'released' });
+detailQueue.release('report');
+await settleDetails();
+assert.equal(allocations.length, 1, 'releasing a report cancels its pending replay before allocation');
+detailQueue.request({ ...detailRequest, id: 'new-report', detailId: 'new-report-detail' });
+detailQueue.release('report');
+await settleDetails();
+assert.equal(allocations.at(-1), 'new-report-detail', 'releasing an older report cannot cancel the current selection');
+assert.equal(detailResponses.at(-1).repaired, null, 'original-only requests keep their original response shape');
+detailQueue.request({ ...detailRequest, detailId: 'retry' });
+await settleDetails();
+assert.equal(allocations.at(-1), 'retry', 'later retries still receive a response after a queue flush or release');
+
 assert.deepEqual(unpackReplay(packReplay([])), []);
 assert.throws(() => unpackReplay({ ...archive, version: 2 }), /Unsupported/);
 assert.throws(() => unpackReplay({ ...archive, roots: new Uint32Array([4294967295]).buffer }), /incomplete/);
-console.log(`Performance regressions passed: content-keyed mini-courts, PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
+console.log(`Performance regressions passed: superseded replay requests, content-keyed mini-courts, PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
