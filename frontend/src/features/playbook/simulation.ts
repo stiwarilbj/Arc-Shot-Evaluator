@@ -2996,9 +2996,13 @@ function updateShot(run: SimulationRun, timeMs: number, dt: number, hoop: CourtP
 }
 
 function nextTimeBoundary(run: SimulationRun, stepEnd: number) {
-  const nextActionBoundary = run.actions.flatMap((action) => [action.startTime, action.startTime + action.durationMs])
-    .filter((time) => time > run.elapsedMs + 1e-6)
-    .reduce((best, time) => Math.min(best, time), stepEnd);
+  let nextActionBoundary = stepEnd;
+  const afterElapsed = run.elapsedMs + 1e-6;
+  for (const action of run.actions) {
+    const endTime = action.startTime + action.durationMs;
+    if (action.startTime > afterElapsed) nextActionBoundary = Math.min(nextActionBoundary, action.startTime);
+    if (endTime > afterElapsed) nextActionBoundary = Math.min(nextActionBoundary, endTime);
+  }
   const nextEarlyRead = !run.shotStart && run.nextEarlyReadMs > run.elapsedMs + 1e-6
     ? run.nextEarlyReadMs
     : Number.POSITIVE_INFINITY;
