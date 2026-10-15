@@ -47,6 +47,7 @@ import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./typ
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
   advanceSimulationRun,
+  bindAuthoredActions,
   createSimulationRun,
   editPausedSimulationMarker,
   getSimulationFrame,
@@ -411,7 +412,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
   const selectedSkillsDefender = draft.defenders.find((defender) => defender.id === defenderSkillsId) ?? draft.defenders[0] ?? null;
-  const selectedParticipants = useMemo(() => selectedArrow ? createSimulationRun(draft, { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: "man-to-man", offenseMode: "scripted" }).actions.find((action) => action.arrow.id === selectedArrow.id) : null, [draft, selectedArrow?.id]);
+  const selectedParticipants = useMemo(() => selectedArrow ? bindAuthoredActions(draft).find((action) => action.arrow.id === selectedArrow.id) : null, [draft, selectedArrow?.id]);
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
   const starterCategories = useMemo(() => ["All plays", ...new Set(STARTER_PLAYS.map((play) => STARTER_PLAY_DETAILS[play.name]?.category ?? "Other"))], []);
   const filteredStarterPlays = useMemo(() => {
