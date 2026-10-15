@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { normalizePlaybookPrecision } from '../frontend/src/features/playbook/documentPrecision.ts';
 import { build } from '../frontend/node_modules/vite/dist/node/index.js';
 const examples = JSON.parse(readFileSync(new URL('../tests/fixtures/playbook-documents.json', import.meta.url)));
 for (const target of ['github-pages', 'local']) {
@@ -42,6 +43,29 @@ for (const target of ['github-pages', 'local']) {
   content = JSON.stringify([saved]);
   const retryEvent = new Event('storage'); Object.defineProperty(retryEvent, 'key', { value: 'arc-playbooks-v1' }); window.dispatchEvent(retryEvent);
   assert.equal((await api.fetchPlaybooks())[0].id, saved.id);
+  const precise = { ...structuredClone(play), id: 'draft-precision-api',
+    players: [{ id: 1, x: 12.3456789, y: 99.99995 }, { id: 2, x: 35, y: 60 }],
+    defenders: [{ id: 1, x: .00015, y: 1.23445 }], ball: { x: 1.23455, y: .00005 },
+    arrows: [{ id: 'precise-pop', kind: 'pick-pop', screener_id: 1, handler_id: 2,
+      start: { x: 1.23445, y: 12.3456789 }, end: { x: 1.23455, y: .00015 },
+      control: { x: 99.99995, y: 1.23445 }, exit_target: { x: .00005, y: 12.3456789 }, timing: 2.675 }] };
+  const original = structuredClone(precise), normalized = normalizePlaybookPrecision(precise);
+  let persisted = await api.createPlaybook(precise);
+  const numericFields = (value) => Object.fromEntries(['players', 'defenders', 'ball', 'arrows'].map((key) => [key, value[key]]));
+  assert.deepEqual(numericFields(persisted), numericFields(normalized), `${target}: create returns normalized precision`);
+  assert.deepEqual(precise, original, 'caller draft was not modified');
+  assert.deepEqual(numericFields(JSON.parse(content).find((p) => p.id === persisted.id)), numericFields(normalized), 'stored JSON is normalized');
+  for (let i = 0; i < 5; i++) {
+    persisted = await api.updatePlaybook(persisted);
+    assert.deepEqual(numericFields((await api.fetchPlaybooks()).find((p) => p.id === persisted.id)), numericFields(normalized), 'update and reload do not drift');
+  }
+  // Reading a legacy library is deliberately lossless; unrelated saves must not
+  // round a play the user has not explicitly saved.
+  content = JSON.stringify([{ ...original, id: 'play-legacy-precision' }]);
+  const changed = new Event('storage'); Object.defineProperty(changed, 'key', { value: 'arc-playbooks-v1' }); window.dispatchEvent(changed);
+  assert.equal((await api.fetchPlaybooks())[0].players[0].x, 12.3456789);
+  await api.createPlaybook(play);
+  if (target === 'github-pages') assert.equal(JSON.parse(content).find((p) => p.id === 'play-legacy-precision').players[0].x, 12.3456789);
   unsubscribe();
-  console.log(`${target}: malformed creates/updates rejected before writes; valid save/reload and preserved-data retry passed`);
+  console.log(`${target}: malformed creates/updates rejected before writes; valid save/reload, preserved-data retry, normalized creates/updates, no drift and lossless legacy reads passed`);
 }

@@ -24,6 +24,9 @@ NAME_WHITESPACE = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u
 MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
+# Version-1 save precision; Python round uses binary float, nearest/ties-to-even.
+COORDINATE_DECIMAL_PLACES = 4
+TIMING_DECIMAL_PLACES = 2
 ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "slip-screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"}
 ALLOWED_ARROW_PATHS = {"straight", "curve"}
 ALLOWED_PLAYER_BADGES = {
@@ -53,7 +56,7 @@ def _point(value: object, label: str) -> dict[str, float]:
     x, y = value["x"], value["y"]
     if not 0 <= x <= 100 or not 0 <= y <= 100:
         raise HTTPException(400, f"{label} must stay inside the court")
-    return {"x": round(float(x), 4), "y": round(float(y), 4)}
+    return {"x": round(float(x), COORDINATE_DECIMAL_PLACES), "y": round(float(y), COORDINATE_DECIMAL_PLACES)}
 
 
 def _markers(
@@ -134,7 +137,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             raise HTTPException(400, "Arrow timing must be between 0.5 and 4 seconds")
         control_value = arrow.get("control")
         control = None if control_value is None else _point(control_value, "Arrow control")
-        clean_arrow = {"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "path": path, "timing": round(float(timing), 2), "control": control, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")}
+        clean_arrow = {"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "path": path, "timing": round(float(timing), TIMING_DECIMAL_PLACES), "control": control, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")}
         player_ids = {marker["id"] for marker in players}
         for field in ("actor_id", "recipient_id", "screener_id", "handler_id", "cutter_id"):
             participant = arrow.get(field)

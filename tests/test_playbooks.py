@@ -356,3 +356,36 @@ def test_nonfinite_coordinates_and_damaged_stored_documents(tmp_path, monkeypatc
     assert client.get("/api/playbooks/play-damaged01").status_code == 500
     assert client.get("/api/playbooks").json() == []
     assert path.read_text() == original
+
+
+def test_shared_persistence_precision(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    examples = json.loads((Path(__file__).parent / "fixtures/playbook-precision.json").read_text())
+    for example in examples:
+        if example["field"] == "coordinate":
+            point = playbooks_module._point({"x": example["value"], "y": example["value"]}, "Shared coordinate")
+            assert point == {"x": example["expected"], "y": example["expected"]}
+        else:
+            payload = _payload()
+            payload["arrows"][0]["timing"] = example["value"]
+            saved = playbooks_module._document(payload, playbook_id="play-precision")
+            assert saved["arrows"][0]["timing"] == example["expected"]
+    payload = _payload()
+    payload["players"][0].update(x=12.3456789, y=99.99995)
+    payload["defenders"][0].update(x=1.23445, y=1.23455)
+    payload["ball"] = {"x": 2.675, "y": 0.00015}
+    payload["arrows"][0].update(start={"x": 12.3456789, "y": 1.23445}, end={"x": 1.23455, "y": 99.99995}, control={"x": .00005, "y": .00015}, exit_target={"x": 12.3456789, "y": 1.23445}, timing=2.675)
+    # Required exit targets also go through the same four-decimal point policy.
+    payload["arrows"][0].update(kind="pick-pop", screener_id=1, handler_id=2)
+    payload["players"].append({"id": 2, "x": 35.1234567, "y": 60.7654321})
+    client = TestClient(app)
+    saved = client.post("/api/playbooks", json=payload).json()
+    assert saved["players"][0]["x"] == 12.3457
+    assert saved["arrows"][0]["exit_target"]["x"] == 12.3457
+    assert saved["arrows"][0]["timing"] == 2.67
+    for _ in range(5):
+        reopened = client.get(f"/api/playbooks/{saved['id']}").json()
+        updated = client.put(f"/api/playbooks/{saved['id']}", json=reopened).json()
+        for field in ("players", "defenders", "ball", "arrows"):
+            assert updated[field] == saved[field]

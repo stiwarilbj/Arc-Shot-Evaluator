@@ -1,3 +1,4 @@
+import { normalizePlaybookPrecision } from "./documentPrecision.ts";
 import { validatePlaybookDocument, validateSavedPlaybook } from "./documentValidation.ts";
 import type { PlaybookDocument, PlaybookDraft } from "./types";
 import { IS_GITHUB_PAGES } from "../../runtime";
@@ -86,6 +87,7 @@ export async function fetchPlaybooks() {
 }
 export async function createPlaybook(playbook: PlaybookDraft) {
   validatePlaybookDocument(playbook);
+  playbook = normalizePlaybookPrecision(playbook);
   return libraryReads.mutate(async () => {
     if (IS_GITHUB_PAGES) return persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, localId());
     const saved = await fetch("/api/playbooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parse<PlaybookDocument>(response));
@@ -95,6 +97,7 @@ export async function createPlaybook(playbook: PlaybookDraft) {
 }
 export async function updatePlaybook(playbook: PlaybookDraft) {
   validatePlaybookDocument(playbook);
+  playbook = normalizePlaybookPrecision(playbook);
   return libraryReads.mutate(async () => {
     if (IS_GITHUB_PAGES) {
       if (!readLocalPlaybooks().some((item) => item.id === playbook.id)) throw new Error("Saved play not found");
