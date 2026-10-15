@@ -3,6 +3,56 @@ import { packReplay, unpackReplay, replayResponse } from '../frontend/src/featur
 import { createSharedLibraryRead } from '../frontend/src/features/playbook/sharedLibraryRead.ts';
 import { createParsedLibraryCache } from '../frontend/src/features/playbook/parsedLibraryCache.ts';
 import { createFrameBatch } from '../frontend/src/features/playbook/frameBatch.ts';
+import { editPlaybookPoint } from '../frontend/src/features/playbook/editPlaybookPoint.ts';
+import { createPlaybookDraftSession } from '../frontend/src/features/playbook/playbookDraftSession.ts';
+
+// Freeze old branches so any mutation of shared data fails immediately.
+const freezeTree = (value) => {
+  if (value && typeof value === 'object') { Object.values(value).forEach(freezeTree); Object.freeze(value); }
+  return value;
+};
+const editFixture = freezeTree({
+  version: 1, id: 'draft-edit', name: 'Copy branches', defenders_visible: true,
+  players: [1, 2].map(id => ({ id, x: id * 10, y: 30, ratings: { threePoint: 4, midrange: 2, finishing: 3 }, badges: ['cutter'] })),
+  defenders: [1, 2].map(id => ({ id, x: id * 20, y: 40, badges: ['helper'] })),
+  ball: { x: 10, y: 30 },
+  arrows: [1, 2].map(id => ({ id: `route-${id}`, kind: 'movement', start: { x: 10, y: 30 }, end: { x: 40, y: 50 }, path: 'straight', control: { x: 20, y: 45 }, exit_target: { x: 60, y: 30 }, actor_id: id, sequence: id })),
+});
+for (const type of ['player', 'defender', 'ball', 'arrow-start', 'arrow-end', 'arrow-exit', 'arrow-control']) {
+  const target = { type, id: type.startsWith('arrow') ? 'route-1' : 1 };
+  const point = { x: 75.123456789, y: 65.987654321 };
+  const before = structuredClone(editFixture), expected = structuredClone(editFixture);
+  const field = type === 'arrow-start' ? 'start' : type === 'arrow-end' ? 'end' : type === 'arrow-exit' ? 'exit_target' : 'control';
+  const edited = type === 'player' ? 'players' : type === 'defender' ? 'defenders' : type === 'ball' ? 'ball' : 'arrows';
+  if (type === 'ball') expected.ball = { ...point };
+  else if (type === 'player' || type === 'defender') Object.assign(expected[edited][0], point);
+  else { expected.arrows[0][field] = { ...point }; if (type === 'arrow-control') expected.arrows[0].path = 'curve'; }
+  const next = editPlaybookPoint(editFixture, target, point);
+  assert.deepEqual(next, expected, `${type}: same edit at full precision`);
+  assert.deepEqual(editFixture, before, `${type}: unchanged source`);
+  assert.notEqual(next, editFixture);
+  for (const branch of ['players', 'defenders', 'arrows', 'ball']) {
+    if (branch !== edited) assert.equal(next[branch], editFixture[branch], `${type}: shared untouched ${branch}`);
+    else assert.notEqual(next[branch], editFixture[branch]);
+  }
+  if (type === 'player' || type === 'defender') {
+    assert.notEqual(next[edited][0], editFixture[edited][0]);
+    assert.equal(next[edited][1], editFixture[edited][1]);
+    assert.equal(next[edited][0].badges, editFixture[edited][0].badges);
+    assert.equal(next[edited][0].ratings, editFixture[edited][0].ratings);
+  } else if (type !== 'ball') {
+    assert.equal(next.arrows[1], editFixture.arrows[1]);
+    for (const key of ['start', 'end', 'control', 'exit_target']) if (key !== field) assert.equal(next.arrows[0][key], editFixture.arrows[0][key]);
+  }
+  point.x = 1;
+  assert.deepEqual(next, expected, 'caller coordinates cannot mutate the edit');
+  const again = editPlaybookPoint(next, target, { x: 15, y: 20 });
+  assert.deepEqual(next, expected, 'subsequent edits preserve the earlier drawing');
+  const session = createPlaybookDraftSession(editFixture);
+  session.edit(again); assert.equal(session.dirty, true);
+  session.edit(editFixture); assert.equal(session.dirty, false, 'undo restores saved content');
+  session.edit(next); assert.deepEqual(session.current, expected, 'redo restores the exact drawing');
+}
 
 for (const hz of [30, 60, 120]) {
   let nextId = 0;
@@ -162,4 +212,4 @@ for (let i = 0; i < 2; i++) {
 assert.deepEqual(unpackReplay(packReplay([])), []);
 assert.throws(() => unpackReplay({ ...archive, version: 2 }), /Unsupported/);
 assert.throws(() => unpackReplay({ ...archive, roots: new Uint32Array([4294967295]).buffer }), /incomplete/);
-console.log(`Performance regressions passed: unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
+console.log(`Performance regressions passed: immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);

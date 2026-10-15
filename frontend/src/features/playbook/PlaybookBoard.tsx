@@ -36,6 +36,7 @@ import {
 import { createPlaybook, deletePlaybook, fetchPlaybooks, subscribePlaybooks, updatePlaybook } from "./api";
 import { createPlaybookDraftSession, playbookContentKey } from "./playbookDraftSession";
 import { createFrameBatch } from "./frameBatch";
+import { editPlaybookPoint } from "./editPlaybookPoint";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
@@ -123,12 +124,7 @@ function markerCount(draft: PlaybookDraft, type: "player" | "defender") {
 
 function replacePoint(draft: PlaybookDraft, selection: Selection, point: CourtPoint): PlaybookDraft {
   if (!selection) return draft;
-  const next = clonePlaybook(draft);
-  if (selection.type === "ball") next.ball = point;
-  if (selection.type === "player") next.players = next.players.map((marker) => marker.id === selection.id ? { ...marker, ...point } : marker);
-  if (selection.type === "defender") next.defenders = next.defenders.map((marker) => marker.id === selection.id ? { ...marker, ...point } : marker);
-  if (selection.type === "arrow") next.arrows = next.arrows.map((arrow) => arrow.id === selection.id ? { ...arrow, end: point } : arrow);
-  return next;
+  return editPlaybookPoint(draft, { type: selection.type === "arrow" ? "arrow-end" : selection.type, id: selection.id }, point);
 }
 
 function clampTiming(value: number) {
@@ -944,16 +940,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         setSimulationFrameState(editPausedSimulationMarker(simulationRunRef.current, drag.type, drag.id, point));
       }
     }
-    const next = clonePlaybook(drag.before);
-    if (drag.type === "ball") next.ball = point;
-    if (drag.type === "player") next.players = next.players.map((marker) => marker.id === drag.id ? { ...marker, ...point } : marker);
-    if (drag.type === "defender") next.defenders = next.defenders.map((marker) => marker.id === drag.id ? { ...marker, ...point } : marker);
-    if (drag.type === "arrow-start" || drag.type === "arrow-end") {
-      next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, [drag.type === "arrow-start" ? "start" : "end"]: point } : arrow);
-    }
-    if (drag.type === "arrow-exit") next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, exit_target: point } : arrow);
-    if (drag.type === "arrow-control") next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, path: "curve", control: point } : arrow);
-    setDraft(next);
+    setDraft(editPlaybookPoint(drag.before, drag, point));
     setStatus("idle");
   }
 
