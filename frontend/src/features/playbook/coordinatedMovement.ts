@@ -48,11 +48,20 @@ function limit(p: MotionPoint, maximum: number): MotionPoint {
 export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: { left: number; right: number; top: number; bottom: number }, preparedOrder?: MovementOrder) {
   if (dt <= 0) return intents.map((i) => ({ point: { ...i.point }, velocity: { ...i.previousVelocity } }));
   const order = movementIndices(intents, preparedOrder);
-  const desired = intents.map((i) => i.frozen ? { x: 0, y: 0 } : { ...i.velocity });
+  // Starting positions stay fixed while the passes correct candidate velocities.
+  const pairs = [];
   for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
     const ai = order[a], bi = order[b], A = intents[ai], B = intents[bi];
     const r = { x: B.point.x - A.point.x, y: B.point.y - A.point.y }, distance = norm(r);
     const n = distance > 1e-6 ? { x: r.x / distance, y: r.y / distance } : { x: 1, y: 0 };
+    const separatingSpeed = Math.max(0, -dot({ x: A.previousVelocity.x - B.previousVelocity.x, y: A.previousVelocity.y - B.previousVelocity.y }, n));
+    const allowance = distance >= BODY_GAP ? (distance - BODY_GAP) / dt
+      : -Math.min(2, (BODY_GAP - distance) * 3, separatingSpeed + (A.acceleration + B.acceleration) * dt * .5);
+    pairs.push({ ai, bi, r, distance, n, allowance, allowed: Math.max(0, (distance - BODY_GAP) / dt) });
+  }
+  const desired = intents.map((i) => i.frozen ? { x: 0, y: 0 } : { ...i.velocity });
+  for (const { ai, bi, r, distance, n } of pairs) {
+    const A = intents[ai], B = intents[bi];
     const relative = { x: desired[ai].x - desired[bi].x, y: desired[ai].y - desired[bi].y };
     const closing = dot(relative, n);
     const horizon = Math.min(.4, Math.max(0, closing > 0 ? (distance - BODY_GAP) / closing : .4));
@@ -74,17 +83,12 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
     return limit({ x: intent.previousVelocity.x + change.x, y: intent.previousVelocity.y + change.y }, intent.speed);
   });
   for (let pass = 0; pass < 16; pass++) {
-    for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
-      const ai = order[a], bi = order[b], A = intents[ai], B = intents[bi];
-      const r = { x: B.point.x - A.point.x, y: B.point.y - A.point.y }, distance = norm(r);
+    for (const { ai, bi, distance, n, allowance } of pairs) {
+      const A = intents[ai], B = intents[bi];
       if (distance > BODY_GAP + (A.speed + B.speed) * dt) continue;
-      const n = distance > 1e-6 ? { x: r.x / distance, y: r.y / distance } : { x: 1, y: 0 };
       const relative = { x: velocities[ai].x - velocities[bi].x, y: velocities[ai].y - velocities[bi].y };
       // For initial overlap, separate gently; otherwise this plane guarantees
       // clearance throughout the entire step, including crossing trajectories.
-      const separatingSpeed = Math.max(0, -dot({ x: A.previousVelocity.x - B.previousVelocity.x, y: A.previousVelocity.y - B.previousVelocity.y }, n));
-      const allowance = distance >= BODY_GAP ? (distance - BODY_GAP) / dt
-        : -Math.min(2, (BODY_GAP - distance) * 3, separatingSpeed + (A.acceleration + B.acceleration) * dt * .5);
       const violation = dot(relative, n) - allowance;
       if (violation <= 1e-8) continue;
       const aw = A.frozen ? 0 : 1 / A.priority, bw = B.frozen ? 0 : 1 / B.priority, sum = aw + bw;
@@ -110,12 +114,10 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
   // Numerical projection of a crowded group can leave a tiny inward residual.
   // Clip travel, never positions, so the final swept segment remains safe.
   for (let pass = 0; pass < 12; pass++) {
-    for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
-      const ai = order[a], bi = order[b];
-      const dx = intents[bi].point.x - intents[ai].point.x, dy = intents[bi].point.y - intents[ai].point.y, distance = Math.hypot(dx, dy);
+    for (const { ai, bi, r, distance, allowed } of pairs) {
+      const dx = r.x, dy = r.y;
       if (distance < 1e-8) continue;
       const closing = ((velocities[ai].x - velocities[bi].x) * dx + (velocities[ai].y - velocities[bi].y) * dy) / Math.max(.001, distance);
-      const allowed = Math.max(0, (distance - BODY_GAP) / dt);
       if (closing <= allowed + 1e-6) continue;
       const scale = Math.max(0, allowed / closing);
       velocities[ai].x *= scale; velocities[ai].y *= scale;
