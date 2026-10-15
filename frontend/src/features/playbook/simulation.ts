@@ -2663,12 +2663,21 @@ function coordinateCourt(run: SimulationRun, dt: number) {
   const topLeft = toCourtFeet(courtSvgToPoint({ x: NBA_COURT_GEOMETRY.boundary.left, y: NBA_COURT_GEOMETRY.boundary.top }));
   const bottomRight = toCourtFeet(courtSvgToPoint({ x: NBA_COURT_GEOMETRY.boundary.right, y: NBA_COURT_GEOMETRY.boundary.bottom }));
   const resolved = coordinateMovement(intents, dt, { left: topLeft.x, right: bottomRight.x, top: topLeft.y, bottom: bottomRight.y });
+  const playerPositions = new Map<number, CourtPoint>();
+  const defenderPositions = new Map<number, CourtPoint>();
   intents.forEach((intent, index) => {
     const point = Math.hypot(resolved[index].velocity.x, resolved[index].velocity.y) < 1e-10 ? null : fromCourtFeet(resolved[index].point), id = Number(intent.key.split(":")[1]);
     run.velocities.set(intent.key, resolved[index].velocity);
     if (!point) return;
-    if (intent.key.startsWith("player:")) run.players = run.players.map((player) => player.id === id ? { ...player, ...point } : player);
-    else run.defenders = run.defenders.map((defender) => defender.id === id ? { ...defender, ...point } : defender);
+    (intent.key.startsWith("player:") ? playerPositions : defenderPositions).set(id, point);
+  });
+  if (playerPositions.size) run.players = run.players.map((player) => {
+    const point = playerPositions.get(player.id);
+    return point ? { ...player, ...point } : player;
+  });
+  if (defenderPositions.size) run.defenders = run.defenders.map((defender) => {
+    const point = defenderPositions.get(defender.id);
+    return point ? { ...defender, ...point } : defender;
   });
   run.motionIntents = undefined;
 }
