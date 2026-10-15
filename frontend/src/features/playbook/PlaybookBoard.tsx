@@ -37,6 +37,7 @@ import { createPlaybook, deletePlaybook, fetchPlaybooks, subscribePlaybooks, upd
 import { createPlaybookDraftSession, playbookContentKey } from "./playbookDraftSession";
 import { createFrameBatch } from "./frameBatch";
 import { editPlaybookPoint } from "./editPlaybookPoint";
+import { exportPlaybookPng } from "./exportPlaybookPng";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
@@ -1167,51 +1168,27 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (currentPoint) commit(replacePoint(draft, selected, { x: clamp(currentPoint.x + delta.x), y: clamp(currentPoint.y + delta.y) }));
   }
 
-  function exportPng() {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const clone = svg.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-    clone.setAttribute("width", "1600");
-    clone.setAttribute("height", "1152");
-    clone.style.setProperty("--orange", "#ee733f");
-    clone.style.setProperty("--muted", "#b3b9b5");
-    clone.querySelectorAll(".selection-handle, .drawing-preview, .adaptive-read-route, .marker-hit-target").forEach((node) => node.remove());
-    const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
-    style.textContent = `.shared-court-route{fill:none;stroke:#ee733f;stroke-width:2;stroke-dasharray:6 4}.shared-court-route.route-adjustment{stroke:#b3b9b5;stroke-width:1.5;stroke-dasharray:2 4}.shared-court-route.route-shot{stroke-dasharray:3 5}.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.simulation-defender-number{fill:#73bff0;stroke:none;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-caption{fill:#b3b9b5;stroke:none;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
-    if (simulationActive) style.textContent += ".marker-number,.simulation-defender-number{font-size:26px}";
-    clone.prepend(style);
-    const serialized = new XMLSerializer().serializeToString(clone);
-    const image = new Image();
-    const svgUrl = URL.createObjectURL(new Blob([serialized], { type: "image/svg+xml" }));
-    image.onload = () => {
-      URL.revokeObjectURL(svgUrl);
-      const canvas = document.createElement("canvas");
-      canvas.width = 1600;
-      canvas.height = 1232;
-      const context = canvas.getContext("2d");
-      if (!context) return;
-      context.fillStyle = "#0d0f10";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = "#f3f1ec";
-      context.font = "600 30px Inter, Arial, sans-serif";
-      context.fillText(draft.name || "ARC play", 48, 48);
-      context.drawImage(image, 0, 80, canvas.width, 1152);
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        const link = document.createElement("a");
-        link.download = `${draft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "arc-play"}.png`;
-        const url = URL.createObjectURL(blob);
-        link.href = url;
-        link.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }, "image/png");
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(svgUrl);
-      setError("PNG export could not render this diagram.");
-    };
-    image.src = svgUrl;
+  async function exportPng() {
+    setError(null);
+    try {
+      const svg = svgRef.current;
+      if (!svg) throw new Error("PNG export could not find the court. Please try again.");
+      const clone = svg.cloneNode(true) as SVGSVGElement;
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone.setAttribute("width", "1600");
+      clone.setAttribute("height", "1152");
+      clone.style.setProperty("--orange", "#ee733f");
+      clone.style.setProperty("--muted", "#b3b9b5");
+      clone.querySelectorAll(".selection-handle, .drawing-preview, .adaptive-read-route, .marker-hit-target").forEach((node) => node.remove());
+      const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+      style.textContent = `.shared-court-route{fill:none;stroke:#ee733f;stroke-width:2;stroke-dasharray:6 4}.shared-court-route.route-adjustment{stroke:#b3b9b5;stroke-width:1.5;stroke-dasharray:2 4}.shared-court-route.route-shot{stroke-dasharray:3 5}.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.simulation-defender-number{fill:#73bff0;stroke:none;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-caption{fill:#b3b9b5;stroke:none;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
+      if (simulationActive) style.textContent += ".marker-number,.simulation-defender-number{font-size:26px}";
+      clone.prepend(style);
+      await exportPlaybookPng(clone, draft.name);
+    } catch (caught) {
+      setError(caught instanceof Error && caught.message.startsWith("PNG export")
+        ? caught.message : "PNG export failed. Please try again.");
+    }
   }
 
   const authoredRoutes = useMemo(() => authoredCourtRoutes(draft), [draft]);

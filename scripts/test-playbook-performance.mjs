@@ -3,8 +3,68 @@ import { packReplay, unpackReplay, replayResponse } from '../frontend/src/featur
 import { createSharedLibraryRead } from '../frontend/src/features/playbook/sharedLibraryRead.ts';
 import { createParsedLibraryCache } from '../frontend/src/features/playbook/parsedLibraryCache.ts';
 import { createFrameBatch } from '../frontend/src/features/playbook/frameBatch.ts';
+import { exportPlaybookPng } from '../frontend/src/features/playbook/exportPlaybookPng.ts';
 import { editPlaybookPoint } from '../frontend/src/features/playbook/editPlaybookPoint.ts';
 import { createPlaybookDraftSession } from '../frontend/src/features/playbook/playbookDraftSession.ts';
+
+// Exercise resource ownership even when browser APIs fail partway through export.
+for (const failure of [null, 'serialize', 'image-constructor', 'svg-url', 'image-source', 'image-load', 'canvas', 'context', 'draw', 'blob-throw', 'blob-null', 'png-url', 'link', 'download']) {
+  const descriptors = new Map(['XMLSerializer', 'Image', 'document', 'window'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL;
+  const allocated = [], revoked = [], timers = [], drawing = [];
+  let image, link, canvas;
+  const fail = (stage) => { if (failure === stage) throw new Error(stage); };
+  try {
+    globalThis.XMLSerializer = class { serializeToString(svg) { fail('serialize'); assert.equal(svg, 'prepared-svg'); return '<svg />'; } };
+    globalThis.Image = class {
+      constructor() { fail('image-constructor'); image = this; }
+      set src(value) { fail('image-source'); assert.equal(value, allocated[0]); queueMicrotask(() => failure === 'image-load' ? this.onerror() : this.onload()); }
+    };
+    globalThis.window = { setTimeout(callback, delay) { assert.equal(delay, 1000); timers.push(callback); } };
+    globalThis.document = { createElement(tag) {
+      if (tag === 'canvas') {
+        fail('canvas');
+        return canvas = {
+          getContext(type) {
+            assert.equal(type, '2d');
+            return failure === 'context' ? null : {
+              fillRect(...args) { drawing.push(['fillRect', ...args]); },
+              fillText(...args) { drawing.push(['fillText', ...args]); },
+              drawImage(source, ...args) { assert.equal(source, image); fail('draw'); drawing.push(['drawImage', ...args]); },
+            };
+          },
+          toBlob(callback, type) { fail('blob-throw'); assert.equal(type, 'image/png'); queueMicrotask(() => callback(failure === 'blob-null' ? null : new Blob(['png'], { type }))); },
+        };
+      }
+      assert.equal(tag, 'a'); fail('link');
+      return link = { click() { fail('download'); } };
+    } };
+    URL.createObjectURL = (blob) => {
+      fail(blob.type === 'image/svg+xml' ? 'svg-url' : 'png-url');
+      const url = `blob:export-${allocated.length}`; allocated.push(url); return url;
+    };
+    URL.revokeObjectURL = url => revoked.push(url);
+    if (failure) {
+      await assert.rejects(exportPlaybookPng('prepared-svg', 'A / Play'), undefined, `${failure}: must reject rather than silently succeed`);
+      assert.deepEqual(timers, [], `${failure}: failed downloads release URLs immediately`);
+    } else {
+      await exportPlaybookPng('prepared-svg', 'A / Play');
+      assert.equal(canvas.width, 1600); assert.equal(canvas.height, 1232);
+      assert.deepEqual(drawing, [['fillRect', 0, 0, 1600, 1232], ['fillText', 'A / Play', 48, 48], ['drawImage', 0, 80, 1600, 1152]]);
+      assert.equal(link.download, 'a-play.png'); assert.equal(link.href, allocated[1]);
+      assert.deepEqual(revoked, [allocated[0]], 'successful download stays alive until the delayed cleanup');
+      assert.equal(timers.length, 1); timers[0]();
+    }
+    assert.deepEqual(revoked, allocated, `${failure ?? 'success'}: every allocated URL is released exactly once`);
+    if (image) { assert.equal(image.onload, null); assert.equal(image.onerror, null); }
+  } finally {
+    URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke;
+    for (const [key, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+}
 
 // Freeze old branches so any mutation of shared data fails immediately.
 const freezeTree = (value) => {
@@ -212,4 +272,4 @@ for (let i = 0; i < 2; i++) {
 assert.deepEqual(unpackReplay(packReplay([])), []);
 assert.throws(() => unpackReplay({ ...archive, version: 2 }), /Unsupported/);
 assert.throws(() => unpackReplay({ ...archive, roots: new Uint32Array([4294967295]).buffer }), /incomplete/);
-console.log(`Performance regressions passed: immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
+console.log(`Performance regressions passed: PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
