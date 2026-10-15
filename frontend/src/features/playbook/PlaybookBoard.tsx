@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { createPlaybook, deletePlaybook, fetchPlaybooks, subscribePlaybooks, updatePlaybook } from "./api";
 import { createPlaybookDraftSession, playbookContentKey } from "./playbookDraftSession";
+import { createFrameBatch } from "./frameBatch";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
@@ -59,7 +60,12 @@ import {
 import type { SimulationFrame, SimulationRun } from "./simulation";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
-type DragState = { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-exit" | "arrow-control"; id: number | string; before: PlaybookDraft };
+type PointerSample = { clientX: number; clientY: number; pointerId: number };
+type PointerGesture = PointerSample & { moved: boolean };
+type DragState = PointerGesture & { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-exit" | "arrow-control"; id: number | string; before: PlaybookDraft };
+function pointerGesture(event: PointerSample): PointerGesture {
+  return { clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId, moved: false };
+}
 const TOOL_LABELS: Record<PlaybookTool, string> = {
   select: "Select / move",
   player: "Add offensive player",
@@ -91,7 +97,7 @@ function clamp(value: number, min = 2, max = 98) {
   return Math.max(min, Math.min(max, value));
 }
 
-function pointFromPointer(event: ReactPointerEvent<SVGSVGElement>, svg: SVGSVGElement | null): CourtPoint | null {
+function pointFromPointer(event: Pick<PointerSample, "clientX" | "clientY">, svg: SVGSVGElement | null): CourtPoint | null {
   if (!svg) return null;
   const transform = svg.getScreenCTM();
   if (!transform) return null;
@@ -330,6 +336,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const rootRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const drawingRef = useRef<PointerGesture & { start: CourtPoint; end: CourtPoint } | null>(null);
+  const applyPointerRef = useRef<(sample: PointerSample) => void>(() => {});
+  const [pointerMoves] = useState(() => createFrameBatch<PointerSample>(
+    (sample) => applyPointerRef.current(sample),
+    (callback) => window.requestAnimationFrame(callback),
+    (id) => window.cancelAnimationFrame(id),
+  ));
   const [draftSession] = useState(() => createPlaybookDraftSession(clonePlaybook(READY_SETUP), (play) => playbookContentKey(normalizeDraft(play))));
   const [draft, setDraftState] = useState<PlaybookDraft>(() => draftSession.current);
   const [history, setHistory] = useState<PlaybookDraft[]>([]);
@@ -368,6 +381,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [arrowFields, setArrowFields] = useState({ id: "", sequence: "", timing: "" });
   const simulationFrameRef = useRef<number | null>(null);
   const simulationRunRef = useRef<SimulationRun | null>(null);
+  applyPointerRef.current = applyPointerPosition;
+
+  useEffect(() => () => pointerMoves.cancel(), [pointerMoves]);
 
   function setDraft(next: PlaybookDraft) {
     setDraftState(draftSession.edit(next));
@@ -551,6 +567,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function chooseTool(next: PlaybookTool) {
+    pointerMoves.cancel();
+    drawingRef.current = null;
     setTool(next);
     if (next !== "off-ball-screen" && next !== "pin-down") setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
     if (next !== "pick-pop") setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
@@ -561,6 +579,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function loadDraft(next: PlaybookDraft) {
+    pointerMoves.cancel();
+    drawingRef.current = null;
     setDraftState(draftSession.load(normalizeDraft(next), next.id.startsWith("draft-copy-")));
     dragRef.current = null;
     setHistory([]);
@@ -784,6 +804,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function onBackgroundPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    if (dragRef.current || drawingRef.current) return;
     const point = pointFromPointer(event, svgRef.current);
     if (!point) return;
     focusBoard();
@@ -865,6 +886,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       return;
     }
     if (tool === "movement" || tool === "pass" || tool === "screen" || tool === "slip-screen" || tool === "handoff" || tool === "pick-roll") {
+      drawingRef.current = { start: point, end: point, ...pointerGesture(event) };
       setDrawStart(point);
       setDrawEnd(point);
       svgRef.current?.setPointerCapture(event.pointerId);
@@ -874,9 +896,20 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function onPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
-    const point = pointFromPointer(event, svgRef.current);
+    const interaction = drawingRef.current ?? dragRef.current;
+    if (interaction?.pointerId !== event.pointerId) return;
+    if (!interaction.moved && interaction.clientX === event.clientX && interaction.clientY === event.clientY) return;
+    interaction.moved = true;
+    pointerMoves.queue({ clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId });
+  }
+
+  function applyPointerPosition(sample: PointerSample) {
+    const interaction = drawingRef.current ?? dragRef.current;
+    if (interaction?.pointerId !== sample.pointerId) return;
+    const point = pointFromPointer(sample, svgRef.current);
     if (!point) return;
-    if (drawStart) {
+    if (drawingRef.current) {
+      drawingRef.current.end = point;
       setDrawEnd(point);
       return;
     }
@@ -910,49 +943,61 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function onPointerUp(event: ReactPointerEvent<SVGSVGElement>) {
-    if (drawStart && drawEnd) {
-      if (pointDistance(drawStart, drawEnd) > 3) {
-        const next = clonePlaybook(draft);
+    const interaction = drawingRef.current ?? dragRef.current;
+    if (interaction?.pointerId !== event.pointerId) return;
+    // React state may not have rendered the last move yet. Flush synchronously
+    // and read the session/ref values before creating the single undo entry.
+    if (event.type !== "pointercancel" && (interaction.moved || interaction.clientX !== event.clientX || interaction.clientY !== event.clientY)) {
+      pointerMoves.flush({ clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId });
+    } else pointerMoves.flush();
+    const currentDraft = draftSession.current;
+    const drawing = drawingRef.current;
+    if (drawing) {
+      const { start, end } = drawing;
+      if (pointDistance(start, end) > 3) {
+        const next = clonePlaybook(currentDraft);
         const kind: ArrowKind = tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement";
         const newArrow: PlaybookArrow = {
           id: arrowId(),
           kind,
-          start: drawStart,
-          end: drawEnd,
+          start,
+          end,
           path: "straight",
           timing: kind === "screen" || kind === "slip-screen" || kind === "pick-roll" ? 1.4 : 1.2,
-          sequence: Math.max(0, ...draft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
+          sequence: Math.max(0, ...currentDraft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
           ...(kind === "screen" || kind === "slip-screen" || kind === "pick-roll" ? {
-            screener_id: nearestPlayerId(draft.players, drawStart),
-            handler_id: draft.ball ? nearestPlayerId(draft.players, draft.ball, nearestPlayerId(draft.players, drawStart)) ?? undefined : undefined,
+            screener_id: nearestPlayerId(currentDraft.players, start),
+            handler_id: currentDraft.ball ? nearestPlayerId(currentDraft.players, currentDraft.ball, nearestPlayerId(currentDraft.players, start)) ?? undefined : undefined,
           } : {}),
         };
-        const binding = createSimulationRun({ ...draft, arrows: [...draft.arrows, newArrow] }, { ...simulationSettings, offenseMode: "scripted" }).actions.find((action) => action.arrow.id === newArrow.id);
+        const binding = createSimulationRun({ ...currentDraft, arrows: [...currentDraft.arrows, newArrow] }, { ...simulationSettings, offenseMode: "scripted" }).actions.find((action) => action.arrow.id === newArrow.id);
         if (binding?.actorId != null) newArrow.actor_id = binding.actorId;
         if ((kind === "pass" || kind === "handoff") && binding?.recipientId != null) newArrow.recipient_id = binding.recipientId;
         next.arrows = [...next.arrows, newArrow];
-        commit(next);
+        commit(next, currentDraft);
         setSelected({ type: "arrow", id: newArrow.id });
       }
       setDrawStart(null);
       setDrawEnd(null);
-      svgRef.current?.releasePointerCapture(event.pointerId);
+      drawingRef.current = null;
+      if (svgRef.current?.hasPointerCapture(event.pointerId)) svgRef.current.releasePointerCapture(event.pointerId);
       return;
     }
     const drag = dragRef.current;
     if (drag) {
-      const finished = clonePlaybook(draft);
+      const finished = clonePlaybook(currentDraft);
       if (!isSameDraft(finished, drag.before)) {
         setHistory((current) => [...current.slice(-39), clonePlaybook(drag.before)]);
         setFuture([]);
       }
       dragRef.current = null;
-      svgRef.current?.releasePointerCapture(event.pointerId);
+      if (svgRef.current?.hasPointerCapture(event.pointerId)) svgRef.current.releasePointerCapture(event.pointerId);
     }
   }
 
   function onMarkerPointerDown(event: ReactPointerEvent<SVGElement>, selection: Selection) {
     event.stopPropagation();
+    if (dragRef.current || drawingRef.current) return;
     focusBoard();
     if (!selection) return;
     if (tool === "delete") {
@@ -1019,7 +1064,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     // Select so clicks in placement modes remain predictable.
     if (selection.type === "arrow") {
       setSelected(selection);
-      dragRef.current = { type: "arrow-end", id: selection.id, before: clonePlaybook(draft) };
+      dragRef.current = { type: "arrow-end", id: selection.id, before: clonePlaybook(draftSession.current), ...pointerGesture(event) };
       svgRef.current?.setPointerCapture(event.pointerId);
       return;
     }
@@ -1032,12 +1077,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setDefenderSkillsId(Number(selection.id));
       setDefenderSkillsOpen(true);
     }
-    dragRef.current = { type: selection.type, id: selection.id, before: clonePlaybook(draft) };
+    dragRef.current = { type: selection.type, id: selection.id, before: clonePlaybook(draftSession.current), ...pointerGesture(event) };
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
   function onArrowEndpointPointerDown(event: ReactPointerEvent<SVGElement>, arrow: PlaybookArrow, endpoint: "start" | "end" | "exit" | "control") {
     event.stopPropagation();
+    if (dragRef.current || drawingRef.current) return;
     focusBoard();
     if (tool === "delete") {
       commit(removeSelection(draft, { type: "arrow", id: arrow.id }));
@@ -1048,7 +1094,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     // Endpoint handles follow the same always-draggable rule as the arrow
     // stroke, including while another drawing tool is active.
     setSelected({ type: "arrow", id: arrow.id });
-    dragRef.current = { type: endpoint === "start" ? "arrow-start" : endpoint === "end" ? "arrow-end" : endpoint === "exit" ? "arrow-exit" : "arrow-control", id: arrow.id, before: clonePlaybook(draft) };
+    dragRef.current = { type: endpoint === "start" ? "arrow-start" : endpoint === "end" ? "arrow-end" : endpoint === "exit" ? "arrow-exit" : "arrow-control", id: arrow.id, before: clonePlaybook(draftSession.current), ...pointerGesture(event) };
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
@@ -1068,6 +1114,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       return;
     }
     if (event.key === "Escape") {
+      if (drawingRef.current) {
+        pointerMoves.cancel();
+        drawingRef.current = null;
+      }
       setSelected(null);
       setDrawStart(null);
       setDrawEnd(null);

@@ -2,6 +2,33 @@ import assert from 'node:assert/strict';
 import { packReplay, unpackReplay, replayResponse } from '../frontend/src/features/playbook/counterLabReplayArchive.ts';
 import { createSharedLibraryRead } from '../frontend/src/features/playbook/sharedLibraryRead.ts';
 import { createParsedLibraryCache } from '../frontend/src/features/playbook/parsedLibraryCache.ts';
+import { createFrameBatch } from '../frontend/src/features/playbook/frameBatch.ts';
+
+for (const hz of [30, 60, 120]) {
+  let nextId = 0;
+  const frames = new Map(), applied = [];
+  const batch = createFrameBatch((value) => applied.push(value),
+    (callback) => { frames.set(++nextId, callback); return nextId; },
+    (id) => frames.delete(id));
+  for (let frame = 0; frame < hz; frame++) {
+    for (let move = 0; move < 100; move++) batch.queue({ x: frame * 100 + move });
+    assert.equal(frames.size, 1, 'a burst of pointer input schedules one display update');
+    const callback = [...frames.values()][0]; frames.clear(); callback();
+    assert.deepEqual(applied.at(-1), { x: frame * 100 + 99 });
+  }
+  assert.equal(applied.length, hz, 'updates follow display frames, not input frequency');
+  batch.queue({ x: 1000 }); batch.queue({ x: 1001 });
+  batch.flush({ x: 1002 });
+  assert.deepEqual(applied.at(-1), { x: 1002 }, 'pointer-up overrides queued movement with its final position');
+  assert.equal(frames.size, 0, 'the flushed frame cannot update again after drag completion');
+  const count = applied.length;
+  batch.flush(); assert.equal(applied.length, count, 'empty completion does not create another edit');
+  batch.queue({ x: 2000 }); batch.cancel(); batch.flush();
+  assert.equal(applied.length, count, 'cancelled or unmounted work never applies');
+  assert.equal(frames.size, 0);
+  batch.queue({ x: 3000 }); batch.flush();
+  assert.deepEqual(applied.at(-1), { x: 3000 }, 'the next gesture can reuse the scheduler');
+}
 
 for (const asyncLoad of [false, true]) {
   let parses = 0, validations = 0, reads = 0, unavailable = false;
