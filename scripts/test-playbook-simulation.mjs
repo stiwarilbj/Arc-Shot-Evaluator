@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating, preparedHasBadge } from '../frontend/src/features/playbook/simulationAttributes.ts';
+import { ARROW_VISIBILITY_OPTIONS, routeVisible } from '../frontend/src/features/playbook/arrowVisibility.ts';
 import {
   advanceSimulationRun,
   advanceSimulationState,
@@ -98,6 +99,62 @@ function advanceAtRate(run, durationMs, framesPerSecond, runSettings = run.setti
 function assertNear(actual, expected, tolerance = 1e-5, message = 'values should be near') {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: expected ${actual} to be within ${tolerance} of ${expected}`);
 }
+
+// Route snapshots are shared only within one unchanged execution revision.
+const routeDraft = makeDraft({ players: [[20, 70], [70, 85]], ball: [20, 70], arrows: [
+  { id: 'cached-curve', kind: 'movement', actor_id: 1, path: 'curve', control: { x: 55, y: 60 }, start: { x: 20, y: 70 }, end: { x: 60, y: 40 }, sequence: 1, timing: 3.5 },
+] });
+const routeRun = createSimulationRun(routeDraft, { ...settings, offenseMode: 'scripted' });
+const initialRoutes = observeCounterLabRun(routeRun).activeRoutes;
+assert.equal(initialRoutes, routeRun.frame.routes, 'frame construction and observation reuse the same route calculation');
+assert.equal(observeCounterLabRun(routeRun).activeRoutes, initialRoutes, 'repeated observations reuse the cache');
+assert.ok(Object.isFrozen(initialRoutes));
+assert.ok(initialRoutes[0].control, 'curved geometry is retained');
+for (const route of initialRoutes) {
+  for (const value of [route, route.start, route.end, route.control, route.via, route.points, ...(route.points ?? [])].filter(Boolean)) assert.ok(Object.isFrozen(value), 'all shared geometry is immutable');
+}
+assert.throws(() => { initialRoutes[0].start.x = 0; }, TypeError);
+assert.throws(() => initialRoutes.push(initialRoutes[0]), TypeError);
+const retainedRoutes = structuredClone(initialRoutes), displayRoutes = getSimulationFrame(routeRun).routes;
+displayRoutes[0].start.x = -100;
+assert.deepEqual(observeCounterLabRun(routeRun).activeRoutes, retainedRoutes, 'display copies cannot corrupt shared geometry');
+const initialRevision = routeRun.routeRevision;
+setSimulationRunSettings(routeRun, structuredClone(routeRun.settings));
+advanceSimulationState(routeRun, 0.01);
+assert.equal(routeRun.routeRevision, initialRevision, 'unchanged settings and sub-step advancement do not invalidate routes');
+assert.equal(observeCounterLabRun(routeRun).activeRoutes, initialRoutes);
+advanceSimulationState(routeRun, 100);
+const movingRoutes = observeCounterLabRun(routeRun).activeRoutes;
+assert.notEqual(movingRoutes, initialRoutes, 'execution and movement invalidate previous geometry');
+assert.equal(movingRoutes, routeRun.frame.routes);
+assert.deepEqual(initialRoutes, retainedRoutes, 'later execution leaves retained observations unchanged');
+const movingSnapshot = structuredClone(movingRoutes);
+for (const { value } of ARROW_VISIBILITY_OPTIONS) {
+  assert.deepEqual(movingRoutes.filter((route) => routeVisible(route, value)), movingSnapshot.filter((route) => routeVisible(route, value)));
+}
+setSimulationRunSettings(routeRun, { ...routeRun.settings, defenseStrategy: 'contain' });
+assert.notEqual(observeCounterLabRun(routeRun).activeRoutes, movingRoutes, 'changed settings invalidate the revision');
+const beforeEditRoutes = routeRun.frame.routes;
+editPausedSimulationMarker(routeRun, 'player', 1, { x: 22, y: 68 });
+assert.notEqual(routeRun.frame.routes, beforeEditRoutes, 'paused edits invalidate paths and overrides');
+assert.equal(observeCounterLabRun(routeRun).activeRoutes, routeRun.frame.routes);
+const beforeRebaseRoutes = routeRun.frame.routes, routeRebase = structuredClone(routeRun.source);
+routeRebase.ball = { ...routeRebase.players[1] };
+assert.equal(rebasePausedSimulation(routeRun, routeRebase), true);
+assert.equal(routeRun.ballHandlerId, 2);
+assert.notEqual(routeRun.frame.routes, beforeRebaseRoutes, 'rebasing possession invalidates routes');
+const beforeFailedRebase = routeRun.routeRevision;
+assert.equal(rebasePausedSimulation(routeRun, { ...routeRebase, arrows: [] }), false);
+assert.equal(routeRun.routeRevision, beforeFailedRebase, 'rejected edits preserve the cached state');
+const shiftedHoop = { x: hoop.x + 2, y: hoop.y + 1 };
+const alternateRoutes = observeCounterLabRun(routeRun, shiftedHoop).activeRoutes;
+assert.notEqual(alternateRoutes, routeRun.frame.routes, 'alternate hoop coordinates cannot reuse default geometry');
+assert.equal(observeCounterLabRun(routeRun, { ...shiftedHoop }).activeRoutes, alternateRoutes, 'hoop keys use coordinate values');
+assert.deepEqual(observeCounterLabRun(routeRun).activeRoutes, routeRun.frame.routes);
+const siblingRouteRun = createSimulationRun(routeDraft, { ...settings, offenseMode: 'scripted' });
+assert.notEqual(observeCounterLabRun(siblingRouteRun).activeRoutes, initialRoutes, 'route caches are isolated between runs');
+assert.deepEqual(siblingRouteRun.source, routeDraft, 'freezing routes never changes saved drawings');
+assert.equal(Object.isFrozen(siblingRouteRun.source.arrows[0].end), false);
 
 function helpSpot(handler) {
   const toFeetX = (COURT_VIEWBOX.width / 100) / COURT_SCALE;

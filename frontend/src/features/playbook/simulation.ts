@@ -71,6 +71,7 @@ type PositionOverride = { atMs: number; point: CourtPoint };
 type ScreenCoverageLock = { screenerDefenderId: number; screenedDefenderId: number } | null;
 
 export type SimulationRun = {
+  routeRevision: number;
   motionIntents?: Map<string, MotionIntent>;
   movementOrder: MovementOrder;
   attributes: SimulationAttributes;
@@ -1053,7 +1054,7 @@ function routesForAction(action: BoundAction, run?: SimulationRun, hoop = HOOP_P
     routes.push({ ...common, id: `${arrow.id}:${action.sequence}:handler`, kind: "handler-support", scope: "on-ball", playerId: action.partnerId, start: { ...action.partnerStart }, end: pointToward(arrow.end, hoop, arrow.kind === "pick-roll" || arrow.kind === "slip-screen" ? 10 : 8) });
   }
   if ((arrow.kind === "off-ball-screen" || arrow.kind === "pin-down") && action.recipientId != null && action.recipientStart) {
-    routes.push({ ...common, id: `${arrow.id}:${action.sequence}:cutter`, kind: "cutter", scope: "off-ball", playerId: action.recipientId, start: { ...action.recipientStart }, via: { ...arrow.end }, end: arrow.exit_target ?? offBallCutterTarget(arrow.end, hoop) });
+    routes.push({ ...common, id: `${arrow.id}:${action.sequence}:cutter`, kind: "cutter", scope: "off-ball", playerId: action.recipientId, start: { ...action.recipientStart }, via: { ...arrow.end }, end: { ...(arrow.exit_target ?? offBallCutterTarget(arrow.end, hoop)) } });
   }
   if (run && action.execution) {
     for (const route of routes) {
@@ -1070,7 +1071,13 @@ function routesForAction(action: BoundAction, run?: SimulationRun, hoop = HOOP_P
 export function authoredCourtRoutes(source: PlaybookDraft): CourtRoute[] {
   return buildActions(source).actions.flatMap((action) => routesForAction(action));
 }
+const runRouteCache = new WeakMap<SimulationRun, { revision: number; hoopX: number; hoopY: number; routes: CourtRoute[] }>();
+function invalidateRunRoutes(run: SimulationRun) {
+  run.routeRevision += 1;
+}
 function getRunRoutes(run: SimulationRun, hoop = HOOP_POINT): CourtRoute[] {
+  const cached = runRouteCache.get(run);
+  if (cached?.revision === run.routeRevision && cached.hoopX === hoop.x && cached.hoopY === hoop.y) return cached.routes;
   const active = run.actions.filter((action) => actionIsMoving(action) && !action.transferFailed && run.elapsedMs + 1e-6 >= action.startTime && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
   const routes = active.flatMap((action) => routesForAction(action, run, hoop));
   // Recorded recent movement exposes small receiving, spacing, and coasting
@@ -1084,6 +1091,17 @@ function getRunRoutes(run: SimulationRun, hoop = HOOP_POINT): CourtRoute[] {
     if (points.length > 1 && points.reduce((distance, point, index) => distance + (index ? pointDistanceFeet(points[index - 1], point) : 0), 0) >= .25) routes.push({ id: `adjustment:${player.id}`, actionId: null, sequence: null, kind: "adjustment", playerId: player.id, scope: onBall ? "on-ball" : "off-ball", importance: "adjustment", start: points[0], end: points.at(-1)!, points });
   }
   if (run.shotStart) routes.push({ id: "shot", actionId: null, sequence: null, kind: "shot", playerId: run.shotShooterId ?? run.ballHandlerId ?? 0, scope: "on-ball", importance: "main", start: { ...run.shotStart }, end: { ...hoop } });
+  // Frames and observations share only immutable, owned route geometry.
+  // Display-frame copies remain mutable and never expose the cache itself.
+  for (const route of routes) {
+    Object.freeze(route.start); Object.freeze(route.end);
+    if (route.control) Object.freeze(route.control);
+    if (route.via) Object.freeze(route.via);
+    if (route.points) { route.points.forEach(Object.freeze); Object.freeze(route.points); }
+    Object.freeze(route);
+  }
+  Object.freeze(routes);
+  runRouteCache.set(run, { revision: run.routeRevision, hoopX: hoop.x, hoopY: hoop.y, routes });
   return routes;
 }
 function recordRouteHistory(run: SimulationRun) {
@@ -1596,6 +1614,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, settings: Simulation
       : null;
   const ballHandlerId = players[nearestPointIndex(players, ball ?? hoop)]?.id ?? null;
   const run: SimulationRun = {
+    routeRevision: 0,
     attributes,
     movementBuffers: { solver: createMovementBuffers(), intents: [], intentMap: new Map(), playerPositions: new Map(), defenderPositions: new Map() },
     movementOrder: createMovementOrder([...players.map((player) => velocityKey("player", player.id)), ...defenders.map((defender) => velocityKey("defender", defender.id))]),
@@ -1712,6 +1731,7 @@ export function setSimulationRunSettings(run: SimulationRun, settings: Simulatio
     run.initialAssignments.forEach((playerId, defenderId) => run.assignments.set(defenderId, playerId));
   }
   nextSettings.defenseScheme = run.settings.defenseScheme;
+  invalidateRunRoutes(run);
   run.settings = nextSettings;
   run.frame = frameFor(run);
 }
@@ -3108,6 +3128,7 @@ function finalizeCompletedMovement(run: SimulationRun, previousTime: number, nex
 }
 
 function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
+  invalidateRunRoutes(run);
   const startTime = run.elapsedMs;
   const endTime = Math.min(run.durationMs, startTime + stepMs);
   const dt = (endTime - startTime) / 1000;
@@ -3179,6 +3200,7 @@ export function advanceSimulationState(run: SimulationRun, deltaMs: number, sett
     run.accumulatorMs = Math.max(0, run.accumulatorMs - advancedMs);
   }
   if (run.durationMs - run.elapsedMs <= 1e-6) {
+    if (run.elapsedMs !== run.durationMs) invalidateRunRoutes(run);
     run.elapsedMs = run.durationMs;
     run.accumulatorMs = 0;
     run.frame = frameFor(run);
@@ -3197,6 +3219,7 @@ export function editPausedSimulationMarker(
   point: CourtPoint,
 ) {
   refreshSimulationAttributes(run.attributes, run.players, run.defenders);
+  invalidateRunRoutes(run);
   const nextPoint = clampCourt(point);
   if (type === "player") {
     run.players = run.players.map((player) => player.id === id ? { ...player, ...nextPoint } : player);
@@ -3254,6 +3277,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
   const defenderIdsChanged = JSON.stringify(sourceBeforeEdit.defenders.map((defender) => defender.id)) !== JSON.stringify(draft.defenders.map((defender) => defender.id));
   const ballPresenceChanged = Boolean(sourceBeforeEdit.ball) !== Boolean(draft.ball);
   if (timelineChanged || playerIdsChanged || defenderIdsChanged || ballPresenceChanged) return false;
+  invalidateRunRoutes(run);
   const ballChanged = draft.ball != null && (sourceBeforeEdit.ball?.x !== draft.ball.x || sourceBeforeEdit.ball?.y !== draft.ball.y);
   run.players = run.players.map((player) => {
     const edited = draft.players.find((candidate) => candidate.id === player.id);
