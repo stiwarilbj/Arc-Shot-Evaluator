@@ -1475,7 +1475,36 @@ function createInitialFrame(): SimulationFrame {
 }
 
 export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT): SimulationRun {
+  return initializeSimulationRun(structuredClone(source), settings, hoop);
+}
+
+/** Bind authored actions once; keep the template private and clone mutable state per run. */
+export function prepareSimulationRun(source: PlaybookDraft) {
   const sourceCopy = structuredClone(source);
+  const authored = buildActions(sourceCopy);
+  const arrowIndices = authored.actions.map((action) => sourceCopy.arrows.indexOf(action.arrow));
+  return (settings: SimulationSettings, hoop = HOOP_POINT): SimulationRun => {
+    const copy = structuredClone(sourceCopy);
+    const manual = {
+      ...authored,
+      actions: authored.actions.map((action, index) => ({
+        ...action,
+        arrow: copy.arrows[arrowIndices[index]],
+        plannedStart: action.plannedStart ? { ...action.plannedStart } : null,
+        recipientStart: action.recipientStart ? { ...action.recipientStart } : null,
+        controlOffset: action.controlOffset ? { ...action.controlOffset } : null,
+        partnerStart: action.partnerStart ? {
+          ...copy.players.find((player) => player.id === action.partnerId),
+          x: action.partnerStart.x, y: action.partnerStart.y,
+        } : null,
+      })),
+      finalPositions: authored.finalPositions.map((player, index) => ({ ...copy.players[index], x: player.x, y: player.y })),
+    };
+    return initializeSimulationRun(copy, settings, hoop, manual);
+  };
+}
+
+function initializeSimulationRun(sourceCopy: PlaybookDraft, settings: SimulationSettings, hoop: CourtPoint, authored?: ReturnType<typeof buildActions>): SimulationRun {
   const runSettings = normalizeSettings(settings);
   const players = sourceCopy.players.map((player) => ({ ...player }));
   const ephemeralDefenders = sourceCopy.defenders.length === 0;
@@ -1494,7 +1523,7 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
   const assignments = new Map<number, number>();
   bestDefensiveMatchups(players, defenders, hoop, initialHandlerId).forEach((playerId, index) => assignments.set(defenders[index].id, playerId));
   const initialAssignments = new Map(assignments);
-  const manual = buildActions(sourceCopy);
+  const manual = authored ?? buildActions(sourceCopy);
   const actions = [...manual.actions];
   let actionDurationMs = manual.actionDurationMs;
   const projectedPlayers = manual.finalPositions.map((player) => ({ ...player }));

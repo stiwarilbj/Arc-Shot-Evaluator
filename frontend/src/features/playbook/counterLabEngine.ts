@@ -1,6 +1,6 @@
 import type { PlaybookDraft, SimulationSettings } from "./types.ts";
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from "./types.ts";
-import { advanceSimulationState, createSimulationRun, observeCounterLabRun, pointDistanceFeet, SIMULATION_STEP_MS } from "./simulation.ts";
+import { advanceSimulationState, createSimulationRun, observeCounterLabRun, pointDistanceFeet, prepareSimulationRun, SIMULATION_STEP_MS } from "./simulation.ts";
 import { createCounterLabRepairs, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabResult, type CounterLabSummary, type CounterLabProgress, type PassDiagnostic, type RepairEvidence } from "./counterLabTypes.ts";
 
 export type CounterLabAnalysis = { results: CounterLabSummary[]; repairs: CounterLabRepair[]; detailTraces: Map<string, CounterLabFrame[]> };
@@ -66,9 +66,13 @@ export function validateCounterLabInput(draft: PlaybookDraft, profiles: CounterL
 
 export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean = () => false): CounterLabResult {
   validateCounterLabInput(draft, [profile], [mode]);
+  return simulateCounterLabTrial(profile, mode, shouldCancel, (settings) => createSimulationRun(draft, settings));
+}
+
+function simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>): CounterLabResult {
   const settings: SimulationSettings = { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: profile.scheme, defenseStrategy: profile.strategy, offenseMode: mode,
     automaticActions: mode === "scripted" ? { screen: false, handoff: false, pickRoll: false, offBallScreen: false } : { screen: true, handoff: true, pickRoll: true, offBallScreen: true } };
-  const run = createSimulationRun(draft, settings);
+  const run = createRun(settings);
   const trace: CounterLabFrame[] = [];
   const diagnosticTrace: CounterLabFrame[] = [];
   let nextDiagnosticMs = 0;
@@ -160,9 +164,12 @@ export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterL
   for (const variant of [{ id: "original", name: "Original play", play: draft, reason: "" }, ...repairs]) {
     const results: CounterLabSummary[] = [];
     const traces = new Map<string, CounterLabFrame[]>();
+    let createRun: ReturnType<typeof prepareSimulationRun> | undefined;
     for (const profile of profiles) for (const mode of modes) {
       if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
-      const { trace, ...result } = runCounterLabTrial(variant.play, profile, mode, shouldCancel);
+      validateCounterLabInput(variant.play, [profile], [mode]);
+      createRun ??= prepareSimulationRun(variant.play);
+      const { trace, ...result } = simulateCounterLabTrial(profile, mode, shouldCancel, createRun);
       results.push(result); traces.set(`${variant.id}:${result.key}`, trace);
       onProgress({ completed: ++completed, total, label: `${profile.label} · ${mode === "scripted" ? "Drawn play" : "Adaptive offense"}`, stage: variant.id === "original" ? "defenses" : "repairs" });
       await new Promise<void>((resolve) => setTimeout(resolve, 0));

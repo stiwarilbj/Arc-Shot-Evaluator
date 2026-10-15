@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { advanceReplay, matchesReplay, replayFrame } from '../frontend/src/features/playbook/counterLabReplay.ts';
 import { analyzeCounterLab, runCounterLabTrial, diagnoseOpenings, repairEvidence, verifiedRecovery } from '../frontend/src/features/playbook/counterLabEngine.ts';
 import { COUNTER_LAB_DEFAULT_PROFILES, createCounterLabRepairs, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
-import { createSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame, observeCounterLabRun } from '../frontend/src/features/playbook/simulation.ts';
+import { createSimulationRun, prepareSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame, observeCounterLabRun } from '../frontend/src/features/playbook/simulation.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 
@@ -41,6 +41,46 @@ const defaultRun = createSimulationRun(switchSlipFixture, { ...DEFAULT_SIMULATIO
 const scriptedRun = createSimulationRun(switchSlipFixture, { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: 'man-to-man', defenseStrategy: 'switch', offenseMode: 'scripted' });
 assert.ok(defaultRun.actions.some((action) => action.automatic), 'existing Playbook simulation keeps its adaptive behavior by default');
 assert.equal(scriptedRun.actions.some((action) => action.automatic), false, 'scripted runs suppress automatic and off-ball actions');
+
+// Reused authored bindings preserve per-defense initialization and run isolation.
+for (const play of [...STARTER_PLAYS,
+  { ...switchSlipFixture, name: 'Partial roster without actions', players: switchSlipFixture.players.slice(0, 2), arrows: [] },
+  { ...switchSlipFixture, name: 'Legacy participant binding', arrows: [{ id: 'legacy-pass', kind: 'pass', start: { ...switchSlipFixture.players[0] }, end: { ...switchSlipFixture.players[1] } }] },
+]) {
+  const createPreparedRun = prepareSimulationRun(play);
+  for (const profile of [...COUNTER_LAB_DEFAULT_PROFILES, { scheme: 'zone-2-3', strategy: 'help' }]) for (const offenseMode of ['scripted', 'adaptive']) {
+    const settings = { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: profile.scheme, defenseStrategy: profile.strategy, offenseMode };
+    const prepared = createPreparedRun(settings);
+    const fresh = createSimulationRun(play, settings);
+    assert.deepEqual(prepared, fresh, `${play.name}: prepared initialization matches fresh bindings for ${profile.scheme}/${profile.strategy}/${offenseMode}`);
+    for (let step = 0; step < 3; step++) {
+      assert.deepEqual(advanceSimulationRun(prepared, 1000 / 30), advanceSimulationRun(fresh, 1000 / 30), 'prepared execution preserves frames and automatic actions');
+    }
+  }
+}
+const templateSource = structuredClone(switchSlipFixture);
+templateSource.players[0].ratings = { threePoint: 4, midrange: 3, finishing: 5 };
+const templateSnapshot = structuredClone(templateSource);
+const createPreparedRun = prepareSimulationRun(templateSource);
+const preparedSettings = { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: 'man-to-man', defenseStrategy: 'switch', offenseMode: 'scripted' };
+const firstPreparedRun = createPreparedRun(preparedSettings);
+const secondPreparedRun = createPreparedRun(preparedSettings);
+assert.equal(firstPreparedRun.actions[0].arrow, firstPreparedRun.source.arrows[0], 'bound arrows retain their own run source identity');
+const secondPreparedSnapshot = structuredClone(secondPreparedRun);
+advanceSimulationRun(firstPreparedRun, 1000 / 30);
+firstPreparedRun.actions[0].arrow.end.x += 1;
+firstPreparedRun.actions[0].plannedStart.y += 1;
+firstPreparedRun.actions[0].startTime += 100;
+firstPreparedRun.actions[0].execution.paths.clear();
+firstPreparedRun.players[0].ratings.finishing = 1;
+firstPreparedRun.source.ball.x += 1;
+assert.deepEqual(secondPreparedRun, secondPreparedSnapshot, 'execution, delays, nested geometry, ratings, and source edits do not leak into sibling trials');
+assert.deepEqual(templateSource, templateSnapshot, 'executing a prepared run leaves the imported draft unchanged');
+templateSource.players[0].x += 1;
+templateSource.arrows[0].timing = .5;
+templateSource.ball.y += 1;
+assert.deepEqual(createPreparedRun(preparedSettings), createSimulationRun(templateSnapshot, preparedSettings), 'later runs retain the captured template after caller edits and prior execution');
+assert.deepEqual(prepareSimulationRun(templateSource)(preparedSettings), createSimulationRun(templateSource, preparedSettings), 'a newly prepared edited play binds its own current content');
 
 // Recording snapshots contain only replay fields and own their mutable data.
 const recordingRun = createSimulationRun({ ...switchSlipFixture,
