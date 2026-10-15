@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createPlaybookDraftSession } from '../frontend/src/features/playbook/playbookDraftSession.ts';
+import { createPlaybookDraftSession, playbookContentKey } from '../frontend/src/features/playbook/playbookDraftSession.ts';
 
 const draft = (id = 'draft-test') => ({
   version: 1, id, name: 'Original', defenders_visible: true,
@@ -31,7 +31,7 @@ for (const source of ['browser', 'server']) {
       if (source === 'server') await new Promise((resolve) => setTimeout(resolve, 0));
       response.resolve(saved(request.draft));
       const applied = await operation;
-      assert.equal(applied.unchanged, edit === 'none', `${source}/${id}/${edit}: only the saved revision can clear dirty state or replace the play`);
+      assert.equal(applied.unchanged, edit === 'none', `${source}/${id}/${edit}: only the unchanged revision can replace the draft`);
       assert.equal(session.isCurrent(request), edit === 'none');
       assert.equal(applied.draft.id, 'saved-play-123');
       assert.equal(applied.draft.created_at, '2026-10-15T08:00:00Z');
@@ -80,4 +80,70 @@ for (const sameId of [false, true]) {
   assert.ok(session.beginSave());
 }
 
-console.log('Playbook draft save regressions passed.');
+{
+  const baseline = saved(draft());
+  baseline.arrows = [{ id: 'move-one', kind: 'movement', start: { x: 20, y: 30 }, end: { x: 40, y: 50 }, actor_id: 1 }];
+  const session = createPlaybookDraftSession(baseline);
+  const changed = { ...structuredClone(baseline), name: 'Edited name' };
+  session.edit(changed); assert.equal(session.dirty, true);
+  session.edit(structuredClone(baseline)); assert.equal(session.dirty, false, 'undo to saved content clears unsaved state');
+  session.edit(changed); assert.equal(session.dirty, true, 'redo restores unsaved state');
+  session.edit({ ...baseline, id: 'metadata-only', created_at: 'older', updated_at: 'newer', selection: 1, playbackPosition: 500, arrowVisibility: 'off' });
+  assert.equal(session.dirty, false, 'identity, timestamps, and transient display state do not affect content');
+  const reordered = Object.fromEntries(Object.entries(baseline).reverse());
+  reordered.players = baseline.players.map((player) => Object.fromEntries(Object.entries(player).reverse()));
+  session.edit(reordered); assert.equal(session.dirty, false, 'object property insertion order is irrelevant');
+
+  const changes = [
+    (p) => { p.name = 'Renamed'; },
+    (p) => { p.defenders_visible = !p.defenders_visible; },
+    (p) => { p.players[0].x++; },
+    (p) => { p.players[0].ratings = { threePoint: 5, midrange: 3, finishing: 3 }; },
+    (p) => { p.players[0].badges = ['slasher']; },
+    (p) => { p.defenders = [{ id: 1, x: 30, y: 40, badges: ['helper'] }]; },
+    (p) => { p.ball = null; },
+    (p) => { p.arrows[0].end.x++; },
+    (p) => { p.arrows[0].sequence = 2; },
+    (p) => { p.arrows[0].timing = 2; },
+    (p) => { p.arrows[0].path = 'curve'; p.arrows[0].control = { x: 35, y: 30 }; },
+    (p) => { p.arrows[0].recipient_id = 1; },
+    (p) => { p.arrows[0].exit_target = { x: 50, y: 50 }; },
+  ];
+  for (const change of changes) {
+    const next = structuredClone(baseline); change(next);
+    session.edit(next); assert.equal(session.dirty, true, 'every persisted content edit remains protected');
+    session.edit(structuredClone(baseline)); assert.equal(session.dirty, false);
+  }
+  const implicit = { ...draft(), players: [{ id: 1, x: 20, y: 30 }] };
+  const explicit = structuredClone(implicit);
+  explicit.players[0].ratings = { threePoint: 3, midrange: 3, finishing: 3 }; explicit.players[0].badges = [];
+  assert.equal(playbookContentKey(implicit), playbookContentKey(explicit), 'legacy default ratings and empty badges are equivalent');
+  session.edit(changed);
+  const failed = session.beginSave(); session.failSave(failed);
+  session.edit(baseline); assert.equal(session.dirty, false, 'failed saves cannot advance the baseline');
+  session.load({ ...draft('draft-copy-one'), name: 'Unsaved duplicate' }, true);
+  session.edit(structuredClone(session.current)); assert.equal(session.dirty, true, 'an unsaved copy has no saved baseline');
+  const copySave = session.beginSave(); session.completeSave(copySave, saved(copySave.draft));
+  assert.equal(session.dirty, false, 'the first successful copy save establishes a baseline');
+  session.load(baseline); assert.equal(session.dirty, false, 'loading resets the baseline');
+}
+
+{
+  const original = { ...draft(), players: [{ id: 1, x: 20, y: 30 }] };
+  const session = createPlaybookDraftSession(original);
+  const request = session.beginSave();
+  session.edit({ ...original, name: 'Temporary change' }); session.edit(structuredClone(original));
+  const applied = session.completeSave(request, saved(request.draft));
+  assert.equal(applied.unchanged, false, 'revision guards still reject save-then-replace after intervening edits');
+  assert.equal(session.dirty, false, 'returning to the saved content is clean despite intervening revisions');
+  session.edit({ ...session.current, name: 'Snapshot being saved' });
+  const second = session.beginSave();
+  session.edit({ ...session.current, name: 'Different latest edit' });
+  session.completeSave(second, saved(second.draft)); assert.equal(session.dirty, true);
+  session.edit({ ...session.current, name: original.name });
+  assert.equal(session.dirty, true, 'the previous baseline is no longer the saved document');
+  session.edit({ ...session.current, name: 'Snapshot being saved' });
+  assert.equal(session.dirty, false, 'a pending save establishes its actual saved content as the new baseline');
+}
+
+console.log('Playbook draft save regressions passed: save races, locking, saved-content baselines, undo/redo, display exclusions, duplicates, and failures.');

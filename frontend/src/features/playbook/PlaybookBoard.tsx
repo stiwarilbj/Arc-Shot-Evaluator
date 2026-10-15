@@ -34,7 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { createPlaybook, deletePlaybook, fetchPlaybooks, subscribePlaybooks, updatePlaybook } from "./api";
-import { createPlaybookDraftSession } from "./playbookDraftSession";
+import { createPlaybookDraftSession, playbookContentKey } from "./playbookDraftSession";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
@@ -330,7 +330,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const rootRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const [draftSession] = useState(() => createPlaybookDraftSession(clonePlaybook(READY_SETUP)));
+  const [draftSession] = useState(() => createPlaybookDraftSession(clonePlaybook(READY_SETUP), (play) => playbookContentKey(normalizeDraft(play))));
   const [draft, setDraftState] = useState<PlaybookDraft>(() => draftSession.current);
   const [history, setHistory] = useState<PlaybookDraft[]>([]);
   const [future, setFuture] = useState<PlaybookDraft[]>([]);
@@ -371,6 +371,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function setDraft(next: PlaybookDraft) {
     setDraftState(draftSession.edit(next));
+    setDirty(draftSession.dirty);
   }
 
   function setReplacement(next: PlaybookDraft | null) {
@@ -523,7 +524,6 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setHistory((current) => [...current.slice(-39), clonePlaybook(previous)]);
     setFuture([]);
     setDraft(next);
-    setDirty(true);
     setStatus("idle");
     setError(null);
   }
@@ -535,7 +535,6 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setFuture((current) => [clonePlaybook(draft), ...current]);
     setDraft(previous);
     resetSimulation();
-    setDirty(true);
     setSelected(null);
     setStatus("idle");
   }
@@ -547,7 +546,6 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setHistory((current) => [...current, clonePlaybook(draft)]);
     setDraft(next);
     resetSimulation();
-    setDirty(true);
     setSelected(null);
     setStatus("idle");
   }
@@ -563,7 +561,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function loadDraft(next: PlaybookDraft) {
-    setDraftState(draftSession.load(normalizeDraft(next)));
+    setDraftState(draftSession.load(normalizeDraft(next), next.id.startsWith("draft-copy-")));
     dragRef.current = null;
     setHistory([]);
     setFuture([]);
@@ -574,7 +572,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
     setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
     setBackdoorCutterId(null);
-    setDirty(false);
+    setDirty(draftSession.dirty);
     setStatus("idle");
     setError(null);
     resetSimulation();
@@ -597,8 +595,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       const applied = draftSession.completeSave(request, result);
       if (!applied) return false;
       setDraftState(applied.draft);
-      setDirty(!applied.unchanged);
-      setStatus(applied.unchanged ? "saved" : "idle");
+      setDirty(draftSession.dirty);
+      setStatus(draftSession.dirty ? "idle" : "saved");
       // Save-then-replace may proceed only when every current edit was saved.
       return applied.unchanged ? request : null;
     } catch (caught) {
@@ -745,7 +743,6 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (dirty) setReplacement(copy);
     else {
       loadDraft(copy);
-      setDirty(true);
     }
     setSavedOpen(false);
   }
@@ -909,7 +906,6 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (drag.type === "arrow-exit") next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, exit_target: point } : arrow);
     if (drag.type === "arrow-control") next.arrows = next.arrows.map((arrow) => arrow.id === drag.id ? { ...arrow, path: "curve", control: point } : arrow);
     setDraft(next);
-    setDirty(true);
     setStatus("idle");
   }
 
@@ -1164,7 +1160,6 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               const next = clonePlaybook(draft);
               next.name = event.currentTarget.value;
               setDraft(next);
-              setDirty(true);
               setStatus("idle");
             }} />
             <Pencil size={14} aria-hidden="true" />
