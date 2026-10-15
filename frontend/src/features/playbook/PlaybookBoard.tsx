@@ -383,7 +383,24 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const simulationRunRef = useRef<SimulationRun | null>(null);
   applyPointerRef.current = applyPointerPosition;
 
-  useEffect(() => () => pointerMoves.cancel(), [pointerMoves]);
+  const interruptPointerRef = useRef(() => {});
+  interruptPointerRef.current = interruptPointerInteraction;
+  useEffect(() => {
+    const interrupt = () => interruptPointerRef.current();
+    const onVisibilityChange = () => { if (document.hidden) interrupt(); };
+    window.addEventListener("blur", interrupt);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", interrupt);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      pointerMoves.cancel();
+      const interaction = drawingRef.current ?? dragRef.current;
+      drawingRef.current = null;
+      dragRef.current = null;
+      if (interaction && svgRef.current?.hasPointerCapture(interaction.pointerId)) svgRef.current.releasePointerCapture(interaction.pointerId);
+    };
+  }, [pointerMoves]);
+  useEffect(() => { if (!active) interruptPointerRef.current(); }, [active]);
 
   function setDraft(next: PlaybookDraft) {
     setDraftState(draftSession.edit(next));
@@ -567,8 +584,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function chooseTool(next: PlaybookTool) {
-    pointerMoves.cancel();
-    drawingRef.current = null;
+    if (drawingRef.current || dragRef.current) interruptPointerInteraction();
     setTool(next);
     if (next !== "off-ball-screen" && next !== "pin-down") setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
     if (next !== "pick-pop") setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
@@ -579,8 +595,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function loadDraft(next: PlaybookDraft) {
-    pointerMoves.cancel();
-    drawingRef.current = null;
+    interruptPointerInteraction();
     setDraftState(draftSession.load(normalizeDraft(next), next.id.startsWith("draft-copy-")));
     dragRef.current = null;
     setHistory([]);
@@ -947,7 +962,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (interaction?.pointerId !== event.pointerId) return;
     // React state may not have rendered the last move yet. Flush synchronously
     // and read the session/ref values before creating the single undo entry.
-    if (event.type !== "pointercancel" && (interaction.moved || interaction.clientX !== event.clientX || interaction.clientY !== event.clientY)) {
+    if (interaction.moved || interaction.clientX !== event.clientX || interaction.clientY !== event.clientY) {
       pointerMoves.flush({ clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId });
     } else pointerMoves.flush();
     const currentDraft = draftSession.current;
@@ -977,22 +992,46 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         commit(next, currentDraft);
         setSelected({ type: "arrow", id: newArrow.id });
       }
-      setDrawStart(null);
-      setDrawEnd(null);
-      drawingRef.current = null;
-      if (svgRef.current?.hasPointerCapture(event.pointerId)) svgRef.current.releasePointerCapture(event.pointerId);
+      clearPointerInteraction();
       return;
     }
+    finishExistingDrag();
+    clearPointerInteraction();
+  }
+
+  function finishExistingDrag() {
     const drag = dragRef.current;
-    if (drag) {
-      const finished = clonePlaybook(currentDraft);
-      if (!isSameDraft(finished, drag.before)) {
-        setHistory((current) => [...current.slice(-39), clonePlaybook(drag.before)]);
-        setFuture([]);
-      }
-      dragRef.current = null;
-      if (svgRef.current?.hasPointerCapture(event.pointerId)) svgRef.current.releasePointerCapture(event.pointerId);
+    if (drag && !isSameDraft(draftSession.current, drag.before)) {
+      setHistory((current) => [...current.slice(-39), clonePlaybook(drag.before)]);
+      setFuture([]);
     }
+  }
+
+  function clearPointerInteraction() {
+    const interaction = drawingRef.current ?? dragRef.current;
+    pointerMoves.cancel();
+    // Clear ownership before releasing capture: lostpointercapture also interrupts.
+    drawingRef.current = null;
+    dragRef.current = null;
+    setDrawStart(null);
+    setDrawEnd(null);
+    if (interaction && svgRef.current?.hasPointerCapture(interaction.pointerId)) svgRef.current.releasePointerCapture(interaction.pointerId);
+  }
+
+  function interruptPointerInteraction(pointerId?: number) {
+    const interaction = drawingRef.current ?? dragRef.current;
+    if (pointerId !== undefined && interaction?.pointerId !== pointerId) return;
+    // Preserve displayed edits with one undo step; discard queued positions
+    // and unfinished drawings instead of committing a cancelled action.
+    finishExistingDrag();
+    clearPointerInteraction();
+    setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
+    setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
+    setBackdoorCutterId(null);
+  }
+
+  function onPointerInterrupted(event: ReactPointerEvent<SVGSVGElement>) {
+    interruptPointerInteraction(event.pointerId);
   }
 
   function onMarkerPointerDown(event: ReactPointerEvent<SVGElement>, selection: Selection) {
@@ -1099,6 +1138,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") interruptPointerInteraction();
     const target = event.target as HTMLElement;
     if (target.closest("input, textarea, select, [contenteditable='true']") || event.nativeEvent.isComposing) return;
     const modifier = event.metaKey || event.ctrlKey;
@@ -1114,10 +1154,6 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       return;
     }
     if (event.key === "Escape") {
-      if (drawingRef.current) {
-        pointerMoves.cancel();
-        drawingRef.current = null;
-      }
       setSelected(null);
       setDrawStart(null);
       setDrawEnd(null);
@@ -1199,7 +1235,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? `Saved · ${draft.arrows.length} actions` : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
 
   return (
-    <div ref={rootRef} className="playbook-page" tabIndex={-1} onKeyDown={onKeyDown} onPointerDownCapture={(event) => {
+    <div ref={rootRef} className="playbook-page" tabIndex={-1} onKeyDown={onKeyDown} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) interruptPointerInteraction();
+    }} onPointerDownCapture={(event) => {
       const target = event.target as HTMLElement;
       if (!target.closest("button, input, textarea, select")) focusBoard();
     }}>
@@ -1412,7 +1450,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior.</span>
           </div> : null}
           <div className="court-frame">
-            <svg ref={svgRef} className="court-svg" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+            <svg ref={svgRef} className="court-svg" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
               <defs>
                 <pattern id="court-boards" width="80" height="80" patternUnits="userSpaceOnUse"><rect width="80" height="80" fill="var(--surface)" /><path d="M0 0h80M0 40h80" stroke="rgba(255,255,255,.022)" strokeWidth="1" /><path d="M40 0v80" stroke="rgba(255,255,255,.014)" strokeWidth="1" /></pattern>
                 <marker id="movement-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--text)" /></marker>
