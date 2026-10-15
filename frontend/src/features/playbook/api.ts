@@ -1,4 +1,4 @@
-import { validatePlaybookParticipants } from "./types";
+import { validatePlaybookDocument, validateSavedPlaybook } from "./documentValidation.ts";
 import type { PlaybookDocument, PlaybookDraft } from "./types";
 import { IS_GITHUB_PAGES } from "../../runtime";
 import { createSharedLibraryRead } from "./sharedLibraryRead.ts";
@@ -34,7 +34,10 @@ export function subscribePlaybooks(listener: () => void) {
 }
 function announceChange() { libraryReads.invalidate(); window.dispatchEvent(new Event(CHANGE_EVENT)); }
 function validateLibrary(value: unknown): PlaybookDocument[] {
-  if (!Array.isArray(value) || value.some((play) => !play || typeof play.id !== "string" || typeof play.name !== "string" || !Array.isArray(play.players) || !Array.isArray(play.defenders) || !Array.isArray(play.arrows))) throw new Error("Saved plays could not be read. Your stored data has been preserved.");
+  try {
+    if (!Array.isArray(value)) throw new Error("Invalid library");
+    value.forEach(validateSavedPlaybook);
+  } catch { throw new Error("Saved plays could not be read. Your stored data has been preserved."); }
   return value as PlaybookDocument[];
 }
 function readLocalPlaybooks(): PlaybookDocument[] {
@@ -60,7 +63,6 @@ function localId() {
 }
 
 function persistLocalPlaybook(playbook: PlaybookDraft, id = playbook.id.startsWith("draft-") ? localId() : playbook.id): PlaybookDocument {
-  validatePlaybookParticipants(playbook);
   const now = new Date().toISOString();
   const saved: PlaybookDocument = {
     version: 1,
@@ -83,19 +85,23 @@ export async function fetchPlaybooks() {
   return libraryReads.read();
 }
 export async function createPlaybook(playbook: PlaybookDraft) {
+  validatePlaybookDocument(playbook);
   return libraryReads.mutate(async () => {
     if (IS_GITHUB_PAGES) return persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, localId());
     const saved = await fetch("/api/playbooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parse<PlaybookDocument>(response));
+    validateSavedPlaybook(saved);
     announceChange(); return saved;
   });
 }
 export async function updatePlaybook(playbook: PlaybookDraft) {
+  validatePlaybookDocument(playbook);
   return libraryReads.mutate(async () => {
     if (IS_GITHUB_PAGES) {
       if (!readLocalPlaybooks().some((item) => item.id === playbook.id)) throw new Error("Saved play not found");
       return persistLocalPlaybook(playbook);
     }
     const saved = await fetch(`/api/playbooks/${encodeURIComponent(playbook.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parse<PlaybookDocument>(response));
+    validateSavedPlaybook(saved);
     announceChange(); return saved;
   });
 }

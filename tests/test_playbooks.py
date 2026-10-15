@@ -320,3 +320,39 @@ def test_explicit_action_participants_round_trip_without_version_migration(tmp_p
         invalid = json.loads(json.dumps(payload))
         invalid["arrows"][1][field] = value
         assert client.post("/api/playbooks", json=invalid).status_code == 400
+
+
+def test_shared_document_validation_contract(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    examples = json.loads((Path(__file__).parent / "fixtures/playbook-documents.json").read_text())
+    client = TestClient(app)
+    for example in examples:
+        response = client.post("/api/playbooks", json=example["document"])
+        assert response.status_code == (200 if example["valid"] else 400), example["name"]
+        if example["valid"]:
+            saved = response.json()
+            assert client.put(f"/api/playbooks/{saved['id']}", json=example["document"]).status_code == 200
+            assert client.get(f"/api/playbooks/{saved['id']}").status_code == 200
+
+
+def test_nonfinite_coordinates_and_damaged_stored_documents(tmp_path, monkeypatch) -> None:
+    import pytest
+    from fastapi import HTTPException
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    for coordinate in (float("nan"), float("inf"), float("-inf"), True):
+        payload = _payload()
+        payload["players"][0]["x"] = coordinate
+        with pytest.raises(HTTPException) as error:
+            playbooks_module._document(payload, playbook_id="play-invalid01")
+        assert error.value.status_code == 400
+    payload = _payload()
+    payload.update(id="play-damaged01", version=1)
+    payload["players"][0]["badges"] = ["unknown"]
+    path = tmp_path / "play-damaged01.json"
+    original = json.dumps(payload)
+    path.write_text(original)
+    client = TestClient(app)
+    assert client.get("/api/playbooks/play-damaged01").status_code == 500
+    assert client.get("/api/playbooks").json() == []
+    assert path.read_text() == original
