@@ -1,7 +1,7 @@
 import { routeVisible, normalizeArrowVisibility, ARROW_VISIBILITY_OPTIONS } from '../frontend/src/features/playbook/arrowVisibility.ts';
 import assert from 'node:assert/strict';
 import { advanceReplay, matchesReplay, replayFrame } from '../frontend/src/features/playbook/counterLabReplay.ts';
-import { analyzeCounterLab, runCounterLabTrial, diagnoseOpenings, repairEvidence, verifiedRecovery } from '../frontend/src/features/playbook/counterLabEngine.ts';
+import { analyzeCounterLab, runCounterLabTrial, validateCounterLabInput, diagnoseOpenings, repairEvidence, verifiedRecovery } from '../frontend/src/features/playbook/counterLabEngine.ts';
 import { COUNTER_LAB_DEFAULT_PROFILES, createCounterLabRepairs, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
 import { bindAuthoredActions, createSimulationRun, prepareSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame, observeCounterLabRun } from '../frontend/src/features/playbook/simulation.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
@@ -184,6 +184,29 @@ const noAdvantagePlay = {
 const noAdvantage = runCounterLabTrial(noAdvantagePlay, holdProfile, 'scripted');
 assert.equal(noAdvantage.createdAdvantage, false, 'a covered low-skill shot is not mislabeled as an advantage');
 
+const requestPlay = structuredClone(noAdvantagePlay);
+const requestProfiles = [structuredClone(holdProfile)];
+const requestModes = ['scripted', 'adaptive'];
+const expectedSnapshot = await analyzeCounterLab(requestPlay, requestProfiles, requestModes, () => {});
+const isolatedSnapshot = await analyzeCounterLab(requestPlay, requestProfiles, requestModes, () => {
+  requestPlay.players[0].x = NaN;
+  requestPlay.arrows.push({ id: 'invalid', kind: 'unknown' });
+  requestProfiles[0].id = 'changed';
+  requestModes.splice(0, requestModes.length, 'invalid');
+});
+assert.deepEqual(isolatedSnapshot, expectedSnapshot, 'validated analysis owns the play and selection across asynchronous caller edits');
+for (const invalidPlay of [
+  { ...noAdvantagePlay, players: [] },
+  { ...noAdvantagePlay, players: [{ id: 1, x: NaN, y: 10 }] },
+  { ...noAdvantagePlay, players: [noAdvantagePlay.players[0], noAdvantagePlay.players[0]] },
+  { ...noAdvantagePlay, arrows: [{ id: 'bad', kind: 'pass', start: { x: 10, y: 10 }, end: { x: 20, y: 20 }, recipient_id: 999 }] },
+]) {
+  assert.throws(() => runCounterLabTrial(invalidPlay, holdProfile, 'scripted'), Error, 'public trials retain validation');
+  await assert.rejects(analyzeCounterLab(invalidPlay, [holdProfile], ['scripted'], () => assert.fail('invalid requests must not publish progress')), Error);
+}
+await assert.rejects(analyzeCounterLab(noAdvantagePlay, [holdProfile], ['invalid'], () => {}), /Choose at least one defense/);
+await assert.rejects(analyzeCounterLab(noAdvantagePlay, [], ['scripted'], () => {}), /Choose at least one defense/);
+
 assert.deepEqual(eligibleCounterLabSchemes(2, 2), [], 'small lineups do not offer ineligible zone schemes');
 assert.ok(!eligibleCounterLabSchemes(5, 1).some((profile) => profile.id === 'triangle-and-two'), 'Triangle-and-two requires two offensive players');
 const shortRosterRun = runCounterLabTrial({ ...noAdvantagePlay, players: noAdvantagePlay.players.concat([{ id: 2, x: 25, y: 55 }]), defenders: [{ id: 1, x: 50, y: 44.6 }, { id: 2, x: 25, y: 54.6 }] }, holdProfile, 'scripted');
@@ -244,6 +267,7 @@ for (const play of STARTER_PLAYS) {
   const candidates = createCounterLabRepairs(play);
   assert.ok(candidates.length <= 8);
   for (const candidate of candidates) {
+    validateCounterLabInput(candidate.play, COUNTER_LAB_DEFAULT_PROFILES, ['scripted', 'adaptive']);
     const originalActions = createSimulationRun(play, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: 'scripted' }).actions;
     const candidateActions = createSimulationRun(candidate.play, { ...DEFAULT_SIMULATION_SETTINGS, offenseMode: 'scripted' }).actions;
     for (const action of candidateActions) if (candidate.id.startsWith('pass-') && action.arrow.id === candidate.id.slice(5).replace(/-[0-9]+$/, '')) {

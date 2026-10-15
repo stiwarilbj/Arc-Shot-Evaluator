@@ -154,6 +154,10 @@ function simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMod
 
 export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterLabProfile[], modes: CounterLabMode[], onProgress: (progress: CounterLabProgress) => void,
   shouldCancel: () => boolean = () => false, onBaseline?: (results: CounterLabSummary[], traces: Map<string, CounterLabFrame[]>) => void): Promise<CounterLabAnalysis> {
+  // Own the request across async progress callbacks; caller edits require a new analysis.
+  draft = structuredClone(draft);
+  profiles = structuredClone(profiles);
+  modes = structuredClone(modes);
   validateCounterLabInput(draft, profiles, modes);
   const repairs = createCounterLabRepairs(draft);
   const detailTraces = new Map<string, CounterLabFrame[]>();
@@ -167,8 +171,11 @@ export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterL
     let createRun: ReturnType<typeof prepareSimulationRun> | undefined;
     for (const profile of profiles) for (const mode of modes) {
       if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
-      validateCounterLabInput(variant.play, [profile], [mode]);
-      createRun ??= prepareSimulationRun(variant.play);
+      if (!createRun) {
+        // The original passed request validation; each private repair needs one check.
+        if (variant.id !== "original") validateCounterLabInput(variant.play, profiles, modes);
+        createRun = prepareSimulationRun(variant.play);
+      }
       const { trace, ...result } = simulateCounterLabTrial(profile, mode, shouldCancel, createRun);
       results.push(result); traces.set(`${variant.id}:${result.key}`, trace);
       onProgress({ completed: ++completed, total, label: `${profile.label} · ${mode === "scripted" ? "Drawn play" : "Adaptive offense"}`, stage: variant.id === "original" ? "defenses" : "repairs" });
