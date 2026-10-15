@@ -1,3 +1,4 @@
+import { parseCounterLabRequest, counterLabRequestError } from "./counterLabRequests.ts";
 import { analyzeCounterLab } from "./counterLabEngine.ts";
 import type { CounterLabRequest, CounterLabMessage } from "./counterLabTypes.ts";
 import { replayResponse } from "./counterLabReplayArchive.ts";
@@ -11,8 +12,10 @@ const detailQueue = createCounterLabDetailQueue((request) => {
   const a = original ? replayResponse(original) : null, b = repaired ? replayResponse(repaired) : null;
   post({ ...request, original: a?.archive ?? null, repaired: b?.archive ?? null }, [...(a?.transfer ?? []), ...(b?.transfer ?? [])]);
 });
-self.onmessage = (event: MessageEvent<CounterLabRequest>) => {
-  const request = event.data;
+self.onmessage = (event: MessageEvent<unknown>) => {
+  let request: CounterLabRequest;
+  try { request = parseCounterLabRequest(event.data); }
+  catch (error: unknown) { post(counterLabRequestError(event.data, error)); return; }
   if (request.type === "cancel") { lifecycle.cancel(request.id); return; }
   if (request.type === "release") { detailQueue.release(request.id); lifecycle.release(request.id); return; }
   if (request.type === "details") {

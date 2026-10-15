@@ -48,7 +48,7 @@ export type CounterLabMessage =
   | { type: "complete"; id: string; results: CounterLabSummary[]; repairs: CounterLabRepair[] }
   | { type: "cancelled"; id: string }
   | { type: "details"; id: string; detailId: string; key: string; repairId: string; original: ReplayArchive | null; repaired: ReplayArchive | null }
-  | { type: "error"; id: string; message: string };
+  | { type: "error"; id: string; message: string; detailId?: string };
 
 export const COUNTER_LAB_DEFAULT_PROFILES: CounterLabProfile[] = [
   { id: "contain", label: "Contain", strategy: "contain", scheme: "man-to-man" },

@@ -153,6 +153,10 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
         } catch (caught) { setDetailError(messageOf(caught)); }
         return;
       }
+      if (message.type === "error" && message.detailId) {
+        if (message.id !== reportId.current || message.detailId !== expectedDetail.current?.detailId) return;
+        expectedDetail.current = null; setDetailError(message.message); return;
+      }
       if (message.id !== pendingId.current) return;
       if (message.type === "progress") setProgress(message);
       if (message.type === "baseline") {
