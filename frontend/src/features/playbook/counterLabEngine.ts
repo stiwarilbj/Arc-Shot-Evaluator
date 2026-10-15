@@ -1,6 +1,6 @@
 import type { PlaybookDraft, SimulationSettings } from "./types.ts";
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from "./types.ts";
-import { advanceSimulationRun, createSimulationRun, observeCounterLabRun, pointDistanceFeet, SIMULATION_STEP_MS } from "./simulation.ts";
+import { advanceSimulationState, createSimulationRun, observeCounterLabRun, pointDistanceFeet, SIMULATION_STEP_MS } from "./simulation.ts";
 import { createCounterLabRepairs, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabResult, type CounterLabSummary, type CounterLabProgress, type PassDiagnostic, type RepairEvidence } from "./counterLabTypes.ts";
 
 export type CounterLabAnalysis = { results: CounterLabSummary[]; repairs: CounterLabRepair[]; detailTraces: Map<string, CounterLabFrame[]> };
@@ -114,7 +114,7 @@ export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProf
   let steps = 0;
   while (run.elapsedMs < run.durationMs && steps++ < 20_000) {
     if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
-    advanceSimulationRun(run, SIMULATION_STEP_MS, settings);
+    advanceSimulationState(run, SIMULATION_STEP_MS, settings);
     captureActions();
     if (run.elapsedMs + 1e-6 >= nextSample) { append(); nextSample += SIMULATION_STEP_MS; }
   }

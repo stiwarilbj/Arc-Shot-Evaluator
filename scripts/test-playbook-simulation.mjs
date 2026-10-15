@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import {
   advanceSimulationRun,
+  advanceSimulationState,
   chooseDefenseScheme,
   createSimulationRun,
   DEFENDER_MAX_SPEED_FT_PER_SECOND,
   editPausedSimulationMarker,
   getSimulationFrame,
+  observeCounterLabRun,
   pointDistanceFeet,
   rebasePausedSimulation,
   setSimulationRunSettings,
@@ -90,6 +92,29 @@ const cadenceDraft = makeDraft({
   defenders: [[50, 69], [30, 54]],
   arrows: [{ id: 'cadence-cut', kind: 'movement', start: { x: 30, y: 60 }, end: { x: 27, y: 45 }, sequence: 1, timing: 2 }],
 });
+
+// Background trials advance the same state without requesting a display frame.
+for (const offenseMode of ['scripted', 'adaptive']) {
+  const initial = { ...settings, offenseMode };
+  const displayRun = createSimulationRun(cadenceDraft, initial);
+  const stateRun = createSimulationRun(cadenceDraft, initial);
+  let step = 0;
+  const deltas = [0, -10, 1, 1000 / 120, 1000 / 60, SIMULATION_STEP_MS, 5000];
+  do {
+    const delta = deltas[step++ % deltas.length];
+    const liveSettings = { ...initial, defenseStrategy: step < 10 ? 'help' : 'contain', offBallIntensity: step < 15 ? 70 : 35 };
+    const displayed = advanceSimulationRun(displayRun, delta, liveSettings);
+    assert.equal(advanceSimulationState(stateRun, delta, liveSettings), undefined, 'advance-only calls do not return a display snapshot');
+    assert.deepEqual(stateRun, displayRun, 'advance-only preserves complete execution state, accumulator, and previous frames');
+    assert.deepEqual(getSimulationFrame(stateRun), displayed, 'display interpolation remains available and identical after advance-only calls');
+    assert.deepEqual(observeCounterLabRun(stateRun), observeCounterLabRun(displayRun), 'diagnostic and replay observations retain every recorded value');
+    assert.ok(step < 5000, 'both paths complete within the fixture step limit');
+  } while (displayRun.elapsedMs < displayRun.durationMs);
+  const completedFrame = getSimulationFrame(stateRun);
+  assert.equal(advanceSimulationState(stateRun, SIMULATION_STEP_MS), undefined);
+  assert.deepEqual(getSimulationFrame(stateRun), completedFrame, 'advancing a completed run leaves its final frame unchanged');
+  assert.deepEqual(advanceSimulationRun(displayRun, SIMULATION_STEP_MS), completedFrame, 'the display API continues returning completed frames');
+}
 
 // Settings updates compare effective values, including nested flags and defaults.
 const unchangedSettingsRun = createSimulationRun(cadenceDraft, settings);

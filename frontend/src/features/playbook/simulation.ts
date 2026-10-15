@@ -3084,8 +3084,9 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   run.frame = frameFor(run);
 }
 
-export function advanceSimulationRun(run: SimulationRun, deltaMs: number, settings: SimulationSettings = run.settings, hoop = HOOP_POINT) {
-  if (run.elapsedMs >= run.durationMs || deltaMs <= 0) return getSimulationFrame(run);
+/** Advance execution and recorded state without copying an interpolated display frame. */
+export function advanceSimulationState(run: SimulationRun, deltaMs: number, settings: SimulationSettings = run.settings, hoop = HOOP_POINT): void {
+  if (run.elapsedMs >= run.durationMs || deltaMs <= 0) return;
   setSimulationRunSettings(run, settings);
   run.accumulatorMs += Math.min(deltaMs, MAX_SIMULATION_DELTA_MS);
   while (run.elapsedMs < run.durationMs) {
@@ -3112,6 +3113,10 @@ export function advanceSimulationRun(run: SimulationRun, deltaMs: number, settin
     run.accumulatorMs = 0;
     run.frame = frameFor(run);
   }
+}
+
+export function advanceSimulationRun(run: SimulationRun, deltaMs: number, settings: SimulationSettings = run.settings, hoop = HOOP_POINT) {
+  advanceSimulationState(run, deltaMs, settings, hoop);
   return getSimulationFrame(run);
 }
 
