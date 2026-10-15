@@ -104,3 +104,31 @@ library loads retain their separate, backward-compatible validation rules.
 
 Run `npm run test:playbook-save-results` for malformed 2xx responses, ID/version
 checks, browser pre-write guards, preserved draft state, and retry coverage.
+
+## Mutation order
+
+Within an application page, updates (including renames) and deletes of the same
+saved play run in invocation order. Playbook and Counter Lab share the same API
+module and queue. Each update captures and validates its own input before
+waiting, so later caller edits cannot alter a queued save. The next operation
+starts only after the preceding operation's storage write or HTTP response
+body and validation have completed. Failures reject their own callers and
+release the queue; they do not silently cancel later operations. Idle queue
+entries are removed.
+
+Separate saved IDs proceed independently. New copies and repair saves receive
+fresh IDs and do not block changes to their source play. Existing draft-save
+locks continue to handle duplicate create requests. Library reads wait for all
+active and queued mutations through the existing write barrier and cannot
+publish an intermediate saved library while a later deletion is pending.
+
+Deletion never turns a subsequent update into a create: browser updates check
+existence inside the queue, and the local API rejects updates to missing IDs.
+A failed deletion leaves the play available for a later save or retry. This is
+in-page ordering; independent browser tabs and other API clients do not share
+this in-memory queue. Storage events still invalidate cross-tab library reads.
+No backend route, document format, or UI changes are required.
+
+Run `npm run test:playbook-mutation-order` for deferred save/rename/delete races,
+response-body completion, independent-play concurrency, queued read barriers,
+input isolation, failure recovery and deletion preservation on both targets.

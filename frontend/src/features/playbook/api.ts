@@ -1,3 +1,4 @@
+import { createPlayMutationQueue } from "./playMutationQueue.ts";
 import { normalizePlaybookPrecision } from "./documentPrecision.ts";
 import { INVALID_PLAYBOOK_SAVE, validatePlaybookDocument, validateSavedPlaybook, validatePlaybookSaveResult, type PlaybookSaveIdentity } from "./documentValidation.ts";
 import type { PlaybookDocument, PlaybookDraft } from "./types";
@@ -24,6 +25,7 @@ async function parseSave(response: Response, identity: PlaybookSaveIdentity): Pr
   return saved;
 }
 
+const queuePlayMutation = createPlayMutationQueue();
 const CHANGE_EVENT = "arc-playbooks-changed";
 const parseLibrary = createParsedLibraryCache(validateLibrary);
 const libraryReads = createSharedLibraryRead(async () => IS_GITHUB_PAGES ? readLocalPlaybooks()
@@ -109,19 +111,19 @@ export async function updatePlaybook(playbook: PlaybookDraft) {
   validatePlaybookDocument(playbook);
   playbook = normalizePlaybookPrecision(playbook);
   const identity: PlaybookSaveIdentity = { operation: "update", id: playbook.id };
-  return libraryReads.mutate(async () => {
+  return libraryReads.mutate(() => queuePlayMutation(playbook.id, async () => {
     if (IS_GITHUB_PAGES) {
       if (!readLocalPlaybooks().some((item) => item.id === playbook.id)) throw new Error("Saved play not found");
       return persistLocalPlaybook(playbook, playbook.id, identity);
     }
     const saved = await fetch(`/api/playbooks/${encodeURIComponent(playbook.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parseSave(response, identity));
     announceChange(); return saved;
-  });
+  }));
 }
 export async function deletePlaybook(id: string) {
-  return libraryReads.mutate(async () => {
+  return libraryReads.mutate(() => queuePlayMutation(id, async () => {
     if (IS_GITHUB_PAGES) { writeLocalPlaybooks(readLocalPlaybooks().filter((item) => item.id !== id)); return { deleted: true, id }; }
     const deleted = await fetch(`/api/playbooks/${encodeURIComponent(id)}`, { method: "DELETE" }).then((response) => parse<{ deleted: boolean; id: string }>(response));
     announceChange(); return deleted;
-  });
+  }));
 }
