@@ -1,8 +1,7 @@
 import { coordinateMovement, createMovementBuffers, createMovementOrder, interpolatePosition, type MotionIntent, type MovementBuffers, type MovementOrder } from "./coordinatedMovement.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
-import { playerHasBadge } from "./badges.ts";
-import { defenderHasBadge } from "./defensiveBadges.ts";
+import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating as playerRating, preparedHasBadge as playerHasBadge, preparedHasBadge as defenderHasBadge, type SimulationAttributes } from "./simulationAttributes.ts";
 import {
   COURT_SCALE,
   COURT_VIEWBOX,
@@ -74,6 +73,7 @@ type ScreenCoverageLock = { screenerDefenderId: number; screenedDefenderId: numb
 export type SimulationRun = {
   motionIntents?: Map<string, MotionIntent>;
   movementOrder: MovementOrder;
+  attributes: SimulationAttributes;
   movementBuffers: { solver: MovementBuffers; intents: MotionIntent[]; intentMap: Map<string, MotionIntent>; playerPositions: Map<number, CourtPoint>; defenderPositions: Map<number, CourtPoint> };
   phaseWaitMs?: Map<number, number>;
   offBallDecisions?: Map<number, { target: CourtPoint; sinceMs: number; cutting: boolean }>;
@@ -621,11 +621,6 @@ function defenderGap(player: CourtPoint, defenders: PlaybookMarker[]) {
   return defenders.length ? Math.min(...defenders.map((defender) => pointDistanceFeet(player, defender))) : Number.POSITIVE_INFINITY;
 }
 
-function playerRating(player: PlaybookMarker, key: keyof PlayerSkillRatings) {
-  const value = player.ratings?.[key] ?? 3;
-  return Number.isInteger(value) ? clamp(value, 1, 5) : 3;
-}
-
 function shotSkillFor(player: CourtPoint, hoop: CourtPoint): keyof PlayerSkillRatings {
   const feet = toCourtFeet(player);
   const basket = toCourtFeet(hoop);
@@ -1110,6 +1105,7 @@ export type CounterLabObservation = {
 
 /** Return a compact, evidence-based view of the current possession for Counter Lab. */
 export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): CounterLabObservation {
+  refreshSimulationAttributes(run.attributes, run.players, run.defenders);
   const { choices } = liveReadChoices(run, hoop);
   const activeActions = run.actions.filter((candidate) => actionIsMoving(candidate) && !candidate.transferFailed
     && run.elapsedMs >= candidate.startTime - 1e-6
@@ -1371,6 +1367,7 @@ function createGoalSideDefenders(players: PlaybookMarker[], existing: PlaybookMa
 
 export function placeDefendersGoalSide(players: PlaybookMarker[], defenders: PlaybookMarker[], hoop = HOOP_POINT) {
   const placed = createGoalSideDefenders(players, defenders, hoop);
+  refreshSimulationAttributes(createSimulationAttributes(), players, placed);
   const matchups = bestDefensiveMatchups(players, placed, hoop);
   return placed.map((defender, index) => {
     const player = players.find((candidate) => candidate.id === matchups[index]);
@@ -1516,6 +1513,8 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, settings: Simulation
   const players = sourceCopy.players.map((player) => ({ ...player }));
   const ephemeralDefenders = sourceCopy.defenders.length === 0;
   const defenders = createGoalSideDefenders(players, sourceCopy.defenders, hoop);
+  const attributes = createSimulationAttributes();
+  refreshSimulationAttributes(attributes, players, defenders);
   const defenseSchemeResolution = chooseDefenseScheme(runSettings.defenseScheme, defenders.length, players.length);
   const activeDefenseScheme = defenseSchemeResolution.scheme;
   const formation = zoneFormation(activeDefenseScheme);
@@ -1591,6 +1590,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, settings: Simulation
       : null;
   const ballHandlerId = players[nearestPointIndex(players, ball ?? hoop)]?.id ?? null;
   const run: SimulationRun = {
+    attributes,
     movementBuffers: { solver: createMovementBuffers(), intents: [], intentMap: new Map(), playerPositions: new Map(), defenderPositions: new Map() },
     movementOrder: createMovementOrder([...players.map((player) => velocityKey("player", player.id)), ...defenders.map((defender) => velocityKey("defender", defender.id))]),
     actions,
@@ -1686,6 +1686,7 @@ export function getSimulationFrame(run: SimulationRun) {
 }
 
 export function setSimulationRunSettings(run: SimulationRun, settings: SimulationSettings) {
+  refreshSimulationAttributes(run.attributes, run.players, run.defenders);
   const current = run.settings;
   const scripted = settings.offenseMode === "scripted";
   // Compare effective values before allocating normalized settings or rebuilding
@@ -3191,6 +3192,7 @@ export function editPausedSimulationMarker(
   id: number | string,
   point: CourtPoint,
 ) {
+  refreshSimulationAttributes(run.attributes, run.players, run.defenders);
   const nextPoint = clampCourt(point);
   if (type === "player") {
     run.players = run.players.map((player) => player.id === id ? { ...player, ...nextPoint } : player);
@@ -3292,6 +3294,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
     }
   }
   run.source = structuredClone(draft);
+  refreshSimulationAttributes(run.attributes, run.players, run.defenders);
   run.actions.forEach((action) => action.execution?.paths.clear());
   run.offBallDecisions?.clear();
   run.routeHistory = [];

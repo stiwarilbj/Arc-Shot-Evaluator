@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating, preparedHasBadge } from '../frontend/src/features/playbook/simulationAttributes.ts';
 import {
   advanceSimulationRun,
   advanceSimulationState,
@@ -18,6 +19,39 @@ import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/t
 import { courtSvgToPoint, COURT_SCALE, COURT_VIEWBOX, NBA_COURT_GEOMETRY } from '../frontend/src/features/playbook/courtGeometry.ts';
 
 const settings = { offenseOffBall: 'read-react', defenseScheme: 'man-to-man', defenseStrategy: 'help', offBallIntensity: 70, automaticActions: { screen: false, handoff: false, pickRoll: false, offBallScreen: false } };
+const attributePlayer = { id: 1, x: 50, y: 50, ratings: { threePoint: 3, midrange: 3, finishing: 3 }, badges: ['playmaker'] };
+const attributeCache = createSimulationAttributes();
+refreshSimulationAttributes(attributeCache, [attributePlayer], []);
+const ratingEntry = attributeCache.ratings.get(attributePlayer.ratings), badgeEntry = attributeCache.badges.get(attributePlayer.badges);
+refreshSimulationAttributes(attributeCache, [{ ...attributePlayer, x: 20 }], []);
+assert.equal(attributeCache.ratings.get(attributePlayer.ratings), ratingEntry, 'position changes reuse normalized ratings');
+assert.equal(attributeCache.badges.get(attributePlayer.badges), badgeEntry, 'position changes reuse badge membership');
+for (const value of [undefined, null, NaN, Infinity, -Infinity, -1, 0, 1, 3, 5, 6, 2.5]) {
+  attributePlayer.ratings.threePoint = value;
+  refreshSimulationAttributes(attributeCache, [attributePlayer], []);
+  assert.equal(preparedPlayerRating(attributePlayer, 'threePoint'), Number.isInteger(value ?? 3) ? Math.max(1, Math.min(5, value ?? 3)) : 3, 'normalization retains legacy defaults and bounds after in-place edits');
+}
+attributePlayer.badges.splice(0, 1, 'lockdown');
+refreshSimulationAttributes(attributeCache, [], [attributePlayer]);
+assert.equal(preparedHasBadge(attributePlayer, 'playmaker'), false);
+assert.equal(preparedHasBadge(attributePlayer, 'lockdown'), true, 'in-place badge replacements refresh defensive membership');
+attributePlayer.badges = ['cutter', 'cutter'];
+attributePlayer.ratings = { threePoint: 5, midrange: 1, finishing: 4 };
+refreshSimulationAttributes(attributeCache, [attributePlayer], []);
+assert.equal(preparedHasBadge(attributePlayer, 'cutter'), true);
+assert.equal(preparedHasBadge(attributePlayer, 'lockdown'), false);
+assert.equal(preparedPlayerRating(attributePlayer, 'threePoint'), 5, 'replacement attributes refresh immediately');
+const attributeSibling = structuredClone(attributePlayer), siblingCache = createSimulationAttributes();
+refreshSimulationAttributes(siblingCache, [attributeSibling], []);
+attributePlayer.ratings.threePoint = 1; attributePlayer.badges.length = 0;
+refreshSimulationAttributes(attributeCache, [attributePlayer], []);
+assert.equal(preparedPlayerRating(attributeSibling, 'threePoint'), 5);
+assert.equal(preparedHasBadge(attributeSibling, 'cutter'), true, 'independent runs retain their own prepared values');
+assert.deepEqual(Object.keys(attributeSibling).sort(), ['badges', 'id', 'ratings', 'x', 'y'], 'preparation never annotates saved or recorded markers');
+const legacyAttributePlayer = { id: 2, x: 50, y: 50, ratings: 3, badges: 'cutter' };
+refreshSimulationAttributes(attributeCache, [legacyAttributePlayer], []);
+assert.equal(preparedPlayerRating(legacyAttributePlayer, 'threePoint'), 3, 'non-object legacy ratings retain the existing default');
+assert.equal(preparedHasBadge(legacyAttributePlayer, 'cutter'), true, 'unprepared legacy attributes retain the existing lookup behavior');
 const hoop = courtSvgToPoint(NBA_COURT_GEOMETRY.basket.center);
 
 function makeDraft({ players, ball, arrows = [], defenders = [] }) {
