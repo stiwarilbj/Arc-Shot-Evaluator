@@ -1,6 +1,10 @@
 import type { CounterLabResult } from "./counterLabTypes.ts";
 import { packReplay, unpackReplay, type ReplayArchive } from "./counterLabReplayArchive.ts";
 
+// Internal borrowers treat replay archives as immutable; outgoing worker
+// transfers must use replayResponse copies, never these shared buffers.
+export type PackedCounterLabTrial = { summary: Omit<CounterLabResult, "trace">; replay: ReplayArchive };
+
 // Bump when simulation, diagnostic, or replay semantics change. This cache is
 // memory-only, so a new worker/build also starts with an empty cache.
 const ENGINE_VERSION = 1;
@@ -52,17 +56,16 @@ function retainedBytes(value: unknown, limit: number, seen = new Set<object>()):
 export function createCompletedTrialCache(maxBytes = 16 * 1024 * 1024, maxEntries = 128) {
   const entries = new Map<string, { summary: Omit<CounterLabResult, "trace">; replay: ReplayArchive; bytes: number }>();
   let bytes = 0;
-  function read(key: string | undefined): CounterLabResult | undefined {
+  function read(key: string | undefined): PackedCounterLabTrial | undefined {
     const cached = key === undefined ? undefined : entries.get(key);
     if (cached && key !== undefined) {
       entries.delete(key); entries.set(key, cached);
-      return { ...structuredClone(cached.summary), trace: structuredClone(unpackReplay(cached.replay)) };
+      return { summary: structuredClone(cached.summary), replay: cached.replay };
     }
   }
-  function store(key: string | undefined, result: CounterLabResult): CounterLabResult {
+  function store(key: string | undefined, result: PackedCounterLabTrial): PackedCounterLabTrial {
     if (key === undefined || maxEntries <= 0) return result;
-    const { trace, ...summary } = result;
-    const replay = packReplay(trace);
+    const { summary, replay } = result;
     const size = key.length * 2 + retainedBytes({ summary, replay }, maxBytes - key.length * 2);
     if (size > maxBytes) return result;
     const copy = structuredClone(summary);
@@ -77,9 +80,27 @@ export function createCompletedTrialCache(maxBytes = 16 * 1024 * 1024, maxEntrie
     entries.set(key, { summary: copy, replay, bytes: size }); bytes += size;
     return result;
   }
-  const reuse = (key: string | undefined, compute: () => CounterLabResult): CounterLabResult => read(key) ?? store(key, compute());
+  const packed = ({ trace, ...summary }: CounterLabResult): PackedCounterLabTrial => ({ summary, replay: packReplay(trace) });
+  const raw = ({ summary, replay }: PackedCounterLabTrial): CounterLabResult => ({ ...summary, trace: structuredClone(unpackReplay(replay)) });
+  const reuse = (key: string | undefined, compute: () => CounterLabResult): CounterLabResult => {
+    const cached = read(key);
+    if (cached) return raw(cached);
+    const result = compute();
+    if (key !== undefined && maxEntries > 0) store(key, packed(result));
+    return result;
+  };
   // Store only resolved, successful computations; never retain an in-flight or
   // rejected trial. Concurrent requests keep independent cancellation ownership.
-  reuse.async = async (key: string | undefined, compute: () => Promise<CounterLabResult>): Promise<CounterLabResult> => read(key) ?? store(key, await compute());
+  reuse.async = async (key: string | undefined, compute: () => Promise<CounterLabResult>): Promise<CounterLabResult> => {
+    const cached = read(key);
+    if (cached) return raw(cached);
+    const result = await compute();
+    if (key !== undefined && maxEntries > 0) store(key, packed(result));
+    return result;
+  };
+  // Analysis owns diagnostics only after completion. Share the packed archive
+  // with its cache entry instead of decoding a hit or retaining a raw trace.
+  reuse.packedAsync = async (key: string | undefined, compute: () => Promise<CounterLabResult>): Promise<PackedCounterLabTrial> =>
+    read(key) ?? store(key, packed(await compute()));
   return reuse;
 }

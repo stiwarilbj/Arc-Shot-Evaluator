@@ -153,8 +153,23 @@ const verifiedSlip = analysis.repairs.find((repair) => repair.id === 'slip-scree
 assert.ok(verifiedSlip, 'the engine offers the repair only after a comparison confirms an improvement');
 assert.ok(verifiedSlip.resolvedBreakdowns > 0, 'the verified repair clears at least one recorded breakdown');
 assert.equal(analysis.results.find((result) => result.key === 'switch:adaptive')?.firstLostOpeningMs, brokenRun.firstLostOpeningMs);
-assert.ok(analysis.detailTraces.has(`slip-screen-one:switch:adaptive`), 'selected repair details are retained for lazy replay');
+assert.ok(analysis.detailArchives.has(`slip-screen-one:switch:adaptive`), 'selected repair details are retained for lazy replay');
 assert.equal(switchSlipFixture.arrows[0].kind, 'screen', 'analysis never mutates the authored play');
+// Every selectable baseline/repair keeps exact samples and diagnostics after
+// the analysis has released its raw trial results, including cache hits.
+const expectedArchiveKeys = [];
+for (const variant of [{ id: 'original', play: switchSlipFixture, results: analysis.results }, ...analysis.repairs]) {
+  for (const result of variant.results) {
+    const key = `${variant.id}:${result.key}`;
+    expectedArchiveKeys.push(key);
+    const expected = runCounterLabTrial(variant.play, result.profile, result.mode);
+    const { trace, ...summary } = expected;
+    assert.deepEqual(result, summary, 'packing leaves repair evidence and diagnostics unchanged');
+    assert.deepEqual(unpackReplay(analysis.detailArchives.get(key)), trace, 'all selectable comparisons retain every exact replay sample');
+  }
+}
+assert.deepEqual([...analysis.detailArchives.keys()].sort(), expectedArchiveKeys.sort(), 'only baseline and qualifying repair archives are retained');
+
 
 const blockedPassPlay = {
   ...structuredClone(switchSlipFixture),
@@ -218,6 +233,23 @@ byteTrial('large', 2000); byteTrial('large', 2000);
 assert.equal(byteComputations, 5, 'oversized results are usable but are not retained');
 byteTrial('a');
 assert.equal(byteComputations, 5, 'an oversized trial does not evict a fitting completed trial');
+
+const packedCache = createCompletedTrialCache(16 * 1024 * 1024, 1);
+let packedComputations = 0;
+const computePacked = async () => { packedComputations++; return structuredClone(noAdvantage); };
+const packedFirst = await packedCache.packedAsync('packed', computePacked);
+assert.equal('trace' in packedFirst, false, 'packed analysis results never retain raw replay arrays');
+const packedSecond = await packedCache.packedAsync('packed', computePacked);
+assert.equal(packedComputations, 1);
+assert.equal(packedFirst.replay, packedSecond.replay, 'analysis and cache share the same packed archive without repacking or decoding');
+packedFirst.summary.profile.label = 'caller edit';
+assert.deepEqual(packedSecond.summary.profile, noAdvantage.profile, 'cached summaries remain isolated');
+assert.deepEqual(unpackReplay(packedSecond.replay), noAdvantage.trace);
+await packedCache.packedAsync('evict', computePacked);
+assert.deepEqual(unpackReplay(packedFirst.replay), noAdvantage.trace, 'analysis-owned archives survive trial cache eviction');
+await assert.rejects(packedCache.packedAsync('failed', async () => { throw new Error('failed'); }), /failed/);
+await packedCache.packedAsync('failed', computePacked);
+assert.equal(packedComputations, 3, 'failed packed trials are retried');
 
 const baseKey = counterLabTrialKey(noAdvantagePlay, holdProfile, 'scripted', DEFAULT_SIMULATION_SETTINGS);
 assert.equal(baseKey, counterLabTrialKey(structuredClone(noAdvantagePlay), { ...holdProfile }, 'scripted', { ...DEFAULT_SIMULATION_SETTINGS }));
@@ -325,7 +357,7 @@ for (const mode of ['scripted', 'adaptive']) {
   const expected = runCounterLabTrial({ ...play, id: `${play.id}-sync` }, switchProfile, mode);
   const { trace, ...summary } = expected;
   assert.deepEqual(analysis.results[0], summary, 'chunking preserves exact diagnostics and outcomes');
-  assert.deepEqual(analysis.detailTraces.get(`original:${expected.key}`), trace, 'chunking preserves every full-precision replay sample');
+  assert.deepEqual(unpackReplay(analysis.detailArchives.get(`original:${expected.key}`)), trace, 'chunking preserves every full-precision replay sample');
 }
 let retainedBaseline;
 let stopRepairs = false;
@@ -335,7 +367,7 @@ await assert.rejects(analyzeCounterLab({ ...structuredClone(switchSlipFixture), 
     setTimeout(() => { stopRepairs = true; }, 0);
   }), (error) => error.name === 'AbortError');
 assert.equal(retainedBaseline.results.length, 1, 'completed baseline remains available when repairs are cancelled');
-assert.ok(retainedBaseline.traces.get('original:switch:scripted').length > 1);
+assert.ok(unpackReplay(retainedBaseline.traces.get('original:switch:scripted')).length > 1);
 const asyncCache = createCompletedTrialCache();
 let asyncComputations = 0;
 await assert.rejects(asyncCache.async('cancelled', async () => { throw new DOMException('cancelled', 'AbortError'); }), (error) => error.name === 'AbortError');

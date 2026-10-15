@@ -397,18 +397,19 @@ for (const disabled of [createDecodedReplayCache(0), createDecodedReplayCache(1_
 // Every delayed callback holds the same owner. Release revokes that owner,
 // including writes that arrive after finally or after another request starts.
 const lifecycle = createCounterLabAnalysisLifecycle();
-const traces = new Map([['original:switch:scripted', frames]]);
+const traces = new Map([['original:switch:scripted', archive]]);
 const owner = lifecycle.start('released-analysis');
 assert.ok(lifecycle.canPublish(owner));
 assert.ok(lifecycle.store(owner, traces));
+assert.equal(lifecycle.archive(owner.id, 'original:switch:scripted'), archive, 'lifecycle retains the existing archive without copying or raw replay storage');
 assert.deepEqual(unpackReplay(lifecycle.archive(owner.id, 'original:switch:scripted')), frames);
 lifecycle.release(owner.id);
 assert.equal(owner.archives.size, 0, 'release immediately drops all owned replay archives');
 assert.equal(lifecycle.canPublish(owner), false, 'late progress, baseline, completion and errors lose ownership');
 assert.equal(lifecycle.shouldCancel(owner), true, 'release also interrupts the active trial');
-// Packing would throw for this data: rejection must happen before allocation.
+// Released callbacks cannot retain any new archives.
 const unencodableTrace = new Map([['late', [()=>{}]]]);
-assert.equal(lifecycle.store(owner, unencodableTrace), false, 'late baseline and completion callbacks cannot recreate or pack archives');
+assert.equal(lifecycle.store(owner, unencodableTrace), false, 'late baseline and completion callbacks cannot recreate archives');
 lifecycle.finish(owner);
 assert.equal(lifecycle.store(owner, traces), false, 'finally cannot restore released ownership');
 assert.equal(lifecycle.archive(owner.id, 'original:switch:scripted'), undefined);

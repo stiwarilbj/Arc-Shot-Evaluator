@@ -1,5 +1,4 @@
-import type { CounterLabFrame } from "./counterLabTypes.ts";
-import { packReplay, type ReplayArchive } from "./counterLabReplayArchive.ts";
+import type { ReplayArchive } from "./counterLabReplayArchive.ts";
 
 type AnalysisOwner = {
   id: string;
@@ -43,11 +42,11 @@ export function createCounterLabAnalysisLifecycle() {
     },
     release,
     archive: (id: string, key: string) => owners.get(id)?.archives.get(key),
-    store(owner: AnalysisOwner, traces: Map<string, CounterLabFrame[]>) {
+    store(owner: AnalysisOwner, archives: Map<string, ReplayArchive>) {
       if (!canPublish(owner)) return false;
-      for (const [key, trace] of traces) {
+      for (const [key, archive] of archives) {
         if (!canPublish(owner)) return false;
-        if (!owner.archives.has(key)) owner.archives.set(key, packReplay(trace));
+        if (!owner.archives.has(key)) owner.archives.set(key, archive);
       }
       return true;
     },

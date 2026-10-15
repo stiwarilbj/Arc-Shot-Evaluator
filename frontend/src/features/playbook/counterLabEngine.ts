@@ -2,9 +2,10 @@ import type { PlaybookDraft, SimulationSettings } from "./types.ts";
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from "./types.ts";
 import { advanceSimulationState, createSimulationRun, observeCounterLabRun, pointDistanceFeet, prepareSimulationRun, SIMULATION_STEP_MS } from "./simulation.ts";
 import { createCounterLabRepairs, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabResult, type CounterLabSummary, type CounterLabProgress, type PassDiagnostic, type RepairEvidence } from "./counterLabTypes.ts";
-import { counterLabTrialKey, createCompletedTrialCache } from "./counterLabTrialCache.ts";
+import { counterLabTrialKey, createCompletedTrialCache, type PackedCounterLabTrial } from "./counterLabTrialCache.ts";
+import type { ReplayArchive } from "./counterLabReplayArchive.ts";
 
-export type CounterLabAnalysis = { results: CounterLabSummary[]; repairs: CounterLabRepair[]; detailTraces: Map<string, CounterLabFrame[]> };
+export type CounterLabAnalysis = { results: CounterLabSummary[]; repairs: CounterLabRepair[]; detailArchives: Map<string, ReplayArchive> };
 export type { CounterLabProgress } from "./counterLabTypes.ts";
 
 /** Loss is a possession-level diagnosis. Released shots no longer have live openings. */
@@ -91,10 +92,10 @@ function trialSettings(profile: CounterLabProfile, mode: CounterLabMode): Simula
 }
 
 const yieldToWorker = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
-async function completedCounterLabTrialAsync(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>, isRepair: boolean): Promise<CounterLabResult> {
+async function completedCounterLabTrialAsync(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>, isRepair: boolean): Promise<PackedCounterLabTrial> {
   const settings = trialSettings(profile, mode);
   if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
-  const result = await (isRepair ? reuseCompletedRepair : reuseCompletedTrial).async(counterLabTrialKey(draft, profile, mode, settings), async () => {
+  const result = await (isRepair ? reuseCompletedRepair : reuseCompletedTrial).packedAsync(counterLabTrialKey(draft, profile, mode, settings), async () => {
     const trial = simulateCounterLabTrial(profile, mode, settings, shouldCancel, createRun);
     let step = trial.next();
     while (!step.done) {
@@ -205,21 +206,23 @@ function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMo
 }
 
 export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterLabProfile[], modes: CounterLabMode[], onProgress: (progress: CounterLabProgress) => void,
-  shouldCancel: () => boolean = () => false, onBaseline?: (results: CounterLabSummary[], traces: Map<string, CounterLabFrame[]>) => void): Promise<CounterLabAnalysis> {
+  shouldCancel: () => boolean = () => false, onBaseline?: (results: CounterLabSummary[], archives: Map<string, ReplayArchive>) => void): Promise<CounterLabAnalysis> {
   // Own the request across async progress callbacks; caller edits require a new analysis.
   draft = structuredClone(draft);
   profiles = structuredClone(profiles);
   modes = structuredClone(modes);
   validateCounterLabInput(draft, profiles, modes);
   const repairs = createCounterLabRepairs(draft);
-  const detailTraces = new Map<string, CounterLabFrame[]>();
+  // Only the currently executing trial owns raw samples. Completed trials,
+  // including unverified candidates awaiting a verdict, retain packed data.
+  const detailArchives = new Map<string, ReplayArchive>();
   const originals: CounterLabSummary[] = [];
   const candidates: CounterLabRepair[] = [];
   const total = (repairs.length + 1) * profiles.length * modes.length;
   let completed = 0;
   for (const variant of [{ id: "original", name: "Original play", play: draft, reason: "" }, ...repairs]) {
     const results: CounterLabSummary[] = [];
-    const traces = new Map<string, CounterLabFrame[]>();
+    const archives = new Map<string, ReplayArchive>();
     let createRun: ReturnType<typeof prepareSimulationRun> | undefined;
     for (const profile of profiles) for (const mode of modes) {
       if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
@@ -228,21 +231,21 @@ export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterL
         if (variant.id !== "original") validateCounterLabInput(variant.play, profiles, modes);
         createRun = prepareSimulationRun(variant.play);
       }
-      const { trace, ...result } = await completedCounterLabTrialAsync(variant.play, profile, mode, shouldCancel, createRun, variant.id !== "original");
-      results.push(result); traces.set(`${variant.id}:${result.key}`, trace);
+      const { replay, summary: result } = await completedCounterLabTrialAsync(variant.play, profile, mode, shouldCancel, createRun, variant.id !== "original");
+      results.push(result); archives.set(`${variant.id}:${result.key}`, replay);
       onProgress({ completed: ++completed, total, label: `${profile.label} · ${mode === "scripted" ? "Drawn play" : "Adaptive offense"}`, stage: variant.id === "original" ? "defenses" : "repairs" });
       await yieldToWorker();
     }
     if (variant.id === "original") {
-      originals.push(...results); traces.forEach((trace, key) => detailTraces.set(key, trace));
-      onBaseline?.(originals, detailTraces);
+      originals.push(...results); archives.forEach((archive, key) => detailArchives.set(key, archive));
+      onBaseline?.(originals, detailArchives);
     } else {
       const evidence = results.map((result) => repairEvidence(originals.find((original) => original.key === result.key)!, result));
       if (!evidence.some((item) => item.verified)) continue;
-      traces.forEach((trace, key) => detailTraces.set(key, trace));
+      archives.forEach((archive, key) => detailArchives.set(key, archive));
       candidates.push({ ...variant, results, evidence, averageGain: evidence.reduce((sum, item) => sum + item.gain, 0) / evidence.length,
         bestGain: Math.max(0, ...evidence.map((item) => item.gain)), resolvedBreakdowns: evidence.filter((item) => item.cleared).length });
     }
   }
-  return { results: originals, repairs: candidates, detailTraces };
+  return { results: originals, repairs: candidates, detailArchives };
 }

@@ -23,9 +23,9 @@ self.onmessage = (event: MessageEvent<CounterLabRequest>) => {
   const owner = lifecycle.start(request.id);
   void analyzeCounterLab(request.draft, request.profiles, request.modes,
     (progress) => { if (lifecycle.canPublish(owner)) post({ type: "progress", id: request.id, ...progress }); }, () => lifecycle.shouldCancel(owner),
-    (results, traces) => { if (lifecycle.store(owner, traces) && lifecycle.canPublish(owner)) post({ type: "baseline", id: request.id, results }); },
+    (results, archives) => { if (lifecycle.store(owner, archives) && lifecycle.canPublish(owner)) post({ type: "baseline", id: request.id, results }); },
   ).then((analysis) => {
-    if (!lifecycle.store(owner, analysis.detailTraces) || !lifecycle.canPublish(owner)) return;
+    if (!lifecycle.store(owner, analysis.detailArchives) || !lifecycle.canPublish(owner)) return;
     post({ type: "complete", id: request.id, results: analysis.results, repairs: analysis.repairs });
   }).catch((error: unknown) => {
     if (!lifecycle.owns(owner)) return;
