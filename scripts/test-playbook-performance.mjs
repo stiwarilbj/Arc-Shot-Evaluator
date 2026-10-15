@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createCounterLabAnalysisLifecycle } from '../frontend/src/features/playbook/counterLabAnalysisLifecycle.ts';
 import { createCounterLabDetailQueue } from '../frontend/src/features/playbook/counterLabDetailQueue.ts';
 import { packReplay, unpackReplay, replayResponse } from '../frontend/src/features/playbook/counterLabReplayArchive.ts';
 import { createSharedLibraryRead } from '../frontend/src/features/playbook/sharedLibraryRead.ts';
@@ -335,6 +336,52 @@ for (let i = 0; i < 2; i++) {
   assert.deepEqual(unpackReplay(received), frames);
   assert.deepEqual([archive.roots.byteLength, archive.offsets.byteLength, archive.tokens.byteLength, archive.numbers.byteLength], retainedSizes, 'transfer never detaches reusable source data');
 }
+// Every delayed callback holds the same owner. Release revokes that owner,
+// including writes that arrive after finally or after another request starts.
+const lifecycle = createCounterLabAnalysisLifecycle();
+const traces = new Map([['original:switch:scripted', frames]]);
+const owner = lifecycle.start('released-analysis');
+assert.ok(lifecycle.canPublish(owner));
+assert.ok(lifecycle.store(owner, traces));
+assert.deepEqual(unpackReplay(lifecycle.archive(owner.id, 'original:switch:scripted')), frames);
+lifecycle.release(owner.id);
+assert.equal(owner.archives.size, 0, 'release immediately drops all owned replay archives');
+assert.equal(lifecycle.canPublish(owner), false, 'late progress, baseline, completion and errors lose ownership');
+assert.equal(lifecycle.shouldCancel(owner), true, 'release also interrupts the active trial');
+// Packing would throw for this data: rejection must happen before allocation.
+const unencodableTrace = new Map([['late', [()=>{}]]]);
+assert.equal(lifecycle.store(owner, unencodableTrace), false, 'late baseline and completion callbacks cannot recreate or pack archives');
+lifecycle.finish(owner);
+assert.equal(lifecycle.store(owner, traces), false, 'finally cannot restore released ownership');
+assert.equal(lifecycle.archive(owner.id, 'original:switch:scripted'), undefined);
+lifecycle.release(owner.id);
+const replacement = lifecycle.start(owner.id);
+assert.equal(lifecycle.store(owner, traces), false, 'even ID reuse cannot reauthorize an older callback');
+lifecycle.finish(owner);
+assert.ok(lifecycle.canPublish(replacement), 'older cleanup cannot finish a replacement request');
+assert.ok(lifecycle.store(replacement, traces));
+lifecycle.finish(replacement);
+assert.equal(lifecycle.canPublish(replacement), false, 'completed owners reject extra writes and progress');
+assert.ok(lifecycle.archive(replacement.id, 'original:switch:scripted'), 'completed reports remain replayable');
+lifecycle.release(replacement.id);
+assert.equal(lifecycle.archive(replacement.id, 'original:switch:scripted'), undefined);
+const cancelledOwner = lifecycle.start('cancelled-report');
+lifecycle.store(cancelledOwner, traces);
+lifecycle.cancel(cancelledOwner.id);
+assert.equal(lifecycle.canPublish(cancelledOwner), false);
+assert.equal(lifecycle.shouldCancel(cancelledOwner), true);
+assert.equal(lifecycle.store(cancelledOwner, unencodableTrace), false);
+lifecycle.finish(cancelledOwner);
+assert.ok(lifecycle.archive(cancelledOwner.id, 'original:switch:scripted'), 'cancelling repairs retains the completed baseline');
+lifecycle.release(cancelledOwner.id);
+assert.equal(lifecycle.owns(cancelledOwner), false);
+for (const cancelled of [false, true]) {
+  const emptyOwner = lifecycle.start(`empty-${cancelled}`);
+  if (cancelled) lifecycle.cancel(emptyOwner.id);
+  lifecycle.finish(emptyOwner);
+  assert.equal(lifecycle.owns(emptyOwner), false, 'finished requests with no report leave no retained ownership entry');
+}
+
 // Superseded selections never reach the response allocator. The final request
 // retains its complete identity and both full-precision comparison replays.
 const detailResponses = [], allocations = [];
@@ -373,4 +420,4 @@ assert.equal(allocations.at(-1), 'retry', 'later retries still receive a respons
 assert.deepEqual(unpackReplay(packReplay([])), []);
 assert.throws(() => unpackReplay({ ...archive, version: 2 }), /Unsupported/);
 assert.throws(() => unpackReplay({ ...archive, roots: new Uint32Array([4294967295]).buffer }), /incomplete/);
-console.log(`Performance regressions passed: superseded replay requests, content-keyed mini-courts, PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
+console.log(`Performance regressions passed: permanent analysis release, superseded replay requests, content-keyed mini-courts, PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
