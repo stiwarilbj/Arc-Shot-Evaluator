@@ -185,6 +185,16 @@ assert.ok(pointDistanceFeet(interruptedRun.frame.players.find((player) => player
 const delayedRun = createSimulationRun(cadenceDraft, settings);
 advanceSimulationRun(delayedRun, 5000, settings);
 assert.ok(delayedRun.elapsedMs <= 50 + 1e-6, 'a delayed animation frame cannot advance the simulation by a large jump');
+const retainedFrame = getSimulationFrame(delayedRun), retainedObservation = observeCounterLabRun(delayedRun);
+const retainedData = structuredClone({ retainedFrame, retainedObservation });
+const siblingRun = createSimulationRun(cadenceDraft, settings);
+const siblingState = structuredClone(siblingRun);
+advanceAtRate(delayedRun, 500, 60);
+assert.deepEqual({ retainedFrame, retainedObservation }, retainedData, 'display and recording snapshots outlive repeated scratch writes');
+assert.deepEqual(siblingRun, siblingState, 'one run cannot modify another run\'s scratch state');
+const liveVelocities = structuredClone(delayedRun.velocities);
+delayedRun.movementBuffers.solver.velocities.forEach((velocity) => { velocity.x += 100; velocity.y += 100; });
+assert.deepEqual(delayedRun.velocities, liveVelocities, 'committed engine velocities never alias solver scratch memory');
 
 // A simulation run must not add temporary defenders to or otherwise mutate the draft.
 const noDefenderDraft = makeDraft({ players: [[50, 76], [27, 60], [73, 60]], ball: [50, 76] });

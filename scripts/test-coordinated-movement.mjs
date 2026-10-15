@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
-import { coordinateMovement, createMovementOrder, PLAYER_BODY_RADIUS_FEET } from '../frontend/src/features/playbook/coordinatedMovement.ts';
+import { coordinateMovement, createMovementBuffers, createMovementOrder, PLAYER_BODY_RADIUS_FEET } from '../frontend/src/features/playbook/coordinatedMovement.ts';
 import { createSimulationRun, advanceSimulationRun, SIMULATION_STEP_MS, pointDistanceFeet, getSimulationFrame, setSimulationRunSettings } from '../frontend/src/features/playbook/simulation.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from '../frontend/src/features/playbook/types.ts';
@@ -19,6 +19,19 @@ const tiedOrder = createMovementOrder(tied.map((item) => item.key));
 for (const active of [tied, [...tied].reverse(), tied]) assert.deepEqual(coordinateMovement(active, dt, bounds, tiedOrder), coordinateMovement(active, dt, bounds), 'locale-equivalent keys retain stable input tie-breaking');
 assert.deepEqual(coordinateMovement(participants, 0, bounds, movementOrder), coordinateMovement(participants, 0, bounds), 'zero-time resolution ignores ordering');
 assert.notEqual(createMovementOrder(participants.map((item) => item.key)).keys, movementOrder.keys, 'each possession owns its order');
+const buffers = createMovementBuffers(), siblingBuffers = createMovementBuffers();
+const retained = coordinateMovement(participants, dt, bounds, undefined, buffers);
+const retainedSnapshot = structuredClone(retained);
+for (const active of [participants.slice(0, 1), [], [...participants].reverse(), participants.map((item) => ({ ...item, frozen: true })), participants]) {
+  assert.deepEqual(coordinateMovement(active, dt, bounds, undefined, buffers), coordinateMovement(active, dt, bounds), 'reused scratch buffers reset across roster sizes, reordering, and frozen movement');
+  coordinateMovement(active, dt * 2, bounds, undefined, siblingBuffers);
+  assert.deepEqual(retained, retainedSnapshot, 'later and interleaved solver calls never overwrite retained results');
+}
+retained[0].velocity.x += 100;
+retained[0].point.y += 100;
+assert.deepEqual(coordinateMovement(participants, dt, bounds, undefined, buffers), retainedSnapshot, 'returned geometry cannot mutate scratch state or subsequent results');
+assert.notEqual(buffers.desired, siblingBuffers.desired);
+assert.notEqual(buffers.pairs[0].r, siblingBuffers.pairs[0].r, 'pair geometry is owned by its simulation');
 const sweptGap = (a, b, nextA, nextB) => {
   const r={x:b.x-a.x,y:b.y-a.y}, v={x:(nextB.x-b.x)-(nextA.x-a.x),y:(nextB.y-b.y)-(nextA.y-a.y)};
   const t=Math.max(0,Math.min(1,-(r.x*v.x+r.y*v.y)/Math.max(1e-12,v.x*v.x+v.y*v.y)));

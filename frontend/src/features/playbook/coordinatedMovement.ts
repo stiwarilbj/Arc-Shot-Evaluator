@@ -6,6 +6,11 @@ export type MotionIntent = {
   corridor?: { point: MotionPoint; radius: number };
 };
 export type MovementOrder = { keys: string[]; inputKeys?: string[]; indices?: number[] };
+type CollisionPair = { ai: number; bi: number; r: MotionPoint; n: MotionPoint; distance: number; allowance: number; allowed: number };
+export type MovementBuffers = { pairs: CollisionPair[]; desired: MotionPoint[]; velocities: MotionPoint[]; bounded: MotionPoint };
+export function createMovementBuffers(): MovementBuffers {
+  return { pairs: [], desired: [], velocities: [], bounded: { x: 0, y: 0 } };
+}
 export function createMovementOrder(keys: Iterable<string>): MovementOrder {
   return { keys: [...new Set(keys)].sort((a, b) => a.localeCompare(b)) };
 }
@@ -39,27 +44,37 @@ export const PLAYER_PREFERRED_GAP_FEET = 2.2;
 const BODY_GAP = PLAYER_BODY_RADIUS_FEET * 2;
 const norm = (p: MotionPoint) => Math.hypot(p.x, p.y);
 const dot = (a: MotionPoint, b: MotionPoint) => a.x * b.x + a.y * b.y;
-function limit(p: MotionPoint, maximum: number): MotionPoint {
+function limit(p: MotionPoint, maximum: number, output: MotionPoint = { x: 0, y: 0 }): MotionPoint {
   const length = norm(p), scale = length > maximum && length ? maximum / length : 1;
-  return { x: p.x * scale, y: p.y * scale };
+  output.x = p.x * scale; output.y = p.y * scale;
+  return output;
 }
 
 /** Reciprocal steering followed by swept, joint body constraints. No position snaps. */
-export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: { left: number; right: number; top: number; bottom: number }, preparedOrder?: MovementOrder) {
+export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: { left: number; right: number; top: number; bottom: number }, preparedOrder?: MovementOrder, buffers = createMovementBuffers()) {
   if (dt <= 0) return intents.map((i) => ({ point: { ...i.point }, velocity: { ...i.previousVelocity } }));
   const order = movementIndices(intents, preparedOrder);
   // Starting positions stay fixed while the passes correct candidate velocities.
-  const pairs = [];
+  const { pairs, desired, velocities } = buffers;
+  let pairCount = 0;
   for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
     const ai = order[a], bi = order[b], A = intents[ai], B = intents[bi];
-    const r = { x: B.point.x - A.point.x, y: B.point.y - A.point.y }, distance = norm(r);
-    const n = distance > 1e-6 ? { x: r.x / distance, y: r.y / distance } : { x: 1, y: 0 };
+    const pair = pairs[pairCount++] ??= { ai: 0, bi: 0, r: { x: 0, y: 0 }, n: { x: 0, y: 0 }, distance: 0, allowance: 0, allowed: 0 };
+    const { r, n } = pair;
+    r.x = B.point.x - A.point.x; r.y = B.point.y - A.point.y;
+    const distance = norm(r);
+    n.x = distance > 1e-6 ? r.x / distance : 1; n.y = distance > 1e-6 ? r.y / distance : 0;
     const separatingSpeed = Math.max(0, -dot({ x: A.previousVelocity.x - B.previousVelocity.x, y: A.previousVelocity.y - B.previousVelocity.y }, n));
     const allowance = distance >= BODY_GAP ? (distance - BODY_GAP) / dt
       : -Math.min(2, (BODY_GAP - distance) * 3, separatingSpeed + (A.acceleration + B.acceleration) * dt * .5);
-    pairs.push({ ai, bi, r, distance, n, allowance, allowed: Math.max(0, (distance - BODY_GAP) / dt) });
+    pair.ai = ai; pair.bi = bi; pair.distance = distance; pair.allowance = allowance; pair.allowed = Math.max(0, (distance - BODY_GAP) / dt);
   }
-  const desired = intents.map((i) => i.frozen ? { x: 0, y: 0 } : { ...i.velocity });
+  pairs.length = pairCount;
+  desired.length = velocities.length = intents.length;
+  intents.forEach((intent, index) => {
+    const point = desired[index] ??= { x: 0, y: 0 };
+    point.x = intent.frozen ? 0 : intent.velocity.x; point.y = intent.frozen ? 0 : intent.velocity.y;
+  });
   for (const { ai, bi, r, distance, n } of pairs) {
     const A = intents[ai], B = intents[bi];
     const relative = { x: desired[ai].x - desired[bi].x, y: desired[ai].y - desired[bi].y };
@@ -77,10 +92,11 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
     desired[ai].x += push.x * aWeight / sum; desired[ai].y += push.y * aWeight / sum;
     desired[bi].x -= push.x * bWeight / sum; desired[bi].y -= push.y * bWeight / sum;
   }
-  const velocities = desired.map((v, i) => {
-    const intent = intents[i]; if (intent.frozen) return { x: 0, y: 0 };
+  desired.forEach((v, i) => {
+    const velocity = velocities[i] ??= { x: 0, y: 0 };
+    const intent = intents[i]; if (intent.frozen) { velocity.x = 0; velocity.y = 0; return; }
     const change = limit({ x: v.x - intent.previousVelocity.x, y: v.y - intent.previousVelocity.y }, intent.acceleration * dt);
-    return limit({ x: intent.previousVelocity.x + change.x, y: intent.previousVelocity.y + change.y }, intent.speed);
+    limit({ x: intent.previousVelocity.x + change.x, y: intent.previousVelocity.y + change.y }, intent.speed, velocity);
   });
   for (let pass = 0; pass < 16; pass++) {
     for (const { ai, bi, distance, n, allowance } of pairs) {
@@ -97,14 +113,14 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
       velocities[bi].x += n.x * violation * bw / sum; velocities[bi].y += n.y * violation * bw / sum;
     }
     velocities.forEach((v, i) => {
-      const intent = intents[i], bounded = limit(v, intent.frozen ? 0 : intent.speed);
+      const intent = intents[i], bounded = limit(v, intent.frozen ? 0 : intent.speed, buffers.bounded);
       v.x = Math.max(Math.min(0, (bounds.left - intent.point.x) / dt), Math.min(Math.max(0, (bounds.right - intent.point.x) / dt), bounded.x));
       v.y = Math.max(Math.min(0, (bounds.top - intent.point.y) / dt), Math.min(Math.max(0, (bounds.bottom - intent.point.y) / dt), bounded.y));
       if (intent.corridor) {
         const next = { x: intent.point.x + v.x * dt, y: intent.point.y + v.y * dt };
         const offset = { x: next.x - intent.corridor.point.x, y: next.y - intent.corridor.point.y };
         if (norm(offset) > intent.corridor.radius && norm({ x: intent.point.x - intent.corridor.point.x, y: intent.point.y - intent.corridor.point.y }) <= intent.corridor.radius) {
-          const safe = limit(offset, intent.corridor.radius);
+          const safe = limit(offset, intent.corridor.radius, buffers.bounded);
           v.x = (intent.corridor.point.x + safe.x - intent.point.x) / dt;
           v.y = (intent.corridor.point.y + safe.y - intent.point.y) / dt;
         }
@@ -124,7 +140,8 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
       velocities[bi].x *= scale; velocities[bi].y *= scale;
     }
   }
-  return velocities.map((velocity, i) => ({ velocity, point: { x: intents[i].point.x + velocity.x * dt, y: intents[i].point.y + velocity.y * dt } }));
+  // Returned positions and velocities must outlive subsequent scratch-buffer writes.
+  return velocities.map((velocity, i) => ({ velocity: { ...velocity }, point: { x: intents[i].point.x + velocity.x * dt, y: intents[i].point.y + velocity.y * dt } }));
 }
 
 /** Bounded linear interpolation cannot overshoot an executed route segment. */
