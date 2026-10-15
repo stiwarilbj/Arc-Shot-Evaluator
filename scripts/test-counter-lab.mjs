@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { advanceReplay, matchesReplay, replayFrame } from '../frontend/src/features/playbook/counterLabReplay.ts';
 import { analyzeCounterLab, runCounterLabTrial, diagnoseOpenings, repairEvidence, verifiedRecovery } from '../frontend/src/features/playbook/counterLabEngine.ts';
 import { COUNTER_LAB_DEFAULT_PROFILES, createCounterLabRepairs, eligibleCounterLabSchemes } from '../frontend/src/features/playbook/counterLabTypes.ts';
-import { createSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame } from '../frontend/src/features/playbook/simulation.ts';
+import { createSimulationRun, authoredCourtRoutes, advanceSimulationRun, getSimulationFrame, observeCounterLabRun } from '../frontend/src/features/playbook/simulation.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
 
@@ -41,6 +41,38 @@ const defaultRun = createSimulationRun(switchSlipFixture, { ...DEFAULT_SIMULATIO
 const scriptedRun = createSimulationRun(switchSlipFixture, { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: 'man-to-man', defenseStrategy: 'switch', offenseMode: 'scripted' });
 assert.ok(defaultRun.actions.some((action) => action.automatic), 'existing Playbook simulation keeps its adaptive behavior by default');
 assert.equal(scriptedRun.actions.some((action) => action.automatic), false, 'scripted runs suppress automatic and off-ball actions');
+
+// Recording snapshots contain only replay fields and own their mutable data.
+const recordingRun = createSimulationRun({ ...switchSlipFixture,
+  players: switchSlipFixture.players.map((player) => ({ ...player, ratings: { threePoint: 4, midrange: 3, finishing: 5 }, badges: ['slasher'] })),
+}, { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: 'man-to-man', offenseMode: 'scripted' });
+advanceSimulationRun(recordingRun, 1000 / 30);
+const recording = observeCounterLabRun(recordingRun);
+const expectedRecording = structuredClone({
+  players: recordingRun.frame.players.map(({ id, x, y }) => ({ id, x, y })),
+  defenders: recordingRun.frame.defenders.map(({ id, x, y }) => ({ id, x, y })),
+  ball: recordingRun.frame.ball, shotPhase: recordingRun.frame.shotPhase, execution: recordingRun.frame.execution,
+});
+assert.deepEqual(recording.frame, expectedRecording, 'recording fields exactly match the original frame projection');
+assert.deepEqual(Object.keys(recording.frame).sort(), ['ball', 'defenders', 'execution', 'players', 'shotPhase'], 'recordings omit unused routes, attributes, quality scores, and display fields');
+assert.ok(recording.frame.execution.length > 0, 'isolation regression exercises an executing action');
+const preservedRecording = structuredClone(recording);
+recordingRun.frame.players[0].x += 1;
+recordingRun.frame.defenders[0].y += 1;
+recordingRun.frame.ball.x += 1;
+recordingRun.frame.execution[0].progress += .1;
+assert.deepEqual(recording, preservedRecording, 'live frame mutations cannot change a recorded sample');
+const preservedLiveFrame = structuredClone(recordingRun.frame);
+recording.frame.players[0].y += 1;
+recording.frame.defenders[0].x += 1;
+recording.frame.ball.y += 1;
+recording.frame.execution[0].notice = 'recording-only edit';
+assert.deepEqual(recordingRun.frame, preservedLiveFrame, 'recording mutations cannot affect simulation or Playbook display frames');
+recordingRun.frame.ball = null;
+recordingRun.frame.execution = undefined;
+const emptyRecording = observeCounterLabRun(recordingRun);
+assert.equal(emptyRecording.frame.ball, null, 'null balls remain null in recording snapshots');
+assert.equal(emptyRecording.frame.execution, undefined, 'missing execution diagnostics remain optional');
 
 const brokenRun = runCounterLabTrial(switchSlipFixture, switchProfile, 'adaptive');
 const repeatedRun = runCounterLabTrial(switchSlipFixture, switchProfile, 'adaptive');

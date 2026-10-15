@@ -105,7 +105,7 @@ export function runCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProf
     const sample: CounterLabFrame = { elapsedMs: run.elapsedMs, sequence: observation.sequence, action: observation.action, ballHandlerId: observation.ballHandlerId,
       assignments: observation.assignments, opportunities: observation.opportunities, blockedPass: observation.blockedPass,
       involvedPlayerIds: observation.involvedPlayerIds, activeRoutes: observation.activeRoutes,
-      players: frame.players.map(({ id, x, y }) => ({ id, x, y })), defenders: frame.defenders.map(({ id, x, y }) => ({ id, x, y })), ball: frame.ball, shotPhase: frame.shotPhase, execution: frame.execution };
+      players: frame.players, defenders: frame.defenders, ball: frame.ball, shotPhase: frame.shotPhase, execution: frame.execution };
     trace.push(sample);
     if (run.elapsedMs + 1e-6 >= nextDiagnosticMs || run.elapsedMs >= run.durationMs) { diagnosticTrace.push(sample); nextDiagnosticMs += 100; }
   };

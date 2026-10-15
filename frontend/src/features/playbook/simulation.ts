@@ -1100,7 +1100,10 @@ export type CounterLabObservation = {
   blockedPass: { actionId: string; sequence: number; playerId: number; receiverGap: number; laneGap: number } | null;
   involvedPlayerIds: number[];
   activeRoutes: CourtRoute[];
-  frame: SimulationFrame;
+  frame: Pick<SimulationFrame, "ball" | "shotPhase" | "execution"> & {
+    players: Array<Pick<PlaybookMarker, "id" | "x" | "y">>;
+    defenders: Array<Pick<PlaybookMarker, "id" | "x" | "y">>;
+  };
 };
 
 /** Return a compact, evidence-based view of the current possession for Counter Lab. */
@@ -1143,7 +1146,13 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
       ...(blockedPass ? [blockedPass.playerId] : []),
     ])],
     activeRoutes,
-    frame: copyFrame(run.frame),
+    frame: {
+      players: run.frame.players.map(({ id, x, y }) => ({ id, x, y })),
+      defenders: run.frame.defenders.map(({ id, x, y }) => ({ id, x, y })),
+      ball: run.frame.ball ? { ...run.frame.ball } : null,
+      shotPhase: run.frame.shotPhase,
+      execution: run.frame.execution?.map((action) => ({ ...action })),
+    },
   };
 }
 
