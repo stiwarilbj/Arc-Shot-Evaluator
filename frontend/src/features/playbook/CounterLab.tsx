@@ -10,6 +10,7 @@ import { STARTER_PLAYS } from "./data";
 import { COUNTER_LAB_DEFAULT_PROFILES, COUNTER_LAB_EXTRA_SCHEMES, COUNTER_LAB_EXTRA_STRATEGIES, eligibleCounterLabSchemes, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabSummary, type CounterLabMessage, type CounterLabProgress } from "./counterLabTypes";
 import { advanceReplay, matchesReplay, replayFrame } from "./counterLabReplay";
 import { unpackReplay } from "./counterLabReplayArchive.ts";
+import { createDecodedReplayCache } from "./decodedReplayCache.ts";
 import { COURT_VIEWBOX, courtPointToSvg } from "./courtGeometry";
 import { CourtMarkings } from "./CourtMarkings";
 const requestId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -51,6 +52,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   const simulationWorker = useRef<Worker | null>(null);
   const reportId = useRef(""), pendingId = useRef("");
   const expectedDetail = useRef<{ id: string; detailId: string; key: string; repairId: string } | null>(null);
+  const [replayCache] = useState(createDecodedReplayCache);
   const libraryVersion = useRef(0), saveLock = useRef(false), positionRef = useRef(0);
   const resultsRef = useRef<HTMLElement>(null);
   const key = `${selection.profileId}:${selection.mode}`;
@@ -64,14 +66,18 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   const repaired = chosenRepair?.results.find((result) => result.key === key) ?? null;
   const duration = Math.max(baselineTrace?.at(-1)?.elapsedMs ?? 0, repairTrace?.at(-1)?.elapsedMs ?? 0);
   const schemes = eligibleCounterLabSchemes(draft.defenders.length || Math.min(5, draft.players.length), draft.players.length);
+  const showReplay = useCallback(({ original, repaired }: { original: CounterLabFrame[]; repaired: CounterLabFrame[] | null }) => {
+    setBaselineTrace(original); setRepairTrace(repaired); setDetailError("");
+    positionRef.current = Math.min(positionRef.current, Math.max(original.at(-1)?.elapsedMs ?? 0, repaired?.at(-1)?.elapsedMs ?? 0)); setPosition(positionRef.current);
+  }, []);
   const refreshLibrary = useCallback(() => {
     const version = ++libraryVersion.current;
     void fetchPlaybooks().then((plays) => { if (version === libraryVersion.current) { setSaved(plays); setLibraryError(""); } }).catch((caught: unknown) => { if (version === libraryVersion.current) setLibraryError(messageOf(caught)); });
   }, []);
   useEffect(() => {
     refreshLibrary(); const unsubscribe = subscribePlaybooks(refreshLibrary);
-    return () => { ++libraryVersion.current; unsubscribe(); simulationWorker.current?.terminate(); simulationWorker.current = null; reportWorker.current = null; pendingWorker.current = null; };
-  }, [refreshLibrary]);
+    return () => { ++libraryVersion.current; unsubscribe(); replayCache.reset(null); simulationWorker.current?.terminate(); simulationWorker.current = null; reportWorker.current = null; pendingWorker.current = null; };
+  }, [refreshLibrary, replayCache]);
   useEffect(() => { if (active) refreshLibrary(); }, [active, refreshLibrary]);
   useEffect(() => { if (requestedPlay) loadPlay(requestedPlay.play, "Playbook draft"); }, [requestedPlay?.requestId]);
   useEffect(() => { if (!active) setPlaying(false); }, [active]);
@@ -88,13 +94,18 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
     handle = requestAnimationFrame(tick); return () => cancelAnimationFrame(handle);
   }, [playing, active, speed, duration]);
   useEffect(() => {
-    if (!baseline || !reportWorker.current) return;
-    setPlaying(false); setBaselineTrace(null); setRepairTrace(null); setDetailError("");
-    const expected = { id: reportId.current, detailId: requestId(), key, repairId: chosenId }; expectedDetail.current = expected;
+    if (!baseline) return;
+    setPlaying(false); setDetailError(""); expectedDetail.current = null;
+    const expected = { id: reportId.current, detailId: requestId(), key, repairId: chosenId };
+    const cached = replayCache.get(expected);
+    if (cached) { showReplay(cached); return; }
+    setBaselineTrace(null); setRepairTrace(null);
+    if (!reportWorker.current) { setDetailError("The replay worker stopped. Test defenses again to restore replay."); return; }
+    expectedDetail.current = expected;
     reportWorker.current.postMessage({ type: "details", ...expected });
     const timeout = window.setTimeout(() => { if (expectedDetail.current?.detailId === expected.detailId) setDetailError("Replay could not be loaded. Retry the replay or test defenses again."); }, 8000);
     return () => window.clearTimeout(timeout);
-  }, [baseline, key, chosenId, detailRetry]);
+  }, [baseline, key, chosenId, detailRetry, replayCache, showReplay]);
   useEffect(() => { if (results && active) resultsRef.current?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); }, [Boolean(results)]);
 
   function pauseAndSeek(time: number) { setPlaying(false); positionRef.current = Math.max(0, Math.min(time, duration)); setPosition(positionRef.current); }
@@ -103,6 +114,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
     if (reportId.current) reportWorker.current?.postMessage({ type: "release", id: reportId.current });
     pendingWorker.current = null; reportWorker.current = null;
     pendingId.current = ""; reportId.current = ""; expectedDetail.current = null;
+    replayCache.reset(null);
     setProgress(null); setResults(null); setRepairs([]); setRepairId("original"); setBaselineTrace(null); setRepairTrace(null); setPlaying(false); setPosition(0); positionRef.current = 0;
     setSavedCopies({}); setSaveMessage(""); setError(""); setDetailError("");
   }
@@ -133,8 +145,8 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
         if (!message.original || (message.repairId !== "original" && !message.repaired)) { setDetailError("This replay is unavailable. Test defenses again to regenerate it."); return; }
         try {
           const original = unpackReplay(message.original), repaired = message.repaired ? unpackReplay(message.repaired) : null;
-          setBaselineTrace(original); setRepairTrace(repaired); setDetailError("");
-          positionRef.current = Math.min(positionRef.current, Math.max(original.at(-1)?.elapsedMs ?? 0, repaired?.at(-1)?.elapsedMs ?? 0)); setPosition(positionRef.current);
+          replayCache.set(message, { original, repaired });
+          showReplay({ original, repaired });
         } catch (caught) { setDetailError(messageOf(caught)); }
         return;
       }
@@ -143,6 +155,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
       if (message.type === "baseline") {
         if (reportId.current && reportId.current !== message.id) reportWorker.current?.postMessage({ type: "release", id: reportId.current });
         reportWorker.current = worker; reportId.current = message.id;
+        replayCache.reset(message.id);
         setResults(message.results); setRepairs([]); setRepairId("original"); setSavedCopies({}); setPosition(0); positionRef.current = 0;
         const mode = modes.includes("scripted") ? "scripted" : modes[0];
         const candidates = message.results.filter((result) => result.mode === mode).sort((a, b) => Number(Boolean(b.firstBreakdown)) - Number(Boolean(a.firstBreakdown)) || a.score - b.score);

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { createDecodedReplayCache } from '../frontend/src/features/playbook/decodedReplayCache.ts';
+import { replayFrame } from '../frontend/src/features/playbook/counterLabReplay.ts';
 import { createCounterLabAnalysisLifecycle } from '../frontend/src/features/playbook/counterLabAnalysisLifecycle.ts';
 import { createCounterLabDetailQueue } from '../frontend/src/features/playbook/counterLabDetailQueue.ts';
 import { packReplay, unpackReplay, replayResponse } from '../frontend/src/features/playbook/counterLabReplayArchive.ts';
@@ -336,6 +338,62 @@ for (let i = 0; i < 2; i++) {
   assert.deepEqual(unpackReplay(received), frames);
   assert.deepEqual([archive.roots.byteLength, archive.offsets.byteLength, archive.tokens.byteLength, archive.numbers.byteLength], retainedSizes, 'transfer never detaches reusable source data');
 }
+// A separate interface cache retains only recent decoded comparisons, reuses
+// exact immutable objects and never crosses report ownership boundaries.
+const decodedCache = createDecodedReplayCache(2 * 1024 * 1024, 2);
+const replaySelection = { id: 'decoded-report', key: 'switch:scripted', repairId: 'original' };
+const comparison = { original: unpackReplay(archive), repaired: null };
+decodedCache.reset(replaySelection.id);
+decodedCache.set(replaySelection, comparison);
+const hit = decodedCache.get({ ...replaySelection, detailId: 'a-new-request-id' });
+assert.equal(hit.original, comparison.original, 'a cache hit reuses decoded traces without decoding or copying');
+assert.ok(Object.isFrozen(hit)); assert.ok(Object.isFrozen(hit.original));
+assert.throws(() => hit.original.push(frame), TypeError);
+assert.throws(() => { hit.original[0].players[0].x = 99; }, TypeError);
+assert.deepEqual(hit.original, frames);
+const snapshot = structuredClone(hit.original);
+replayFrame(hit.original, 1234.56789);
+assert.deepEqual(hit.original, snapshot, 'seeking and interpolation never mutate cached data');
+for (const changed of [{ id: 'other-report' }, { key: 'switch:adaptive' }, { key: 'drop:scripted' }, { repairId: 'slip-screen' }]) {
+  assert.equal(decodedCache.get({ ...replaySelection, ...changed }), undefined, 'analysis, defense, mode and repair all participate in identity');
+}
+const repairedSelection = { ...replaySelection, repairId: 'slip-screen' };
+const repairedComparison = { original: unpackReplay(archive), repaired: unpackReplay(archive) };
+decodedCache.set(repairedSelection, repairedComparison);
+assert.equal(decodedCache.get(repairedSelection).repaired, repairedComparison.repaired);
+decodedCache.get(replaySelection); // Original becomes most recently used.
+const thirdSelection = { ...replaySelection, key: 'drop:scripted' };
+decodedCache.set(thirdSelection, comparison);
+assert.equal(decodedCache.get(repairedSelection), undefined, 'least-recently-used comparison is evicted at the entry limit');
+assert.equal(decodedCache.get(replaySelection).original, comparison.original);
+decodedCache.reset(replaySelection.id);
+assert.ok(decodedCache.get(replaySelection), 'keeping a report through cancellation preserves cached replays');
+decodedCache.reset('replacement-report');
+assert.equal(decodedCache.get(replaySelection), undefined);
+decodedCache.set(replaySelection, comparison);
+decodedCache.reset(replaySelection.id);
+assert.equal(decodedCache.get(replaySelection), undefined, 'late responses cannot repopulate a released report');
+decodedCache.set(replaySelection, comparison);
+decodedCache.reset(null); decodedCache.reset(replaySelection.id);
+assert.equal(decodedCache.get(replaySelection), undefined, 'clear/unmount drops all retained traces');
+decodedCache.set(repairedSelection, comparison);
+assert.equal(decodedCache.get(repairedSelection), undefined, 'incomplete repaired comparisons never become cache hits');
+const memoryCache = createDecodedReplayCache(20_000, 10);
+memoryCache.reset(replaySelection.id);
+const largeComparison = { original: unpackReplay(packReplay([{ ...frame, action: 'x'.repeat(6000) }])), repaired: null };
+memoryCache.set(replaySelection, largeComparison);
+assert.ok(memoryCache.get(replaySelection), 'a single fitting decoded comparison is retained');
+memoryCache.set(thirdSelection, largeComparison);
+assert.equal(memoryCache.get(replaySelection), undefined, 'the memory budget evicts entries even below the count limit');
+assert.ok(memoryCache.get(thirdSelection));
+memoryCache.set(replaySelection, { original: unpackReplay(packReplay([{ ...frame, action: 'x'.repeat(30_000) }])), repaired: null });
+assert.equal(memoryCache.get(replaySelection), undefined, 'oversized replays remain playable but are not retained');
+assert.ok(memoryCache.get(thirdSelection), 'oversized entries do not evict a fitting recent replay');
+for (const disabled of [createDecodedReplayCache(0), createDecodedReplayCache(1_000_000, 0)]) {
+  disabled.reset(replaySelection.id); disabled.set(replaySelection, comparison);
+  assert.equal(disabled.get(replaySelection), undefined);
+}
+
 // Every delayed callback holds the same owner. Release revokes that owner,
 // including writes that arrive after finally or after another request starts.
 const lifecycle = createCounterLabAnalysisLifecycle();
@@ -420,4 +478,4 @@ assert.equal(allocations.at(-1), 'retry', 'later retries still receive a respons
 assert.deepEqual(unpackReplay(packReplay([])), []);
 assert.throws(() => unpackReplay({ ...archive, version: 2 }), /Unsupported/);
 assert.throws(() => unpackReplay({ ...archive, roots: new Uint32Array([4294967295]).buffer }), /incomplete/);
-console.log(`Performance regressions passed: permanent analysis release, superseded replay requests, content-keyed mini-courts, PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
+console.log(`Performance regressions passed: bounded decoded replay reuse, permanent analysis release, superseded replay requests, content-keyed mini-courts, PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
