@@ -34,6 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { createPlaybook, deletePlaybook, fetchPlaybooks, subscribePlaybooks, updatePlaybook } from "./api";
+import { createPlaybookDraftSession } from "./playbookDraftSession";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
@@ -329,7 +330,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const rootRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const [draft, setDraft] = useState<PlaybookDraft>(() => clonePlaybook(READY_SETUP));
+  const [draftSession] = useState(() => createPlaybookDraftSession(clonePlaybook(READY_SETUP)));
+  const [draft, setDraftState] = useState<PlaybookDraft>(() => draftSession.current);
   const [history, setHistory] = useState<PlaybookDraft[]>([]);
   const [future, setFuture] = useState<PlaybookDraft[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -352,7 +354,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [starterOpen, setStarterOpen] = useState(false);
   const [starterSearch, setStarterSearch] = useState("");
   const [starterCategory, setStarterCategory] = useState("All plays");
-  const [replacement, setReplacement] = useState<PlaybookDraft | null>(null);
+  const [replacement, setReplacementState] = useState<PlaybookDraft | null>(null);
+  const replacementRef = useRef<PlaybookDraft | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -365,6 +368,15 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [arrowFields, setArrowFields] = useState({ id: "", sequence: "", timing: "" });
   const simulationFrameRef = useRef<number | null>(null);
   const simulationRunRef = useRef<SimulationRun | null>(null);
+
+  function setDraft(next: PlaybookDraft) {
+    setDraftState(draftSession.edit(next));
+  }
+
+  function setReplacement(next: PlaybookDraft | null) {
+    replacementRef.current = next;
+    setReplacementState(next);
+  }
 
   const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
@@ -551,7 +563,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function loadDraft(next: PlaybookDraft) {
-    setDraft(normalizeDraft(next));
+    setDraftState(draftSession.load(normalizeDraft(next)));
+    dragRef.current = null;
     setHistory([]);
     setFuture([]);
     setSelected(null);
@@ -573,18 +586,26 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   async function saveDraft() {
+    const request = draftSession.beginSave();
+    if (!request) return false;
     setStatus("saving");
     setError(null);
     try {
-      const result = draft.id.startsWith("draft-") ? await createPlaybook(draftPayload(draft)) : await updatePlaybook(draftPayload(draft));
-      setDraft(clonePlaybook(result));
-      setDirty(false);
+      const payload = draftPayload(request.draft);
+      const result = payload.id.startsWith("draft-") ? await createPlaybook(payload) : await updatePlaybook(payload);
       setSaved((current) => [result, ...current.filter((play) => play.id !== result.id)]);
-      setStatus("saved");
-      return true;
+      const applied = draftSession.completeSave(request, result);
+      if (!applied) return false;
+      setDraftState(applied.draft);
+      setDirty(!applied.unchanged);
+      setStatus(applied.unchanged ? "saved" : "idle");
+      // Save-then-replace may proceed only when every current edit was saved.
+      return applied.unchanged ? request : null;
     } catch (caught) {
-      setStatus("error");
-      setError(caught instanceof Error ? caught.message : "Play could not be saved. Your draft is still here.");
+      if (draftSession.failSave(request)) {
+        setStatus("error");
+        setError(caught instanceof Error ? caught.message : "Play could not be saved. Your draft is still here.");
+      }
       return false;
     }
   }
@@ -1415,7 +1436,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         <div className="starter-categories" role="group" aria-label="Filter starter plays by category">{starterCategories.map((category) => <button type="button" key={category} className={starterCategory === category ? "is-active" : ""} aria-pressed={starterCategory === category} onClick={() => setStarterCategory(category)}>{category}</button>)}</div>
         <div className="starter-grid">{filteredStarterPlays.map((play) => { const details = STARTER_PLAY_DETAILS[play.name]; return <button type="button" className="starter-card" key={play.name} onClick={() => { requestLoad(clonePlaybook(play)); setStarterOpen(false); }}><MiniCourt play={play} /><span className="starter-card-copy"><span className="starter-category-label">{details?.category}</span><strong>{play.name}</strong><span>{details?.description ?? "Edit this diagram"}</span></span></button>; })}{filteredStarterPlays.length === 0 ? <p className="starter-empty">No starter plays match that search.</p> : null}</div>
       </section></div> : null}
-      {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes. Save it before opening the new starting point, or discard the draft.</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
+      {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes. Save it before opening the new starting point, or discard the draft.</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave && draftSession.isCurrent(didSave) && replacementRef.current === next) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
     </div>
   );
 }
