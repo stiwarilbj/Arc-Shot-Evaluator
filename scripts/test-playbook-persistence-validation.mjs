@@ -1,8 +1,10 @@
+import { installBrowserLocks } from './helpers/browser-locks.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { normalizePlaybookPrecision } from '../frontend/src/features/playbook/documentPrecision.ts';
 import { build } from '../frontend/node_modules/vite/dist/node/index.js';
 const examples = JSON.parse(readFileSync(new URL('../tests/fixtures/playbook-documents.json', import.meta.url)));
+installBrowserLocks();
 for (const target of ['github-pages', 'local']) {
   // Bundle the real persistence module with the same deployment flag as Vite.
   const output = await build({ configFile: false, logLevel: 'silent', define: { 'import.meta.env.VITE_DEPLOY_TARGET': JSON.stringify(target) }, build: { write: false, lib: { entry: new URL('../frontend/src/features/playbook/api.ts', import.meta.url).pathname, formats: ['es'], fileName: 'api' }, minify: false } });

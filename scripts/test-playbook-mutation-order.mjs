@@ -1,3 +1,4 @@
+import { installBrowserLocks } from './helpers/browser-locks.mjs';
 import assert from 'node:assert/strict';
 import { build } from '../frontend/node_modules/vite/dist/node/index.js';
 import { createPlayMutationQueue } from '../frontend/src/features/playbook/playMutationQueue.ts';
@@ -30,6 +31,7 @@ const flush = async () => { for(let i=0;i<24;i++)await Promise.resolve(); };
   await flush();assert.equal(reads,0);gate.resolve();await Promise.all([a,b,failure]);assert.equal(await read,'renamed');
 }
 const document=(id,name='Original')=>({version:1,id,name,created_at:'2026-10-15T12:00:00Z',updated_at:'2026-10-15T12:00:00Z',defenders_visible:false,players:[{id:1,x:50,y:70}],defenders:[],ball:null,arrows:[]});
+installBrowserLocks();
 for(const target of ['local','github-pages']){
   const output=await build({configFile:false,logLevel:'silent',define:{'import.meta.env.VITE_DEPLOY_TARGET':JSON.stringify(target)},build:{write:false,lib:{entry:new URL('../frontend/src/features/playbook/api.ts',import.meta.url).pathname,formats:['es'],fileName:'api'},minify:false}});
   const code=(Array.isArray(output)?output[0]:output).output[0].code;

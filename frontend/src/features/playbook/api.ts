@@ -7,6 +7,14 @@ import { createSharedLibraryRead } from "./sharedLibraryRead.ts";
 import { createParsedLibraryCache } from "./parsedLibraryCache.ts";
 
 const LOCAL_STORAGE_KEY = "arc-playbooks-v1";
+// All tabs on this origin must finish the entire transaction before another
+// writer reads the library. Never substitute an unsafe localStorage spin lock.
+function withLibraryWrite<T>(write: () => T): Promise<T> {
+  if (typeof navigator === "undefined" || !navigator.locks) {
+    return Promise.reject(new Error("Safe browser storage is unavailable. Use a current browser over HTTPS or localhost and retry; your play is still in memory."));
+  }
+  return navigator.locks.request(`${LOCAL_STORAGE_KEY}:write`, { mode: "exclusive" }, write);
+}
 
 async function parse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -102,7 +110,7 @@ export async function createPlaybook(playbook: PlaybookDraft) {
   playbook = normalizePlaybookPrecision(playbook);
   const identity: PlaybookSaveIdentity = { operation: "create", sourceId: playbook.id };
   return libraryReads.mutate(async () => {
-    if (IS_GITHUB_PAGES) return persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, localId(), identity);
+    if (IS_GITHUB_PAGES) return withLibraryWrite(() => persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, localId(), identity));
     const saved = await fetch("/api/playbooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parseSave(response, identity));
     announceChange(); return saved;
   });
@@ -112,17 +120,17 @@ export async function updatePlaybook(playbook: PlaybookDraft) {
   playbook = normalizePlaybookPrecision(playbook);
   const identity: PlaybookSaveIdentity = { operation: "update", id: playbook.id };
   return libraryReads.mutate(() => queuePlayMutation(playbook.id, async () => {
-    if (IS_GITHUB_PAGES) {
+    if (IS_GITHUB_PAGES) return withLibraryWrite(() => {
       if (!readLocalPlaybooks().some((item) => item.id === playbook.id)) throw new Error("Saved play not found");
       return persistLocalPlaybook(playbook, playbook.id, identity);
-    }
+    });
     const saved = await fetch(`/api/playbooks/${encodeURIComponent(playbook.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parseSave(response, identity));
     announceChange(); return saved;
   }));
 }
 export async function deletePlaybook(id: string) {
   return libraryReads.mutate(() => queuePlayMutation(id, async () => {
-    if (IS_GITHUB_PAGES) { writeLocalPlaybooks(readLocalPlaybooks().filter((item) => item.id !== id)); return { deleted: true, id }; }
+    if (IS_GITHUB_PAGES) return withLibraryWrite(() => { writeLocalPlaybooks(readLocalPlaybooks().filter((item) => item.id !== id)); return { deleted: true, id }; });
     const deleted = await fetch(`/api/playbooks/${encodeURIComponent(id)}`, { method: "DELETE" }).then((response) => parse<{ deleted: boolean; id: string }>(response));
     announceChange(); return deleted;
   }));

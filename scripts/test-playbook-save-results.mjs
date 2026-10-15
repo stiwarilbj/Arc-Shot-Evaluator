@@ -1,3 +1,4 @@
+import { installBrowserLocks } from './helpers/browser-locks.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { build } from '../frontend/node_modules/vite/dist/node/index.js';
@@ -24,6 +25,7 @@ assert.throws(() => validatePlaybookSaveResult(saved, { operation: 'update', id:
 assert.throws(() => validatePlaybookSaveResult(saved, { operation: 'create', sourceId: saved.id }));
 const empty = { ...saved, players: [], ball: null }; validatePlaybookSaveResult(empty, create);
 
+installBrowserLocks();
 for (const target of ['local', 'github-pages']) {
   const output = await build({ configFile: false, logLevel: 'silent', define: { 'import.meta.env.VITE_DEPLOY_TARGET': JSON.stringify(target) }, build: { write: false, lib: { entry: new URL('../frontend/src/features/playbook/api.ts', import.meta.url).pathname, formats: ['es'], fileName: 'api' }, minify: false } });
   const code = (Array.isArray(output) ? output[0] : output).output[0].code;

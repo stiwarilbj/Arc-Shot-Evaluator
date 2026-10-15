@@ -9,6 +9,7 @@ import re
 import tempfile
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Response
@@ -233,6 +234,43 @@ def _write(path: Path, value: dict) -> None:
         raise HTTPException(500, "Playbook could not be saved") from error
 
 
+@contextmanager
+def _playbook_lock(path: Path):
+    """Cross-thread/process transaction lock; keep the inode after release.
+
+    Unlinking a lock file would let a waiter and a new client lock different
+    inodes for the same play. Atomic JSON replacement remains in _write.
+    """
+    try:
+        directory = path.parent / ".locks"
+        directory.mkdir(parents=True, exist_ok=True)
+        lock = (directory / f"{path.stem}.lock").open("a+b")
+    except OSError as error:
+        raise HTTPException(503, "Playbook storage is busy or unavailable; retry") from error
+    with lock:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                if os.fstat(lock.fileno()).st_size == 0:
+                    lock.write(b"\0")
+                    lock.flush()
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        except OSError as error:
+            raise HTTPException(503, "Playbook storage is busy or unavailable; retry") from error
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
     PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
@@ -240,7 +278,10 @@ def list_playbooks(response: Response) -> list[dict]:
     warnings: list[str] = []
     for path in PLAYBOOKS_DIR.glob("*.json"):
         try:
-            value = _read(path)
+            with _playbook_lock(path):
+                if not path.is_file():
+                    continue  # A deletion completed after globbing.
+                value = _read(path)
         except HTTPException:
             warnings.append(path.name)
             continue
@@ -254,36 +295,41 @@ def list_playbooks(response: Response) -> list[dict]:
 def create_playbook(payload: dict) -> dict:
     playbook_id = f"play-{uuid.uuid4().hex[:12]}"
     value = _document(payload, playbook_id=playbook_id)
-    _write(_path(playbook_id), value)
+    path = _path(playbook_id)
+    with _playbook_lock(path):
+        _write(path, value)
     return value
 
 
 @router.get("/{playbook_id}")
 def get_playbook(playbook_id: str) -> dict:
     path = _path(playbook_id)
-    if not path.is_file():
-        raise HTTPException(404, "Playbook not found")
-    return _read(path)
+    with _playbook_lock(path):
+        if not path.is_file():
+            raise HTTPException(404, "Playbook not found")
+        return _read(path)
 
 
 @router.put("/{playbook_id}")
 def update_playbook(playbook_id: str, payload: dict) -> dict:
     path = _path(playbook_id)
-    if not path.is_file():
-        raise HTTPException(404, "Playbook not found")
-    current = _read(path)
-    value = _document(payload, playbook_id=playbook_id, created_at=str(current.get("created_at", _now())))
-    _write(path, value)
-    return value
+    with _playbook_lock(path):
+        if not path.is_file():
+            raise HTTPException(404, "Playbook not found")
+        current = _read(path)
+        value = _document(payload, playbook_id=playbook_id, created_at=str(current.get("created_at", _now())))
+        _write(path, value)
+        return value
 
 
 @router.delete("/{playbook_id}")
 def delete_playbook(playbook_id: str) -> dict:
     path = _path(playbook_id)
-    if not path.is_file():
-        raise HTTPException(404, "Playbook not found")
-    try:
-        path.unlink()
-    except OSError as error:
-        raise HTTPException(500, "Playbook could not be deleted") from error
-    return {"deleted": True, "id": playbook_id}
+    with _playbook_lock(path):
+        if not path.is_file():
+            raise HTTPException(404, "Playbook not found")
+        try:
+            path.unlink()
+        except OSError as error:
+            raise HTTPException(500, "Playbook could not be deleted") from error
+        return {"deleted": True, "id": playbook_id}

@@ -389,3 +389,86 @@ def test_shared_persistence_precision(tmp_path, monkeypatch) -> None:
         updated = client.put(f"/api/playbooks/{saved['id']}", json=reopened).json()
         for field in ("players", "defenders", "ball", "arrows"):
             assert updated[field] == saved[field]
+
+
+def _hold_playbook_lock(path, entered, release):
+    # Top-level target so Windows/macOS spawn tests use a separate interpreter.
+    with playbooks_module._playbook_lock(path):
+        entered.set()
+        if not release.wait(10):
+            raise TimeoutError("Lock test did not release")
+
+
+def test_playbook_lock_coordinates_processes_and_independent_ids(tmp_path, monkeypatch):
+    import multiprocessing
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from pathlib import Path
+    import pytest
+
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    saved = playbooks_module.create_playbook(_payload())
+    context = multiprocessing.get_context("spawn")
+    entered, release = context.Event(), context.Event()
+    process = context.Process(target=_hold_playbook_lock, args=(Path(tmp_path / f"{saved['id']}.json"), entered, release))
+    process.start()
+    try:
+        assert entered.wait(10)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            waiting = pool.submit(playbooks_module.update_playbook, saved["id"], _payload("After lock"))
+            try:
+                with pytest.raises(TimeoutError):
+                    waiting.result(timeout=0.15)
+                # A different document does not wait for the first document's lock.
+                independent = pool.submit(playbooks_module.create_playbook, _payload("Other play"))
+                assert independent.result(timeout=3)["name"] == "Other play"
+            finally:
+                release.set()
+            assert waiting.result(timeout=5)["name"] == "After lock"
+    finally:
+        release.set()
+        process.join(timeout=10)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+    assert process.exitcode == 0
+
+
+def test_concurrent_update_and_delete_cannot_recreate_play(tmp_path, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    import pytest
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    saved = playbooks_module.create_playbook(_payload())
+    entered, release = threading.Event(), threading.Event()
+    original_write = playbooks_module._write
+
+    def delayed_write(path, value):
+        if value["name"] == "Pending update":
+            entered.set()
+            assert release.wait(5)
+        return original_write(path, value)
+
+    monkeypatch.setattr(playbooks_module, "_write", delayed_write)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        updating = pool.submit(playbooks_module.update_playbook, saved["id"], _payload("Pending update"))
+        try:
+            assert entered.wait(3)
+            deleting = pool.submit(playbooks_module.delete_playbook, saved["id"])
+            with pytest.raises(TimeoutError):
+                deleting.result(timeout=0.15)
+        finally:
+            release.set()
+        assert updating.result(timeout=3)["name"] == "Pending update"
+        assert deleting.result(timeout=3)["deleted"]
+    with pytest.raises(HTTPException) as missing:
+        playbooks_module.update_playbook(saved["id"], _payload("Late update"))
+    assert missing.value.status_code == 404
+    assert not (tmp_path / f"{saved['id']}.json").exists()
+    # Failed validation also releases the lock and keeps existing content intact.
+    other = playbooks_module.create_playbook(_payload("Retained"))
+    with pytest.raises(HTTPException):
+        playbooks_module.update_playbook(other["id"], {"players": [False]})
+    assert playbooks_module.get_playbook(other["id"])["name"] == "Retained"
+    assert playbooks_module.delete_playbook(other["id"])["deleted"]

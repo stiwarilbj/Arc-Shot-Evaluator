@@ -116,7 +116,7 @@ body and validation have completed. Failures reject their own callers and
 release the queue; they do not silently cancel later operations. Idle queue
 entries are removed.
 
-Separate saved IDs proceed independently. New copies and repair saves receive
+Within-page queues for separate saved IDs proceed independently. New copies and repair saves receive
 fresh IDs and do not block changes to their source play. Existing draft-save
 locks continue to handle duplicate create requests. Library reads wait for all
 active and queued mutations through the existing write barrier and cannot
@@ -124,11 +124,41 @@ publish an intermediate saved library while a later deletion is pending.
 
 Deletion never turns a subsequent update into a create: browser updates check
 existence inside the queue, and the local API rejects updates to missing IDs.
-A failed deletion leaves the play available for a later save or retry. This is
-in-page ordering; independent browser tabs and other API clients do not share
-this in-memory queue. Storage events still invalidate cross-tab library reads.
-No backend route, document format, or UI changes are required.
+A failed deletion leaves the play available for a later save or retry. The in-memory queue preserves invocation order within a page. Cross-client
+transaction locks provide the additional guarantees below. Storage events
+still invalidate cross-tab library reads.
 
 Run `npm run test:playbook-mutation-order` for deferred save/rename/delete races,
 response-body completion, independent-play concurrency, queued read barriers,
 input isolation, failure recovery and deletion preservation on both targets.
+
+
+## Cross-tab and cross-client transactions
+
+On Pages, all creates, updates and deletes acquire the same origin-scoped Web
+Lock (`arc-playbooks-v1:write`) before reading the current library. Validation,
+existence checks and the complete read–modify–write happen while holding that
+lock. A waiting tab rereads storage after acquiring it, preserving changes to
+other plays and preventing deleted plays from being recreated by an update.
+Native locks release on errors or tab closure. A browser without Web Locks
+rejects writes through the existing error path, retaining the in-memory draft;
+it never falls back to an unsafe read–modify–write. Pages uses HTTPS, and local
+browser testing should use localhost or HTTPS.
+
+The local API uses OS advisory file locks around per-play reads, updates and
+deletes across threads and server processes sharing the same storage directory.
+Different IDs remain independent; atomic JSON replacement is retained. Lock
+files live under `.locks` and intentionally remain after release to avoid
+splitting waiters across different inodes. No documents, routes or UI controls
+change. Library reads skip files deleted after directory enumeration.
+
+These locks serialize storage transactions, not human editing sessions. Two
+clients explicitly saving different whole drawings to the same existing ID
+still use last-completed-save behavior; edits are not merged and stale drafts
+are not rejected. Older deployed tabs or tools writing storage directly must
+be closed/reloaded because they do not participate in this lock protocol.
+
+Run `npm run test:playbook-cross-client` and the Python playbook tests for
+independent-client coordination, concurrent creates/updates/deletes, failure
+recovery, and separate-process lock exclusion. Native two-tab browser checks
+also verify waiting and release against the deployed persistence code.
