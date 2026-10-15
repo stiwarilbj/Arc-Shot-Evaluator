@@ -38,6 +38,8 @@ import { createPlaybookDraftSession, playbookContentKey } from "./playbookDraftS
 import { createFrameBatch } from "./frameBatch";
 import { editPlaybookPoint } from "./editPlaybookPoint";
 import { exportPlaybookPng } from "./exportPlaybookPng";
+import { clamp, markerPoint, arrowSequence, lerpPoint, defaultArrowControl, arrowControl, actionPointAt, actionPath, screenCutterPath } from "./playbookPaths";
+import { prepareMiniCourt } from "./miniCourtGeometry";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
@@ -96,20 +98,12 @@ const DEFENSE_SCHEME_OPTIONS: Array<{ value: DefenseScheme; label: string; descr
   })),
 ];
 
-function clamp(value: number, min = 2, max = 98) {
-  return Math.max(min, Math.min(max, value));
-}
-
 function pointFromPointer(event: Pick<PointerSample, "clientX" | "clientY">, svg: SVGSVGElement | null): CourtPoint | null {
   if (!svg) return null;
   const transform = svg.getScreenCTM();
   if (!transform) return null;
   const point = clientPointToCourt(event.clientX, event.clientY, transform);
   return point ? { x: clamp(point.x), y: clamp(point.y) } : null;
-}
-
-function markerPoint(marker: CourtPoint) {
-  return courtPointToSvg(marker);
 }
 
 function arrowId() {
@@ -150,10 +144,6 @@ function isSameDraft(a: PlaybookDraft, b: PlaybookDraft) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function arrowSequence(arrow: PlaybookArrow, index: number) {
-  return Number.isInteger(arrow.sequence) && (arrow.sequence ?? 0) > 0 ? arrow.sequence as number : index + 1;
-}
-
 function orderedArrows(arrows: PlaybookArrow[]) {
   return arrows
     .map((arrow, index) => ({ arrow, index, sequence: arrowSequence(arrow, index) }))
@@ -184,14 +174,6 @@ function normalizeDraft(source: PlaybookDraft) {
   return next;
 }
 
-function lerpPoint(start: CourtPoint, end: CourtPoint, amount: number): CourtPoint {
-  const progress = Math.max(0, Math.min(1, amount));
-  return {
-    x: clamp(start.x + (end.x - start.x) * progress),
-    y: clamp(start.y + (end.y - start.y) * progress),
-  };
-}
-
 function easeInOut(amount: number) {
   const progress = Math.max(0, Math.min(1, amount));
   return progress * progress * (3 - 2 * progress);
@@ -204,66 +186,9 @@ function parabolicPoint(start: CourtPoint, end: CourtPoint, amount: number) {
   return { x: clamp(result.x), y: clamp(result.y) };
 }
 
-function defaultArrowControl(start: CourtPoint, end: CourtPoint): CourtPoint {
-  const from = courtPointToSvg(start);
-  const to = courtPointToSvg(end);
-  const midpoint = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const distance = Math.hypot(dx, dy);
-  const offset = Math.max(60, Math.min(140, distance * 0.22));
-  const control = courtSvgToPoint({
-    x: midpoint.x + dy * offset / Math.max(1, distance),
-    y: midpoint.y - dx * offset / Math.max(1, distance),
-  });
-  return { x: clamp(control.x), y: clamp(control.y) };
-}
 
-function arrowControl(arrow: PlaybookArrow) {
-  return arrow.control ?? defaultArrowControl(arrow.start, arrow.end);
-}
 
-function quadraticPoint(start: CourtPoint, end: CourtPoint, control: CourtPoint, amount: number): CourtPoint {
-  const progress = Math.max(0, Math.min(1, amount));
-  const inverse = 1 - progress;
-  return {
-    x: clamp(inverse * inverse * start.x + 2 * inverse * progress * control.x + progress * progress * end.x),
-    y: clamp(inverse * inverse * start.y + 2 * inverse * progress * control.y + progress * progress * end.y),
-  };
-}
 
-function actionPointAt(arrow: PlaybookArrow, amount: number) {
-  return arrow.path === "curve" ? quadraticPoint(arrow.start, arrow.end, arrowControl(arrow), amount) : lerpPoint(arrow.start, arrow.end, amount);
-}
-
-function actionPath(arrow: PlaybookArrow) {
-  const start = markerPoint(arrow.start);
-  const end = markerPoint(arrow.end);
-  if (arrow.kind === "pick-pop" && arrow.exit_target) {
-    const pop = markerPoint(arrow.exit_target);
-    return `M${start.x} ${start.y} L${end.x} ${end.y} L${pop.x} ${pop.y}`;
-  }
-  if (arrow.path === "curve") {
-    const control = markerPoint(arrowControl(arrow));
-    return `M${start.x} ${start.y} Q${control.x} ${control.y} ${end.x} ${end.y}`;
-  }
-  return `M${start.x} ${start.y} L${end.x} ${end.y}`;
-}
-
-function screenCutterPath(arrow: PlaybookArrow, players: PlaybookMarker[]) {
-  if (arrow.kind !== "off-ball-screen" && arrow.kind !== "pin-down") return null;
-  const cutter = players.find((player) => player.id === arrow.cutter_id);
-  if (!cutter) return null;
-  const start = markerPoint(cutter);
-  const screen = markerPoint(arrow.end);
-  const hoop = courtSvgToPoint(NBA_COURT_GEOMETRY.basket.center);
-  const distance = Math.hypot(hoop.x - arrow.end.x, hoop.y - arrow.end.y);
-  const finishPoint = markerPoint(arrow.exit_target ?? {
-    x: arrow.end.x + (hoop.x - arrow.end.x) * Math.min(1, 16 / Math.max(1, distance)),
-    y: arrow.end.y + (hoop.y - arrow.end.y) * Math.min(1, 16 / Math.max(1, distance)),
-  });
-  return `M${start.x} ${start.y} L${screen.x} ${screen.y} L${finishPoint.x} ${finishPoint.y}`;
-}
 
 function nearestPlayerId(players: PlaybookMarker[], point: CourtPoint, excludeId?: number) {
   return players.filter((player) => player.id !== excludeId)
@@ -298,7 +223,6 @@ function actionClass(kind: ArrowKind) {
 function actionMarker(kind: ArrowKind) {
   return kind === "pass" || kind === "handoff" ? "pass-arrow" : "movement-arrow";
 }
-
 
 const EMPTY_SIMULATION_FRAME: SimulationFrame = {
   routes: [],
@@ -1506,28 +1430,18 @@ function SavedPlayCard({ play, active, deletePending, onOpen, onDuplicate, onDel
 
 function MiniCourt({ play }: { play: PlaybookDocument | PlaybookDraft }) {
   const visibility = useArrowVisibility();
-  const routes = useMemo(() => authoredCourtRoutes(play), [play]);
+  const geometry = prepareMiniCourt(play, visibility);
   return <svg className="mini-court" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} aria-hidden="true">
     <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} rx="5" className="mini-floor" />
     <CourtMarkings mini />
-    {play.arrows.filter((arrow) => routes.some((route) => route.actionId === arrow.id && routeVisible(route, visibility))).map((arrow) => {
-      const badge = markerPoint(actionPointAt(arrow, 0.5));
-      const sequence = arrowSequence(arrow, play.arrows.findIndex((original) => original.id === arrow.id));
-      return <g key={arrow.id}>
-        {screenCutterPath(arrow, play.players) ? <path d={screenCutterPath(arrow, play.players) as string} className="mini-screen-cutter" /> : null}
-        <path d={actionPath(arrow)} className={arrow.kind === "pass" || arrow.kind === "handoff" ? "mini-pass" : arrow.kind === "screen" || arrow.kind === "slip-screen" || arrow.kind === "off-ball-screen" || arrow.kind === "pin-down" ? "mini-screen" : arrow.kind === "pick-roll" || arrow.kind === "pick-pop" ? "mini-pick-roll" : "mini-move"} />
-        <circle cx={badge.x} cy={badge.y} r="22" className="mini-sequence-badge" />
-        <text x={badge.x} y={badge.y + 1} className="mini-sequence-number">{sequence}</text>
-      </g>;
-    })}
-    {play.defenders_visible ? play.defenders.map((marker) => {
-      const point = markerPoint(marker);
-      return <path key={`d-${marker.id}`} d={`M${point.x - 7} ${point.y - 7}l14 14M${point.x + 7} ${point.y - 7}l-14 14`} className="mini-defense" />;
-    }) : null}
-    {play.players.map((marker) => {
-      const point = markerPoint(marker);
-      return <circle key={`p-${marker.id}`} cx={point.x} cy={point.y} r="16" className="mini-player" />;
-    })}
-    {play.ball ? <circle cx={markerPoint(play.ball).x} cy={markerPoint(play.ball).y} r="9" className="mini-ball" /> : null}
+    {geometry.arrows.map((arrow) => <g key={arrow.id}>
+      {arrow.supportPath ? <path d={arrow.supportPath} className="mini-screen-cutter" /> : null}
+      <path d={arrow.path} className={arrow.className} />
+      <circle cx={arrow.badge.x} cy={arrow.badge.y} r="22" className="mini-sequence-badge" />
+      <text x={arrow.badge.x} y={arrow.badge.y + 1} className="mini-sequence-number">{arrow.sequence}</text>
+    </g>)}
+    {geometry.defenders.map((marker) => <path key={`d-${marker.id}`} d={marker.path} className="mini-defense" />)}
+    {geometry.players.map((marker) => <circle key={`p-${marker.id}`} cx={marker.x} cy={marker.y} r="16" className="mini-player" />)}
+    {geometry.ball ? <circle cx={geometry.ball.x} cy={geometry.ball.y} r="9" className="mini-ball" /> : null}
   </svg>;
 }

@@ -7,6 +7,12 @@ import { exportPlaybookPng } from '../frontend/src/features/playbook/exportPlayb
 import { editPlaybookPoint } from '../frontend/src/features/playbook/editPlaybookPoint.ts';
 import { createPlaybookDraftSession } from '../frontend/src/features/playbook/playbookDraftSession.ts';
 
+import { createMiniCourtCache } from '../frontend/src/features/playbook/miniCourtGeometry.ts';
+import { STARTER_PLAYS } from '../frontend/src/features/playbook/data.ts';
+import { ARROW_VISIBILITY_OPTIONS, routeVisible } from '../frontend/src/features/playbook/arrowVisibility.ts';
+import { authoredCourtRoutes } from '../frontend/src/features/playbook/simulation.ts';
+import { actionPath, actionPointAt, arrowSequence, markerPoint, screenCutterPath } from '../frontend/src/features/playbook/playbookPaths.ts';
+
 // Exercise resource ownership even when browser APIs fail partway through export.
 for (const failure of [null, 'serialize', 'image-constructor', 'svg-url', 'image-source', 'image-load', 'canvas', 'context', 'draw', 'blob-throw', 'blob-null', 'png-url', 'link', 'download']) {
   const descriptors = new Map(['XMLSerializer', 'Image', 'document', 'window'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -112,6 +118,65 @@ for (const type of ['player', 'defender', 'ball', 'arrow-start', 'arrow-end', 'a
   session.edit(again); assert.equal(session.dirty, true);
   session.edit(editFixture); assert.equal(session.dirty, false, 'undo restores saved content');
   session.edit(next); assert.deepEqual(session.current, expected, 'redo restores the exact drawing');
+}
+
+const miniCache = createMiniCourtCache();
+for (const play of [...STARTER_PLAYS, editFixture, { ...editFixture, players: [], defenders: [], ball: null, arrows: [] }]) {
+  for (const { value: visibility } of ARROW_VISIBILITY_OPTIONS) {
+    const before = structuredClone(play);
+    const preview = miniCache(play, visibility);
+    const routes = authoredCourtRoutes(play);
+    const visible = play.arrows.filter(arrow => routes.some(route => route.actionId === arrow.id && routeVisible(route, visibility)));
+    assert.deepEqual(preview.arrows.map(a => a.id), visible.map(a => a.id));
+    for (const arrow of visible) {
+      const prepared = preview.arrows.find(a => a.id === arrow.id);
+      assert.equal(prepared.path, actionPath(arrow));
+      assert.equal(prepared.supportPath, screenCutterPath(arrow, play.players));
+      assert.equal(prepared.sequence, arrowSequence(arrow, play.arrows.indexOf(arrow)), 'filtering never renumbers original actions');
+      assert.deepEqual(prepared.badge, markerPoint(actionPointAt(arrow, 0.5)));
+      assert.ok(Object.isFrozen(prepared) && Object.isFrozen(prepared.badge));
+    }
+    assert.equal(preview.players.length, play.players.length);
+    assert.equal(preview.defenders.length, play.defenders_visible ? play.defenders.length : 0);
+    assert.deepEqual(preview.ball, play.ball ? markerPoint(play.ball) : null);
+    assert.deepEqual(play, before, 'preparation preserves source documents');
+    const refreshed = { ...structuredClone(play), id: 'fresh-id', name: 'New title', created_at: 'changed', updated_at: 'changed' };
+    assert.equal(miniCache(refreshed, visibility), preview, 'fresh documents and metadata-only changes reuse all prepared geometry');
+    assert.ok(Object.isFrozen(preview) && Object.isFrozen(preview.players) && Object.isFrozen(preview.arrows));
+    assert.throws(() => preview.arrows.push({}), TypeError);
+    if (preview.players.length) assert.throws(() => { preview.players[0].x++; }, TypeError);
+  }
+}
+const miniBaseline = miniCache(editFixture, 'all');
+for (const mutate of [
+  p => { p.players[0].x++; }, p => { p.players[0].id = 7; },
+  p => { p.players[0].ratings.finishing++; }, p => { p.players[0].badges = ['slasher']; },
+  p => { p.defenders[0].y++; }, p => { p.defenders_visible = false; }, p => { p.ball.x++; },
+  p => { p.arrows[0].end.x++; }, p => { p.arrows[0].start.y++; }, p => { p.arrows[0].control.x++; },
+  p => { p.arrows[0].path = 'curve'; }, p => { p.arrows[0].kind = 'pass'; },
+  p => { p.arrows[0].actor_id = 2; }, p => { p.arrows[0].recipient_id = 2; },
+  p => { p.arrows[0].screener_id = 2; }, p => { p.arrows[0].cutter_id = 2; },
+  p => { p.arrows[0].handler_id = 2; }, p => { p.arrows[0].sequence = 7; },
+  p => { p.arrows[0].timing = 3; }, p => { p.arrows[0].exit_target.y++; },
+  p => { p.arrows.reverse(); }, p => { p.players.reverse(); },
+]) {
+  const changed = structuredClone(editFixture); mutate(changed);
+  const preview = miniCache(changed, 'all');
+  assert.notEqual(preview, miniBaseline, 'every binding/render input invalidates the cache');
+  assert.deepEqual(preview, createMiniCourtCache(0)(changed, 'all'), 'changed content renders immediately, without stale cached geometry');
+}
+assert.notEqual(miniCache(editFixture, 'off'), miniBaseline);
+assert.equal(miniCache(editFixture, 'off').arrows.length, 0);
+const numbered = { ...structuredClone(editFixture), arrows: editFixture.arrows.map((a, i) => ({ ...a, sequence: i ? 9 : 4 })) };
+assert.deepEqual(miniCache(numbered, 'all').arrows.map(a => a.sequence), [4, 9]);
+const boundedMini = createMiniCourtCache(2);
+const firstMini = boundedMini(editFixture, 'off');
+const originalAllMini = boundedMini(editFixture, 'all'); boundedMini(editFixture, 'off'); boundedMini(editFixture, 'main-on-ball');
+assert.equal(boundedMini(editFixture, 'off'), firstMini, 'recently used previews survive eviction');
+const evictedMini = boundedMini(editFixture, 'all');
+assert.notEqual(evictedMini, originalAllMini, 'least recently used preview is rebuilt after eviction');
+for (const cache of [createMiniCourtCache(0), createMiniCourtCache(128, 1)]) {
+  assert.notEqual(cache(editFixture, 'all'), cache(editFixture, 'all'), 'disabled or oversized entries are never retained');
 }
 
 for (const hz of [30, 60, 120]) {
@@ -272,4 +337,4 @@ for (let i = 0; i < 2; i++) {
 assert.deepEqual(unpackReplay(packReplay([])), []);
 assert.throws(() => unpackReplay({ ...archive, version: 2 }), /Unsupported/);
 assert.throws(() => unpackReplay({ ...archive, roots: new Uint32Array([4294967295]).buffer }), /incomplete/);
-console.log(`Performance regressions passed: PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
+console.log(`Performance regressions passed: content-keyed mini-courts, PNG success/failure cleanup, immutable point edits and branch sharing, unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
