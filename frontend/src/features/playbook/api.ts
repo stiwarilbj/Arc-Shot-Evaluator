@@ -2,6 +2,7 @@ import { validatePlaybookParticipants } from "./types";
 import type { PlaybookDocument, PlaybookDraft } from "./types";
 import { IS_GITHUB_PAGES } from "../../runtime";
 import { createSharedLibraryRead } from "./sharedLibraryRead.ts";
+import { createParsedLibraryCache } from "./parsedLibraryCache.ts";
 
 const LOCAL_STORAGE_KEY = "arc-playbooks-v1";
 
@@ -14,8 +15,14 @@ async function parse<T>(response: Response): Promise<T> {
 }
 
 const CHANGE_EVENT = "arc-playbooks-changed";
+const parseLibrary = createParsedLibraryCache(validateLibrary);
 const libraryReads = createSharedLibraryRead(async () => IS_GITHUB_PAGES ? readLocalPlaybooks()
-  : validateLibrary(await fetch("/api/playbooks").then((response) => parse<unknown>(response))));
+  : readRemotePlaybooks());
+async function readRemotePlaybooks(): Promise<PlaybookDocument[]> {
+  const response = await fetch("/api/playbooks");
+  if (!response.ok) await parse<never>(response);
+  return parseLibrary(await response.text());
+}
 let subscriptions = 0;
 const onStorage = (event: StorageEvent) => {
   if (event.key === LOCAL_STORAGE_KEY || event.key === null) announceChange();
@@ -33,7 +40,7 @@ function validateLibrary(value: unknown): PlaybookDocument[] {
 function readLocalPlaybooks(): PlaybookDocument[] {
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    return raw ? validateLibrary(JSON.parse(raw)) : [];
+    return parseLibrary(raw || "[]");
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error("Saved plays contain unreadable data. Your stored data has been preserved.");
     throw new Error(error instanceof Error && error.message.includes("preserved") ? error.message : "Browser storage is unavailable. Allow site storage and retry; your play is still in memory.");

@@ -1,6 +1,57 @@
 import assert from 'node:assert/strict';
 import { packReplay, unpackReplay, replayResponse } from '../frontend/src/features/playbook/counterLabReplayArchive.ts';
 import { createSharedLibraryRead } from '../frontend/src/features/playbook/sharedLibraryRead.ts';
+import { createParsedLibraryCache } from '../frontend/src/features/playbook/parsedLibraryCache.ts';
+
+for (const asyncLoad of [false, true]) {
+  let parses = 0, validations = 0, reads = 0, unavailable = false;
+  let content = '[{"id":"one","players":[{"id":1,"x":20}],"arrows":[]}]';
+  const originalParse = JSON.parse;
+  JSON.parse = (...args) => { parses++; return originalParse(...args); };
+  try {
+    const parse = createParsedLibraryCache((value) => {
+      validations++;
+      assert.ok(Array.isArray(value), 'invalid libraries still fail validation');
+      return value;
+    });
+    const reader = createSharedLibraryRead(() => {
+      reads++;
+      if (unavailable) throw new Error('Source unavailable');
+      return asyncLoad ? Promise.resolve(content).then(parse) : parse(content);
+    });
+    const first = await reader.read();
+    first[0].players[0].x = 99; first.push({ id: 'caller edit' });
+    assert.deepEqual(await reader.read(), originalParse(content), 'caller mutations cannot reach cached documents');
+    assert.equal(reads, 2, 'every settled refresh still checks the underlying source');
+    assert.equal(parses, 1); assert.equal(validations, 1, 'identical content skips parsing and validation');
+    const retained = parse(content);
+    assert.ok(Object.isFrozen(retained[0].players[0]));
+    assert.throws(() => { retained[0].players[0].x = 50; }, TypeError);
+    assert.throws(() => retained.push({}), TypeError, 'the retained library is immutable');
+    reader.invalidate(); await reader.read();
+    assert.equal(parses, 1, 'persistence notifications do not discard an identical parse');
+    content = content.replace('20', '21');
+    assert.equal((await reader.read())[0].players[0].x, 21);
+    assert.equal(parses, 2); assert.equal(validations, 2, 'changed content is processed');
+    content = ` ${content}`; await reader.read();
+    assert.equal(parses, 3, 'comparison uses exact JSON content, including whitespace');
+    const valid = content;
+    content = '{broken';
+    await assert.rejects(reader.read(), SyntaxError); await assert.rejects(reader.read(), SyntaxError);
+    assert.equal(parses, 5, 'malformed JSON is never cached or hidden by a previous success');
+    content = '{}';
+    await assert.rejects(reader.read()); await assert.rejects(reader.read());
+    assert.equal(validations, 5, 'validation errors also remain visible on every retry');
+    content = valid; await reader.read();
+    assert.equal(parses, 7, 'failures preserve only the last successful parse');
+    unavailable = true; await assert.rejects(reader.read(), /unavailable/);
+    unavailable = false; await reader.read();
+    assert.equal(parses, 7, 'recovery can reuse identical content after checking the source');
+    content = '[]'; assert.deepEqual(await reader.read(), []);
+    content = valid; await reader.read();
+    assert.equal(parses, 9, 'only one successful content value is retained');
+  } finally { JSON.parse = originalParse; }
+}
 
 const deferred = () => {
   let resolve, reject;
@@ -84,4 +135,4 @@ for (let i = 0; i < 2; i++) {
 assert.deepEqual(unpackReplay(packReplay([])), []);
 assert.throws(() => unpackReplay({ ...archive, version: 2 }), /Unsupported/);
 assert.throws(() => unpackReplay({ ...archive, roots: new Uint32Array([4294967295]).buffer }), /incomplete/);
-console.log(`Performance regressions passed: shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
+console.log(`Performance regressions passed: unchanged JSON reuse, immutable cached libraries, visible parse/source errors, shared reads, write barriers, retry/storage invalidation, lossless replay tables, independent transfers; fixture replay ${bytes} bytes versus ${JSON.stringify(frames).length * 2} bytes of JSON`);
