@@ -340,6 +340,12 @@ const courtBounds = {
   top: courtSvgToPoint({ x: 0, y: NBA_COURT_GEOMETRY.boundary.top }).y,
   bottom: courtSvgToPoint({ x: 0, y: NBA_COURT_GEOMETRY.boundary.bottom }).y,
 };
+const courtBoundsFeet = Object.freeze({
+  left: courtBounds.left * courtUnitsPerPoint.x,
+  right: courtBounds.right * courtUnitsPerPoint.x,
+  top: courtBounds.top * courtUnitsPerPoint.y,
+  bottom: courtBounds.bottom * courtUnitsPerPoint.y,
+});
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -2702,9 +2708,7 @@ function coordinateCourt(run: SimulationRun, dt: number) {
   intents.length = 0;
   for (const intent of run.motionIntents?.values() ?? []) intents.push(intent);
   playerPositions.clear(); defenderPositions.clear();
-  const topLeft = toCourtFeet(courtSvgToPoint({ x: NBA_COURT_GEOMETRY.boundary.left, y: NBA_COURT_GEOMETRY.boundary.top }));
-  const bottomRight = toCourtFeet(courtSvgToPoint({ x: NBA_COURT_GEOMETRY.boundary.right, y: NBA_COURT_GEOMETRY.boundary.bottom }));
-  const resolved = coordinateMovement(intents, dt, { left: topLeft.x, right: bottomRight.x, top: topLeft.y, bottom: bottomRight.y }, run.movementOrder, solver);
+  const resolved = coordinateMovement(intents, dt, courtBoundsFeet, run.movementOrder, solver);
   intents.forEach((intent, index) => {
     const point = Math.hypot(resolved[index].velocity.x, resolved[index].velocity.y) < 1e-10 ? null : fromCourtFeet(resolved[index].point), id = Number(intent.key.split(":")[1]);
     run.velocities.set(intent.key, resolved[index].velocity);
