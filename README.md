@@ -12,7 +12,10 @@ Personal videos remain in this browser (hosted) or `jumper-media/` (local).
 Download important clips: clearing browser storage removes hosted personal data.
 
 The public NBA collection remains unavailable: **zero reviewed clips** are
-published. The 300-clip target is a separate acquisition and review dependency.
+published. Reviewed starter releases (at least two distinct shots/two NBA players)
+are supported and labeled with actual counts. The 300-clip/60-player complete
+collection remains an acquisition and review dependency. See the
+[acquisition status](docs/jumper-starter-status.md).
 See [the editor guide](docs/jumper-editor.md) and
 [the preparation guide](docs/jumper-preparation.md).
 

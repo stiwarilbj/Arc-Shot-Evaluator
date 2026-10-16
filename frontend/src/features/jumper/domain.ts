@@ -26,6 +26,14 @@ export interface QuizClip {
   quiz: string;
   reveal: string;
   duration: number;
+  provenance?: {
+    source_url: string;
+    permission_url: string;
+    identity_url: string;
+    license: string;
+    attribution: string;
+    changes: string;
+  };
 }
 export interface Attempt {
   id: string;

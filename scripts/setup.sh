@@ -26,4 +26,9 @@ else
   exit 1
 fi
 
+# Restore the same reviewed, pinned pack used by Pages; never process footage here.
+.venv/bin/python scripts/jumper_fetch_pack.py jumper-release.json frontend/dist/jumper/catalog
+
+.venv/bin/python scripts/jumper_pack.py budget frontend/dist
+
 echo "ARC is ready. Run ./scripts/start.sh"

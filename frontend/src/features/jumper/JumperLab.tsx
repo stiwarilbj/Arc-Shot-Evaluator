@@ -28,6 +28,7 @@ import {
   videoBlob,
 } from "./storage";
 import { publicCatalog } from "./catalog";
+import type { PublicCatalog } from "./publicManifest";
 import "./jumper.css";
 const Editor = lazy(() => import("./JumperEditor"));
 export function useBlobUrl(blob: Blob | null) {
@@ -88,8 +89,13 @@ export default function JumperLab({ active }: { active: boolean }) {
   const [tab, setTab] = useState<"guess" | "create" | "clips">("guess");
   const [opened, setOpened] = useState(false);
   const [clips, setClips] = useState<Clip[]>([]);
-  const [nba, setNba] = useState<QuizClip[]>([]);
+  const [catalog, setCatalog] = useState<PublicCatalog>({
+    kind: null,
+    clips: [],
+  });
   const [error, setError] = useState("");
+  const [catalogError, setCatalogError] = useState("");
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
   async function refresh() {
     try {
@@ -106,14 +112,19 @@ export default function JumperLab({ active }: { active: boolean }) {
   }
   useEffect(() => {
     void refresh();
+  }, []);
+  useEffect(() => {
     const controller = new AbortController();
+    setCatalogError("");
     publicCatalog(controller.signal)
-      .then(setNba)
+      .then((value) => {
+        if (!controller.signal.aborted) setCatalog(value);
+      })
       .catch((error) => {
-        if (!controller.signal.aborted) setError(error.message);
+        if (!controller.signal.aborted) setCatalogError(error.message);
       });
     return () => controller.abort();
-  }, []);
+  }, [catalogAttempt]);
   useEffect(() => {
     if (active) void refresh();
   }, [active]);
@@ -157,11 +168,23 @@ export default function JumperLab({ active }: { active: boolean }) {
           </button>
         </div>
       ) : null}
+      {catalogError && tab === "guess" ? (
+        <div role="alert" className="jumper-notice">
+          {catalogError}{" "}
+          <button
+            type="button"
+            onClick={() => setCatalogAttempt((value) => value + 1)}
+          >
+            Retry NBA collection
+          </button>
+        </div>
+      ) : null}
       <section hidden={tab !== "guess"}>
         <Guess
           active={active && tab === "guess"}
           personal={clips.filter((value) => value.quiz)}
-          nba={nba}
+          nba={catalog.clips}
+          nbaKind={catalog.kind}
           onCreate={() => change("create")}
         />
       </section>
@@ -194,11 +217,13 @@ function Guess({
   active,
   personal,
   nba,
+  nbaKind,
   onCreate,
 }: {
   active: boolean;
   personal: Clip[];
   nba: QuizClip[];
+  nbaKind: PublicCatalog["kind"];
   onCreate: () => void;
 }) {
   const [collection, setCollection] = useState<"personal" | "nba" | "combined">(
@@ -454,6 +479,15 @@ function Guess({
           </select>
         </label>
         <span>{candidates.length} playable clips</span>
+        {nbaKind ? (
+          <span>
+            {nbaKind === "starter"
+              ? "Starter collection"
+              : "Complete collection"}{" "}
+            · {nba.length} NBA clips ·{" "}
+            {new Set(nba.map((clip) => clip.player.id)).size} players
+          </span>
+        ) : null}
       </div>
       {error ? (
         <div role="alert" className="jumper-notice">
@@ -481,8 +515,10 @@ function Guess({
           <Video size={38} />
           <h2>Your first mystery starts here</h2>
           <p>
-            Create a clip and choose “Use in my guessing game.” The reviewed NBA
-            collection is still being prepared.
+            Create a clip and choose “Use in my guessing game.”{" "}
+            {nba.length
+              ? "Or choose NBA from the collection menu to play the reviewed collection."
+              : "The reviewed NBA collection is still being prepared."}
           </p>
           <button
             className="button button-primary"
@@ -531,6 +567,28 @@ function Guess({
                   {submitted.outcome ? "YOU GOT IT" : "THE REVEAL"}
                 </span>
                 <h2>{current.player.name}</h2>
+                {"provenance" in current && current.provenance ? (
+                  <details>
+                    <summary>Footage attribution</summary>
+                    <p>{current.provenance.attribution}</p>
+                    <p>{current.provenance.changes}</p>
+                    <a
+                      href={current.provenance.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Source
+                    </a>
+                    {" · "}
+                    <a
+                      href={current.provenance.permission_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {current.provenance.license}
+                    </a>
+                  </details>
+                ) : null}
                 <p>
                   {submitted.outcome
                     ? "Correct. You recognized the release."

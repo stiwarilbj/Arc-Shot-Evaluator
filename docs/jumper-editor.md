@@ -66,7 +66,14 @@ to ONNX (Ultralytics AGPL-3.0); proposals require human confirmation.
 
 NBA is disabled until a genuine reviewed pack exists. `jumper-release.json`
 currently has no release configured; this permits personal-first deployment.
+A starter pack needs at least two reviewed shots from two NBA players; a complete
+pack needs 300 shots and 60 players. The collection area displays its designation
+and actual counts. Manifests without a designation retain the complete minimum.
+Attribution, license and source links appear with the answer reveal.
+
 A configured Release URL and SHA-256 must verify or Pages publication stops.
+The downloaded app setup restores that same pack into its built catalog; raw
+footage, masks and personal uploads never enter it.
 No video processing happens in deployment. Pack and total site budgets remain
 600 MiB and 800 MiB respectively.
 

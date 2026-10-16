@@ -61,7 +61,9 @@ collection is impossible to obtain; it has not been obtained here.
 `scripts/jumper_pack.py` builds a candidate release archive from externally
 reviewed report/review pairs. It requires every review check, evidence links,
 output checksums, no unresolved tracking warnings, 3–6 second paired timelines,
-300 distinct shots and at least 60 canonical players. It rejects duplicates,
+at least two distinct shots and two canonical players for an explicitly designated
+starter collection. Complete collections (including legacy manifests without a
+designation) still require 300 distinct shots and 60 players. It rejects duplicates,
 stale reviews, changed/missing videos, nonopaque filenames, and symlinked media.
 Clip IDs derive from source/event identity and survive mask revisions. Only quiz,
 reveal, thumbnail, provenance, and canonical player records enter the public pack;
@@ -71,7 +73,8 @@ The pack builder enforces **600 MiB**, compressed and uncompressed. Its `budget`
 command enforces **800 MiB** for the full Pages artifact. The existing Pages
 deployment workflow runs that size check after restoring examples; no new CI
 workflow or deployment-time inference was added. A failed pack build leaves an
-existing pack intact. No pack is currently configured for publication.
+existing pack intact. No pack is currently configured for publication. The October 16 acquisition
+audit is recorded in [the starter status](jumper-starter-status.md).
 
 ## Reproducing preparation
 
@@ -187,7 +190,11 @@ palette tests apply before encoding, and encoded clips require visual review.
 
 An external collection file has `version: 1`, `release: "jumper-v1"`, and a
 `clips` array of `{ "report": "relative/path/report.json", "review":
-"relative/path/review.json" }` entries. All 300 must be real reviewed events.
+"relative/path/review.json" }` entries. Every entry must be a real reviewed event. Set `"collection_kind": "starter"`
+for a reviewed two-shot/two-player minimum, or `"collection_kind": "complete"`
+for the 300-shot/60-player minimum. An omitted designation keeps the complete
+requirements; unknown designations fail. The builder, release verifier and
+browser enforce the same minimums and actual counts.
 
 ```bash
 .venv/bin/python scripts/jumper_pack.py build /private/collection.json /private/media.tar.gz
@@ -223,3 +230,16 @@ correction propagation, media codec/rotation/VFR handling, private persistence,
 quiz scoring, autocomplete, accessibility, network isolation, and the complete
 upload → save → reload → personal quiz workflows still require implementation
 and acceptance testing on both targets. The feature is not ready to publish.
+
+## Starter validation commands
+
+Run `pnpm --dir frontend test:jumper` and
+`.venv/bin/python -m pytest tests/test_jumper_preparation.py tests/test_jumper_release.py`.
+These use synthetic packaging fixtures, never reviewed footage.
+
+`scripts/test-jumper-starter-ui.mjs` verifies a production preview with a routed,
+synthetic two-player catalog. Set `JUMPER_URL` to either build's preview and
+`JUMPER_TEST_VIDEO` to an external muted three-second, 30fps synthetic MP4. It
+checks counts, shuffle exhaustion, persisted scoring, reveal attribution, playback
+failure, catalog retry, and absence of inference requests. Its fixture is not a
+public pack and must never be published as NBA content.
