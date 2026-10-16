@@ -395,7 +395,12 @@ function Guess({
       };
       const recorded = await saveAttempt(value);
       setSubmitted(recorded);
-      setHistory(await readAttempts());
+      // The committed answer is already verified. A second storage read must
+      // not turn a successful write into an apparent failure.
+      setHistory((previous) => [
+        ...previous.filter((item) => item.id !== recorded.id),
+        recorded,
+      ]);
       setError("");
     } catch (error) {
       setError(`Your answer was not recorded. Retry: ${String(error)}`);

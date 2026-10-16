@@ -675,7 +675,11 @@ export default function JumperEditor({
                 />
                 {result.warnings.length ? (
                   <div className="jumper-notice" role="alert">
-                    Tracking needs attention on {result.warnings.length}{" "}
+                    Tracking needs attention on{" "}
+                    {
+                      new Set(result.warnings.map((warning) => warning.frame))
+                        .size
+                    }{" "}
                     frame(s). Correct the selected track or shorten the segment
                     before saving.
                     <div>
