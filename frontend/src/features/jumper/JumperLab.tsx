@@ -358,18 +358,12 @@ function Guess({
     setPlaybackError(false);
     if (current) {
       if ("highlight" in current || clip(current)) {
-        void Promise.all([
-          videoBlob(current.id, "quiz"),
-          videoBlob(current.id, "reveal"),
-        ])
-          .then((blobs) => {
+        void videoBlob(current.id, "quiz")
+          .then((blob) => {
             if (cancelled) return;
-            const values = blobs.map((blob) => {
-              const url = URL.createObjectURL(blob);
-              urls.push(url);
-              return url;
-            });
-            setSources({ quiz: values[0], reveal: values[1] });
+            const url = URL.createObjectURL(blob);
+            urls.push(url);
+            setSources({ quiz: url, reveal: url });
           })
           .catch((error) => {
             if (!cancelled) setError(String(error));
@@ -556,7 +550,9 @@ function Guess({
             ) : null}
             <p className="jumper-caption">
               {submitted
-                ? "Original player appearance · background stays hidden"
+                ? clip(current)
+                  ? "Name revealed · your video stays masked"
+                  : "Original player appearance · background stays hidden"
                 : "Black silhouette: the shooter · Gray: other players"}
             </p>
           </div>
@@ -689,7 +685,7 @@ function Library({
     setBlob(null);
     setVideoError("");
     if (selected)
-      videoBlob(selected.id, "highlight")
+      videoBlob(selected.id, selected.quiz ? "quiz" : "highlight")
         .then((value) => {
           if (!cancelled) setBlob(value);
         })
@@ -738,8 +734,12 @@ function Library({
               <h3>{value.player.name}</h3>
               <p>
                 {value.duration.toFixed(1)}s ·{" "}
-                {value.quiz ? "Quiz ready" : "Highlight"} ·{" "}
-                {new Date(value.createdAt).toLocaleDateString()}
+                {value.quiz
+                  ? "Quiz ready · masked"
+                  : value.presentation === "silhouette"
+                    ? "Silhouette"
+                    : "Legacy · original colors may remain"}{" "}
+                · {new Date(value.createdAt).toLocaleDateString()}
               </p>
               <div className="jumper-toolbar">
                 <button
@@ -788,14 +788,21 @@ function Library({
           </div>
           {url ? (
             <>
-              <ClipVideo
-                src={url}
-                label={`${selected.player.name} highlight`}
-                active={active}
-                onFailure={() =>
-                  setVideoError("This saved video could not play.")
-                }
-              />
+              {selected.presentation === "silhouette" || selected.quiz ? (
+                <ClipVideo
+                  src={url}
+                  label={`${selected.player.name} silhouette`}
+                  active={active}
+                  onFailure={() =>
+                    setVideoError("This saved video could not play.")
+                  }
+                />
+              ) : (
+                <p className="jumper-notice">
+                  Legacy download · this older file may contain original player
+                  colors. Create a new silhouette to anonymize it.
+                </p>
+              )}
               <a
                 className="button button-outline"
                 href={url}

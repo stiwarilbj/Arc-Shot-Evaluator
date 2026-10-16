@@ -63,7 +63,9 @@ const output =
       await route.fulfill({ response: r, body: code });
     });
     p.on("pageerror", (e) => console.log(e.message));
-    await p.goto("http://127.0.0.1:5175/Arc-Shot-Evaluator/");
+    await p.goto(
+      process.env.JUMPER_URL || "http://127.0.0.1:5175/Arc-Shot-Evaluator/",
+    );
     await p.getByRole("button", { name: /Others/ }).click();
     await p.getByRole("menuitem").click();
     await p.getByRole("button", { name: "Create", exact: true }).click();
@@ -89,6 +91,11 @@ const output =
     await img.click({
       position: { x: box.width * point[0], y: box.height * point[1] },
     });
+    await p.locator(".jumper-corrections summary").click();
+    // Compare the same explicit identities/prompts rather than detector differences.
+    await p
+      .getByLabel("Find other people automatically", { exact: false })
+      .uncheck();
     if (process.env.JUMPER_SECOND_POINT) {
       const second = process.env.JUMPER_SECOND_POINT.split(",").map(Number);
       await p.getByRole("button", { name: "Add player", exact: true }).click();

@@ -46,7 +46,7 @@ export async function processVideo(
         cleanup();
         reject(
           Error(
-            "Masking worker stopped. Your source is unchanged; retry or use the downloaded editor.",
+            "Masking worker stopped. Your source is unchanged; retry. If this page was updated, reload ARC and select your video again, or use the free downloaded editor.",
           ),
         );
       };
@@ -63,7 +63,14 @@ export async function processVideo(
           reject(Error(data.error));
         } else if (data.kind === "done") {
           cleanup();
-          if (maskResult(data.result)) resolve(data.result);
+          if (
+            maskResult(data.result) &&
+            (!request.auto_detect_others ||
+              data.result.objects?.some(
+                (o) => o.id === request.target_id && !o.ignored,
+              ))
+          )
+            resolve(data.result);
           else
             reject(
               Error(
@@ -109,19 +116,31 @@ export async function processVideo(
       if (state.status === "cancelled")
         throw new DOMException("Processing cancelled", "AbortError");
       if (state.status === "done") {
-        const [highlight, quiz, reveal] = await Promise.all(
-          ["highlight", "quiz", "reveal"].map(async (kind) =>
+        const kinds =
+          request.presentation === "silhouette"
+            ? ["quiz"]
+            : ["highlight", "quiz", "reveal"];
+        const values = await Promise.all(
+          kinds.map(async (kind) =>
             (await api(`/jobs/${id}/output/${kind}`)).blob(),
           ),
         );
         const result = {
-          highlight,
-          quiz,
-          reveal,
+          highlight: values[0],
+          quiz: values[1] ?? values[0],
+          reveal: values[2] ?? values[0],
+          objects: state.result.objects,
           duration: state.result.duration,
           warnings: state.result.warnings,
         };
-        if (!maskResult(result))
+        if (
+          !maskResult(result) ||
+          (request.auto_detect_others &&
+            !result.objects?.some(
+              (o: { id: number; ignored?: boolean }) =>
+                o.id === request.target_id && !o.ignored,
+            ))
+        )
           throw Error("Local editor returned invalid videos");
         return result;
       }

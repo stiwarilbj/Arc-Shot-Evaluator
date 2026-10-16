@@ -482,3 +482,52 @@ def test_invalid_explicit_collection_designation(kind):
     with pytest.raises(ValueError):
         pack.collection_kind({"collection_kind": kind})
     assert pack.collection_kind({}) == "complete"
+
+
+def test_personal_silhouette_exports_share_only_masked_video(tmp_path):
+    from backend.jumper.pipeline import render
+
+    frames, masks, output = [tmp_path / name for name in ("frames", "masks", "output")]
+    frames.mkdir()
+    masks.mkdir()
+    for i in range(3):
+        source = np.full((64, 96, 3), (12, 60, 230), dtype=np.uint8)
+        cv2.imwrite(str(frames / f"{i:06}.jpg"), source)
+        owners = np.zeros((64, 96), dtype=np.uint8)
+        owners[10:50, 10:30] = 1
+        owners[10:50, 60:80] = 2
+        np.save(masks / f"{i:06}.npy", owners)
+    result = render(
+        sorted(frames.iterdir()), masks, output, 1, "personal", silhouette=True
+    )
+    assert result["highlight"] == result["quiz"] == result["reveal"]
+    assert len(list(output.glob("*.mp4"))) == 1
+    capture = cv2.VideoCapture(str(output / result["quiz"]["file"]))
+    ok, image = capture.read()
+    capture.release()
+    assert ok
+    assert np.max(image.max(axis=2).astype(int) - image.min(axis=2)) <= 2
+    assert np.max(image[15:45, 15:25]) <= 4
+    assert np.max(np.abs(image[15:45, 65:75].astype(int) - 128)) <= 4
+    assert np.max(np.abs(image[:5].astype(int) - 224)) <= 4
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"auto_detect_others": "yes"},
+        {"presentation": "original"},
+        {
+            "objects": [
+                {
+                    "id": 1,
+                    "ignored": True,
+                    "prompts": [{"frame": 0, "box": [0, 0, 1, 1]}],
+                }
+            ]
+        },
+    ],
+)
+def test_personal_options_reject_invalid_values(change):
+    with pytest.raises(ValueError):
+        prep.validate_job({**job(), **change})

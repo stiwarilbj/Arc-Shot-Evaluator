@@ -96,3 +96,10 @@ def test_empty_upload_and_invalid_job(client):
         client.get(f"/api/jumper-lab/jobs/{identity}").json()["status"] == "cancelled"
     )
     assert client.delete(f"/api/jumper-lab/jobs/{identity}").status_code == 200
+
+
+def test_silhouette_metadata_survives_reload(client):
+    value = {**metadata(), "presentation": "silhouette"}
+    assert save(client, value).json() == value
+    assert client.get("/api/jumper-lab/media").json() == [value]
+    assert save(client, {**metadata(), "presentation": "original"}).status_code == 400

@@ -50,3 +50,99 @@ def test_tracking_pruning_preserves_corrections_and_required_memory():
     prune_tracking({"output_dict_per_obj": {0: output}}, 30)
     assert output["cond_frame_outputs"] is conditional
     assert list(output["non_cond_frame_outputs"]) == list(range(15, 31))
+
+
+def test_discovery_matches_browser_fixtures():
+    import json
+    from pathlib import Path
+    from backend.jumper.discovery import resolve_people
+
+    fixtures = json.loads(
+        (Path(__file__).parent / "fixtures/jumper/discovery.json").read_text()
+    )
+    for fixture in fixtures:
+        owners = np.zeros((fixture["height"], fixture["width"]), dtype=np.uint8)
+        for identity, x1, y1, x2, y2 in fixture["masks"]:
+            owners[y1:y2, x1:x2] = identity
+        assert resolve_people(fixture["boxes"], owners) == {
+            "unmatched": fixture["unmatched"],
+            "ambiguous": fixture["ambiguous"],
+        }, fixture["name"]
+
+
+def test_clicked_body_box_requires_unique_containment():
+    from backend.jumper.discovery import clicked_person_box
+
+    bodies = [[0.1, 0.1, 0.4, 0.9], [0.6, 0.1, 0.9, 0.9]]
+    assert clicked_person_box(bodies, [0.2, 0.5]) == bodies[0]
+    assert clicked_person_box(bodies, [0.5, 0.5]) is None
+    assert clicked_person_box([*bodies, bodies[0]], [0.2, 0.5]) is None
+
+
+def test_mps_background_expansion_uses_cpu_retry_without_hiding_real_cuts():
+    import pytest
+    from backend.jumper.pipeline import check_device_mask_area
+
+    with pytest.raises(RuntimeError, match="retry on CPU"):
+        check_device_mask_area("mps", 2500, 157000, 160000)
+    check_device_mask_area("mps", None, 157000, 160000)
+    check_device_mask_area("mps", 2500, 2600, 160000)
+    check_device_mask_area("cpu", 2500, 157000, 160000)
+    check_device_mask_area("cuda", 2500, 157000, 160000)
+
+
+def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
+    tmp_path, monkeypatch
+):
+    import hashlib
+    import json
+    from backend.jumper import runner
+    from backend import config
+
+    weights = tmp_path / "weights"
+    weights.mkdir()
+    checkpoint = weights / "sam2.1_hiera_tiny.pt"
+    checkpoint.write_bytes(b"test checkpoint")
+    monkeypatch.setattr(config, "MODEL_WEIGHTS_DIR", weights)
+    monkeypatch.setattr(
+        runner, "CHECKPOINT_SHA", hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    )
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    budgets = []
+    monkeypatch.setattr(torch.mps, "set_per_process_memory_fraction", budgets.append)
+    monkeypatch.setattr(torch.mps, "empty_cache", lambda: None)
+    frames = [tmp_path / str(i) for i in range(9)]
+    monkeypatch.setattr(runner, "extract", lambda *args: frames)
+    job = dict(
+        start=0,
+        end=0.3,
+        target_id=1,
+        presentation="silhouette",
+        auto_detect_others=True,
+        objects=[dict(id=1, prompts=[dict(frame=0, points=[[0.5, 0.5]], labels=[1])])],
+    )
+    (tmp_path / "request.json").write_text(json.dumps(job))
+    attempts = []
+
+    def tracking(frames, masks, value, checkpoint, device, progress):
+        attempts.append(device)
+        assert [o["id"] for o in value["objects"]] == [1]
+        value["objects"].append(
+            dict(id=2, prompts=[dict(frame=0, box=[0, 0, 0.2, 0.2])])
+        )
+        if device == "mps":
+            raise RuntimeError("GPU memory limit")
+        return []
+
+    monkeypatch.setattr(runner, "track", tracking)
+
+    def rendering(*args, silhouette=False):
+        assert silhouette
+        return {}
+
+    monkeypatch.setattr(runner, "render", rendering)
+    runner.run(tmp_path)
+    assert attempts == ["mps", "cpu"]
+    assert budgets == [0.5]
+    result = json.loads((tmp_path / "result.json").read_text())
+    assert [o["id"] for o in result["objects"]] == [1, 2]

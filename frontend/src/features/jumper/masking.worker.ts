@@ -14,6 +14,8 @@ import {
   type WorkerResponse,
 } from "./domain";
 import { compositePixels, openVideo, writers } from "./media";
+import { createPersonDetector } from "./personDetector";
+import { clickedPersonBox, resolvePeople } from "./discovery";
 import { samPixels } from "./preprocessing";
 import {
   bilinear,
@@ -122,7 +124,13 @@ async function process(
   const opened = await openVideo(request.file);
   const input = opened.input,
     video = opened.track;
-  const { start, end, objects, target_id } = request.request;
+  const { start, end, target_id } = request.request;
+  const objects = structuredClone(request.request.objects);
+  const silhouette = request.request.presentation === "silhouette";
+  const trackedObjects = objects.filter(
+    (object) => !object.ignored || request.request.auto_detect_others,
+  );
+  let detector: Awaited<ReturnType<typeof createPersonDetector>> | undefined;
   if (end > opened.duration + 0.01) {
     input.dispose();
     throw Error("Trim extends beyond the video");
@@ -150,6 +158,10 @@ async function process(
   >[] = [];
   try {
     const format = await writers(width, height);
+    if (request.request.auto_detect_others) {
+      report("Preparing automatic player detection", 0);
+      detector = await createPersonDetector();
+    }
     const sessionsByName: Record<string, ort.InferenceSession> = {};
     for (const [key, asset] of Object.entries(ASSETS)) {
       if (key === "weights") continue;
@@ -185,10 +197,10 @@ async function process(
       });
     if (!sourceContext) throw Error("Could not initialize masking canvas");
     const conditions = new Map<number, Map<number, Memory>>(
-      objects.map((object) => [object.id, new Map()]),
+      trackedObjects.map((object) => [object.id, new Map()]),
     );
     const recents = new Map<number, Map<number, Memory>>(
-      objects.map((object) => [object.id, new Map()]),
+      trackedObjects.map((object) => [object.id, new Map()]),
     );
     const corrected = new Map<number, Map<number, Prediction>>();
     async function features(canvas: HTMLCanvasElement | OffscreenCanvas) {
@@ -300,9 +312,24 @@ async function process(
         if (result) dispose(result);
       }
     }
+    if (detector) {
+      const initial = objects.find((object) => object.id === target_id)!
+        .prompts[0];
+      const point = initial.points?.find((_, i) => initial.labels?.[i] === 1);
+      if (initial.frame === 0 && !initial.box && point) {
+        report("Detecting the selected shooter", 0);
+        const sample = await sink.getCanvas(start);
+        if (!sample) throw Error("Could not decode the starting frame");
+        const box = clickedPersonBox(
+          await detector.detect(sample.canvas),
+          point,
+        );
+        if (box) initial.box = box;
+      }
+    }
     const promptFrames = [
       ...new Set(
-        objects.flatMap((object) =>
+        trackedObjects.flatMap((object) =>
           object.prompts.map((prompt) => prompt.frame),
         ),
       ),
@@ -313,7 +340,7 @@ async function process(
       if (!sample) throw Error("Could not decode a correction frame");
       const feats = await features(sample.canvas);
       try {
-        for (const object of objects) {
+        for (const object of trackedObjects) {
           const prompt = object.prompts.find(
             (prompt) => prompt.frame === frame,
           );
@@ -333,7 +360,8 @@ async function process(
         dispose(feats);
       }
     }
-    for (let i = 0; i < 3; i++) outputs.push(await format.create());
+    for (let i = 0; i < (silhouette ? 1 : 3); i++)
+      outputs.push(await format.create());
     const warnings: MaskResult["warnings"] = [];
     let previous: Uint8ClampedArray | undefined;
     let previousMask: MaskExtent | null = null;
@@ -352,7 +380,7 @@ async function process(
         best = new Float32Array(width * height);
       best.fill(0);
       try {
-        for (const object of objects) {
+        for (const object of trackedObjects) {
           if (frame < object.prompts[0].frame) continue;
           let prediction = corrected.get(frame)?.get(object.id);
           if (!prediction) {
@@ -419,9 +447,58 @@ async function process(
           for (const old of recents.get(object.id)!.keys())
             if (old < frame - 15) recents.get(object.id)!.delete(old);
         }
+        if (detector) {
+          report(
+            `Finding players · frame ${frame + 1} / ${count}`,
+            frame / count,
+          );
+          const boxes = await detector.detect(sample.canvas);
+          const resolution = resolvePeople(boxes, owners, width, height);
+          if (resolution.ambiguous)
+            warnings.push({ frame, kind: "ambiguous_players" });
+          for (const box of resolution.unmatched) {
+            if (objects.length >= 20)
+              throw Error(
+                "More than 20 tracks are needed. Remove spectators or use manual selection in corrections.",
+              );
+            const id = Math.max(0, ...objects.map((o) => o.id)) + 1;
+            if (id > 255)
+              throw Error(
+                "Too many player selections. Start a fresh selection.",
+              );
+            const prompt = { frame, box };
+            const object = { id, prompts: [prompt] };
+            objects.push(object);
+            trackedObjects.push(object);
+            conditions.set(id, new Map());
+            recents.set(id, new Map());
+            const sampleFeatures = feats;
+            {
+              const raw = floats(sampleFeatures.feats2);
+              for (let c = 0; c < 256; c++)
+                for (let i = 0; i < 4096; i++)
+                  raw[c * 4096 + i] += weights.no_mem_embed[c];
+              const prediction = await predict(sampleFeatures, raw, prompt);
+              conditions
+                .get(id)!
+                .set(frame, await remember(sampleFeatures, prediction, frame));
+              const values = bilinear(prediction.low, 256, 256, width, height);
+              for (let i = 0; i < values.length; i++)
+                if (values[i] > best[i]) {
+                  best[i] = values[i];
+                  owners[i] = id;
+                }
+            }
+          }
+        }
       } finally {
         dispose(feats);
       }
+      // Ignored tracks still participate in matching so removal survives reprocessing.
+      for (const object of objects)
+        if (object.ignored)
+          for (let i = 0; i < owners.length; i++)
+            if (owners[i] === object.id) owners[i] = 0;
       let area = 0,
         x = 0,
         y = 0;
@@ -450,6 +527,10 @@ async function process(
       const canvasContext = outputs[0].context;
       canvasContext.drawImage(sample.canvas, 0, 0, width, height);
       const rgb = canvasContext.getImageData(0, 0, width, height).data;
+      report(
+        `Rendering silhouettes · frame ${frame + 1} / ${count}`,
+        frame / count,
+      );
       for (let i = 0; i < outputs.length; i++) {
         outputs[i].context.putImageData(
           new ImageData(
@@ -457,7 +538,9 @@ async function process(
               rgb,
               owners,
               target_id,
-              (["highlight", "quiz", "reveal"] as const)[i],
+              silhouette
+                ? "quiz"
+                : (["highlight", "quiz", "reveal"] as const)[i],
             ),
             width,
             height,
@@ -473,9 +556,19 @@ async function process(
     const [highlight, quiz, reveal] = await Promise.all(
       outputs.map((output) => output.finish()),
     );
-    return { highlight, quiz, reveal, duration: count / 30, warnings };
+    return {
+      highlight,
+      quiz: silhouette ? highlight : quiz,
+      reveal: silhouette ? highlight : reveal,
+      duration: count / 30,
+      warnings,
+      objects,
+    };
   } finally {
     input.dispose();
+    try {
+      await detector?.release();
+    } catch {}
     for (const output of outputs) {
       try {
         await output.output.cancel();

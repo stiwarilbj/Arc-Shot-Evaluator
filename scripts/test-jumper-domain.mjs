@@ -113,3 +113,43 @@ assert(
     warnings: [null],
   }),
 );
+
+// Browser/native association uses the same input fixtures and expectations.
+const { readFileSync } = await import("node:fs");
+const { resolvePeople, clickedPersonBox } = await import(
+  "../frontend/src/features/jumper/discovery.ts"
+);
+const bodies = [
+  [0.1, 0.1, 0.4, 0.9],
+  [0.6, 0.1, 0.9, 0.9],
+];
+assert.deepEqual(clickedPersonBox(bodies, [0.2, 0.5]), bodies[0]);
+assert.equal(clickedPersonBox(bodies, [0.5, 0.5]), undefined);
+assert.equal(clickedPersonBox([...bodies, bodies[0]], [0.2, 0.5]), undefined);
+for (const fixture of JSON.parse(
+  readFileSync(
+    new URL("../tests/fixtures/jumper/discovery.json", import.meta.url),
+  ),
+)) {
+  const owners = new Uint8Array(fixture.width * fixture.height);
+  for (const [id, x1, y1, x2, y2] of fixture.masks)
+    for (let y = y1; y < y2; y++)
+      for (let x = x1; x < x2; x++) owners[y * fixture.width + x] = id;
+  assert.deepEqual(
+    resolvePeople(fixture.boxes, owners, fixture.width, fixture.height),
+    { unmatched: fixture.unmatched, ambiguous: fixture.ambiguous },
+    fixture.name,
+  );
+}
+validateMaskRequest({
+  ...request,
+  auto_detect_others: true,
+  presentation: "silhouette",
+});
+for (const change of [
+  { auto_detect_others: "yes" },
+  { presentation: "original" },
+  { objects: request.objects.map((o) => ({ ...o, ignored: true })) },
+])
+  assert.throws(() => validateMaskRequest({ ...request, ...change }));
+console.log("Silhouette options and one-to-one discovery passed");

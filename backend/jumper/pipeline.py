@@ -34,6 +34,10 @@ def validate_job(job: object) -> dict:
     for key in ("source", "event_id", "player_id", "player_name", "identity_evidence"):
         if not isinstance(job.get(key), str) or not job[key].strip():
             raise ValueError(f"Missing {key}")
+    if "auto_detect_others" in job and type(job["auto_detect_others"]) is not bool:
+        raise ValueError("Invalid automatic discovery flag")
+    if "presentation" in job and job["presentation"] != "silhouette":
+        raise ValueError("Invalid presentation")
     start, end = job.get("start"), job.get("end")
     if (
         not number(start)
@@ -64,6 +68,10 @@ def validate_job(job: object) -> dict:
     if type(job.get("target_id")) is not int or job["target_id"] not in ids:
         raise ValueError("Target must be a selected foreground person")
     for obj in objects:
+        if "ignored" in obj and type(obj["ignored"]) is not bool:
+            raise ValueError("Invalid ignored track")
+        if obj["id"] == job["target_id"] and obj.get("ignored"):
+            raise ValueError("The selected player cannot be ignored")
         prompts = obj.get("prompts")
         if (
             not isinstance(prompts, list)
@@ -222,6 +230,21 @@ def propose_people(frame: Path, detector: Path) -> list[list[float]]:
     return (result.boxes.xyxy.cpu().numpy() / [width, height, width, height]).tolist()
 
 
+def check_device_mask_area(device, previous, current, pixels):
+    # MPS can produce a near-full-frame mask immediately after a valid small
+    # person mask. Retry from untouched selections on CPU for this numerical
+    # failure. Real camera cuts still receive warnings on the CPU retry.
+    if (
+        device == "mps"
+        and previous is not None
+        and previous < pixels * 0.2
+        and current > pixels * 0.8
+    ):
+        raise RuntimeError(
+            "MPS tracking mask expanded into the background; retry on CPU"
+        )
+
+
 def track(
     frames: list[Path],
     destination: Path,
@@ -250,7 +273,55 @@ def track(
 
         enable_real_rotary(predictor)
     warnings = []
+    detector = None
+    if job.get("auto_detect_others"):
+        from ultralytics import YOLO
+        from backend.config import MODEL_WEIGHTS_DIR
+
+        detector_path = MODEL_WEIGHTS_DIR / "yolo11n-pose.pt"
+        if not detector_path.is_file():
+            raise ValueError(
+                "Local person detector is missing. Run the downloaded app setup again."
+            )
+        detector = YOLO(str(detector_path))
     height, width = cv2.imread(str(frames[0])).shape[:2]
+    if detector is not None:
+        from backend.jumper.discovery import clicked_person_box
+
+        initial = next(o for o in job["objects"] if o["id"] == job["target_id"])[
+            "prompts"
+        ][0]
+        point = next(
+            (
+                p
+                for p, label in zip(
+                    initial.get("points", []), initial.get("labels", [])
+                )
+                if label == 1
+            ),
+            None,
+        )
+        if initial["frame"] == 0 and "box" not in initial and point is not None:
+            detections = detector.predict(
+                cv2.imread(str(frames[0])),
+                classes=[0],
+                conf=0.25,
+                iou=0.45,
+                imgsz=640,
+                rect=False,
+                device="cpu",
+                verbose=False,
+            )[0]
+            boxes = (
+                detections.boxes.xyxy.cpu().numpy() / [width, height, width, height]
+            ).tolist()
+            if len(boxes) > 20:
+                raise ValueError(
+                    "More than 20 people detected. Trim to a closer view or use manual selection."
+                )
+            box = clicked_person_box(boxes, point)
+            if box is not None:
+                initial["box"] = box
     with torch.inference_mode():
         state = bounded_state(predictor, frames)
         try:
@@ -259,6 +330,7 @@ def track(
             prompts = sorted(
                 (p["frame"], obj["id"], p)
                 for obj in job["objects"]
+                if not obj.get("ignored") or job.get("auto_detect_others")
                 for p in obj["prompts"]
             )
             for index, obj_id, prompt in prompts:
@@ -283,9 +355,83 @@ def track(
                 )
             previous = None
             previous_extent = None
-            for index, ids, logits in predictor.propagate_in_video(
-                state, start_frame_idx=0
-            ):
+            previous_areas = {}
+
+            def propagation():
+                if detector is None:
+                    yield from predictor.propagate_in_video(state, start_frame_idx=0)
+                    return
+                from backend.jumper.discovery import resolve_people
+
+                for index in range(len(frames)):
+                    _, ids, logits = next(
+                        predictor.propagate_in_video(
+                            state, start_frame_idx=index, max_frame_num_to_track=0
+                        )
+                    )
+                    values = logits[:, 0].float().cpu().numpy()
+                    for row, identity in enumerate(ids):
+                        if index < next(
+                            o["prompts"][0]["frame"]
+                            for o in job["objects"]
+                            if o["id"] == identity
+                        ):
+                            values[row] = -1024
+                    owners = np.zeros((height, width), dtype=np.uint8)
+                    valid = values.max(axis=0) > 0
+                    owners[valid] = np.asarray(ids, dtype=np.uint8)[
+                        values.argmax(axis=0)[valid]
+                    ]
+                    detections = detector.predict(
+                        cv2.imread(str(frames[index])),
+                        classes=[0],
+                        conf=0.25,
+                        iou=0.45,
+                        imgsz=640,
+                        rect=False,
+                        device="cpu",
+                        verbose=False,
+                    )[0]
+                    boxes = (
+                        detections.boxes.xyxy.cpu().numpy()
+                        / [width, height, width, height]
+                    ).tolist()
+                    if len(boxes) > 20:
+                        raise ValueError(
+                            "More than 20 people detected. Trim to a closer view or disable automatic discovery and select court players manually."
+                        )
+                    resolution = resolve_people(boxes, owners)
+                    if resolution["ambiguous"]:
+                        warnings.append({"frame": index, "kind": "ambiguous_players"})
+                    additions = resolution["unmatched"]
+                    for box in additions:
+                        if len(job["objects"]) >= 20:
+                            raise ValueError(
+                                "More than 20 tracks needed. Remove spectators or use manual selection."
+                            )
+                        identity = max(o["id"] for o in job["objects"]) + 1
+                        if identity > 255:
+                            raise ValueError(
+                                "Too many selections. Start a fresh selection."
+                            )
+                        prompt = {"frame": index, "box": box}
+                        job["objects"].append({"id": identity, "prompts": [prompt]})
+                        predictor.add_new_points_or_box(
+                            state,
+                            frame_idx=index,
+                            obj_id=identity,
+                            box=np.array(box, dtype=np.float32)
+                            * [width, height, width, height],
+                        )
+                    if additions:
+                        _, ids, logits = next(
+                            predictor.propagate_in_video(
+                                state, start_frame_idx=index, max_frame_num_to_track=0
+                            )
+                        )
+                    yield index, ids, logits
+
+            for index, ids, logits in propagation():
                 if progress:
                     progress(index, len(frames))
                 values = logits[:, 0].float().cpu().numpy()
@@ -295,12 +441,20 @@ def track(
                 for row, identity in enumerate(ids):
                     if index < starts[identity]:
                         values[row] = -1024
+                    area = int(np.count_nonzero(values[row] > 0))
+                    check_device_mask_area(
+                        device, previous_areas.get(identity), area, height * width
+                    )
+                    previous_areas[identity] = area
                 # Exactly one visible owner per pixel. Negative logits stay
                 # background; no expansion or generated body pixels are used.
                 owners = np.argmax(values, axis=0)
                 labels = np.zeros((height, width), dtype=np.uint8)
                 valid = np.max(values, axis=0) > 0
                 labels[valid] = np.asarray(ids, dtype=np.uint8)[owners[valid]]
+                for obj in job["objects"]:
+                    if obj.get("ignored"):
+                        labels[labels == obj["id"]] = 0
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
                 if not np.any(labels == job["target_id"]):
                     warnings.append({"frame": index, "kind": "target_lost"})
@@ -332,6 +486,16 @@ def track(
                     warnings.append({"frame": index, "kind": "possible_camera_cut"})
                 previous = current.astype(float)
                 prune_tracking(state, index)
+                if device == "mps":
+                    torch.mps.synchronize()
+                    torch.mps.empty_cache()
+                    if (
+                        torch.mps.driver_allocated_memory()
+                        > torch.mps.recommended_max_memory() * 0.55
+                    ):
+                        raise RuntimeError(
+                            "MPS working set exceeds the safe memory budget"
+                        )
         finally:
             predictor.reset_state(state)
     del state, predictor
@@ -394,11 +558,16 @@ def encoder(path: Path, width: int, height: int):
 
 
 def render(
-    frames: list[Path], masks: Path, output: Path, target: int, token: str
+    frames: list[Path],
+    masks: Path,
+    output: Path,
+    target: int,
+    token: str,
+    silhouette: bool = False,
 ) -> dict:
     output.mkdir(exist_ok=True)
     height, width = cv2.imread(str(frames[0])).shape[:2]
-    kinds = ("quiz", "reveal", "highlight")
+    kinds = ("quiz",) if silhouette else ("quiz", "reveal", "highlight")
     paths = {
         kind: output
         / f"{hashlib.sha256(f'{token}:{kind}'.encode()).hexdigest()[:32]}.mp4"
@@ -423,6 +592,9 @@ def render(
                     raise RuntimeError("Could not write the neutral thumbnail")
             for stream, image in zip(streams, composites):
                 stream.write(image.tobytes())
+    if silhouette:
+        paths["highlight"] = paths["quiz"]
+        paths["reveal"] = paths["quiz"]
     paths["thumbnail"] = thumbnail
     return {
         kind: {"file": path.name, "sha256": digest(path), "bytes": path.stat().st_size}

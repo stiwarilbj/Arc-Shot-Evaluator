@@ -14,6 +14,7 @@ export interface Clip {
   createdAt: string;
   mime: "video/mp4" | "video/webm";
   quiz: boolean;
+  presentation?: "silhouette";
 }
 export interface PersonalClip extends Clip {
   highlight: Blob;
@@ -51,15 +52,19 @@ export interface PointPrompt {
 }
 export interface Track {
   id: number;
+  ignored?: boolean;
   prompts: PointPrompt[];
 }
 export interface MaskRequest {
+  auto_detect_others?: boolean;
+  presentation?: "silhouette";
   start: number;
   end: number;
   target_id: number;
   objects: Track[];
 }
 export interface MaskResult {
+  objects?: Track[];
   highlight: Blob;
   quiz: Blob;
   reveal: Blob;
@@ -165,6 +170,7 @@ export function clip(value: unknown): value is Clip {
     typeof v.createdAt === "string" &&
     Number.isFinite(Date.parse(v.createdAt)) &&
     ["video/mp4", "video/webm"].includes(v.mime) &&
+    (v.presentation === undefined || v.presentation === "silhouette") &&
     typeof v.quiz === "boolean"
   );
 }
@@ -187,6 +193,9 @@ export function validateMaskRequest(
   const v = value as MaskRequest;
   if (
     !v ||
+    (v.auto_detect_others !== undefined &&
+      typeof v.auto_detect_others !== "boolean") ||
+    (v.presentation !== undefined && v.presentation !== "silhouette") ||
     !Number.isFinite(v.start) ||
     !Number.isFinite(v.end) ||
     v.start < 0 ||
@@ -211,6 +220,8 @@ export function validateMaskRequest(
   for (const track of v.objects) {
     if (
       !track ||
+      (track.ignored !== undefined && typeof track.ignored !== "boolean") ||
+      (track.id === v.target_id && track.ignored === true) ||
       !Number.isInteger(track.id) ||
       track.id < 1 ||
       track.id > 255 ||
@@ -306,6 +317,7 @@ export function maskResult(value: unknown): value is MaskResult {
         blob.size <= MAX_BYTES &&
         ["video/mp4", "video/webm"].includes(blob.type),
     ) &&
+    (v.objects === undefined || validResultTracks(v.objects, v.duration)) &&
     Array.isArray(v.warnings) &&
     v.warnings.every(
       (w) =>
@@ -313,9 +325,12 @@ export function maskResult(value: unknown): value is MaskResult {
         Number.isInteger(w.frame) &&
         w.frame >= 0 &&
         w.frame < Math.ceil(v.duration * 30) &&
-        ["target_lost", "possible_camera_cut", "tracking_unstable"].includes(
-          w.kind,
-        ),
+        [
+          "target_lost",
+          "possible_camera_cut",
+          "tracking_unstable",
+          "ambiguous_players",
+        ].includes(w.kind),
     )
   );
 }
@@ -337,4 +352,19 @@ export function unstableMask(
       current.area / previous.area > 2.8 ||
       Math.hypot(current.x - previous.x, current.y - previous.y) > 0.2)
   );
+}
+
+function validResultTracks(objects: Track[], duration: number) {
+  try {
+    validateMaskRequest({
+      start: 0,
+      end: duration,
+      target_id: objects.find((o) => !o.ignored && o.prompts[0]?.frame === 0)
+        ?.id,
+      objects,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }

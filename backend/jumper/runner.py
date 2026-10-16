@@ -1,6 +1,7 @@
 """Disposable native masking subprocess. No HTTP server or public publication."""
 
 from __future__ import annotations
+import copy
 import hashlib
 import json
 import os
@@ -39,13 +40,14 @@ def run(directory: Path):
         import torch
         from backend.config import MODEL_WEIGHTS_DIR
 
-        progress("Downloading local masking model")
+        progress("Checking local masking model")
         checkpoint = MODEL_WEIGHTS_DIR / "sam2.1_hiera_tiny.pt"
         if (
             not checkpoint.exists()
             or hashlib.file_digest(checkpoint.open("rb"), "sha256").hexdigest()
             != CHECKPOINT_SHA
         ):
+            progress("Downloading local masking model")
             temporary = checkpoint.with_suffix(".download")
             with (
                 urllib.request.urlopen(CHECKPOINT_URL, timeout=60) as response,
@@ -73,8 +75,14 @@ def run(directory: Path):
             if torch.cuda.is_available()
             else "cpu"
         )
+        # MPS defaults permit allocations beyond physical RAM. Leave room for
+        # the browser/OS and fail into the existing CPU retry before jetsam kills
+        # the whole process (which cannot be caught as a Python exception).
+        if device == "mps":
+            torch.mps.set_per_process_memory_fraction(0.5)
         torch.set_num_threads(min(4, os.cpu_count() or 1))
         progress("Tracking players · " + device.upper())
+        original_objects = copy.deepcopy(job["objects"])
         try:
             warnings = track(
                 frames,
@@ -83,7 +91,14 @@ def run(directory: Path):
                 checkpoint,
                 device,
                 lambda done, total: progress(
-                    "Tracking players · " + device.upper(), done, total
+                    (
+                        "Detecting and tracking players · "
+                        if job.get("auto_detect_others")
+                        else "Tracking players · "
+                    )
+                    + device.upper(),
+                    done,
+                    total,
                 ),
             )
         except (RuntimeError, NotImplementedError) as error:
@@ -97,6 +112,7 @@ def run(directory: Path):
                 torch.mps.empty_cache()
             elif device == "cuda":
                 torch.cuda.empty_cache()
+            job["objects"] = original_objects
             progress("Restarting tracking on CPU")
             warnings = track(
                 frames,
@@ -113,11 +129,13 @@ def run(directory: Path):
             directory / "output",
             job["target_id"],
             directory.name,
+            silhouette=job.get("presentation") == "silhouette",
         )
         result = {
             "duration": len(frames) / 30,
             "fps": 30,
             "warnings": warnings,
+            "objects": job["objects"],
             "outputs": outputs,
         }
         write(directory / "result.json", result)

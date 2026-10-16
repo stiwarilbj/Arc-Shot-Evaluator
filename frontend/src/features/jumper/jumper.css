@@ -516,3 +516,21 @@
     max-height: none;
   }
 }
+
+.jumper-corrections {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-color, #454545);
+  padding-top: 12px;
+}
+.jumper-corrections summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: list-item;
+  font-weight: 600;
+}
+.jumper-corrections[open] summary {
+  margin-bottom: 10px;
+}
+.jumper-corrections > button {
+  margin-block: 6px;
+}

@@ -16,6 +16,8 @@ published. Reviewed starter releases (at least two distinct shots/two NBA player
 are supported and labeled with actual counts. The 300-clip/60-player complete
 collection remains an acquisition and review dependency. See the
 [acquisition status](docs/jumper-starter-status.md).
+Personal uploads start with a click on the shooter: black target, gray players, neutral background, and no audio. Processing is device-local and uses no paid inference service. Review masks before saving; personal quizzes stay masked after answering.
+
 See [the editor guide](docs/jumper-editor.md) and
 [the preparation guide](docs/jumper-preparation.md).
 

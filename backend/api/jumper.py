@@ -211,7 +211,7 @@ def execute(identity, generation):
                 job["error"] = (
                     json.loads(path.read_text())["error"]
                     if path.exists()
-                    else "Local masking process failed"
+                    else f"Local masking process stopped (exit {process.returncode}). Retry a shorter clip or restart the downloaded app."
                 )
             else:
                 job["status"] = "done"
@@ -349,6 +349,8 @@ async def save(request: Request):
         identity = identifier(metadata["id"])
         if not isinstance(metadata.get("quiz"), bool):
             raise ValueError("Invalid quiz flag")
+        if metadata.get("presentation") not in (None, "silhouette"):
+            raise ValueError("Invalid presentation")
         datetime.fromisoformat(metadata["createdAt"].replace("Z", "+00:00"))
         name = metadata["player"]["name"]
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
@@ -401,6 +403,11 @@ async def save(request: Request):
                 "createdAt": metadata["createdAt"],
                 "mime": metadata["mime"],
                 "quiz": bool(metadata.get("quiz")),
+                **(
+                    {"presentation": "silhouette"}
+                    if metadata.get("presentation") == "silhouette"
+                    else {}
+                ),
             }
             atomic(staging / "clip.json", clean)
             with LOCK:

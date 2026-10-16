@@ -29,6 +29,7 @@ export async function detectPeople(
         if (data.error) reject(Error(data.error));
         else if (
           Array.isArray(data.boxes) &&
+          data.boxes.length <= 20 &&
           data.boxes.every(
             (b: unknown) =>
               Array.isArray(b) &&
@@ -63,7 +64,12 @@ export async function detectPeople(
       { signal },
     );
     if (!result.ok) throw Error("Detection unavailable; add players manually");
-    return (await result.json()).boxes;
+    const boxes = (await result.json()).boxes;
+    if (!Array.isArray(boxes) || boxes.length > 20)
+      throw Error(
+        "More than 20 people detected. Trim closer or select players manually.",
+      );
+    return boxes;
   } finally {
     if (id) void fetch(`/api/jumper-lab/jobs/${id}`, { method: "DELETE" });
   }

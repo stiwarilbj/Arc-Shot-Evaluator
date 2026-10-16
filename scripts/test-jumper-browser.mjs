@@ -10,10 +10,10 @@ const {
 const artifacts =
   process.env.JUMPER_ARTIFACTS || path.join(tmpdir(), "arc-jumper-browser");
 mkdirSync(artifacts, { recursive: true });
-const fixture = new URL(
-  "../tests/fixtures/jumper/research-shot.mp4",
-  import.meta.url,
-).pathname;
+const fixture =
+  process.env.JUMPER_FIXTURE ||
+  new URL("../tests/fixtures/jumper/research-shot.mp4", import.meta.url)
+    .pathname;
 // Explicit browser fallback: Browser plugin unavailable in this environment.
 (async () => {
   const target = process.env.JUMPER_TARGET || "hosted";
@@ -35,6 +35,11 @@ const fixture = new URL(
     });
     p.setDefaultTimeout(30000);
     const pageErrors = [];
+    const localRequests = [];
+    p.on("request", (request) => {
+      if (new URL(request.url()).pathname.startsWith("/api/"))
+        localRequests.push(request.url());
+    });
     p.on("pageerror", (e) => {
       pageErrors.push(e.message);
       console.log("PAGEERROR", e.message);
@@ -45,6 +50,8 @@ const fixture = new URL(
           ? "http://127.0.0.1:5173"
           : "http://127.0.0.1:5175/Arc-Shot-Evaluator/"),
     );
+    await expect(p).toHaveTitle("ARC · Online Shot Analysis");
+    console.log("Page identity", p.url(), await p.title());
     async function open() {
       await p.getByRole("button", { name: /Others/ }).click();
       await p.getByRole("menuitem").click();
@@ -57,48 +64,152 @@ const fixture = new URL(
       await p.getByLabel("Start (s)").fill(process.env.JUMPER_TRIM_START);
       await p.getByLabel("End (s)").fill(process.env.JUMPER_TRIM_END);
     }
-    await p.getByPlaceholder("e.g. Stephen Curry").fill("Practice Shooter");
-    await p.getByRole("button", { name: "Find people in first frame" }).click();
-    await p
-      .getByRole("button", { name: "Process clip", exact: true })
-      .waitFor();
-    await expect(
-      p.getByRole("button", { name: "Process clip", exact: true }),
-    ).toBeEnabled({ timeout: 90000 });
-    console.log(target, "detected");
-    // This fixture has one real player. The detector also proposes painted
-    // wall silhouettes; explicitly reject those as a user must in review.
-    const removeNames = await p
-      .getByRole("button", { name: /Remove track/ })
-      .evaluateAll((buttons) =>
-        buttons.map((button) => button.getAttribute("aria-label")),
-      );
-    for (const name of removeNames)
-      if (name !== "Remove track 1")
-        await p.getByRole("button", { name, exact: true }).click();
+    const img = p.getByAltText(
+      "Selected video frame; click to add a mask point",
+    );
+    await img.waitFor();
+    const bounds = await img.boundingBox();
+    const point = (process.env.JUMPER_POINT || ".485,.64")
+      .split(",")
+      .map(Number);
+    await img.click({
+      position: { x: bounds.width * point[0], y: bounds.height * point[1] },
+    });
+    // Processing requires only the clicked shooter, never a name or manual roster.
     await p.getByRole("button", { name: "Process clip", exact: true }).click();
-    let last = "";
-    for (let i = 0; i < 900; i++) {
-      await p.waitForTimeout(1000);
-      const status = await p.locator(".jumper-progress").innerText();
-      if (i % 20 === 0) console.log(status);
-      const errors = await p
-        .locator(".jumper-editor-controls [role=alert]")
-        .allTextContents();
-      if (errors.length) throw Error(errors.join("\n"));
-      if (status.includes("Ready for review")) break;
-      if (i === 899) throw Error("processing deadline");
+    if (process.env.JUMPER_TEST_CANCEL) {
+      await expect(p.locator(".jumper-progress")).toContainText(
+        /Tracking|Finding players/,
+        { timeout: 180000 },
+      );
+      await p.getByRole("button", { name: "Cancel processing" }).click();
+      await expect(p.locator(".jumper-progress")).toContainText("cancelled");
+      await expect(
+        p.getByRole("button", { name: "Process clip", exact: true }),
+      ).toBeEnabled();
+      await expect(
+        p.getByRole("heading", { name: "Your finished clip", exact: true }),
+      ).toHaveCount(0);
+      await p
+        .getByRole("button", { name: "Process clip", exact: true })
+        .click();
+      console.log(
+        "Real tracking cancelled and restarted with selections preserved",
+      );
+    }
+
+    async function waitForResult() {
+      for (let i = 0; i < 900; i++) {
+        await p.waitForTimeout(1000);
+        const status = await p.locator(".jumper-progress").innerText();
+        if (i % 20 === 0) console.log(status);
+        const errors = await p
+          .locator(".jumper-editor-controls [role=alert]")
+          .allTextContents();
+        if (errors.length) throw Error(errors.join("\n"));
+        if (status.includes("Ready for review")) break;
+        if (i === 899) throw Error("processing deadline");
+      }
+      // Native progress can reach "Ready" just before the job commits its result.
+      await p
+        .getByRole("heading", { name: "Your finished clip", exact: true })
+        .waitFor();
+      await expect(
+        p.getByRole("button", {
+          name: /^(Process clip|Apply corrections & process)$/,
+        }),
+      ).toBeEnabled();
+    }
+    await waitForResult();
+    if (fixture.includes("research-")) {
+      // The technical fixture contains painted wall players. Remove those
+      // false detections using real correction controls, preserving track IDs.
+      await p.locator(".jumper-corrections summary").click();
+      const names = await p
+        .getByRole("button", { name: /Remove track/ })
+        .evaluateAll((buttons) =>
+          buttons.map((b) => b.getAttribute("aria-label")),
+        );
+      for (const name of names)
+        if (name !== "Remove track 1")
+          await p.getByRole("button", { name, exact: true }).click();
+      await p
+        .getByLabel("Find other people automatically", { exact: false })
+        .uncheck();
+      await expect(
+        p.getByRole("button", { name: "Save to My Clips", exact: true }),
+      ).toHaveCount(0);
+      await p
+        .getByRole("button", {
+          name: "Apply corrections & process",
+          exact: true,
+        })
+        .click();
+      await waitForResult();
+      console.log(
+        "False detections removed; approval invalidated and corrected tracking completed",
+      );
     }
     console.log(
       "warnings",
       await p.locator(".jumper-editor-main [role=alert]").allTextContents(),
     );
+    if (process.env.JUMPER_EXPECT_WARNING) {
+      await expect(
+        p.getByRole("button", { name: "Save to My Clips", exact: true }),
+      ).toBeDisabled();
+      if (!(await p.locator(".jumper-editor-main [role=alert]").count()))
+        throw Error("Expected tracking warning");
+      console.log("UNCERTAIN FOOTAGE CORRECTLY BLOCKED");
+      return;
+    }
+    await p.getByPlaceholder("e.g. Stephen Curry").fill("Practice Shooter");
     await p.getByLabel("I reviewed the full motion:", { exact: false }).check();
     await p.getByLabel("Use in my guessing game", { exact: false }).check();
     const download = p.waitForEvent("download");
     await p.getByRole("link", { name: "Download", exact: true }).click();
     const file = await download;
     await file.saveAs(path.join(artifacts, target + "-full.mp4"));
+    // Storage failure must preserve the finished downloadable result.
+    if (target === "hosted")
+      await p.evaluate(() => {
+        window.originalClipPut = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function (...args) {
+          if (this.name === "clips")
+            throw new DOMException(
+              "Test quota exhaustion",
+              "QuotaExceededError",
+            );
+          return window.originalClipPut.apply(this, args);
+        };
+      });
+    else {
+      let rejectSave = true;
+      await p.route("**/api/jumper-lab/media", (route) => {
+        if (route.request().method() === "POST" && rejectSave) {
+          rejectSave = false;
+          return route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: "Test unavailable storage" }),
+          });
+        }
+        return route.continue();
+      });
+    }
+    await p
+      .getByRole("button", { name: "Save to My Clips", exact: true })
+      .click();
+    await expect(
+      p.locator(".jumper-editor-controls [role=alert]"),
+    ).toContainText("still downloadable");
+    await expect(
+      p.getByRole("link", { name: "Download", exact: true }),
+    ).toBeVisible();
+    if (target === "hosted")
+      await p.evaluate(() => {
+        IDBObjectStore.prototype.put = window.originalClipPut;
+      });
     await p
       .getByRole("button", { name: "Save to My Clips", exact: true })
       .click();
@@ -140,8 +251,14 @@ const fixture = new URL(
     expect(await attempts()).toHaveLength(0);
     await p.getByRole("button", { name: "Retry playback" }).click();
     await expect(p.getByRole("button", { name: "Lock answer" })).toBeEnabled();
+    const maskedSource = await p
+      .locator('video[aria-label="Mystery jumpshot"]')
+      .getAttribute("src");
     await p.getByRole("button", { name: "Lock answer" }).click();
     await p.getByText("Correct. You recognized the release.").waitFor();
+    expect(
+      await p.locator('video[aria-label="Player reveal"]').getAttribute("src"),
+    ).toBe(maskedSource);
     expect(await attempts()).toHaveLength(1);
     await p.reload();
     await open();
@@ -171,6 +288,7 @@ const fixture = new URL(
       await p.evaluate(() => document.documentElement.scrollWidth > innerWidth),
     );
     expect(pageErrors).toHaveLength(0);
+    if (target === "hosted") expect(localRequests).toHaveLength(0);
     console.log("FLOW PASS", target);
   } finally {
     await b.close();

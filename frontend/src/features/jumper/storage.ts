@@ -69,15 +69,27 @@ export async function listClips(): Promise<Clip[]> {
   if (!Array.isArray(value) || !value.every(clip))
     throw Error("Saved clip metadata could not be read");
   return value
-    .map(({ version, id, player, duration, createdAt, mime, quiz }) => ({
-      version,
-      id,
-      player,
-      duration,
-      createdAt,
-      mime,
-      quiz,
-    }))
+    .map(
+      ({
+        version,
+        id,
+        player,
+        duration,
+        createdAt,
+        mime,
+        quiz,
+        presentation,
+      }) => ({
+        version,
+        id,
+        player,
+        duration,
+        createdAt,
+        mime,
+        quiz,
+        ...(presentation ? { presentation } : {}),
+      }),
+    )
     .sort(
       (a, b) =>
         b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
@@ -103,7 +115,12 @@ export async function saveClip(value: PersonalClip): Promise<Clip> {
   const saved: unknown = await (
     await api("/media", { method: "POST", body: data })
   ).json();
-  if (!clip(saved) || saved.id !== value.id)
+  if (
+    !clip(saved) ||
+    saved.id !== value.id ||
+    saved.presentation !== value.presentation ||
+    saved.quiz !== value.quiz
+  )
     throw Error("The saved clip could not be verified");
   return saved;
 }

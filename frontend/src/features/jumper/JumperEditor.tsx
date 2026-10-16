@@ -26,6 +26,7 @@ export default function JumperEditor({
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(0);
   const [name, setName] = useState("");
+  const [automatic, setAutomatic] = useState(true);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [target, setTarget] = useState(1);
   const [editing, setEditing] = useState(1);
@@ -56,6 +57,8 @@ export default function JumperEditor({
     !IS_GITHUB_PAGES || ("gpu" in navigator && "VideoEncoder" in globalThis);
   useEffect(
     () => () => {
+      generation.current++;
+      sourceGeneration.current++;
       controller.current?.abort();
     },
     [],
@@ -66,6 +69,7 @@ export default function JumperEditor({
       setImage(null);
       return;
     }
+    setImage(null);
     const abort = new AbortController();
     const blob =
       view === "masked" && result && !dirty ? result.highlight : file;
@@ -97,6 +101,7 @@ export default function JumperEditor({
       setError("Choose a nonempty video no larger than 100 MB.");
       return;
     }
+    generation.current++;
     const revision = ++sourceGeneration.current;
     setError("");
     try {
@@ -110,6 +115,7 @@ export default function JumperEditor({
       setStart(0);
       setEnd(Math.min(6, length));
       setTracks([]);
+      setAutomatic(true);
       setTarget(1);
       setEditing(1);
       setFrame(0);
@@ -128,6 +134,9 @@ export default function JumperEditor({
     setEnd(nextEnd);
     setFrame(0);
     setTracks([]);
+    setTarget(1);
+    setEditing(1);
+    setNegative(false);
     setResult(null);
     setView("source");
     invalidate();
@@ -153,6 +162,10 @@ export default function JumperEditor({
   function addPoint(xy: number[]) {
     if (busy || saving || !image) return;
     let id = editing;
+    if (!tracks.length && frame !== 0) {
+      setError("Return to frame 1 and click the shooter first.");
+      return;
+    }
     if (!tracks.length) {
       id = 1;
       setTracks([{ id, prompts: [] }]);
@@ -183,6 +196,7 @@ export default function JumperEditor({
   }
   async function detect() {
     if (!file || busy || saving) return;
+    const id = ++generation.current;
     const abort = new AbortController();
     controller.current = abort;
     setBusy(true);
@@ -191,6 +205,7 @@ export default function JumperEditor({
     try {
       const { detectPeople } = await import("./detection");
       const boxes = await detectPeople(file, start, abort.signal);
+      if (abort.signal.aborted || generation.current !== id) return;
       setTracks(
         boxes.map((box, index) => ({
           id: index + 1,
@@ -206,17 +221,24 @@ export default function JumperEditor({
         progress: 1,
       });
     } catch (error) {
+      if (generation.current !== id) return;
       if (!abort.signal.aborted) setError(String(error));
       else setProgress({ stage: "Detection cancelled", progress: 0 });
     } finally {
-      setBusy(false);
+      if (generation.current === id) setBusy(false);
     }
   }
   async function process() {
     if (!file || busy || saving) return;
-    const request = { start, end, target_id: target, objects: tracks };
+    const request = {
+      start,
+      end,
+      target_id: target,
+      objects: tracks,
+      auto_detect_others: automatic,
+      presentation: "silhouette" as const,
+    };
     try {
-      if (!name.trim()) throw Error("Name the selected player first.");
       if (end > duration + 0.01)
         throw Error("The trim extends beyond this video.");
       validateMaskRequest(request);
@@ -241,7 +263,8 @@ export default function JumperEditor({
         },
         abort.signal,
       );
-      if (id !== generation.current) return;
+      if (id !== generation.current || abort.signal.aborted) return;
+      if (value.objects) setTracks(value.objects);
       setResult(value);
       setDirty(false);
       setReviewed(false);
@@ -277,6 +300,12 @@ export default function JumperEditor({
     saveLock.current = true;
     setSaving(true);
     setError("");
+    if (quiz && !name.trim()) {
+      setError("Add the player’s name to use this clip in your guessing game.");
+      saveLock.current = false;
+      setSaving(false);
+      return;
+    }
     const identity = savedIdentity.current;
     try {
       const existing = (await listClips()).find(
@@ -284,10 +313,11 @@ export default function JumperEditor({
       );
       const value: PersonalClip = {
         version: 1,
+        presentation: "silhouette",
         id: identity,
         player: {
           id: existing?.player.id ?? identity,
-          name: name.trim(),
+          name: name.trim() || "Selected player",
           aliases: [],
         },
         duration: result.duration,
@@ -319,13 +349,20 @@ export default function JumperEditor({
         <span className="jumper-eyebrow">MAKE A MYSTERY</span>
         <h2>One shot. No clues.</h2>
         <p>
-          Hide the entire background and choose which player keeps their
-          original appearance.
+          Click the shooter to turn them black. Other players become gray, with
+          a flat background and no original colors or audio.
         </p>
         {!supported ? (
           <div className="jumper-notice">
             Creating clips requires WebGPU and video encoding. Try Chrome or use
-            the downloaded app. Guess and saved clips remain available.
+            <a
+              href="https://github.com/stiwarilbj/Arc-Shot-Evaluator#readme"
+              target="_blank"
+              rel="noreferrer"
+            >
+              the free downloaded app
+            </a>
+            . Guess and saved clips remain available.
           </div>
         ) : null}
         <label className="jumper-upload">
@@ -378,9 +415,29 @@ export default function JumperEditor({
               </small>
             </fieldset>
             <fieldset disabled={busy || saving}>
-              <legend>2 · Name and select the player</legend>
+              <legend>2 · Click the shooter in frame 1</legend>
+              <p className="jumper-caption">
+                The clicked player stays black. Other people are found
+                automatically throughout the clip. Review the whole result
+                before saving.
+              </p>
+              <button
+                type="button"
+                className="button button-outline"
+                onClick={() => {
+                  setTracks([]);
+                  setTarget(1);
+                  setEditing(1);
+                  setFrame(0);
+                  setNegative(false);
+                  setView("source");
+                  invalidate();
+                }}
+              >
+                Select shooter again
+              </button>
               <label>
-                Player name
+                Player name (optional until adding to quiz)
                 <input
                   value={name}
                   maxLength={100}
@@ -392,87 +449,132 @@ export default function JumperEditor({
                   }}
                 />
               </label>
-              <p className="jumper-caption">
-                The name is a label. Select the named player on frame 1. Add
-                other tracks on their first visible frame, then mark the named
-                player below.
-              </p>
-              <button
-                type="button"
-                className="button button-outline"
-                onClick={detect}
-              >
-                Find people in first frame
-              </button>
-              <div className="jumper-track-list">
-                {tracks.map((value) => (
-                  <div key={value.id}>
-                    <button
-                      type="button"
-                      className={editing === value.id ? "is-active" : ""}
-                      onClick={() => setEditing(value.id)}
-                    >
-                      Track {value.id}
-                    </button>
-                    <label>
-                      <input
-                        type="radio"
-                        name="jumper-target"
-                        checked={target === value.id}
-                        onChange={() => {
-                          setTarget(value.id);
-                          invalidate();
-                        }}
-                      />{" "}
-                      Named player
-                    </label>
-                    <button
-                      type="button"
-                      className="jumper-icon"
-                      aria-label={`Remove track ${value.id}`}
-                      onClick={() => {
-                        const next = tracks.filter(
-                          (track) => track.id !== value.id,
-                        );
-                        setTracks(next);
-                        setEditing(next[0]?.id ?? 1);
-                        if (target === value.id) setTarget(next[0]?.id ?? 1);
-                        invalidate();
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="button button-outline"
-                disabled={tracks.length >= 20}
-                onClick={addTrack}
-              >
-                <Plus size={15} /> Add player
-              </button>
-              <div className="jumper-toolbar">
+              <details className="jumper-corrections">
+                <summary>Correct masks & player selection</summary>
+                <label className="jumper-check">
+                  <input
+                    type="checkbox"
+                    checked={automatic}
+                    onChange={(event) => {
+                      setAutomatic(event.target.checked);
+                      invalidate();
+                    }}
+                  />
+                  Find other people automatically, including later entrants
+                </label>
+                <p className="jumper-caption">
+                  Remove spectators or false detections. Select a track and add
+                  Include/Exclude points on problem frames, then process again.
+                  Use manual selection if automatic discovery is unsuitable.
+                </p>
                 <button
                   type="button"
-                  aria-pressed={!negative}
-                  onClick={() => setNegative(false)}
+                  className="button button-outline"
+                  onClick={detect}
                 >
-                  <Plus size={14} /> Include
+                  Find people in first frame
                 </button>
+                <div className="jumper-track-list">
+                  {tracks
+                    .filter((value) => !value.ignored)
+                    .map((value) => (
+                      <div key={value.id}>
+                        <button
+                          type="button"
+                          className={editing === value.id ? "is-active" : ""}
+                          onClick={() => {
+                            setEditing(value.id);
+                            setFrame(value.prompts[0]?.frame ?? 0);
+                            setView("source");
+                          }}
+                        >
+                          Track {value.id}
+                        </button>
+                        <label>
+                          <input
+                            type="radio"
+                            name="jumper-target"
+                            checked={target === value.id}
+                            onChange={() => {
+                              setTarget(value.id);
+                              setEditing(value.id);
+                              setFrame(0);
+                              setView("source");
+                              setNegative(false);
+                              invalidate();
+                            }}
+                          />{" "}
+                          Shooter · black
+                        </label>
+                        <button
+                          type="button"
+                          className="jumper-icon"
+                          aria-label={`Remove track ${value.id}`}
+                          onClick={() => {
+                            if (value.id === target) {
+                              setError(
+                                "Choose a different shooter before removing this track.",
+                              );
+                              return;
+                            }
+                            setTracks((current) =>
+                              current.map((track) =>
+                                track.id === value.id
+                                  ? { ...track, ignored: true }
+                                  : track,
+                              ),
+                            );
+                            setEditing(target);
+                            invalidate();
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                </div>
+                {tracks.some((value) => value.ignored) ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTracks((current) =>
+                        current.map((value) => ({ ...value, ignored: false })),
+                      );
+                      invalidate();
+                    }}
+                  >
+                    Restore removed tracks
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  aria-pressed={negative}
-                  onClick={() => setNegative(true)}
+                  className="button button-outline"
+                  disabled={tracks.length >= 20}
+                  onClick={addTrack}
                 >
-                  <X size={14} /> Exclude
+                  <Plus size={15} /> Add player
                 </button>
-              </div>
-              <p className="jumper-caption">
-                Include the body; exclude the ball, shadows, and background. At
-                a later frame, points correct that same track.
-              </p>
+                <div className="jumper-toolbar">
+                  <button
+                    type="button"
+                    aria-pressed={!negative}
+                    onClick={() => setNegative(false)}
+                  >
+                    <Plus size={14} /> Include
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={negative}
+                    onClick={() => setNegative(true)}
+                  >
+                    <X size={14} /> Exclude
+                  </button>
+                </div>
+                <p className="jumper-caption">
+                  Include the body; exclude the ball, shadows, and background.
+                  At a later frame, points correct that same track.
+                </p>
+              </details>
             </fieldset>
             <button
               type="button"
@@ -480,13 +582,22 @@ export default function JumperEditor({
               disabled={busy || saving || !supported || !tracks.length}
               onClick={process}
             >
-              {result ? "Apply corrections & process" : "Process clip"}
+              {result && dirty ? "Apply corrections & process" : "Process clip"}
             </button>
             {busy ? (
               <button
                 type="button"
                 className="button button-outline"
-                onClick={() => controller.current?.abort()}
+                onClick={() => {
+                  generation.current++;
+                  controller.current?.abort();
+                  setBusy(false);
+                  setProgress({
+                    stage:
+                      "Processing cancelled. Your selections are preserved.",
+                    progress: 0,
+                  });
+                }}
               >
                 Cancel processing
               </button>
@@ -586,11 +697,9 @@ export default function JumperEditor({
                           />
                         </g>
                       ) : null}
-                      {track?.prompts.find((p) => p.frame === 0)?.box
+                      {prompts?.box
                         ? (() => {
-                            const b = track.prompts.find(
-                              (p) => p.frame === 0,
-                            )!.box!;
+                            const b = prompts.box!;
                             return (
                               <rect
                                 x={b[0] * 100}
@@ -670,7 +779,7 @@ export default function JumperEditor({
                 <h2>Your finished clip</h2>
                 <ClipVideo
                   src={videoUrl}
-                  label="Finished highlighted player clip"
+                  label="Finished silhouette clip"
                   active={active}
                 />
                 {result.warnings.length ? (
@@ -716,8 +825,8 @@ export default function JumperEditor({
                     disabled={saving || saved}
                     onChange={(event) => setQuiz(event.target.checked)}
                   />{" "}
-                  Use in my guessing game (also saves silhouette and reveal
-                  videos)
+                  Use in my guessing game (requires a player name; video stays
+                  masked after answering)
                 </label>
                 <div className="jumper-toolbar">
                   <button
@@ -728,7 +837,7 @@ export default function JumperEditor({
                       saving ||
                       saved ||
                       !!result.warnings.length ||
-                      !name.trim()
+                      (quiz && !name.trim())
                     }
                     onClick={save}
                   >
@@ -771,13 +880,13 @@ export default function JumperEditor({
             <Upload size={42} />
             <h2>Bring your own jumpshot</h2>
             <p>
-              Upload, select the people, and turn one short shot into a clip
+              Upload, click the shooter, and turn one short shot into a clip
               with every background clue removed.
             </p>
             <ol>
               <li>Trim to the gather, shot, and follow-through.</li>
               <li>
-                Name and click the player; select the other court players.
+                Click the shooter in frame 1; find other people automatically.
               </li>
               <li>Process, fix any mask errors, and save or download.</li>
             </ol>
