@@ -11,8 +11,9 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Header, HTTPException, Response
 
 from backend.config import PLAYBOOKS_DIR
 
@@ -292,11 +293,15 @@ def list_playbooks(response: Response) -> list[dict]:
 
 
 @router.post("")
-def create_playbook(payload: dict) -> dict:
-    playbook_id = f"play-{uuid.uuid4().hex[:12]}"
+def create_playbook(payload: dict, create_id: Annotated[str | None, Header(alias="X-ARC-Create-ID")] = None) -> dict:
+    if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
+        raise HTTPException(400, "Invalid create identity")
+    playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
     value = _document(payload, playbook_id=playbook_id)
     path = _path(playbook_id)
     with _playbook_lock(path):
+        if path.exists():
+            raise HTTPException(409, "A play with this identity already exists; refresh the saved library")
         _write(path, value)
     return value
 

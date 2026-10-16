@@ -472,3 +472,22 @@ def test_concurrent_update_and_delete_cannot_recreate_play(tmp_path, monkeypatch
         playbooks_module.update_playbook(other["id"], {"players": [False]})
     assert playbooks_module.get_playbook(other["id"])["name"] == "Retained"
     assert playbooks_module.delete_playbook(other["id"])["deleted"]
+
+
+def test_create_identity_allows_read_only_outcome_check_without_overwrite(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    identity = "play-" + "a" * 32
+    headers = {"X-ARC-Create-ID": identity}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda name: client.post("/api/playbooks", json=_payload(name), headers=headers), ["First client", "Other client"]))
+    assert sorted(response.status_code for response in results) == [200, 409]
+    accepted = next(response.json() for response in results if response.status_code == 200)
+    assert accepted["id"] == identity
+    assert client.get(f"/api/playbooks/{identity}").json() == accepted
+    assert len(list(tmp_path.glob("*.json"))) == 1
+    for bad in ["../escape", "draft-" + "a" * 32, "play-short", "play-" + "A" * 32]:
+        assert client.post("/api/playbooks", json=_payload(), headers={"X-ARC-Create-ID": bad}).status_code == 400
+    assert len(list(tmp_path.glob("*.json"))) == 1

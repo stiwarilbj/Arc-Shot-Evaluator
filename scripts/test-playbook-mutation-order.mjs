@@ -41,7 +41,7 @@ for(const target of ['local','github-pages']){
   const window=new EventTarget();globalThis.window=window;
   window.localStorage={getItem:()=>JSON.stringify(library),setItem:(_key,value)=>{const next=JSON.parse(value);const deleted=library.find(p=>!next.some(n=>n.id===p.id));events.push(deleted?`delete:${deleted.id}`:`save:${next[0].name}`);library=next;}};
   globalThis.fetch=async(url,options)=>{
-    if(!options){reads++;return Response.json(library);}
+    if(!options?.method){reads++;return Response.json(library);}
     const id=decodeURIComponent(url.split('/').pop());
     const method=options.method;const payload=options.body?JSON.parse(options.body):null;
     events.push(`${method}:${payload?.name??id}`);

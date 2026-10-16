@@ -1,3 +1,5 @@
+import { withPersistenceDeadline, PersistenceDeadlineError, PERSISTENCE_CHECK_TIMEOUT_MS } from "./persistenceDeadline.ts";
+import { playbookContentKey } from "./playbookDraftSession.ts";
 import { createPlayMutationQueue } from "./playMutationQueue.ts";
 import { normalizePlaybookPrecision } from "./documentPrecision.ts";
 import { INVALID_PLAYBOOK_SAVE, validatePlaybookDocument, validateSavedPlaybook, validatePlaybookSaveResult, type PlaybookSaveIdentity } from "./documentValidation.ts";
@@ -13,7 +15,10 @@ function withLibraryWrite<T>(write: () => T): Promise<T> {
   if (typeof navigator === "undefined" || !navigator.locks) {
     return Promise.reject(new Error("Safe browser storage is unavailable. Use a current browser over HTTPS or localhost and retry; your play is still in memory."));
   }
-  return navigator.locks.request(`${LOCAL_STORAGE_KEY}:write`, { mode: "exclusive" }, write);
+  return withPersistenceDeadline((signal) => navigator.locks.request(`${LOCAL_STORAGE_KEY}:write`, { mode: "exclusive", signal }, () => {
+    signal.throwIfAborted();
+    return write();
+  }));
 }
 
 async function parse<T>(response: Response): Promise<T> {
@@ -39,10 +44,60 @@ const parseLibrary = createParsedLibraryCache(validateLibrary);
 const libraryReads = createSharedLibraryRead(async () => IS_GITHUB_PAGES ? readLocalPlaybooks()
   : readRemotePlaybooks());
 async function readRemotePlaybooks(): Promise<PlaybookDocument[]> {
-  const response = await fetch("/api/playbooks");
-  if (!response.ok) await parse<never>(response);
-  return parseLibrary(await response.text());
+  return withPersistenceDeadline(async (signal) => {
+    const response = await fetch("/api/playbooks", { signal, cache: "no-store" });
+    if (!response.ok) await parse<never>(response);
+    return parseLibrary(await response.text());
+  });
 }
+const UNCERTAIN_SAVE = "The save response was interrupted and its outcome could not be confirmed. Your draft is still in memory. Check the saved library before saving another copy.";
+const UNCERTAIN_DELETE = "The delete response was interrupted and its outcome could not be confirmed. Refresh the saved library before retrying.";
+
+async function checkRemotePlay(id: string): Promise<PlaybookDocument | null> {
+  return withPersistenceDeadline(async (signal) => {
+    const response = await fetch(`/api/playbooks/${encodeURIComponent(id)}`, { signal, cache: "no-store" });
+    if (response.status === 404) return null;
+    return parseSave(response, { operation: "update", id });
+  }, PERSISTENCE_CHECK_TIMEOUT_MS);
+}
+
+async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIdentity): Promise<PlaybookDocument> {
+  // Identify this POST before sending it, so recovery never guesses which copy
+  // was saved or repeats a write. The backend rejects existing create IDs.
+  const id = identity.operation === "create" ? `play-${Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("")}` : identity.id;
+  try {
+    return await withPersistenceDeadline(async (signal) => {
+      const response = await fetch(identity.operation === "create" ? "/api/playbooks" : `/api/playbooks/${encodeURIComponent(id)}`, {
+        method: identity.operation === "create" ? "POST" : "PUT", signal,
+        headers: { "Content-Type": "application/json", ...(identity.operation === "create" ? { "X-ARC-Create-ID": id } : {}) },
+        body: JSON.stringify(playbook),
+      });
+      return parseSave(response, identity);
+    });
+  } catch (error) {
+    if (!(error instanceof PersistenceDeadlineError || error instanceof TypeError)) throw error;
+    try {
+      const saved = await checkRemotePlay(id);
+      if (saved && playbookContentKey(saved) === playbookContentKey({ ...playbook, version: 1, name: playbook.name.trim() })) return saved;
+    } catch { /* Verification failure cannot prove the write failed. */ }
+    throw new Error(UNCERTAIN_SAVE);
+  }
+}
+
+async function deleteRemotePlay(id: string) {
+  try {
+    return await withPersistenceDeadline(async (signal) => {
+      const response = await fetch(`/api/playbooks/${encodeURIComponent(id)}`, { method: "DELETE", signal });
+      return parse<{ deleted: boolean; id: string }>(response);
+    });
+  } catch (error) {
+    if (!(error instanceof PersistenceDeadlineError || error instanceof TypeError)) throw error;
+    try { if (await checkRemotePlay(id) === null) return { deleted: true, id }; }
+    catch { /* Preserve uncertainty when the read also fails or times out. */ }
+    throw new Error(UNCERTAIN_DELETE);
+  }
+}
+
 let subscriptions = 0;
 const onStorage = (event: StorageEvent) => {
   if (event.key === LOCAL_STORAGE_KEY || event.key === null) announceChange();
@@ -111,7 +166,7 @@ export async function createPlaybook(playbook: PlaybookDraft) {
   const identity: PlaybookSaveIdentity = { operation: "create", sourceId: playbook.id };
   return libraryReads.mutate(async () => {
     if (IS_GITHUB_PAGES) return withLibraryWrite(() => persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, localId(), identity));
-    const saved = await fetch("/api/playbooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parseSave(response, identity));
+    const saved = await saveRemotePlay(playbook, identity);
     announceChange(); return saved;
   });
 }
@@ -124,14 +179,14 @@ export async function updatePlaybook(playbook: PlaybookDraft) {
       if (!readLocalPlaybooks().some((item) => item.id === playbook.id)) throw new Error("Saved play not found");
       return persistLocalPlaybook(playbook, playbook.id, identity);
     });
-    const saved = await fetch(`/api/playbooks/${encodeURIComponent(playbook.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(playbook) }).then((response) => parseSave(response, identity));
+    const saved = await saveRemotePlay(playbook, identity);
     announceChange(); return saved;
   }));
 }
 export async function deletePlaybook(id: string) {
   return libraryReads.mutate(() => queuePlayMutation(id, async () => {
     if (IS_GITHUB_PAGES) return withLibraryWrite(() => { writeLocalPlaybooks(readLocalPlaybooks().filter((item) => item.id !== id)); return { deleted: true, id }; });
-    const deleted = await fetch(`/api/playbooks/${encodeURIComponent(id)}`, { method: "DELETE" }).then((response) => parse<{ deleted: boolean; id: string }>(response));
+    const deleted = await deleteRemotePlay(id);
     announceChange(); return deleted;
   }));
 }

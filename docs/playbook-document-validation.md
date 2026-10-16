@@ -162,3 +162,38 @@ Run `npm run test:playbook-cross-client` and the Python playbook tests for
 independent-client coordination, concurrent creates/updates/deletes, failure
 recovery, and separate-process lock exclusion. Native two-tab browser checks
 also verify waiting and release against the deployed persistence code.
+
+
+## Persistence deadlines and uncertain writes
+
+Local API requests have a 15-second deadline covering connection, headers and
+complete response bodies. Abort signals cancel cooperative transports; a promise
+race also rejects stalled transports that ignore cancellation. Late results do
+not apply state or announce a save. Timers are cleared on success and failure.
+The existing `finally` paths release shared-read entries, mutation barriers,
+per-play queues and UI save ownership. Hosted Web Lock acquisition has the same
+15-second bound; expired waiters cannot execute a storage write later.
+
+A timeout or network interruption does not prove that a write failed. The client
+makes one read-only check with a separate five-second deadline (at most 20 seconds
+total for a timed-out request and verification). Updates require a validated
+same-ID document whose persisted content matches the submitted snapshot, with
+existing precision/defaults and trimmed names. Deletes require a 404. Creates
+send a fresh random 128-bit ID in `X-ARC-Create-ID`, allowing the check to identify
+that exact copy rather than guessing from its name. The local API accepts this
+optional header, validates it and rejects an existing identity with 409 under
+the document lock. Older callers without the header retain server-generated IDs;
+an older server that ignores it may leave the outcome uncertain.
+
+Only confirmed desired state returns success. Missing, different, malformed or
+unavailable verification results produce an explicit uncertain-outcome error;
+they never claim that the write definitely failed. No mutation is automatically
+repeated. Drafts and existing Counter Lab reports stay in memory, and existing
+retry controls become available again. Before manually retrying an uncertain
+create, refresh the library to avoid another copy. An aborted HTTP request may
+still finish on the server after verification; cancellation is not a rollback.
+
+Run `npm run test:playbook-deadlines` for exact deadline boundaries, stalled
+headers/bodies, late results, write verification, bounded uncertainty, cleanup,
+retry and hosted lock waits. The Python playbook tests also cover create-ID
+validation and duplicate-create exclusion.

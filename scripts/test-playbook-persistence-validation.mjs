@@ -15,7 +15,7 @@ for (const target of ['github-pages', 'local']) {
   globalThis.window = window;
   globalThis.fetch = async (_url, options) => {
     calls++;
-    if (!options) return new Response(content);
+    if (!options?.method) return new Response(content);
     const value = { ...JSON.parse(options.body), id: 'play-server01', created_at: '2026-10-15', updated_at: '2026-10-15' };
     content = JSON.stringify([value]); writes++;
     return Response.json(value);
