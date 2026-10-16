@@ -167,3 +167,9 @@ The Pages artifact is approximately 62 MiB, below the 800 MiB budget. The checks
 cover tested fixtures and device paths, not all GPUs, codecs or occlusions.
 An additional real multi-person overlap run raised an ambiguous-player warning
 at frame 5 and correctly disabled saving; that uncertain output was not approved.
+
+The same 54-frame upload workflow passed on the deployed GitHub Pages site,
+including tracking cancellation/restart, storage failure/retry, save/reload and
+exactly-once personal guessing. The reveal kept the masked video, the guessing
+round made no inference requests, and hosted processing called no local API.
+Live keyboard/mobile/theme/workspace checks also passed.

@@ -2,12 +2,14 @@
 
 The hosted demo and local app include Shot Analyzer, Playbook, Counter Lab, and
 **Others → Who’s That Jumper?** for private personal clips. Upload a short video,
-select the players, process and correct their masks, then download or save it.
-Enable “Use in my guessing game” to quiz yourself using finished silhouette/reveal
-videos. Guess never downloads inference models.
+click the shooter in the first frame, process and review the masks, then download
+or save it. The shooter is black, other players gray, and the background neutral,
+with no audio. Enable “Use in my guessing game” and add the player's name to quiz
+yourself; the video stays masked after answering. Guess never downloads models.
 
 Creating clips requires WebGPU and video encoding in Chrome on the hosted site,
-or the downloaded app’s native SAM 2.1 engine. Models download only when needed.
+or the downloaded app’s native SAM 2.1 engine. Models download only when needed;
+processing stays on-device and uses no paid inference service.
 Personal videos remain in this browser (hosted) or `jumper-media/` (local).
 Download important clips: clearing browser storage removes hosted personal data.
 
@@ -16,7 +18,6 @@ published. Reviewed starter releases (at least two distinct shots/two NBA player
 are supported and labeled with actual counts. The 300-clip/60-player complete
 collection remains an acquisition and review dependency. See the
 [acquisition status](docs/jumper-starter-status.md).
-Personal uploads start with a click on the shooter: black target, gray players, neutral background, and no audio. Processing is device-local and uses no paid inference service. Review masks before saving; personal quizzes stay masked after answering.
 
 See [the editor guide](docs/jumper-editor.md) and
 [the preparation guide](docs/jumper-preparation.md).
