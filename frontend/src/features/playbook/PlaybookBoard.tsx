@@ -1,3 +1,4 @@
+import { compareSavedPlaybooks } from "./playbookOrder";
 import { CreationAttemptError } from "./creationAttempt.ts";
 import { ArrowVisibilityControl, useArrowVisibility } from "./ArrowVisibilityControl";
 import { routeVisible } from "./arrowVisibility";
@@ -549,7 +550,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     try {
       const payload = draftPayload(request.draft);
       const result = payload.id.startsWith("draft-") ? await createPlaybook(payload, request.creationId) : await updatePlaybook(payload);
-      setSaved((current) => [result, ...current.filter((play) => play.id !== result.id)]);
+      setSaved((current) => [result, ...current.filter((play) => play.id !== result.id)].sort(compareSavedPlaybooks));
       const applied = draftSession.completeSave(request, result);
       if (!applied) return false;
       setDraftState(applied.draft);

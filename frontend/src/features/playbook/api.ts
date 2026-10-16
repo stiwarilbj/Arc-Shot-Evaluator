@@ -1,3 +1,4 @@
+import { compareSavedPlaybooks } from "./playbookOrder.ts";
 import { newCreationId, CreationAttemptError } from "./creationAttempt.ts";
 import { validateHostedLibrary, type HostedLibrary, type CreationReceipt } from "./hostedLibrary.ts";
 import { withPersistenceDeadline, PersistenceDeadlineError, PERSISTENCE_CHECK_TIMEOUT_MS } from "./persistenceDeadline.ts";
@@ -46,8 +47,10 @@ const queuePlayMutation = createPlayMutationQueue();
 const CHANGE_EVENT = "arc-playbooks-changed";
 const parseLibrary = createParsedLibraryCache(validateLibrary);
 const parseHostedLibrary = createParsedLibraryCache(validateHostedLibrary);
-const libraryReads = createSharedLibraryRead(async () => IS_GITHUB_PAGES ? readLocalPlaybooks()
-  : readRemotePlaybooks());
+const libraryReads = createSharedLibraryRead(async () => {
+  const plays = IS_GITHUB_PAGES ? readLocalPlaybooks() : await readRemotePlaybooks();
+  return [...plays].sort(compareSavedPlaybooks);
+});
 async function readRemotePlaybooks(): Promise<PlaybookDocument[]> {
   return withPersistenceDeadline(async (signal) => {
     const response = await fetch("/api/playbooks", { signal, cache: "no-store" });

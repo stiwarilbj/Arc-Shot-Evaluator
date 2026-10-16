@@ -241,3 +241,9 @@ acknowledgements, original-snapshot retries, preservation of newer edits,
 independent clients, content conflicts, concurrent requests, storage failures,
 receipt corruption and replays after edits/deletion. Existing deadline tests
 continue to assert that no writes are retried automatically.
+
+Saved libraries use descending `updated_at` timestamp text, with ascending document
+ID as the tie-breaker. Both targets compare Unicode code points, independent of
+locale; absent/non-string legacy timestamps use an empty key and appear last.
+Playbook's immediate save update uses the same order. Sorting read views never
+rewrites stored documents, receipts, or timestamps.

@@ -11,7 +11,7 @@
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
     "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
     "test:counter-lab": "node --experimental-strip-types ../scripts/test-counter-lab.mjs",
-    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:playbook-performance && npm run test:playbook-draft-save && npm run test:playbook-document-validation && npm run test:playbook-precision && npm run test:playbook-save-results && npm run test:playbook-mutation-order && npm run test:playbook-cross-client && npm run test:playbook-deadlines && npm run test:playbook-idempotency",
+    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:playbook-performance && npm run test:playbook-draft-save && npm run test:playbook-document-validation && npm run test:playbook-precision && npm run test:playbook-save-results && npm run test:playbook-mutation-order && npm run test:playbook-cross-client && npm run test:playbook-deadlines && npm run test:playbook-idempotency && npm run test:playbook-order",
     "test:playbook-draft-save": "node --experimental-strip-types ../scripts/test-playbook-draft-save.mjs",
     "test:playbook-performance": "node --experimental-strip-types ../scripts/test-playbook-performance.mjs",
     "test:coordinated-movement": "node --experimental-strip-types ../scripts/test-coordinated-movement.mjs",
@@ -24,7 +24,8 @@
     "test:playbook-idempotency": "node --experimental-strip-types ../scripts/test-playbook-idempotency.mjs",
     "test:playbook-deadlines": "node --experimental-strip-types ../scripts/test-playbook-deadlines.mjs",
     "test:playbook-cross-client": "node --experimental-strip-types ../scripts/test-playbook-cross-client.mjs",
-    "test:playbook-mutation-order": "node --experimental-strip-types ../scripts/test-playbook-mutation-order.mjs"
+    "test:playbook-mutation-order": "node --experimental-strip-types ../scripts/test-playbook-mutation-order.mjs",
+    "test:playbook-order": "node --experimental-strip-types ../scripts/test-playbook-order.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

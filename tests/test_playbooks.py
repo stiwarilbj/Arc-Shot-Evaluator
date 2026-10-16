@@ -552,3 +552,20 @@ def test_corrupt_creation_receipt_is_preserved_instead_of_replayed(tmp_path, mon
     assert client.post("/api/playbooks", json=_payload(), headers=headers).status_code == 500
     assert path.read_text() == raw
     assert len(list(tmp_path.glob("*.json"))) == 1
+
+
+def test_library_order_is_stable_for_tied_timestamps(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+
+    fixture = json.loads((Path(__file__).parent / "fixtures/playbook-order.json").read_text())
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    for index, entry in enumerate(reversed(fixture["entries"])):
+        document = {"version": 1, **_payload(entry["id"]), **entry}
+        (tmp_path / f"play-{index}.json").write_text(json.dumps(document))
+    before = {path.name: path.read_bytes() for path in tmp_path.glob("*.json")}
+    for _ in range(3):
+        response = client.get("/api/playbooks")
+        assert response.status_code == 200
+        assert [play["id"] for play in response.json()] == fixture["expected"]
+    assert {path.name: path.read_bytes() for path in tmp_path.glob("*.json")} == before

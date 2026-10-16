@@ -291,7 +291,10 @@ def list_playbooks(response: Response) -> list[dict]:
         result.append(value)
     if warnings:
         response.headers["X-ARC-Playbook-Warnings"] = ", ".join(sorted(warnings))
-    return sorted(result, key=lambda item: str(item.get("updated_at", "")), reverse=True)
+    # Stable sorts keep IDs ascending within descending timestamp groups.
+    result.sort(key=lambda item: item["id"])
+    result.sort(key=lambda item: item["updated_at"] if isinstance(item.get("updated_at"), str) else "", reverse=True)
+    return result
 
 
 def _creation_request(value: dict) -> str:
