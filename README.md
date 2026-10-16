@@ -2,6 +2,11 @@
 
 The hosted demo and local app have three workspaces: Shot Analyzer, Playbook, and Counter Lab.
 
+Who’s That Jumper? is **not released**: its reviewed video collection and masking
+pilot are still prerequisites. Offline preparation tools, research findings,
+and the remaining implementation work are documented in
+[the preparation guide](docs/jumper-preparation.md). No quiz library is claimed.
+
 ```bash
 cd Arc-Shot-Evaluator
 ./scripts/setup.sh  #first run only

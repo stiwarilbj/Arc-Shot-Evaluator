@@ -48,6 +48,9 @@ jobs:
           mkdir -p frontend/dist/examples
           cp -R examples/. frontend/dist/examples/
 
+      - name: Check complete Pages artifact size
+        run: python3 scripts/jumper_pack.py budget frontend/dist
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
