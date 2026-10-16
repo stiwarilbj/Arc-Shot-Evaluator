@@ -104,3 +104,11 @@ VITE_DEPLOY_TARGET=github-pages pnpm build
 ```
 
 GitHub Pages deploys automatically after changes merge into `main`.
+
+## Save-and-simulate compatibility check
+
+Run `npm --prefix frontend run test:save-simulate` to round-trip representative
+plays through both persistence targets and compare their shared-engine execution.
+It uses isolated storage and the real local FastAPI routes, without starting the
+app or touching saved libraries. The command is also part of `npm test`. See
+[setup, fixtures, and comparison rules](docs/save-simulate-compatibility.md).
