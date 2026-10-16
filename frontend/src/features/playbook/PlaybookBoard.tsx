@@ -1,3 +1,4 @@
+import { CreationAttemptError } from "./creationAttempt.ts";
 import { ArrowVisibilityControl, useArrowVisibility } from "./ArrowVisibilityControl";
 import { routeVisible } from "./arrowVisibility";
 import { CourtRoutes } from "./CourtRoutes";
@@ -547,7 +548,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setError(null);
     try {
       const payload = draftPayload(request.draft);
-      const result = payload.id.startsWith("draft-") ? await createPlaybook(payload) : await updatePlaybook(payload);
+      const result = payload.id.startsWith("draft-") ? await createPlaybook(payload, request.creationId) : await updatePlaybook(payload);
       setSaved((current) => [result, ...current.filter((play) => play.id !== result.id)]);
       const applied = draftSession.completeSave(request, result);
       if (!applied) return false;
@@ -557,7 +558,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       // Save-then-replace may proceed only when every current edit was saved.
       return applied.unchanged ? request : null;
     } catch (caught) {
-      if (draftSession.failSave(request)) {
+      if (draftSession.failSave(request, caught instanceof CreationAttemptError && caught.retainAttempt)) {
         setStatus("error");
         setError(caught instanceof Error ? caught.message : "Play could not be saved. Your draft is still here.");
       }

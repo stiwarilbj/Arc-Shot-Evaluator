@@ -1,3 +1,5 @@
+import { newCreationId, CreationAttemptError } from "./creationAttempt.ts";
+import { validateHostedLibrary, type HostedLibrary, type CreationReceipt } from "./hostedLibrary.ts";
 import { withPersistenceDeadline, PersistenceDeadlineError, PERSISTENCE_CHECK_TIMEOUT_MS } from "./persistenceDeadline.ts";
 import { playbookContentKey } from "./playbookDraftSession.ts";
 import { createPlayMutationQueue } from "./playMutationQueue.ts";
@@ -21,10 +23,12 @@ function withLibraryWrite<T>(write: () => T): Promise<T> {
   }));
 }
 
+class PersistenceResponseError extends Error { constructor(message: string, readonly status: number) { super(message); } }
+
 async function parse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: "Request failed" })) as { detail?: string };
-    throw new Error(body.detail ?? `Request failed (${response.status})`);
+    throw new PersistenceResponseError(body.detail ?? `Request failed (${response.status})`, response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -41,6 +45,7 @@ async function parseSave(response: Response, identity: PlaybookSaveIdentity): Pr
 const queuePlayMutation = createPlayMutationQueue();
 const CHANGE_EVENT = "arc-playbooks-changed";
 const parseLibrary = createParsedLibraryCache(validateLibrary);
+const parseHostedLibrary = createParsedLibraryCache(validateHostedLibrary);
 const libraryReads = createSharedLibraryRead(async () => IS_GITHUB_PAGES ? readLocalPlaybooks()
   : readRemotePlaybooks());
 async function readRemotePlaybooks(): Promise<PlaybookDocument[]> {
@@ -50,7 +55,7 @@ async function readRemotePlaybooks(): Promise<PlaybookDocument[]> {
     return parseLibrary(await response.text());
   });
 }
-const UNCERTAIN_SAVE = "The save response was interrupted and its outcome could not be confirmed. Your draft is still in memory. Check the saved library before saving another copy.";
+const UNCERTAIN_SAVE = "The save response was interrupted and its outcome could not be confirmed. Your draft is still in memory. Retry when the server is available.";
 const UNCERTAIN_DELETE = "The delete response was interrupted and its outcome could not be confirmed. Refresh the saved library before retrying.";
 
 async function checkRemotePlay(id: string): Promise<PlaybookDocument | null> {
@@ -61,10 +66,10 @@ async function checkRemotePlay(id: string): Promise<PlaybookDocument | null> {
   }, PERSISTENCE_CHECK_TIMEOUT_MS);
 }
 
-async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIdentity): Promise<PlaybookDocument> {
+async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIdentity, creationId?: string): Promise<PlaybookDocument> {
   // Identify this POST before sending it, so recovery never guesses which copy
-  // was saved or repeats a write. The backend rejects existing create IDs.
-  const id = identity.operation === "create" ? `play-${Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("")}` : identity.id;
+  // was saved or repeats a write. The backend replays matching create receipts.
+  const id = identity.operation === "create" ? creationId! : identity.id;
   try {
     return await withPersistenceDeadline(async (signal) => {
       const response = await fetch(identity.operation === "create" ? "/api/playbooks" : `/api/playbooks/${encodeURIComponent(id)}`, {
@@ -72,7 +77,9 @@ async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIde
         headers: { "Content-Type": "application/json", ...(identity.operation === "create" ? { "X-ARC-Create-ID": id } : {}) },
         body: JSON.stringify(playbook),
       });
-      return parseSave(response, identity);
+      const saved = await parseSave(response, identity);
+      if (identity.operation === "create" && saved.id !== id) throw new Error(INVALID_PLAYBOOK_SAVE);
+      return saved;
     });
   } catch (error) {
     if (!(error instanceof PersistenceDeadlineError || error instanceof TypeError)) throw error;
@@ -115,29 +122,23 @@ function validateLibrary(value: unknown): PlaybookDocument[] {
   } catch { throw new Error("Saved plays could not be read. Your stored data has been preserved."); }
   return value as PlaybookDocument[];
 }
-function readLocalPlaybooks(): PlaybookDocument[] {
+function readLocalLibrary(): HostedLibrary {
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    return parseLibrary(raw || "[]");
+    return parseHostedLibrary(raw || "[]");
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error("Saved plays contain unreadable data. Your stored data has been preserved.");
     throw new Error(error instanceof Error && error.message.includes("preserved") ? error.message : "Browser storage is unavailable. Allow site storage and retry; your play is still in memory.");
   }
 }
-function writeLocalPlaybooks(playbooks: PlaybookDocument[]) {
-  try { window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(playbooks)); }
+function readLocalPlaybooks(): PlaybookDocument[] { return readLocalLibrary().plays; }
+function writeLocalPlaybooks(playbooks: PlaybookDocument[], creations = readLocalLibrary().creations) {
+  try { window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ version: 1, plays: playbooks, creations })); }
   catch { throw new Error("This play could not be saved: browser storage is unavailable or full. Free some space and retry."); }
   announceChange();
 }
 
-function localId() {
-  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID().slice(0, 12)
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  return `local-${suffix}`;
-}
-
-function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identity: PlaybookSaveIdentity): PlaybookDocument {
+function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identity: PlaybookSaveIdentity, receipt?: { id: string; request: string }): PlaybookDocument {
   const now = new Date().toISOString();
   const saved: PlaybookDocument = {
     version: 1,
@@ -153,22 +154,39 @@ function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identity: Pla
   };
   validatePlaybookSaveResult(saved, identity);
   const current = readLocalPlaybooks().filter((item) => item.id !== id);
-  writeLocalPlaybooks([saved, ...current]);
+  const creations: CreationReceipt[] = receipt ? [...readLocalLibrary().creations, { ...receipt, result: saved }] : readLocalLibrary().creations;
+  writeLocalPlaybooks([saved, ...current], creations);
   return saved;
 }
 
 export async function fetchPlaybooks() {
   return libraryReads.read();
 }
-export async function createPlaybook(playbook: PlaybookDraft) {
+export async function createPlaybook(playbook: PlaybookDraft, creationId = newCreationId()) {
   validatePlaybookDocument(playbook);
+  if (!/^play-[a-f0-9]{32}$/.test(creationId) || creationId === playbook.id) throw new Error("Invalid creation identity");
   playbook = normalizePlaybookPrecision(playbook);
   const identity: PlaybookSaveIdentity = { operation: "create", sourceId: playbook.id };
-  return libraryReads.mutate(async () => {
-    if (IS_GITHUB_PAGES) return withLibraryWrite(() => persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, localId(), identity));
-    const saved = await saveRemotePlay(playbook, identity);
-    announceChange(); return saved;
-  });
+  try {
+    return await libraryReads.mutate(async () => {
+      if (IS_GITHUB_PAGES) return withLibraryWrite(() => {
+        const request = playbookContentKey({ ...playbook, version: 1, name: playbook.name.trim() });
+        const library = readLocalLibrary();
+        const receipt = library.creations.find(item => item.id === creationId);
+        if (receipt) {
+          if (receipt.request !== request) throw new PersistenceResponseError("This creation attempt belongs to a different drawing.", 409);
+          return structuredClone(receipt.result);
+        }
+        if (library.plays.some(item => item.id === creationId)) throw new PersistenceResponseError("This creation identity is already in use.", 409);
+        return persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, creationId, identity, { id: creationId, request });
+      });
+      const saved = await saveRemotePlay(playbook, identity, creationId);
+      announceChange(); return saved;
+    });
+  } catch (error) {
+    throw new CreationAttemptError(error instanceof Error ? error.message : "The create response could not be confirmed.",
+      !(error instanceof PersistenceResponseError && [400, 422].includes(error.status)));
+  }
 }
 export async function updatePlaybook(playbook: PlaybookDraft) {
   validatePlaybookDocument(playbook);

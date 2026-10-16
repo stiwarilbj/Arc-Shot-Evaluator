@@ -491,3 +491,64 @@ def test_create_identity_allows_read_only_outcome_check_without_overwrite(tmp_pa
     for bad in ["../escape", "draft-" + "a" * 32, "play-short", "play-" + "A" * 32]:
         assert client.post("/api/playbooks", json=_payload(), headers={"X-ARC-Create-ID": bad}).status_code == 400
     assert len(list(tmp_path.glob("*.json"))) == 1
+
+
+def test_idempotent_creation_replays_original_through_edits_deletion_and_restart(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    identity = "play-" + "b" * 32
+    headers = {"X-ARC-Create-ID": identity}
+    client = TestClient(app)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(pool.map(lambda _: client.post("/api/playbooks", json=_payload(), headers=headers), range(4)))
+    assert all(response.status_code == 200 for response in responses)
+    original = responses[0].json()
+    assert all(response.json() == original for response in responses)
+    assert "_creation" not in original
+    assert len(list(tmp_path.glob("*.json"))) == 1
+    assert client.put(f"/api/playbooks/{identity}", json=_payload("Later rename")).status_code == 200
+    fresh_client = TestClient(app)  # Receipts come from disk, not a client/session cache.
+    assert fresh_client.post("/api/playbooks", json=_payload(), headers=headers).json() == original
+    mismatch = fresh_client.post("/api/playbooks", json=_payload("Different request"), headers=headers)
+    assert mismatch.status_code == 409
+    assert fresh_client.get(f"/api/playbooks/{identity}").json()["name"] == "Later rename"
+    assert fresh_client.delete(f"/api/playbooks/{identity}").status_code == 200
+    assert fresh_client.post("/api/playbooks", json=_payload(), headers=headers).json() == original
+    assert fresh_client.get(f"/api/playbooks/{identity}").status_code == 404
+    assert fresh_client.get("/api/playbooks").json() == []
+    assert (tmp_path / ".deleted" / f"{identity}.json").exists()
+
+
+def test_failed_idempotent_create_leaves_no_receipt(tmp_path, monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    original_write = playbooks_module._write
+    def fail_write(*_):
+        raise HTTPException(500, "Disk failure")
+
+    monkeypatch.setattr(playbooks_module, "_write", fail_write)
+    identity = "play-" + "c" * 32
+    with pytest.raises(HTTPException):
+        playbooks_module.create_playbook(_payload(), identity)
+    assert not list(tmp_path.glob("*.json"))
+    monkeypatch.setattr(playbooks_module, "_write", original_write)
+    result = playbooks_module.create_playbook(_payload(), identity)
+    assert result["id"] == identity
+    assert playbooks_module.create_playbook(_payload(), identity) == result
+
+
+def test_corrupt_creation_receipt_is_preserved_instead_of_replayed(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    identity = "play-" + "d" * 32
+    headers = {"X-ARC-Create-ID": identity}
+    assert client.post("/api/playbooks", json=_payload(), headers=headers).status_code == 200
+    path = tmp_path / f"{identity}.json"
+    value = json.loads(path.read_text())
+    value["_creation"]["result"]["name"] = "Damaged receipt"
+    raw = json.dumps(value)
+    path.write_text(raw)
+    assert client.post("/api/playbooks", json=_payload(), headers=headers).status_code == 500
+    assert path.read_text() == raw
+    assert len(list(tmp_path.glob("*.json"))) == 1

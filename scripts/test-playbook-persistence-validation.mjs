@@ -16,7 +16,7 @@ for (const target of ['github-pages', 'local']) {
   globalThis.fetch = async (_url, options) => {
     calls++;
     if (!options?.method) return new Response(content);
-    const value = { ...JSON.parse(options.body), id: 'play-server01', created_at: '2026-10-15', updated_at: '2026-10-15' };
+    const value = { ...JSON.parse(options.body), id: options.headers?.['X-ARC-Create-ID'] ?? JSON.parse(options.body).id, created_at: '2026-10-15', updated_at: '2026-10-15' };
     content = JSON.stringify([value]); writes++;
     return Response.json(value);
   };
@@ -56,7 +56,7 @@ for (const target of ['github-pages', 'local']) {
   const numericFields = (value) => Object.fromEntries(['players', 'defenders', 'ball', 'arrows'].map((key) => [key, value[key]]));
   assert.deepEqual(numericFields(persisted), numericFields(normalized), `${target}: create returns normalized precision`);
   assert.deepEqual(precise, original, 'caller draft was not modified');
-  assert.deepEqual(numericFields(JSON.parse(content).find((p) => p.id === persisted.id)), numericFields(normalized), 'stored JSON is normalized');
+  assert.deepEqual(numericFields((JSON.parse(content).plays ?? JSON.parse(content)).find((p) => p.id === persisted.id)), numericFields(normalized), 'stored JSON is normalized');
   for (let i = 0; i < 5; i++) {
     persisted = await api.updatePlaybook(persisted);
     assert.deepEqual(numericFields((await api.fetchPlaybooks()).find((p) => p.id === persisted.id)), numericFields(normalized), 'update and reload do not drift');
@@ -67,7 +67,7 @@ for (const target of ['github-pages', 'local']) {
   const changed = new Event('storage'); Object.defineProperty(changed, 'key', { value: 'arc-playbooks-v1' }); window.dispatchEvent(changed);
   assert.equal((await api.fetchPlaybooks())[0].players[0].x, 12.3456789);
   await api.createPlaybook(play);
-  if (target === 'github-pages') assert.equal(JSON.parse(content).find((p) => p.id === 'play-legacy-precision').players[0].x, 12.3456789);
+  if (target === 'github-pages') assert.equal((JSON.parse(content).plays ?? JSON.parse(content)).find((p) => p.id === 'play-legacy-precision').players[0].x, 12.3456789);
   unsubscribe();
   console.log(`${target}: malformed creates/updates rejected before writes; valid save/reload, preserved-data retry, normalized creates/updates, no drift and lossless legacy reads passed`);
 }

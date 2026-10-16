@@ -1,7 +1,8 @@
+import { newCreationId } from "./creationAttempt.ts";
 import type { CourtPoint, PlaybookDocument, PlaybookDraft } from "./types.ts";
 
 type SavedIdentity = Pick<PlaybookDocument, "id" | "created_at" | "updated_at">;
-type PendingSave = { document: number; revision: number; draft: PlaybookDraft };
+type PendingSave = { document: number; revision: number; draft: PlaybookDraft; creationId?: string };
 
 function withIdentity(draft: PlaybookDraft, saved: SavedIdentity): PlaybookDraft {
   return { ...draft, id: saved.id, created_at: saved.created_at, updated_at: saved.updated_at };
@@ -33,6 +34,7 @@ export function createPlaybookDraftSession(initial: PlaybookDraft, contentKey = 
   let revision = 0;
   let identity: SavedIdentity | null = null;
   let pending: PendingSave | null = null;
+  let retryCreation: PendingSave | null = null;
   return {
     get current() { return current; },
     get dirty() { return dirty; },
@@ -44,6 +46,7 @@ export function createPlaybookDraftSession(initial: PlaybookDraft, contentKey = 
       return current;
     },
     load(next: PlaybookDraft, unsavedCopy = false) {
+      retryCreation = null;
       document++;
       revision++;
       identity = null;
@@ -54,7 +57,7 @@ export function createPlaybookDraftSession(initial: PlaybookDraft, contentKey = 
     },
     beginSave(): PendingSave | null {
       if (pending) return null;
-      pending = { document, revision, draft: structuredClone(current) };
+      pending = retryCreation ?? { document, revision, draft: structuredClone(current), ...(current.id.startsWith("draft-") ? { creationId: newCreationId() } : {}) };
       return pending;
     },
     isCurrent(request: PendingSave) {
@@ -65,15 +68,17 @@ export function createPlaybookDraftSession(initial: PlaybookDraft, contentKey = 
       pending = null;
       if (document !== request.document) return null;
       const unchanged = revision === request.revision;
+      retryCreation = null;
       identity = { id: saved.id, created_at: saved.created_at, updated_at: saved.updated_at };
       current = unchanged ? structuredClone(saved) : withIdentity(current, identity);
       baseline = contentKey(saved);
       dirty = contentKey(current) !== baseline;
       return { draft: current, unchanged };
     },
-    failSave(request: PendingSave) {
+    failSave(request: PendingSave, retainCreation = false) {
       if (pending !== request) return false;
       pending = null;
+      if (document === request.document) retryCreation = retainCreation && request.creationId ? request : null;
       return document === request.document;
     },
   };

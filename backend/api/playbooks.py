@@ -204,7 +204,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
     }
 
 
-def _read(path: Path) -> dict:
+def _read(path: Path, *, include_creation: bool = False) -> dict:
     try:
         value = json.loads(path.read_text())
     except (OSError, ValueError, TypeError) as error:
@@ -217,6 +217,8 @@ def _read(path: Path) -> dict:
         _document(value, playbook_id=value["id"])
     except HTTPException as error:
         raise HTTPException(500, "Saved play is invalid") from error
+    if not include_creation:
+        value.pop("_creation", None)
     return value
 
 
@@ -292,6 +294,28 @@ def list_playbooks(response: Response) -> list[dict]:
     return sorted(result, key=lambda item: str(item.get("updated_at", "")), reverse=True)
 
 
+def _creation_request(value: dict) -> str:
+    return json.dumps({key: item for key, item in value.items() if key not in {"id", "created_at", "updated_at"}}, sort_keys=True, separators=(",", ":"))
+
+
+def _replay_creation(path: Path, request: str) -> dict:
+    stored = _read(path, include_creation=True)
+    receipt = stored.get("_creation")
+    if not isinstance(receipt, dict) or receipt.get("request") != request:
+        raise HTTPException(409, "This creation identity is already in use for a different drawing")
+    result = receipt.get("result")
+    if not isinstance(result, dict) or result.get("id") != stored["id"] or result.get("version") != 1:
+        raise HTTPException(500, "The creation receipt could not be read")
+    try:
+        if _creation_request(_document(result, playbook_id=stored["id"])) != request:
+            raise HTTPException(400, "Invalid receipt content")
+        if any(not isinstance(result.get(key), str) or not result[key] for key in ("created_at", "updated_at")):
+            raise HTTPException(400, "Invalid receipt timestamps")
+    except HTTPException as error:
+        raise HTTPException(500, "The creation receipt could not be read") from error
+    return result
+
+
 @router.post("")
 def create_playbook(payload: dict, create_id: Annotated[str | None, Header(alias="X-ARC-Create-ID")] = None) -> dict:
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
@@ -300,9 +324,16 @@ def create_playbook(payload: dict, create_id: Annotated[str | None, Header(alias
     value = _document(payload, playbook_id=playbook_id)
     path = _path(playbook_id)
     with _playbook_lock(path):
-        if path.exists():
-            raise HTTPException(409, "A play with this identity already exists; refresh the saved library")
-        _write(path, value)
+        request = _creation_request(value)
+        deleted = PLAYBOOKS_DIR / ".deleted" / path.name
+        if path.exists() or deleted.exists():
+            if create_id is not None:
+                return _replay_creation(path if path.exists() else deleted, request)
+            raise HTTPException(409, "This creation identity is already in use")
+        # One atomic file replacement commits both the drawing and original
+        # result. Keep the private receipt through edits and deletion.
+        stored = {**value, "_creation": {"request": request, "result": value}} if create_id else value
+        _write(path, stored)
     return value
 
 
@@ -321,9 +352,10 @@ def update_playbook(playbook_id: str, payload: dict) -> dict:
     with _playbook_lock(path):
         if not path.is_file():
             raise HTTPException(404, "Playbook not found")
-        current = _read(path)
+        current = _read(path, include_creation=True)
         value = _document(payload, playbook_id=playbook_id, created_at=str(current.get("created_at", _now())))
-        _write(path, value)
+        stored = {**value, "_creation": current["_creation"]} if "_creation" in current else value
+        _write(path, stored)
         return value
 
 
@@ -334,7 +366,12 @@ def delete_playbook(playbook_id: str) -> dict:
         if not path.is_file():
             raise HTTPException(404, "Playbook not found")
         try:
-            path.unlink()
+            if "_creation" in _read(path, include_creation=True):
+                deleted = PLAYBOOKS_DIR / ".deleted"
+                deleted.mkdir(parents=True, exist_ok=True)
+                os.replace(path, deleted / path.name)
+            else:
+                path.unlink()
         except OSError as error:
             raise HTTPException(500, "Playbook could not be deleted") from error
         return {"deleted": True, "id": playbook_id}

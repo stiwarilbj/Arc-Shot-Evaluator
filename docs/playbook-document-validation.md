@@ -181,19 +181,63 @@ same-ID document whose persisted content matches the submitted snapshot, with
 existing precision/defaults and trimmed names. Deletes require a 404. Creates
 send a fresh random 128-bit ID in `X-ARC-Create-ID`, allowing the check to identify
 that exact copy rather than guessing from its name. The local API accepts this
-optional header, validates it and rejects an existing identity with 409 under
-the document lock. Older callers without the header retain server-generated IDs;
+optional header, validates it and replays matching creation receipts under the document lock;
+reusing the identity for different content returns 409. Older callers without the header retain server-generated IDs;
 an older server that ignores it may leave the outcome uncertain.
 
 Only confirmed desired state returns success. Missing, different, malformed or
 unavailable verification results produce an explicit uncertain-outcome error;
 they never claim that the write definitely failed. No mutation is automatically
 repeated. Drafts and existing Counter Lab reports stay in memory, and existing
-retry controls become available again. Before manually retrying an uncertain
-create, refresh the library to avoid another copy. An aborted HTTP request may
+retry controls become available again. Uncertain creates now retain their attempt identity and submitted snapshot,
+so an explicit retry returns the original result without another copy. An aborted HTTP request may
 still finish on the server after verification; cancellation is not a rollback.
 
 Run `npm run test:playbook-deadlines` for exact deadline boundaries, stalled
 headers/bodies, late results, write verification, bounded uncertainty, cleanup,
 retry and hosted lock waits. The Python playbook tests also cover create-ID
 validation and duplicate-create exclusion.
+
+
+## Retrying a creation attempt
+
+Playbook retains the creation identity, first submitted snapshot and draft
+revision when a valid create has an uncertain response. Retry submits that same
+attempt; confirming it attaches the saved identity without replacing newer
+edits. Those edits remain dirty and can then be saved as an update. Loading a
+different drawing abandons the in-memory retry. Invalid-input responses release
+the attempt so corrected content can be submitted. Counter Lab retains a separate
+attempt for each repair in the current report, including while switching results.
+New drafts, explicit copies, and repairs in a new report get fresh identities.
+Neither caller automatically repeats a request.
+
+The backend commits a private `_creation` receipt and its version-1 document in
+one atomic JSON replacement. The receipt stores normalized request content and
+the original result, including its timestamps. Updates preserve it; deletes
+atomically move the file to `.deleted`, keeping the receipt out of the library.
+A matching `X-ARC-Create-ID` returns that original result even after edits or
+deletion, without overwriting or recreating anything. A different payload with
+the same identity returns 409. Legacy creates without a header remain separate
+server-generated plays. Old ID-bearing files without receipts cannot be safely
+replayed and return a conflict rather than guessing.
+
+Hosted storage reads the existing `arc-playbooks-v1` array format and writes an
+internal `{ version: 1, plays, creations }` envelope on the next mutation. The
+single `localStorage.setItem` atomically commits both plays and receipts while
+the cross-tab lock is held. All subsequent writes preserve receipts, including
+deletes. Corrupt envelopes or receipts fail without overwriting stored data.
+Older deployed tabs must be reloaded; their array validator rejects the envelope
+rather than silently dropping its receipts. Public library reads and exported
+play documents expose only the unchanged version-1 drawings.
+
+Receipts are durable and do not expire automatically: expiring them could make
+an old retry create another copy. They consume additional local disk/browser
+storage; the existing storage-full error preserves the library if a write cannot
+fit. They persist until application data is explicitly cleared. Attempt tokens
+in the editor and in-memory Counter Lab reports last for that workspace session.
+
+Run `npm run test:playbook-idempotency` plus the Python playbook tests for lost
+acknowledgements, original-snapshot retries, preservation of newer edits,
+independent clients, content conflicts, concurrent requests, storage failures,
+receipt corruption and replays after edits/deletion. Existing deadline tests
+continue to assert that no writes are retried automatically.

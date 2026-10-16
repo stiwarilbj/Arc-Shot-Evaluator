@@ -60,10 +60,11 @@ for (const target of ['local', 'github-pages']) {
     globalThis.fetch = async () => Response.json({ detail: 'Server refused save' }, { status: 503 });
     await assert.rejects(api.createPlaybook(source), /Server refused save/);
     assert.equal(notifications, 0, 'no malformed save result announces a saved play');
-    globalThis.fetch = async () => Response.json(saved);
+    globalThis.fetch = async (_url, options) => Response.json({ ...saved, id: options.headers?.['X-ARC-Create-ID'] ?? saved.id });
     const pending = session.beginSave();
-    session.completeSave(pending, await api.createPlaybook(pending.draft));
-    assert.equal(session.dirty, false);assert.equal(session.current.id, saved.id);assert.equal(notifications, 1);
+    const confirmed = await api.createPlaybook(pending.draft);
+    session.completeSave(pending, confirmed);
+    assert.equal(session.dirty, false);assert.equal(session.current.id, confirmed.id);assert.equal(notifications, 1);
   } else {
     const before = content;
     for (const created_at of ['', 'not a date', 17]) {

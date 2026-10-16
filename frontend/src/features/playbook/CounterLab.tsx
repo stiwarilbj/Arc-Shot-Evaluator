@@ -1,3 +1,4 @@
+import { newCreationId } from "./creationAttempt.ts";
 import { ArrowVisibilityControl, useArrowVisibility } from "./ArrowVisibilityControl";
 import { CourtRoutes } from "./CourtRoutes";
 import { authoredCourtRoutes } from "./simulation";
@@ -50,6 +51,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   const [saveMessage, setSaveMessage] = useState("");
   const reportWorker = useRef<Worker | null>(null), pendingWorker = useRef<Worker | null>(null);
   const simulationWorker = useRef<Worker | null>(null);
+  const [repairCreates] = useState(() => new Map<string, { draft: PlaybookDraft; id: string }>());
   const reportId = useRef(""), pendingId = useRef("");
   const expectedDetail = useRef<{ id: string; detailId: string; key: string; repairId: string } | null>(null);
   const [replayCache] = useState(createDecodedReplayCache);
@@ -119,7 +121,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
     pendingId.current = ""; reportId.current = ""; expectedDetail.current = null;
     replayCache.reset(null);
     setProgress(null); setResults(null); setRepairs([]); setRepairId("original"); setBaselineTrace(null); setRepairTrace(null); setPlaying(false); setPosition(0); positionRef.current = 0;
-    setSavedCopies({}); setSaveMessage(""); setError(""); setDetailError("");
+    setSavedCopies({}); repairCreates.clear(); setSaveMessage(""); setError(""); setDetailError("");
   }
   function loadPlay(play: PlaybookDraft, origin: string) {
     clearReport(); setDraft(clonePlaybook(play)); setSource(origin);
@@ -163,7 +165,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
         if (reportId.current && reportId.current !== message.id) reportWorker.current?.postMessage({ type: "release", id: reportId.current });
         reportWorker.current = worker; reportId.current = message.id;
         replayCache.reset(message.id);
-        setResults(message.results); setRepairs([]); setRepairId("original"); setSavedCopies({}); setPosition(0); positionRef.current = 0;
+        setResults(message.results); setRepairs([]); setRepairId("original"); setSavedCopies({}); repairCreates.clear(); setPosition(0); positionRef.current = 0;
         const mode = modes.includes("scripted") ? "scripted" : modes[0];
         const candidates = message.results.filter((result) => result.mode === mode).sort((a, b) => Number(Boolean(b.firstBreakdown)) - Number(Boolean(a.firstBreakdown)) || a.score - b.score);
         setSelection({ profileId: candidates[0]?.profile.id ?? profiles[0].id, mode });
@@ -184,7 +186,13 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
     if (!chosenRepair || savedCopies[chosenRepair.id] || saveLock.current) return;
     saveLock.current = true; setSaving(true); setError(""); const analysisId = reportId.current, repair = chosenRepair;
     try {
-      const copy = await createPlaybook({ ...clonePlaybook(repair.play), id: `draft-counter-${requestId()}`, created_at: undefined, updated_at: undefined, name: `${draft.name} · ${repair.name}`.slice(0, 80) });
+      const key = `${analysisId}:${repair.id}`;
+      let attempt = repairCreates.get(key);
+      if (!attempt) {
+        attempt = { id: newCreationId(), draft: { ...clonePlaybook(repair.play), id: `draft-counter-${requestId()}`, created_at: undefined, updated_at: undefined, name: `${draft.name} · ${repair.name}`.slice(0, 80) } };
+        repairCreates.set(key, attempt);
+      }
+      const copy = await createPlaybook(attempt.draft, attempt.id);
       if (reportId.current === analysisId) { setSavedCopies((current) => ({ ...current, [repair.id]: copy })); setSaveMessage(`Saved “${copy.name}” as a separate editable play.`); }
     } catch (caught) { if (reportId.current === analysisId) setError(messageOf(caught)); }
     finally { saveLock.current = false; setSaving(false); }
