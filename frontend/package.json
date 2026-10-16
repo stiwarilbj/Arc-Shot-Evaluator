@@ -11,7 +11,7 @@
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
     "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
     "test:counter-lab": "node --experimental-strip-types ../scripts/test-counter-lab.mjs",
-    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:playbook-performance && npm run test:playbook-draft-save && npm run test:playbook-document-validation && npm run test:playbook-precision && npm run test:playbook-save-results && npm run test:playbook-mutation-order && npm run test:playbook-cross-client && npm run test:playbook-deadlines && npm run test:playbook-idempotency && npm run test:playbook-order && npm run test:save-simulate",
+    "test": "npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:playbook-performance && npm run test:playbook-draft-save && npm run test:playbook-document-validation && npm run test:playbook-precision && npm run test:playbook-save-results && npm run test:playbook-mutation-order && npm run test:playbook-cross-client && npm run test:playbook-deadlines && npm run test:playbook-idempotency && npm run test:playbook-order && npm run test:save-simulate && npm run test:jumper",
     "test:playbook-draft-save": "node --experimental-strip-types ../scripts/test-playbook-draft-save.mjs",
     "test:playbook-performance": "node --experimental-strip-types ../scripts/test-playbook-performance.mjs",
     "test:coordinated-movement": "node --experimental-strip-types ../scripts/test-coordinated-movement.mjs",
@@ -26,14 +26,18 @@
     "test:playbook-cross-client": "node --experimental-strip-types ../scripts/test-playbook-cross-client.mjs",
     "test:playbook-mutation-order": "node --experimental-strip-types ../scripts/test-playbook-mutation-order.mjs",
     "test:playbook-order": "node --experimental-strip-types ../scripts/test-playbook-order.mjs",
-    "test:save-simulate": "node --experimental-strip-types ../scripts/test-save-simulate-compatibility.mjs"
+    "test:save-simulate": "node --experimental-strip-types ../scripts/test-save-simulate-compatibility.mjs",
+    "test:jumper": "node --experimental-strip-types ../scripts/test-jumper-domain.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",
+    "mediabunny": "^1.61.4",
+    "onnxruntime-web": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.1.0",

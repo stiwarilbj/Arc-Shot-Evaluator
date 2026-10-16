@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.analysis.pipeline import analyze_video, probe_video, refresh_saved_analysis
 from backend.api.playbooks import router as playbooks_router
+from backend.api import jumper as jumper_api
 from backend.config import (
     ANALYSIS_SESSIONS_DIR,
     EXAMPLE_VIDEOS_DIR,
@@ -49,6 +50,7 @@ EXAMPLE_FILES = (
 
 app = FastAPI(title="ARC Local Shot Analysis", version="3.1.0")
 app.include_router(playbooks_router)
+app.include_router(jumper_api.router)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 job_cancel_events: dict[str, threading.Event] = {}
@@ -63,6 +65,7 @@ try:
 except ValueError:
     ANALYSIS_WORKERS = 1
 executor = ThreadPoolExecutor(max_workers=ANALYSIS_WORKERS, thread_name_prefix="arc-analysis")
+jumper_api.configure(executor)
 
 
 def _job_state_path(session_dir: Path) -> Path:

@@ -48,8 +48,9 @@ export function UsageGuide() {
           <div><span className="section-kicker">Quick guide</span><h2 id="guide-title">How to use ARC</h2></div>
           <button ref={closeRef} type="button" className="icon-button" onClick={close} aria-label="Close guide"><X size={17} /></button>
         </div>
-        <p className="guide-intro" id="guide-intro">ARC has three workspaces: Shot Analyzer for footage review, Playbook for drawing plays, and Counter Lab for testing defensive answers.</p>
+        <p className="guide-intro" id="guide-intro">ARC includes Shot Analyzer for footage review, Playbook for drawing plays, and Counter Lab for testing defensive answers, and Others → Who’s That Jumper? for personal mystery clips.</p>
         <div className="guide-grid">
+          <article className="guide-card"><h3>Who’s That Jumper?</h3><ol><li>Open Others, then Who’s That Jumper? → Create.</li><li>Upload up to 100 MB and trim to a complete shot of at most 15 seconds.</li><li>Find people, remove spectators, name the target, and confirm each court player.</li><li>Process and inspect the entire motion. Add include/exclude points on problem frames and process corrections.</li><li>Review, save or download. Enable “Use in my guessing game” to save quiz and reveal variants.</li></ol><p>Processing stays on this device. Guess uses finished clips without inference. The public NBA collection is unavailable until its reviewed pack is ready.</p></article>
           <article className="guide-card">
             <h3>Analyze a video</h3>
             <ol>

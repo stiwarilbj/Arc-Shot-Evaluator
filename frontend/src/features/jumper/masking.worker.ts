@@ -1,0 +1,510 @@
+/// <reference lib="webworker" />
+import * as ort from "onnxruntime-web/webgpu";
+import ortModule from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
+import ortWasm from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
+import { ALL_FORMATS, BlobSource, CanvasSink, Input } from "mediabunny";
+import {
+  validateMaskRequest,
+  unstableMask,
+  type MaskExtent,
+  MAX_BYTES,
+  type MaskResult,
+  type PointPrompt,
+  type WorkerRequest,
+  type WorkerResponse,
+} from "./domain";
+import { compositePixels, openVideo, writers } from "./media";
+import { samPixels } from "./preprocessing";
+import {
+  bilinear,
+  buildBank,
+  channelsFirst,
+  sequenceFirst,
+  type Memory,
+  type TrackerWeights,
+} from "./trackingMath";
+const context = self as unknown as DedicatedWorkerGlobalScope;
+ort.env.wasm.numThreads = 1;
+ort.env.wasm.wasmPaths = { wasm: ortWasm, mjs: ortModule };
+const REVISION = "3cb090d9d0b4c897281fdcac7765c0f3a888c49f";
+const HF = `https://huggingface.co/jax-image-tools/sam21-tiny-video-onnx/resolve/${REVISION}/`;
+const LOCAL = `${import.meta.env.BASE_URL}jumper/models/`;
+const ASSETS = {
+  vision: {
+    url: HF + "vision_encoder.onnx",
+    sha: "98311f41182f40c57cac2522180fff34b53931ce981412ddd8643ec27fb830e3",
+  },
+  attention: {
+    url: HF + "memory_attention.onnx",
+    sha: "afd5045a8fe48628d4da49a82b77351a43f7554f1f101a5052ab74aae69e3737",
+  },
+  decoder: {
+    url: LOCAL + "native_mask_decoder.onnx",
+    sha: "b9ca43b2d2bd4c8db6363b555d924ff2ab1ceed400a34503ae5ffc4098abbc0a",
+  },
+  memory: {
+    url: LOCAL + "native_memory_encoder.onnx",
+    sha: "fb8951150c52c7765cededa9bf8fc1fab4d213c087b3c230f641e4f87cae6fa3",
+  },
+  weights: {
+    url: LOCAL + "native_tracker.json",
+    sha: "5cf5f2391e7a7a196ed5b15f21850d1b16c2282aae5f00179831c5b1ea61d646",
+  },
+};
+async function checkedAsset(
+  asset: { url: string; sha: string },
+  progress: (done: number, total: number) => void,
+) {
+  const url = new URL(asset.url, context.location.href).href;
+  let cache: Cache | undefined;
+  try {
+    cache = await caches.open("arc-jumper-models-v1");
+  } catch {}
+  let response = await cache?.match(url);
+  if (!response) {
+    const fetched = await fetch(url);
+    if (!fetched.ok || !fetched.body)
+      throw Error(`Model download failed (${fetched.status}); retry Create.`);
+    const reader = fetched.body.getReader();
+    const pieces: Uint8Array<ArrayBuffer>[] = [];
+    const total = Number(fetched.headers.get("Content-Length") ?? 0);
+    let done = 0;
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      pieces.push(new Uint8Array(chunk.value));
+      done += chunk.value.length;
+      progress(done, total);
+    }
+    response = new Response(new Blob(pieces));
+  }
+  const bytes = await response.arrayBuffer();
+  const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+  if (hash !== asset.sha) {
+    await cache?.delete(url);
+    throw Error(
+      "Model integrity check failed. Retry to download a fresh copy.",
+    );
+  }
+  try {
+    await cache?.put(url, new Response(bytes));
+  } catch {
+    /* Model works even when persistent cache is unavailable. */
+  }
+  return bytes;
+}
+const tensor = (values: Float32Array, dims: number[]) =>
+  new ort.Tensor("float32", values, dims);
+const floats = (value: ort.Tensor) =>
+  Float32Array.from(value.data as Float32Array);
+function dispose(values: Record<string, ort.Tensor>) {
+  Object.values(values).forEach((value) => value.dispose());
+}
+interface Prediction {
+  low: Float32Array;
+  pointer: Float32Array;
+  score: Float32Array;
+}
+async function process(
+  request: WorkerRequest,
+  report: (stage: string, progress: number) => void,
+): Promise<MaskResult> {
+  if (
+    request.kind !== "process" ||
+    typeof request.id !== "string" ||
+    !(request.file instanceof Blob) ||
+    request.file.size > MAX_BYTES
+  )
+    throw Error("Invalid masking request");
+  validateMaskRequest(request.request);
+  const opened = await openVideo(request.file);
+  const input = opened.input,
+    video = opened.track;
+  const { start, end, objects, target_id } = request.request;
+  if (end > opened.duration + 0.01) {
+    input.dispose();
+    throw Error("Trim extends beyond the video");
+  }
+  const width = Math.max(
+    2,
+    Math.floor(
+      (Math.min(1, 1280 / video.displayWidth, 720 / video.displayHeight) *
+        video.displayWidth) /
+        2,
+    ) * 2,
+  );
+  const height = Math.max(
+    2,
+    Math.floor(
+      (Math.min(1, 1280 / video.displayWidth, 720 / video.displayHeight) *
+        video.displayHeight) /
+        2,
+    ) * 2,
+  );
+  const count = Math.ceil((end - start) * 30);
+  const sessions: ort.InferenceSession[] = [];
+  const outputs: Awaited<
+    ReturnType<Awaited<ReturnType<typeof writers>>["create"]>
+  >[] = [];
+  try {
+    const format = await writers(width, height);
+    const sessionsByName: Record<string, ort.InferenceSession> = {};
+    for (const [key, asset] of Object.entries(ASSETS)) {
+      if (key === "weights") continue;
+      report(`Downloading masking model · ${key}`, 0);
+      const bytes = await checkedAsset(asset, (done, total) =>
+        report(
+          `Downloading masking model · ${key} · ${(done / 1024 / 1024).toFixed(1)} MB`,
+          total ? done / total : 0,
+        ),
+      );
+      report(`Preparing ${key} model`, 0);
+      sessionsByName[key] = await ort.InferenceSession.create(bytes, {
+        executionProviders: ["webgpu"],
+        graphOptimizationLevel: "disabled",
+      }).catch((error) => {
+        throw Error(`${key}: ${String(error)}`);
+      });
+      sessions.push(sessionsByName[key]);
+    }
+    const weights: TrackerWeights = JSON.parse(
+      new TextDecoder().decode(await checkedAsset(ASSETS.weights, () => {})),
+    );
+    const { vision, attention, decoder, memory } = sessionsByName;
+    const sink = new CanvasSink(video, {
+      width,
+      height,
+      fit: "fill",
+      poolSize: 2,
+    });
+    const sourceCanvas = new OffscreenCanvas(width, height),
+      sourceContext = sourceCanvas.getContext("2d", {
+        willReadFrequently: true,
+      });
+    if (!sourceContext) throw Error("Could not initialize masking canvas");
+    const conditions = new Map<number, Map<number, Memory>>(
+      objects.map((object) => [object.id, new Map()]),
+    );
+    const recents = new Map<number, Map<number, Memory>>(
+      objects.map((object) => [object.id, new Map()]),
+    );
+    const corrected = new Map<number, Map<number, Prediction>>();
+    async function features(canvas: HTMLCanvasElement | OffscreenCanvas) {
+      sourceContext!.drawImage(canvas, 0, 0, width, height);
+      const pixels = samPixels(
+        sourceContext!.getImageData(0, 0, width, height).data,
+        width,
+        height,
+      );
+      const value = tensor(pixels, [1, 3, 1024, 1024]);
+      try {
+        return await vision.run({ pixel_values: value }, [
+          "feats0",
+          "feats1",
+          "feats2",
+          "pos2",
+        ]);
+      } finally {
+        value.dispose();
+      }
+    }
+    async function predict(
+      feats: Record<string, ort.Tensor>,
+      conditioned: Float32Array,
+      prompt?: PointPrompt,
+    ): Promise<Prediction> {
+      const points = [
+        ...(prompt?.box
+          ? [
+              [prompt.box[0], prompt.box[1]],
+              [prompt.box[2], prompt.box[3]],
+            ]
+          : []),
+        ...(prompt?.points ?? []),
+      ];
+      const labels = [
+        ...(prompt?.box ? [2, 3] : []),
+        ...(prompt?.labels ?? []),
+      ];
+      if (!points.length) {
+        points.push([0, 0]);
+        labels.push(-1);
+      }
+      const args = {
+        feats0: feats.feats0,
+        feats1: feats.feats1,
+        feats2: tensor(conditioned, [1, 256, 64, 64]),
+        points: tensor(
+          Float32Array.from(points.flat().map((value) => value * 1024)),
+          [1, points.length, 2],
+        ),
+        labels: new ort.Tensor(
+          "int64",
+          BigInt64Array.from(labels.map(BigInt)),
+          [1, labels.length],
+        ),
+      };
+      let result: Record<string, ort.Tensor> | undefined;
+      try {
+        result = await decoder.run(args);
+        const quality = result.quality.data as Float32Array;
+        const useMulti = points.length <= 1 && labels[0] !== 2;
+        let selected = 0;
+        if (useMulti) {
+          selected = 1;
+          for (let i = 2; i < 4; i++)
+            if (quality[i] > quality[selected]) selected = i;
+        }
+        const masks = result.masks.data as Float32Array;
+        const pointers = result.pointers.data as Float32Array;
+        return {
+          low: masks.slice(selected * 256 * 256, (selected + 1) * 256 * 256),
+          pointer: pointers.slice(selected * 256, (selected + 1) * 256),
+          score: floats(result.scores),
+        };
+      } finally {
+        args.feats2.dispose();
+        args.points.dispose();
+        args.labels.dispose();
+        if (result) dispose(result);
+      }
+    }
+    async function remember(
+      feats: Record<string, ort.Tensor>,
+      prediction: Prediction,
+      frame: number,
+    ): Promise<Memory> {
+      const high = tensor(
+        bilinear(prediction.low, 256, 256, 1024, 1024),
+        [1, 1, 1024, 1024],
+      );
+      const score = tensor(prediction.score, [1, 1]);
+      let result: Record<string, ort.Tensor> | undefined;
+      try {
+        result = await memory.run({
+          vision_features: feats.feats2,
+          pred_masks_high_res: high,
+          object_score_logits: score,
+        });
+        return {
+          frame,
+          tokens: floats(result.memory_tokens),
+          position: floats(result.memory_pos_enc),
+          pointer: prediction.pointer,
+        };
+      } finally {
+        high.dispose();
+        score.dispose();
+        if (result) dispose(result);
+      }
+    }
+    const promptFrames = [
+      ...new Set(
+        objects.flatMap((object) =>
+          object.prompts.map((prompt) => prompt.frame),
+        ),
+      ),
+    ].sort((a, b) => a - b);
+    for (const frame of promptFrames) {
+      report(`Applying selections · frame ${frame + 1}`, frame / count);
+      const sample = await sink.getCanvas(start + frame / 30);
+      if (!sample) throw Error("Could not decode a correction frame");
+      const feats = await features(sample.canvas);
+      try {
+        for (const object of objects) {
+          const prompt = object.prompts.find(
+            (prompt) => prompt.frame === frame,
+          );
+          if (!prompt) continue;
+          const raw = floats(feats.feats2);
+          for (let c = 0; c < 256; c++)
+            for (let i = 0; i < 4096; i++)
+              raw[c * 4096 + i] += weights.no_mem_embed[c];
+          const prediction = await predict(feats, raw, prompt);
+          conditions
+            .get(object.id)!
+            .set(frame, await remember(feats, prediction, frame));
+          if (!corrected.has(frame)) corrected.set(frame, new Map());
+          corrected.get(frame)!.set(object.id, prediction);
+        }
+      } finally {
+        dispose(feats);
+      }
+    }
+    for (let i = 0; i < 3; i++) outputs.push(await format.create());
+    const warnings: MaskResult["warnings"] = [];
+    let previous: Uint8ClampedArray | undefined;
+    let previousMask: MaskExtent | null = null;
+    const small = new OffscreenCanvas(64, 36),
+      smallContext = small.getContext("2d", { willReadFrequently: true })!;
+    for (let frame = 0; frame < count; frame++) {
+      report(
+        `Tracking and rendering · frame ${frame + 1} / ${count}`,
+        frame / count,
+      );
+      const sample = await sink.getCanvas(start + frame / 30);
+      if (!sample)
+        throw Error("The selected segment could not be fully decoded");
+      const feats = await features(sample.canvas);
+      const owners = new Uint8Array(width * height),
+        best = new Float32Array(width * height);
+      best.fill(0);
+      try {
+        for (const object of objects) {
+          if (frame < object.prompts[0].frame) continue;
+          let prediction = corrected.get(frame)?.get(object.id);
+          if (!prediction) {
+            const bank = buildBank(
+              frame,
+              count,
+              conditions.get(object.id)!,
+              recents.get(object.id)!,
+              weights,
+            );
+            const args = {
+              current_vision_features: tensor(
+                sequenceFirst(floats(feats.feats2)),
+                [4096, 1, 256],
+              ),
+              current_vision_position_embeddings: tensor(
+                sequenceFirst(floats(feats.pos2)),
+                [4096, 1, 256],
+              ),
+              spatial_memory: tensor(bank.spatial, [
+                bank.spatial.length / 64,
+                1,
+                64,
+              ]),
+              spatial_memory_position_embeddings: tensor(bank.positions, [
+                bank.positions.length / 64,
+                1,
+                64,
+              ]),
+              pointer_memory: tensor(bank.pointerData, [
+                bank.pointerData.length / 64,
+                1,
+                64,
+              ]),
+              pointer_memory_position_embeddings: tensor(bank.pointerPosition, [
+                bank.pointerPosition.length / 64,
+                1,
+                64,
+              ]),
+            };
+            let result: Record<string, ort.Tensor> | undefined;
+            try {
+              result = await attention.run(args);
+              prediction = await predict(
+                feats,
+                channelsFirst(floats(result.conditioned_features)),
+              );
+            } finally {
+              dispose(args);
+              if (result) dispose(result);
+            }
+            recents
+              .get(object.id)!
+              .set(frame, await remember(feats, prediction, frame));
+          }
+          // propagate_in_video resizes its stored 256px logits directly to the
+          // source frame. The 1024px masks are used only by the memory encoder.
+          const values = bilinear(prediction.low, 256, 256, width, height);
+          for (let i = 0; i < values.length; i++)
+            if (values[i] > best[i]) {
+              best[i] = values[i];
+              owners[i] = object.id;
+            }
+          for (const old of recents.get(object.id)!.keys())
+            if (old < frame - 15) recents.get(object.id)!.delete(old);
+        }
+      } finally {
+        dispose(feats);
+      }
+      let area = 0,
+        x = 0,
+        y = 0;
+      for (let index = 0; index < owners.length; index++)
+        if (owners[index] === target_id) {
+          area++;
+          x += (index % width) / width;
+          y += Math.floor(index / width) / height;
+        }
+      const extent = { area, x: area ? x / area : 0, y: area ? y / area : 0 };
+      if (unstableMask(previousMask, extent))
+        warnings.push({ frame, kind: "tracking_unstable" });
+      previousMask = extent;
+      if (!owners.includes(target_id))
+        warnings.push({ frame, kind: "target_lost" });
+      smallContext.drawImage(sample.canvas, 0, 0, 64, 36);
+      const pixels = smallContext.getImageData(0, 0, 64, 36).data;
+      if (previous) {
+        let diff = 0;
+        for (let i = 0; i < pixels.length; i++)
+          if (i % 4 !== 3) diff += Math.abs(pixels[i] - previous[i]);
+        if (diff / (64 * 36 * 3) > 55)
+          warnings.push({ frame, kind: "possible_camera_cut" });
+      }
+      previous = pixels;
+      const canvasContext = outputs[0].context;
+      canvasContext.drawImage(sample.canvas, 0, 0, width, height);
+      const rgb = canvasContext.getImageData(0, 0, width, height).data;
+      for (let i = 0; i < outputs.length; i++) {
+        outputs[i].context.putImageData(
+          new ImageData(
+            compositePixels(
+              rgb,
+              owners,
+              target_id,
+              (["highlight", "quiz", "reveal"] as const)[i],
+            ),
+            width,
+            height,
+          ),
+          0,
+          0,
+        );
+        await outputs[i].source.add(frame / 30, 1 / 30);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    report("Finalizing videos", 1);
+    const [highlight, quiz, reveal] = await Promise.all(
+      outputs.map((output) => output.finish()),
+    );
+    return { highlight, quiz, reveal, duration: count / 30, warnings };
+  } finally {
+    input.dispose();
+    for (const output of outputs) {
+      try {
+        await output.output.cancel();
+      } catch {}
+    }
+    for (const session of sessions) {
+      try {
+        await session.release();
+      } catch {}
+    }
+  }
+}
+let running = false;
+context.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
+  const send = (value: WorkerResponse) => context.postMessage(value);
+  if (running || typeof data?.id !== "string") return;
+  running = true;
+  try {
+    const result = await process(data, (stage, progress) =>
+      send({ kind: "progress", id: data.id, stage, progress }),
+    );
+    send({ kind: "done", id: data.id, result });
+  } catch (error) {
+    send({
+      kind: "error",
+      id: data.id,
+      error: `${error instanceof Error ? error.message : error}. If this device cannot complete WebGPU processing, use the downloaded editor.`,
+    });
+  } finally {
+    running = false;
+  }
+};

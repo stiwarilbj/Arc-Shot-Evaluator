@@ -1,0 +1,518 @@
+.workspace-others {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.workspace-others-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 230px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  z-index: 100;
+}
+.workspace-nav .workspace-others-menu button {
+  border: 0;
+  padding: 14px 12px;
+  width: 100%;
+  text-align: left;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.workspace-others-menu[hidden] {
+  display: none;
+}
+.jumper-workspace {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+  color: var(--text);
+}
+.jumper-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.jumper-heading h1 {
+  font-size: 30px;
+  letter-spacing: -0.7px;
+  margin: 7px 0;
+}
+.jumper-heading p,
+.jumper-panel p,
+.jumper-toolbar p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.jumper-eyebrow {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 1.8px;
+  color: var(--orange);
+}
+.jumper-private {
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 9px 14px;
+}
+.jumper-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  gap: 6px;
+  margin-bottom: 24px;
+}
+.jumper-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 12px 22px;
+  font: inherit;
+  background: transparent;
+  color: var(--muted);
+  min-height: 44px;
+}
+.jumper-tabs .is-active {
+  color: var(--orange);
+  border-color: var(--orange);
+}
+.jumper-workspace button,
+.jumper-workspace input,
+.jumper-workspace select {
+  font: inherit;
+}
+.jumper-workspace button {
+  cursor: pointer;
+}
+.jumper-workspace button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.jumper-workspace
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not(
+    [type="file"]
+  ),
+.jumper-workspace select {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 11px 12px;
+  min-height: 44px;
+  min-width: 0;
+}
+.jumper-workspace input:focus-visible,
+.jumper-workspace button:focus-visible,
+.jumper-workspace select:focus-visible,
+.workspace-others button:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 3px;
+}
+.jumper-workspace [hidden] {
+  display: none !important;
+}
+.jumper-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.jumper-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.jumper-toolbar > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.jumper-panel {
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+}
+.jumper-panel h2 {
+  font-size: 21px;
+  line-height: 1.3;
+  margin: 6px 0 16px;
+}
+.jumper-panel h3 {
+  margin: 10px 0;
+}
+.jumper-video {
+  width: 100%;
+  max-height: 52vh;
+  aspect-ratio: 16/9;
+  object-fit: contain;
+  display: block;
+  background: #e0e0e0;
+  border-radius: 8px;
+}
+.jumper-caption {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.jumper-guess-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
+  gap: 20px;
+}
+.jumper-answer {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.jumper-answer form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.jumper-answer label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.jumper-answer h2 {
+  font-size: 28px;
+  margin-top: 8px;
+}
+.jumper-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.jumper-suggestions button,
+.jumper-toolbar > button:not(.button),
+.jumper-notice button,
+.jumper-track-list button,
+.jumper-icon {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 6px;
+  min-height: 40px;
+  padding: 8px 12px;
+}
+.jumper-suggestions button[aria-pressed="true"],
+.jumper-toolbar button[aria-pressed="true"],
+.jumper-track-list .is-active {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.jumper-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.jumper-stats > div {
+  padding: 16px 20px;
+  border-right: 1px solid var(--line);
+}
+.jumper-stats > div:last-child {
+  border: 0;
+}
+.jumper-stats strong {
+  display: block;
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+}
+.jumper-stats span {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.jumper-empty {
+  min-height: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px;
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.jumper-empty > svg {
+  color: var(--orange);
+  margin-bottom: 12px;
+}
+.jumper-empty h2 {
+  font-size: 25px;
+  letter-spacing: -0.4px;
+}
+.jumper-empty p {
+  color: var(--muted);
+  max-width: 490px;
+  line-height: 1.7;
+}
+.jumper-empty ol {
+  color: var(--muted);
+  text-align: left;
+  line-height: 2;
+  max-width: 470px;
+}
+.jumper-empty .button {
+  margin-top: 12px;
+}
+.jumper-notice {
+  padding: 14px 16px;
+  border: 1px solid var(--orange-soft);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 12px 0;
+  background: var(--surface);
+}
+.jumper-notice button {
+  margin: 6px;
+}
+.jumper-editor {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.jumper-editor-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.jumper-editor-controls > p {
+  font-size: 13px;
+  margin: 0;
+}
+.jumper-editor fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.jumper-editor legend {
+  font-size: 13px;
+  font-weight: 650;
+  margin: 10px 0 12px;
+}
+.jumper-editor fieldset label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.jumper-editor small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 11px;
+  margin: 8px 0;
+}
+.jumper-upload {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 22px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--orange);
+  cursor: pointer;
+}
+.jumper-upload span {
+  overflow-wrap: anywhere;
+}
+.jumper-upload input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.jumper-upload:focus-within {
+  outline: 2px solid var(--orange);
+  outline-offset: 3px;
+}
+.jumper-trim {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.jumper-editor-main {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.jumper-point-surface {
+  position: relative;
+  line-height: 0;
+  background: #e0e0e0;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.jumper-point-surface img {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  cursor: crosshair;
+}
+.jumper-point-surface svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.jumper-scrubber {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 16px;
+}
+.jumper-scrubber input {
+  width: 100%;
+  accent-color: var(--orange);
+  min-height: 32px;
+}
+.jumper-track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.jumper-track-list > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.jumper-track-list label {
+  flex-direction: row !important;
+  align-items: center;
+  font-size: 11px !important;
+}
+.jumper-track-list button {
+  padding: 7px;
+}
+.jumper-workspace input[type="checkbox"],
+.jumper-workspace input[type="radio"] {
+  accent-color: var(--orange);
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+.jumper-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 18px 0;
+  color: var(--muted);
+}
+.jumper-progress {
+  display: grid;
+  gap: 10px;
+  font-size: 12px;
+}
+.jumper-progress progress {
+  width: 100%;
+  accent-color: var(--orange);
+  height: 8px;
+}
+.jumper-library {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.jumper-library .jumper-panel > svg {
+  color: var(--orange);
+}
+.jumper-library p {
+  font-size: 12px;
+}
+.jumper-library-player {
+  margin-top: 20px;
+}
+.jumper-workspace .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  text-decoration: none;
+}
+@media (max-width: 1000px) {
+  .jumper-editor {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+  .jumper-guess-grid {
+    grid-template-columns: minmax(0, 1.3fr) minmax(250px, 1fr);
+  }
+  .jumper-private {
+    display: none;
+  }
+  .jumper-library {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .jumper-workspace {
+    padding: 20px 12px 32px;
+  }
+  .jumper-heading h1 {
+    font-size: 25px;
+  }
+  .jumper-heading p {
+    font-size: 13px;
+  }
+  .jumper-editor,
+  .jumper-guess-grid {
+    grid-template-columns: 1fr;
+  }
+  .jumper-panel {
+    padding: 16px;
+  }
+  .jumper-stats > div {
+    padding: 12px;
+  }
+  .jumper-stats strong {
+    font-size: 21px;
+  }
+  .jumper-empty {
+    padding: 24px 18px;
+  }
+  .jumper-library {
+    grid-template-columns: 1fr;
+  }
+  .jumper-video {
+    max-height: 46vh;
+  }
+  .workspace-others-menu {
+    right: 0;
+    min-width: 220px;
+  }
+  .jumper-tabs button {
+    padding: 12px 18px;
+  }
+  .jumper-point-surface img {
+    max-height: none;
+  }
+}

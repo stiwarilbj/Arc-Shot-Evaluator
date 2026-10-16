@@ -1161,3 +1161,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .simulation-movement-notice { color: var(--muted); font-size: 12px; flex-basis: 100%; }
 
 .playbook-editor.is-simulating .marker-number { font-size: 26px; }
+
+.workspace-others{position:relative;display:flex;align-items:stretch}.workspace-others-menu{position:absolute;top:100%;right:0;min-width:230px;padding:8px;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);z-index:100}.workspace-nav .workspace-others-menu button{border:0;padding:14px 12px;width:100%;text-align:left;font-size:14px;white-space:nowrap}.workspace-others-menu[hidden]{display:none}

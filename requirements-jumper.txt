@@ -1,0 +1,8 @@
+# Native tracker versions used for browser/native compatibility verification.
+# Install after the project's ordinary dependencies, without CUDA extension builds.
+torch==2.14.0
+torchvision==0.29.0
+hydra-core==1.3.7
+iopath==0.1.10
+Pillow==12.3.0
+sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4

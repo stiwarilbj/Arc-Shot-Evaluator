@@ -32,6 +32,7 @@ import type {
   WorkspaceTab,
 } from "../domain/analysisTypes";
 
+const JumperLab = lazy(() => import("../features/jumper/JumperLab"));
 const CounterLab = lazy(() => import("../features/playbook/CounterLab").then((module) => ({ default: module.CounterLab })));
 
 const WAIT_MS = 750;
@@ -112,8 +113,10 @@ export function ArcShotEvaluatorApp() {
   const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
   function changeWorkspace(next: AppWorkspace) {
     if (next === "counterlab") setCounterLabHasOpened(true);
+    if (next === "jumper") setJumperHasOpened(true);
     setWorkspace(next);
   }
+  const [jumperHasOpened, setJumperHasOpened] = useState(false);
   const [counterLabHasOpened, setCounterLabHasOpened] = useState(false);
   const [counterLabPlay, setCounterLabPlay] = useState<PlaybookDraft | null>(null);
   const [counterLabRequest, setCounterLabRequest] = useState<{ requestId: string; play: PlaybookDraft } | null>(null);
@@ -516,6 +519,7 @@ export function ArcShotEvaluatorApp() {
         <PlaybookBoard active={workspace === "playbook"} onTestInCounterLab={testInCounterLab} onDraftChange={setCounterLabPlay} requestedPlay={playbookRequest} />
       </div>
       {counterLabHasOpened ? <div className={workspace === "counterlab" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "counterlab"}><Suspense fallback={<div className="counter-lab-loading" role="status">Loading Counter Lab…</div>}><CounterLab active={workspace === "counterlab"} currentDraft={counterLabPlay} requestedPlay={counterLabRequest} onOpenEditor={() => setWorkspace("playbook")} onOpenInPlaybook={openSavedPlayInEditor} /></Suspense></div> : null}
+      {jumperHasOpened ? <div className={workspace === "jumper" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "jumper"}><Suspense fallback={<p role="status">Opening Who’s That Jumper?…</p>}><JumperLab active={workspace === "jumper"} /></Suspense></div> : null}
       <div className={workspace === "analyzer" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "analyzer"}>
         {analyzerView}
       </div>

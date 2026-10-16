@@ -1,11 +1,20 @@
 [Open the live ARC GitHub Pages demo →](https://stiwarilbj.github.io/Arc-Shot-Evaluator/)
 
-The hosted demo and local app have three workspaces: Shot Analyzer, Playbook, and Counter Lab.
+The hosted demo and local app include Shot Analyzer, Playbook, Counter Lab, and
+**Others → Who’s That Jumper?** for private personal clips. Upload a short video,
+select the players, process and correct their masks, then download or save it.
+Enable “Use in my guessing game” to quiz yourself using finished silhouette/reveal
+videos. Guess never downloads inference models.
 
-Who’s That Jumper? is **not released**: its reviewed video collection and masking
-pilot are still prerequisites. Offline preparation tools, research findings,
-and the remaining implementation work are documented in
-[the preparation guide](docs/jumper-preparation.md). No quiz library is claimed.
+Creating clips requires WebGPU and video encoding in Chrome on the hosted site,
+or the downloaded app’s native SAM 2.1 engine. Models download only when needed.
+Personal videos remain in this browser (hosted) or `jumper-media/` (local).
+Download important clips: clearing browser storage removes hosted personal data.
+
+The public NBA collection remains unavailable: **zero reviewed clips** are
+published. The 300-clip target is a separate acquisition and review dependency.
+See [the editor guide](docs/jumper-editor.md) and
+[the preparation guide](docs/jumper-preparation.md).
 
 ```bash
 cd Arc-Shot-Evaluator

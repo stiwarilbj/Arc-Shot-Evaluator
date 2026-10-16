@@ -9,6 +9,10 @@ if [[ ! -x .venv/bin/python ]]; then
 fi
 uv pip install -p .venv -e ".[dev]"
 
+# Install the native video tracker without a CUDA build; weights load only in Create.
+SAM2_BUILD_CUDA=0 uv pip install -p .venv --no-build-isolation \
+  -r requirements-jumper.txt
+
 # pnpm is the fastest option, but it is not installed on every Mac. Keep the
 # setup self-contained by falling back to npm, which ships with Node.js.
 if command -v pnpm >/dev/null 2>&1; then

@@ -1,15 +1,13 @@
 # Who’s That Jumper? — preparation status
 
-**Status: prerequisite work only; feature not released.** There are **zero
-approved public quiz clips**. The 300-shot / approximately 60-player collection
-has not been acquired. No Others menu, quiz, upload editor, media endpoints,
-browser model integration, personal library, or release downloader has been
-added to the running app. Existing workspaces remain unchanged.
+**Public collection: zero approved clips.** The personal-first application is
+implemented separately; see [the editor guide](jumper-editor.md). The 300-shot /
+approximately 60-player NBA pack has not been acquired or approved. Earlier
+rejected practice pilots remain rejected and are never quiz content.
 
-The accepted delivery plan requires an acquired collection and successful
-masking pilot before publication. The first technical pilot failed sampled-frame
-inspection. Do not treat a running model, an MP4 file, a test fixture, or a
-successful frontend build as approval of the feature.
+Offline preparation and the downloaded editor now share
+`backend/jumper/pipeline.py`. Importing it does not load a model. Publication
+still requires identity/provenance checks, complete motion review and pack gates.
 
 ## Footage research
 
@@ -31,7 +29,7 @@ collection is impossible to obtain; it has not been obtained here.
 
 ## Implemented offline tools
 
-`scripts/jumper_prepare.py` is separate from the frontend and local API. It:
+`scripts/jumper_prepare.py` is an offline CLI, separate from app startup. It:
 
 - Validates a segment and explicit foreground object prompts before inference.
 - Proposes person boxes using an explicitly supplied local YOLO checkpoint.
@@ -77,15 +75,17 @@ existing pack intact. No pack is currently configured for publication.
 
 ## Reproducing preparation
 
-Run normal project setup first. Install SAM separately; the app does not load or
-download it. The pilot used the official repository at
+Run normal project setup first; `scripts/setup.sh` installs the pinned native SAM
+dependencies for personal creation. Models are never loaded by importing the
+preparation module or opening Guess. The offline pilot used the official repository at
 `2b90b9f5ceec907a1c18123530e92e794ad901a4` and the official Tiny checkpoint.
 See [SAM installation and video usage](https://github.com/facebookresearch/sam2)
 and its Apache 2.0 license. Review the license for any detector checkpoint used
 too; installing a model does not clear source footage rights.
 
-For example, put SAM and its checkpoint in a separate preparation directory,
-then install the checked-out code into the project's existing Python environment:
+For a separate offline preparation checkout, put SAM and its checkpoint in an
+external directory. The following optional development install replaces the
+pinned setup dependency with that checkout:
 
 ```bash
 SAM2_BUILD_CUDA=0 uv pip install --python .venv/bin/python \
