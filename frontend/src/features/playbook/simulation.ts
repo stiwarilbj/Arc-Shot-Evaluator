@@ -1,3 +1,4 @@
+import { linearRoutePoint as lerpPoint, quadraticRoutePoint as quadraticPoint, perpendicularRouteControl } from "./routeGeometry.ts";
 import { coordinateMovement, createMovementBuffers, createMovementOrder, interpolatePosition, type MotionIntent, type MovementBuffers, type MovementOrder } from "./coordinatedMovement.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
@@ -386,14 +387,6 @@ function pointToward(from: CourtPoint, to: CourtPoint, distanceFeet: number): Co
   return addFeet(from, { x: (dx / length) * distanceFeet, y: (dy / length) * distanceFeet });
 }
 
-function lerpPoint(start: CourtPoint, end: CourtPoint, amount: number): CourtPoint {
-  const progress = clamp(amount, 0, 1);
-  return {
-    x: start.x + (end.x - start.x) * progress,
-    y: start.y + (end.y - start.y) * progress,
-  };
-}
-
 function easeInOut(amount: number) {
   const progress = clamp(amount, 0, 1);
   return progress * progress * (3 - 2 * progress);
@@ -427,25 +420,9 @@ function orderedArrows(arrows: PlaybookArrow[]) {
     .sort((left, right) => left.sequence - right.sequence || left.index - right.index);
 }
 
-function quadraticPoint(start: CourtPoint, end: CourtPoint, control: CourtPoint, amount: number) {
-  const progress = clamp(amount, 0, 1);
-  const inverse = 1 - progress;
-  return {
-    x: inverse * inverse * start.x + 2 * inverse * progress * control.x + progress * progress * end.x,
-    y: inverse * inverse * start.y + 2 * inverse * progress * control.y + progress * progress * end.y,
-  };
-}
-
 function defaultControl(start: CourtPoint, end: CourtPoint): CourtPoint {
-  const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const distance = Math.hypot(dx, dy);
-  const offset = clamp(distance * 0.22, 5, 13);
-  return clampCourt({
-    x: midpoint.x + (dy * offset) / Math.max(1, distance),
-    y: midpoint.y - (dx * offset) / Math.max(1, distance),
-  });
+  // Retain the engine's normalized-unit bend policy and physical court bounds.
+  return clampCourt(perpendicularRouteControl(start, end, 5, 13));
 }
 
 function routeControl(action: BoundAction, start: CourtPoint, end = action.arrow.end) {

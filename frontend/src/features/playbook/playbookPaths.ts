@@ -1,3 +1,4 @@
+import { linearRoutePoint, quadraticRoutePoint, perpendicularRouteControl } from "./routeGeometry.ts";
 import type { CourtPoint, PlaybookArrow, PlaybookMarker } from "./types.ts";
 import { courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry.ts";
 
@@ -14,25 +15,15 @@ export function arrowSequence(arrow: PlaybookArrow, index: number) {
 }
 
 export function lerpPoint(start: CourtPoint, end: CourtPoint, amount: number): CourtPoint {
-  const progress = Math.max(0, Math.min(1, amount));
-  return {
-    x: clamp(start.x + (end.x - start.x) * progress),
-    y: clamp(start.y + (end.y - start.y) * progress),
-  };
+  const point = linearRoutePoint(start, end, amount);
+  return { x: clamp(point.x), y: clamp(point.y) };
 }
 
 export function defaultArrowControl(start: CourtPoint, end: CourtPoint): CourtPoint {
-  const from = courtPointToSvg(start);
-  const to = courtPointToSvg(end);
-  const midpoint = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const distance = Math.hypot(dx, dy);
-  const offset = Math.max(60, Math.min(140, distance * 0.22));
-  const control = courtSvgToPoint({
-    x: midpoint.x + dy * offset / Math.max(1, distance),
-    y: midpoint.y - dx * offset / Math.max(1, distance),
-  });
+  // Editor bend limits are SVG pixels; convert back before editor bounds.
+  const control = courtSvgToPoint(perpendicularRouteControl(
+    courtPointToSvg(start), courtPointToSvg(end), 60, 140,
+  ));
   return { x: clamp(control.x), y: clamp(control.y) };
 }
 
@@ -41,12 +32,8 @@ export function arrowControl(arrow: PlaybookArrow) {
 }
 
 export function quadraticPoint(start: CourtPoint, end: CourtPoint, control: CourtPoint, amount: number): CourtPoint {
-  const progress = Math.max(0, Math.min(1, amount));
-  const inverse = 1 - progress;
-  return {
-    x: clamp(inverse * inverse * start.x + 2 * inverse * progress * control.x + progress * progress * end.x),
-    y: clamp(inverse * inverse * start.y + 2 * inverse * progress * control.y + progress * progress * end.y),
-  };
+  const point = quadraticRoutePoint(start, end, control, amount);
+  return { x: clamp(point.x), y: clamp(point.y) };
 }
 
 export function actionPointAt(arrow: PlaybookArrow, amount: number) {
