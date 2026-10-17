@@ -311,3 +311,31 @@ def test_partial_body_diagnostics_match_browser_fixtures():
         assert [w["kind"] for w in warnings] == fixture["expected"], fixture["name"]
         assert all(w["frame"] == frame and w["track_ids"] == [identity] for w in warnings)
         np.testing.assert_array_equal(after, original)
+
+
+def test_camera_cut_evidence_matches_browser_fixtures():
+    import json
+    import math
+    from pathlib import Path
+    import numpy as np
+    from backend.jumper.camera_cuts import CameraCuts
+
+    fixtures = json.loads((Path(__file__).parent / "fixtures/jumper/camera-cuts.json").read_text())
+    for fixture in fixtures:
+        monitor, cuts = CameraCuts(), []
+        for index, frame in enumerate(fixture["frames"]):
+            rgb = np.zeros((36, 64, 3), np.uint8)
+            for y in range(36):
+                for x in range(64):
+                    h = ((x+frame.get("x", 0)+101)*374761393 + (y+frame.get("y", 0)+101)*668265263 + frame.get("seed", 1)*1274126177) & 0xffffffff
+                    h = ((h ^ (h >> 13))*1274126177) & 0xffffffff
+                    h = (h ^ (h >> 16)) & 0xffffffff
+                    value = frame.get("flat", max(0, min(255, math.floor((32+h % 160)*frame.get("gain", 1)+frame.get("offset", 0)+.5))))
+                    rgb[y, x] = value
+            original = rgb.copy()
+            cuts.extend(monitor.inspect(frame.get("frame", index), rgb)["cuts"])
+            np.testing.assert_array_equal(rgb, original)
+            rgb.fill(0)
+        cuts.extend(monitor.finish())
+        assert cuts == fixture["cuts"], fixture["name"]
+        assert monitor.finish() == []

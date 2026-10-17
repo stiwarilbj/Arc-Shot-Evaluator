@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { CameraCuts } from "./cameraCuts";
 import * as ort from "onnxruntime-web/webgpu";
 import ortModule from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
 import ortWasm from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
@@ -534,7 +535,7 @@ async function process(
     }
     const warnings: MaskResult["warnings"] = [];
     const discovery = new PeopleDiscovery();
-    let previous: Uint8ClampedArray | undefined;
+    const cameraCuts = new CameraCuts();
     const quality = new MaskQuality();
     const ownership = new MaskOwnership(width, height);
     const small = new OffscreenCanvas(64, 36),
@@ -668,15 +669,9 @@ async function process(
       }
       smallContext.drawImage(sample.canvas, 0, 0, 64, 36);
       const pixels = smallContext.getImageData(0, 0, 64, 36).data;
-      let cut = false;
-      if (previous) {
-        let diff = 0;
-        for (let i = 0; i < pixels.length; i++)
-          if (i % 4 !== 3) diff += Math.abs(pixels[i] - previous[i]);
-        cut = diff / (64 * 36 * 3) > 55;
-        if (cut) warnings.push({ frame, kind: "possible_camera_cut" });
-      }
-      previous = pixels;
+      const transition = cameraCuts.inspect(frame, pixels);
+      const cut = transition.reset;
+      for (const at of transition.cuts) warnings.push({ frame: at, kind: "possible_camera_cut" });
       // Discovery and tracking above retain raw scores; only output ownership is stabilized.
       const labels = ownership.finish(
         new Set(objects.filter(o => o.ignored).map(o => o.id)),
@@ -719,6 +714,7 @@ async function process(
       await detector?.release();
     } catch {}
     detector = undefined;
+    for (const at of cameraCuts.finish()) warnings.push({ frame: at, kind: "possible_camera_cut" });
     const [highlight, quiz, reveal] = await retryExport(
       async () => {
         if (encodingError) throw encodingError;

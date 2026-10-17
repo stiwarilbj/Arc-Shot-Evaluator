@@ -227,7 +227,13 @@ Personal videos stay on your device; they are never automatically published.
    disappearance or a stationary player vanishing at the edge still needs review.
    These are temporal mask checks, not anatomical guarantees: inspect limbs and
    overlaps in the full video, including frames without warnings. The timeline
-   also flags uncertain matches and possible camera cuts.
+   also flags uncertain matches and possible camera cuts. Cut detection compares
+   brightness-normalized scene structure over translated image overlaps, then
+   checks up to two following frames. Brief clipped flashes that return to the prior
+   scene are discarded; exposure changes and supported pans retain continuity.
+   Confirmed scene changes still require trimming or correction. Transitions
+   truncated at the clip end, prolonged blank flashes, very large pans, and other
+   inconclusive footage may still need review; this is not a perfect cut detector.
    To reduce black/gray boundary flicker, both processors can retain a previous
    pixel owner for at most two frames when current scores are close, both masks
    still cover that pixel, and nearby current pixels clearly support that owner.

@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .camera_cuts import CameraCuts
 from .mask_quality import MaskQuality
 from .mask_ownership import MaskOwnership
 from .video_validation import (
@@ -431,7 +432,7 @@ def track(
                 predictor.add_new_points_or_box(
                     state, frame_idx=index, obj_id=obj_id, **kwargs
                 )
-            previous = None
+            camera_cuts = CameraCuts()
             quality = MaskQuality()
             ownership = MaskOwnership(width, height)
             previous_areas = {}
@@ -517,11 +518,10 @@ def track(
                         device, previous_areas.get(identity), area, height * width
                     )
                     previous_areas[identity] = area
-                current = cv2.resize(cv2.imread(str(frames[index])), (64, 36))
-                cut = previous is not None and np.abs(current.astype(float) - previous).mean() > 55
-                if cut:
-                    warnings.append({"frame": index, "kind": "possible_camera_cut"})
-                previous = current.astype(float)
+                current = cv2.cvtColor(cv2.resize(cv2.imread(str(frames[index])), (64, 36)), cv2.COLOR_BGR2RGB)
+                transition = camera_cuts.inspect(index, current)
+                cut = transition["reset"]
+                warnings.extend({"frame": at, "kind": "possible_camera_cut"} for at in transition["cuts"])
                 # Discovery and SAM memory keep raw scores. Apply bounded
                 # consistency only to the final, mutually exclusive output.
                 labels = ownership.resolve(
@@ -554,6 +554,7 @@ def track(
         torch.mps.empty_cache()
     if len(list(destination.glob("*.npy"))) != len(frames):
         raise RuntimeError("Incomplete mask propagation")
+    warnings.extend({"frame": at, "kind": "possible_camera_cut"} for at in camera_cuts.finish())
     return warnings
 
 
