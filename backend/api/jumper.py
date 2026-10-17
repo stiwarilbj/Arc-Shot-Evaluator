@@ -12,10 +12,19 @@ import subprocess
 import sys
 import threading
 import time
+import tempfile
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
+from backend.jumper.backup import (
+    export_archive,
+    import_archive,
+    library_contents,
+    MAX_ARCHIVE,
+)
 from backend.config import PROJECT_ROOT, MODEL_WEIGHTS_DIR
 from backend.jumper.pipeline import validate_job, run_ffmpeg, propose_people
 
@@ -443,3 +452,60 @@ def delete(identity: str):
     with LOCK:
         shutil.rmtree(ROOT / "saved" / identity, ignore_errors=True)
     return {"deleted": True}
+
+
+@router.get("/backup")
+def backup_export():
+    directory = ROOT / "backup-temp"
+    directory.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(suffix=".zip", dir=directory, delete=False)
+    path = Path(handle.name)
+    handle.close()
+    try:
+        with LOCK:
+            export_archive(ROOT, path)
+        return FileResponse(
+            path,
+            media_type="application/zip",
+            filename="arc-jumper-library.zip",
+            background=BackgroundTask(path.unlink, missing_ok=True),
+        )
+    except (ValueError, OSError, KeyError) as error:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, str(error))
+
+
+@router.post("/backup")
+async def backup_restore(file: UploadFile):
+    directory = ROOT / "backup-temp"
+    directory.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(suffix=".zip", dir=directory, delete=False)
+    path = Path(handle.name)
+    try:
+        total = 0
+        while chunk := await file.read(1024 * 1024):
+            total += len(chunk)
+            if total > MAX_ARCHIVE:
+                raise HTTPException(413, "Backups are limited to 512 MiB")
+            handle.write(chunk)
+        handle.close()
+        return await run_in_threadpool(import_archive, ROOT, path, LOCK)
+    except FileExistsError as error:
+        raise HTTPException(409, str(error))
+    except Exception as error:
+        if isinstance(error, HTTPException):
+            raise
+        raise HTTPException(400, f"Backup could not be restored: {error}")
+    finally:
+        handle.close()
+        path.unlink(missing_ok=True)
+        await file.close()
+
+
+@router.get("/backup/index")
+def backup_index():
+    try:
+        with LOCK:
+            return library_contents(ROOT)[0]
+    except (ValueError, OSError, KeyError) as error:
+        raise HTTPException(400, str(error))

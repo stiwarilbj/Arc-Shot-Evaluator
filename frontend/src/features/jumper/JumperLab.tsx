@@ -29,6 +29,7 @@ import {
 } from "./storage";
 import { publicCatalog } from "./catalog";
 import type { PublicCatalog } from "./publicManifest";
+import { LibraryBackup } from "./LibraryBackup";
 import "./jumper.css";
 const Editor = lazy(() => import("./JumperEditor"));
 export function useBlobUrl(blob: Blob | null) {
@@ -97,6 +98,7 @@ export default function JumperLab({ active }: { active: boolean }) {
   const [catalogError, setCatalogError] = useState("");
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [historyRevision, setHistoryRevision] = useState(0);
   async function refresh() {
     try {
       const saved = await listClips();
@@ -185,6 +187,7 @@ export default function JumperLab({ active }: { active: boolean }) {
           personal={clips.filter((value) => value.quiz)}
           nba={catalog.clips}
           nbaKind={catalog.kind}
+          historyRevision={historyRevision}
           onCreate={() => change("create")}
         />
       </section>
@@ -208,6 +211,10 @@ export default function JumperLab({ active }: { active: boolean }) {
           onCreate={() => change("create")}
           onChange={refresh}
           onError={setError}
+          onRestored={async () => {
+            await refresh();
+            setHistoryRevision((v) => v + 1);
+          }}
         />
       </section>
     </main>
@@ -218,12 +225,14 @@ function Guess({
   personal,
   nba,
   nbaKind,
+  historyRevision,
   onCreate,
 }: {
   active: boolean;
   personal: Clip[];
   nba: QuizClip[];
   nbaKind: PublicCatalog["kind"];
+  historyRevision: number;
   onCreate: () => void;
 }) {
   const [collection, setCollection] = useState<"personal" | "nba" | "combined">(
@@ -265,7 +274,10 @@ function Guess({
   const totals = useMemo(() => stats(history), [history]);
   async function hydrate() {
     try {
-      setHistory(await readAttempts());
+      const saved = await readAttempts();
+      setHistory(saved);
+      if (round)
+        setSubmitted(saved.find((value) => value.id === round.id) ?? null);
       setHydrated(true);
       setError("");
     } catch (error) {
@@ -276,7 +288,7 @@ function Guess({
   }
   useEffect(() => {
     void hydrate();
-  }, []);
+  }, [historyRevision]);
   const key = `shuffle:${collection}`;
   async function next() {
     if (lock.current) return;
@@ -666,6 +678,7 @@ function Library({
   onCreate,
   onChange,
   onError,
+  onRestored,
 }: {
   clips: Clip[];
   loading: boolean;
@@ -673,6 +686,7 @@ function Library({
   onCreate: () => void;
   onChange: () => Promise<void>;
   onError: (error: string) => void;
+  onRestored: () => Promise<void>;
 }) {
   const [selected, setSelected] = useState<Clip | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
@@ -713,8 +727,8 @@ function Library({
     <>
       <div className="jumper-toolbar">
         <p>
-          Finished videos stay on this device. Browser data can be cleared;
-          download a copy to keep it.
+          Finished videos stay on this device. Browser data can be cleared; keep
+          a library backup to protect your collection.
         </p>
         <button
           type="button"
@@ -724,6 +738,7 @@ function Library({
           <Plus size={16} /> Create
         </button>
       </div>
+      <LibraryBackup onRestored={onRestored} />
       {loading ? (
         <p role="status">Reading clips…</p>
       ) : clips.length ? (

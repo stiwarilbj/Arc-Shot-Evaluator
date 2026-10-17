@@ -88,6 +88,43 @@ local media directory; quiz attempts/progress remain in that browser. Download
 files you want to keep before clearing site data. My Clips supports playback,
 download and deletion. No personal file is added to the public pack.
 
+## Private library backup
+
+Open **My Clips → Back up or restore library** on either build target.
+
+1. Optionally enable **Include guessing history in backup**, then choose
+   **Download backup**. Keep the ZIP on your own device or backup drive.
+2. On the destination device, choose **Choose backup ZIP**. ARC verifies its
+   manifest, checksums, required video variants, and full video decoding before
+   showing a restore preview. No masking model or inference service is needed.
+3. Review the clip and answer counts. If history is present, choose whether to
+   restore it, then select **Restore backup**.
+
+The standard, uncompressed ZIP contains finished videos, player names/aliases,
+quiz eligibility, and optional answer records. It excludes raw uploads, masks,
+correction history, models, caches, and shuffle position. Existing legacy files
+keep their legacy status. The same ZIP works between hosted and local storage.
+Limits are 512 MiB, 1,000 clips, 10,000 answers, and 100 MiB per video. This is a
+private downloadable file, not an encrypted archive or cloud synchronization.
+
+Identical clips are skipped. Different content sharing an identity receives a
+stable separate identity; repeating that import skips the copy too. Existing
+videos, names, and answers are never overwritten, and answer records retain their
+recorded correct/incorrect outcome. Duplicate answer identities keep the existing
+record, preventing repeat imports from increasing statistics.
+
+Hosted clips and answers commit in one IndexedDB transaction. Native videos are
+validated and staged before the local library changes; failed staging or commit
+rolls back new files. Native answers remain in browser storage, so an answer-storage
+failure can occur after clips have restored. The message explains this partial
+result; retry the same backup to restore history without duplicating the clips.
+Malformed archives leave the existing library intact. Full-storage failures keep
+the selected backup available for retry. No personal backup is published.
+
+Run `node --experimental-strip-types scripts/test-jumper-backup.mjs` and
+`.venv/bin/python -m pytest -q tests/test_jumper_backup.py` for archive integrity,
+cross-target round trips, duplicate/conflict handling, and atomic failure checks.
+
 ## Models and reproducibility
 
 SAM graphs/weights: Apache 2.0, Meta SAM 2.1 Tiny. Vision and attention are pinned
