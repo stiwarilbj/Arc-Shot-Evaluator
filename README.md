@@ -9,6 +9,11 @@ use only the masked output. The shooter is black, other players gray, and the ba
 with no audio. Enable “Use in my guessing game” and add the player's name to quiz
 yourself; the video stays masked after answering. Guess never downloads models.
 
+Workspace tabs have shareable URL fragments, such as `#playbook`, `#counter-lab`,
+and `#jumper/my-clips`. Reloading reopens that workspace/view; browser Back and
+Forward follow tab changes. Switching workspaces keeps mounted drafts and reports
+in memory. Reloading does not preserve unsaved uploads or in-memory reports.
+
 Creating clips requires WebGPU and video encoding in Chrome on the hosted site,
 or the downloaded app’s native SAM 2.1 engine. Models download only when needed;
 processing stays on-device and uses no paid inference service.

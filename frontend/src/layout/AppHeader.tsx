@@ -11,8 +11,7 @@ import {
 } from "lucide-react";
 import type { ThemeMode } from "../domain/analysisTypes";
 import { UsageGuide } from "./UsageGuide";
-
-export type AppWorkspace = "analyzer" | "playbook" | "counterlab" | "jumper";
+import type { AppWorkspace } from "../app/workspaceLocation";
 
 interface AppHeaderProps {
   filename?: string;

@@ -9,7 +9,8 @@ import { ExampleVideoLibrary } from "../features/upload/ExampleVideoLibrary";
 import { VideoUpload } from "../features/upload/VideoUpload";
 import { PlaybookBoard } from "../features/playbook/PlaybookBoard";
 import type { PlaybookDocument, PlaybookDraft } from "../features/playbook/types";
-import { AppHeader, type AppWorkspace } from "../layout/AppHeader";
+import { AppHeader } from "../layout/AppHeader";
+import { useWorkspaceNavigation } from "./useWorkspaceNavigation";
 import { IS_GITHUB_PAGES } from "../runtime";
 import { isProcessingMode } from "../domain/analysisModes";
 import {
@@ -29,7 +30,6 @@ import type {
   ShotMode,
   ThemeMode,
   VideoMode,
-  WorkspaceTab,
 } from "../domain/analysisTypes";
 
 const JumperLab = lazy(() => import("../features/jumper/JumperLab"));
@@ -105,30 +105,28 @@ export function ArcShotEvaluatorApp() {
   const [selectedShot, setSelectedShot] = useState(0);
   const [reviewFrame, setReviewFrame] = useState<number | null>(null);
   const [mode, setMode] = useState<VideoMode>("pose");
-  const [tab, setTab] = useState<WorkspaceTab>("shot");
+  const { workspace, changeWorkspace, analysisView: tab, changeAnalysisView: setTab, jumperView, changeJumperView } = useWorkspaceNavigation();
   const [processingMode, setProcessingMode] = useState<ProcessingMode>("normal");
   // The selected analysis depth is captured into each queue item so changing
   // it never mutates a queued or active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
-  const [workspace, setWorkspace] = useState<AppWorkspace>("analyzer");
-  function changeWorkspace(next: AppWorkspace) {
-    if (next === "counterlab") setCounterLabHasOpened(true);
-    if (next === "jumper") setJumperHasOpened(true);
-    setWorkspace(next);
-  }
-  const [jumperHasOpened, setJumperHasOpened] = useState(false);
-  const [counterLabHasOpened, setCounterLabHasOpened] = useState(false);
+  const [jumperHasOpened, setJumperHasOpened] = useState(workspace === "jumper");
+  const [counterLabHasOpened, setCounterLabHasOpened] = useState(workspace === "counterlab");
+  useEffect(() => {
+    if (workspace === "jumper") setJumperHasOpened(true);
+    if (workspace === "counterlab") setCounterLabHasOpened(true);
+  }, [workspace]);
   const [counterLabPlay, setCounterLabPlay] = useState<PlaybookDraft | null>(null);
   const [counterLabRequest, setCounterLabRequest] = useState<{ requestId: string; play: PlaybookDraft } | null>(null);
   const [playbookRequest, setPlaybookRequest] = useState<{ requestId: string; play: PlaybookDocument } | null>(null);
   function testInCounterLab(play: PlaybookDraft) {
     setCounterLabRequest({ requestId: createQueueItemId("counter-import"), play });
     setCounterLabHasOpened(true);
-    setWorkspace("counterlab");
+    changeWorkspace("counterlab");
   }
   function openSavedPlayInEditor(play: PlaybookDocument) {
     setPlaybookRequest({ requestId: createQueueItemId("counter-copy"), play });
-    setWorkspace("playbook");
+    changeWorkspace("playbook");
   }
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
@@ -441,13 +439,13 @@ export function ArcShotEvaluatorApp() {
   }
 
   function showHomePage() {
-    setWorkspace("analyzer");
+    setTab("shot");
+    changeWorkspace("analyzer");
     setSession(null);
     setReviewFrame(null);
     setError(null);
     setSelectedShot(0);
     setMode("pose");
-    setTab("shot");
   }
 
   const queuePanel = (
@@ -518,8 +516,8 @@ export function ArcShotEvaluatorApp() {
       <div className={workspace === "playbook" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "playbook"}>
         <PlaybookBoard active={workspace === "playbook"} onTestInCounterLab={testInCounterLab} onDraftChange={setCounterLabPlay} requestedPlay={playbookRequest} />
       </div>
-      {counterLabHasOpened ? <div className={workspace === "counterlab" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "counterlab"}><Suspense fallback={<div className="counter-lab-loading" role="status">Loading Counter Lab…</div>}><CounterLab active={workspace === "counterlab"} currentDraft={counterLabPlay} requestedPlay={counterLabRequest} onOpenEditor={() => setWorkspace("playbook")} onOpenInPlaybook={openSavedPlayInEditor} /></Suspense></div> : null}
-      {jumperHasOpened ? <div className={workspace === "jumper" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "jumper"}><Suspense fallback={<p role="status">Opening Who’s That Jumper?…</p>}><JumperLab active={workspace === "jumper"} /></Suspense></div> : null}
+      {counterLabHasOpened || workspace === "counterlab" ? <div className={workspace === "counterlab" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "counterlab"}><Suspense fallback={<div className="counter-lab-loading" role="status">Loading Counter Lab…</div>}><CounterLab active={workspace === "counterlab"} currentDraft={counterLabPlay} requestedPlay={counterLabRequest} onOpenEditor={() => changeWorkspace("playbook")} onOpenInPlaybook={openSavedPlayInEditor} /></Suspense></div> : null}
+      {jumperHasOpened || workspace === "jumper" ? <div className={workspace === "jumper" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "jumper"}><Suspense fallback={<p role="status">Opening Who’s That Jumper?…</p>}><JumperLab active={workspace === "jumper"} tab={jumperView} onTabChange={changeJumperView} /></Suspense></div> : null}
       <div className={workspace === "analyzer" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "analyzer"}>
         {analyzerView}
       </div>

@@ -30,6 +30,7 @@ import {
 import { publicCatalog } from "./catalog";
 import type { PublicCatalog } from "./publicManifest";
 import { LibraryBackup } from "./LibraryBackup";
+import type { JumperView } from "../../app/workspaceLocation";
 import "./jumper.css";
 const Editor = lazy(() => import("./JumperEditor"));
 export function useBlobUrl(blob: Blob | null) {
@@ -86,9 +87,19 @@ export function ClipVideo({
     />
   );
 }
-export default function JumperLab({ active }: { active: boolean }) {
-  const [tab, setTab] = useState<"guess" | "create" | "clips">("guess");
-  const [opened, setOpened] = useState(false);
+export default function JumperLab({
+  active,
+  tab,
+  onTabChange,
+}: {
+  active: boolean;
+  tab: JumperView;
+  onTabChange: (tab: JumperView) => void;
+}) {
+  const [opened, setOpened] = useState(tab === "create");
+  useEffect(() => {
+    if (tab === "create") setOpened(true);
+  }, [tab]);
   const [clips, setClips] = useState<Clip[]>([]);
   const [catalog, setCatalog] = useState<PublicCatalog>({
     kind: null,
@@ -113,9 +124,6 @@ export default function JumperLab({ active }: { active: boolean }) {
     }
   }
   useEffect(() => {
-    void refresh();
-  }, []);
-  useEffect(() => {
     const controller = new AbortController();
     setCatalogError("");
     publicCatalog(controller.signal)
@@ -129,11 +137,10 @@ export default function JumperLab({ active }: { active: boolean }) {
   }, [catalogAttempt]);
   useEffect(() => {
     if (active) void refresh();
-  }, [active]);
+  }, [active, tab]);
   function change(next: typeof tab) {
-    setTab(next);
+    onTabChange(next);
     if (next === "create") setOpened(true);
-    if (next === "clips") void refresh();
   }
   return (
     <main className="jumper-workspace">
@@ -191,7 +198,7 @@ export default function JumperLab({ active }: { active: boolean }) {
           onCreate={() => change("create")}
         />
       </section>
-      {opened ? (
+      {opened || tab === "create" ? (
         <section hidden={tab !== "create"}>
           <Suspense fallback={<p role="status">Opening editor…</p>}>
             <Editor
