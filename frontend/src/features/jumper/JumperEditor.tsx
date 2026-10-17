@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Plus, Trash2, Upload, Check, X } from "lucide-react";
+import {
+  Download,
+  Plus,
+  Trash2,
+  Upload,
+  Check,
+  X,
+  Undo2,
+  Redo2,
+} from "lucide-react";
 import { IS_GITHUB_PAGES } from "../../runtime";
 import {
   MAX_BYTES,
@@ -19,6 +28,7 @@ import ShooterPreview from "./ShooterPreview";
 import SelectionMagnifier from "./SelectionMagnifier";
 import { ClipVideo, useBlobUrl } from "./JumperLab";
 import ReviewComparison from "./ReviewComparison";
+import { CorrectionHistory, type CorrectionState } from "./correctionHistory";
 
 export default function JumperEditor({
   active,
@@ -27,6 +37,8 @@ export default function JumperEditor({
   active: boolean;
   onSaved: () => void;
 }) {
+  const [history] = useState(() => new CorrectionHistory());
+  const [, refreshHistory] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [duration, setDuration] = useState(0);
   const [start, setStart] = useState(0);
@@ -102,6 +114,50 @@ export default function JumperEditor({
       abort.abort();
     };
   }, [file, start, frame, view, result, dirty]);
+  function correctionState(): CorrectionState {
+    return { tracks, target, editing, frame, negative, automatic };
+  }
+  function remember(label: string) {
+    history.record(correctionState(), label);
+    refreshHistory((value) => value + 1);
+  }
+  function clearHistory() {
+    history.clear();
+    refreshHistory((value) => value + 1);
+  }
+  function restoreCorrection(direction: "undo" | "redo") {
+    if (!active || busy || saveLock.current || uploadLock.current) return;
+    const state = history[direction](correctionState());
+    if (!state) return;
+    setTracks(state.tracks);
+    setTarget(state.target);
+    setEditing(state.editing);
+    setFrame(state.frame);
+    setNegative(state.negative);
+    setAutomatic(state.automatic);
+    setError("");
+    setProgress(null);
+    editorRoot.current
+      ?.querySelectorAll("video")
+      .forEach((video) => video.pause());
+    invalidate();
+    refreshHistory((value) => value + 1);
+  }
+  function historyKey(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || !active) return;
+    const element = event.target as HTMLElement;
+    if (
+      element.closest("textarea, [contenteditable]") ||
+      (element instanceof HTMLInputElement &&
+        !["radio", "checkbox", "range", "button"].includes(element.type))
+    )
+      return;
+    const key = event.key.toLowerCase();
+    if (key !== "z" && !(key === "y" && event.ctrlKey && !event.metaKey))
+      return;
+    event.preventDefault();
+    restoreCorrection(key === "y" || event.shiftKey ? "redo" : "undo");
+  }
   function invalidate() {
     setView("source");
     setReviewed(false);
@@ -125,6 +181,7 @@ export default function JumperEditor({
       const length = opened.duration;
       opened.input.dispose();
       if (revision !== sourceGeneration.current) return;
+      clearHistory();
       setPreviewRatio(undefined);
       setFile(next);
       setName("");
@@ -150,6 +207,8 @@ export default function JumperEditor({
   }
   function trim(nextStart: number, nextEnd: number) {
     if (!Number.isFinite(nextStart) || !Number.isFinite(nextEnd)) return;
+    if (nextStart === start && nextEnd === end) return;
+    clearHistory();
     setStart(nextStart);
     setEnd(nextEnd);
     setFrame(0);
@@ -164,6 +223,7 @@ export default function JumperEditor({
   function addTrack() {
     if (tracks.length >= 20 || busy) return;
     const id = Math.max(0, ...tracks.map((value) => value.id)) + 1;
+    remember("Add player");
     setEditing(id);
     setTracks((current) => [...current, { id, prompts: [] }]);
     if (!tracks.length) setTarget(id);
@@ -196,6 +256,7 @@ export default function JumperEditor({
       setError("Return to frame 1 and click the shooter first.");
       return;
     }
+    remember(negative ? "Exclude point" : "Include point");
     if (!tracks.length) {
       id = 1;
       setTracks([{ id, prompts: [] }]);
@@ -237,6 +298,7 @@ export default function JumperEditor({
       const { detectPeople } = await import("./detection");
       const boxes = await detectPeople(file, start, abort.signal);
       if (abort.signal.aborted || generation.current !== id) return;
+      remember("Find people");
       setResult(null);
       setTracks(
         boxes.map((box, index) => ({
@@ -296,7 +358,13 @@ export default function JumperEditor({
         abort.signal,
       );
       if (id !== generation.current || abort.signal.aborted) return;
-      if (value.objects) setTracks(value.objects);
+      if (
+        value.objects &&
+        JSON.stringify(value.objects) !== JSON.stringify(tracks)
+      ) {
+        remember("Automatic player discovery");
+        setTracks(value.objects);
+      }
       resultTarget.current = target;
       setResult(value);
       setDirty(false);
@@ -408,7 +476,7 @@ export default function JumperEditor({
         prompt.frame === 0 && (prompt.box || prompt.labels?.includes(1)),
     );
   return (
-    <div ref={editorRoot} className="jumper-editor">
+    <div ref={editorRoot} className="jumper-editor" onKeyDown={historyKey}>
       <aside className="jumper-panel jumper-editor-controls">
         <span className="jumper-eyebrow">MAKE A MYSTERY</span>
         <h2>One shot. No clues.</h2>
@@ -488,7 +556,9 @@ export default function JumperEditor({
               <button
                 type="button"
                 className="button button-outline"
+                disabled={!tracks.length && frame === 0}
                 onClick={() => {
+                  remember("Reset shooter selection");
                   setResult(null);
                   setTracks([]);
                   setTarget(1);
@@ -501,6 +571,44 @@ export default function JumperEditor({
               >
                 Select shooter again
               </button>
+              <div
+                className="jumper-toolbar"
+                role="group"
+                aria-label="Correction history"
+              >
+                <button
+                  type="button"
+                  className="button button-outline"
+                  aria-label="Undo correction"
+                  disabled={!history.undoLabel}
+                  title={
+                    history.undoLabel
+                      ? `Undo ${history.undoLabel} (Ctrl/Cmd+Z)`
+                      : "No correction to undo"
+                  }
+                  onClick={() => restoreCorrection("undo")}
+                >
+                  <Undo2 size={16} /> Undo
+                </button>
+                <button
+                  type="button"
+                  className="button button-outline"
+                  aria-label="Redo correction"
+                  disabled={!history.redoLabel}
+                  title={
+                    history.redoLabel
+                      ? `Redo ${history.redoLabel} (Ctrl/Cmd+Shift+Z)`
+                      : "No correction to redo"
+                  }
+                  onClick={() => restoreCorrection("redo")}
+                >
+                  <Redo2 size={16} /> Redo
+                </button>
+              </div>
+              <p className="jumper-caption">
+                Up to 50 corrections. Undo/redo requires processing again before
+                saving. Replacing or trimming the video clears this history.
+              </p>
               <label>
                 Player name (optional until adding to quiz)
                 <input
@@ -521,6 +629,7 @@ export default function JumperEditor({
                     type="checkbox"
                     checked={automatic}
                     onChange={(event) => {
+                      remember("Automatic discovery setting");
                       setAutomatic(event.target.checked);
                       invalidate();
                     }}
@@ -561,6 +670,7 @@ export default function JumperEditor({
                             name="jumper-target"
                             checked={target === value.id}
                             onChange={() => {
+                              remember("Change shooter");
                               setTarget(value.id);
                               setEditing(value.id);
                               setFrame(0);
@@ -582,6 +692,7 @@ export default function JumperEditor({
                               );
                               return;
                             }
+                            remember("Remove track");
                             setTracks((current) =>
                               needsSelection(value)
                                 ? current.filter(
@@ -606,6 +717,7 @@ export default function JumperEditor({
                   <button
                     type="button"
                     onClick={() => {
+                      remember("Restore removed tracks");
                       setTracks((current) =>
                         current.map((value) => ({ ...value, ignored: false })),
                       );
@@ -949,6 +1061,7 @@ export default function JumperEditor({
                   }
                   onClick={() => {
                     if (saveLock.current || uploadLock.current) return;
+                    remember("Clear frame points");
                     setTracks((current) =>
                       clearFramePoints(current, editing, frame),
                     );

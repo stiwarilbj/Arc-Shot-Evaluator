@@ -75,6 +75,19 @@ const fixture =
     await img.click({
       position: { x: bounds.width * point[0], y: bounds.height * point[1] },
     });
+    // Restore the actual seed through correction history before real tracking.
+    await p
+      .getByRole("button", { name: "Undo correction", exact: true })
+      .click();
+    await expect(
+      p.getByRole("button", { name: "Process clip", exact: true }),
+    ).toBeDisabled();
+    await p
+      .getByRole("button", { name: "Redo correction", exact: true })
+      .click();
+    await expect(
+      p.getByRole("button", { name: "Process clip", exact: true }),
+    ).toBeEnabled();
     // Processing requires only the clicked shooter, never a name or manual roster.
     await p.getByRole("button", { name: "Process clip", exact: true }).click();
     if (process.env.JUMPER_TEST_CANCEL) {

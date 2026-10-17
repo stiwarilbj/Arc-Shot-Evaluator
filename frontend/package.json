@@ -27,7 +27,7 @@
     "test:playbook-mutation-order": "node --experimental-strip-types ../scripts/test-playbook-mutation-order.mjs",
     "test:playbook-order": "node --experimental-strip-types ../scripts/test-playbook-order.mjs",
     "test:save-simulate": "node --experimental-strip-types ../scripts/test-save-simulate-compatibility.mjs",
-    "test:jumper": "node --experimental-strip-types ../scripts/test-jumper-domain.mjs && node --experimental-strip-types ../scripts/test-jumper-catalog.mjs && node --experimental-strip-types ../scripts/test-jumper-silhouette.mjs"
+    "test:jumper": "node --experimental-strip-types ../scripts/test-jumper-history.mjs && node --experimental-strip-types ../scripts/test-jumper-domain.mjs && node --experimental-strip-types ../scripts/test-jumper-catalog.mjs && node --experimental-strip-types ../scripts/test-jumper-silhouette.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

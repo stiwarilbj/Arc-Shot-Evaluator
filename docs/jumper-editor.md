@@ -29,6 +29,12 @@ state when switching workspaces. Dark mode remains the default.
    selection**, select a track, scrub to a problem frame, and add Include/Exclude
    points. Remove spectators/artwork; removed tracks retain stable identities so
    discovery does not immediately add them back. Reprocess after any correction.
+   **Undo / Redo** retain up to 50 edits, including points,
+   removed tracks, shooter changes, discovery and resets. Ctrl/Cmd+Z undoes and
+   Ctrl/Cmd+Shift+Z (or Ctrl+Y) redoes when focus is outside text-entry fields.
+   Typing retains native text undo. Undo/redo always requires processing and
+   review again; saved clips are unaffected. A new edit clears redo. Replacing
+   the upload or changing the trim clears history for that segment.
    Automatic discovery can be disabled for manually selected court participants.
    The **Frames to review** timeline marks missing-shooter masks, unstable outlines,
    ambiguous overlaps, and possible camera cuts. Click a colored band to inspect
