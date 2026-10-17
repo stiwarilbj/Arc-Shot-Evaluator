@@ -3,6 +3,8 @@ import type { MaskWarning } from "./domain";
 export const warningLabels = {
   target_lost: "Missing shooter",
   player_lost: "Missing player",
+  outline_changed: "Abrupt outline change",
+  mask_fragmented: "Detached mask fragment",
   tracking_unstable: "Unstable outline",
   ambiguous_players: "Uncertain player match",
   possible_camera_cut: "Possible camera cut",

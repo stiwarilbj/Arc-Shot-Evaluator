@@ -80,6 +80,8 @@ export interface MaskWarning {
     | "target_lost"
     | "player_lost"
     | "tracking_unstable"
+    | "outline_changed"
+    | "mask_fragmented"
     | "ambiguous_players"
     | "possible_camera_cut";
   track_ids?: number[];
@@ -353,6 +355,8 @@ export function maskResult(value: unknown): value is MaskResult {
           "player_lost",
           "possible_camera_cut",
           "tracking_unstable",
+          "outline_changed",
+          "mask_fragmented",
           "ambiguous_players",
         ].includes(w.kind) &&
         (w.track_ids === undefined ||

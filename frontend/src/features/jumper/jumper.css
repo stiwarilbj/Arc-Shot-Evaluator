@@ -632,6 +632,8 @@
 .jumper-warning-player_lost {
   color: #ed754f;
 }
+.jumper-warning-outline_changed,
+.jumper-warning-mask_fragmented,
 .jumper-warning-tracking_unstable {
   color: #d99d31;
 }

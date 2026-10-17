@@ -682,7 +682,7 @@ async function process(
         new Set(objects.filter(o => o.ignored).map(o => o.id)),
         cut || objects.some(o => o.prompts.some(p => p.frame === frame)),
       );
-      warnings.push(...quality.inspect(frame, labels, width, height, objects, target_id));
+      warnings.push(...quality.inspect(frame, labels, width, height, objects, target_id, cut));
       exportCheckpoint.add(frame, labels);
       if (!encodingError) {
         report(

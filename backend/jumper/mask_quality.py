@@ -1,6 +1,7 @@
 """Per-player visible-mask diagnostics, kept equivalent to maskQuality.ts."""
 import math
 import numpy as np
+from .mask_outline import outline_changes
 
 
 def mask_extents(owners):
@@ -49,8 +50,10 @@ def shrunk(a, b):
 class MaskQuality:
     def __init__(self):
         self.states = {}
+        self.previous_owners = None
+        self.previous_frame = -2
 
-    def inspect(self, frame, owners, tracks, target):
+    def inspect(self, frame, owners, tracks, target, reset=False):
         height, width = owners.shape
         extents = mask_extents(owners)
         warnings = []
@@ -70,6 +73,7 @@ class MaskQuality:
                     warn(frame, "target_lost" if identity == target else "player_lost")
                 state.update(previous=None, exiting=False, shrink=None)
             else:
+                recovering_shrink = bool(state.get("shrink"))
                 exit_frame = previous is not None and leaving(previous, current, width, height)
                 unstable = previous and (
                     current["area"] / previous["area"] < .35 or
@@ -89,5 +93,19 @@ class MaskQuality:
                         state.update(shrink=previous, shrink_frame=frame)
                 else:
                     state["shrink"] = None
+                # Large truncations retain their existing persistence rule.
+                if (previous and not exit_frame and not leaving(current, previous, width, height)
+                        and not unstable and not shrunk(previous, current)
+                        and not recovering_shrink and not reset
+                        and self.previous_frame == frame - 1 and self.previous_owners is not None
+                        and self.previous_owners.shape == owners.shape
+                        and not any(p["frame"] == frame for p in track["prompts"])):
+                    changes = outline_changes(self.previous_owners, owners, identity, previous, current)
+                    if changes["outline"]:
+                        warn(frame, "outline_changed")
+                    if changes["fragmented"]:
+                        warn(frame, "mask_fragmented")
                 state.update(previous=current, exiting=bool(exit_frame), exited=False)
+        self.previous_owners = owners.copy()
+        self.previous_frame = frame
         return warnings

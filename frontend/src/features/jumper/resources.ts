@@ -35,7 +35,7 @@ export function estimateResources(
     (1536 + 192 + 96 + (request.auto_detect_others ? 256 : 0)) * MIB +
       memories * 2.5 * MIB +
       (maxConditions + 6) * 8 * MIB +
-      width * height * 64 +
+      width * height * 96 +
       sourceWidth * sourceHeight * 16 +
       frames * width * height * 0.25,
   );

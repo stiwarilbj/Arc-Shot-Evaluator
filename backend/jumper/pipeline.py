@@ -531,7 +531,7 @@ def track(
                 )
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
                 frame_warnings = quality.inspect(
-                    index, labels, job["objects"], job["target_id"]
+                    index, labels, job["objects"], job["target_id"], reset=cut
                 )
                 for warning in frame_warnings:
                     check_device_tracking(device, warning["kind"])

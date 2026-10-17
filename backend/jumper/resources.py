@@ -26,7 +26,7 @@ def estimate_resources(
         (1536 + 192 + 96 + (256 if job.get("auto_detect_others") else 0)) * MIB
         + memories * 2.5 * MIB
         + (maximum + 6) * 8 * MIB
-        + width * height * 64
+        + width * height * 96
         + (source_width or width) * (source_height or height) * 16
         + frames * width * height * 0.25
     )

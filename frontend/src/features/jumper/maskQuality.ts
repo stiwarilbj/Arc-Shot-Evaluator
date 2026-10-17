@@ -1,4 +1,5 @@
 import { unstableMask, type MaskExtent, type MaskWarning } from "./domain.ts";
+import { outlineChanges } from "./maskOutline.ts";
 
 type Extent = MaskExtent & { bounds: number[] };
 type Track = { id: number; ignored?: boolean; prompts: readonly { frame: number }[] };
@@ -55,10 +56,12 @@ function shrunk(a: Extent, b: Extent) {
 
 /** Bounded per-job history; warnings carry the affected player's stable ID. */
 export class MaskQuality {
+  private previousOwners?: Uint8Array;
+  private previousFrame = -2;
   private states = new Map<number, State>();
 
   inspect(frame: number, owners: Uint8Array, width: number, height: number,
-    tracks: readonly Track[], target: number): MaskWarning[] {
+    tracks: readonly Track[], target: number, reset = false): MaskWarning[] {
     const extents = maskExtents(owners, width, height);
     const warnings: MaskWarning[] = [];
     for (const track of tracks) {
@@ -72,6 +75,7 @@ export class MaskQuality {
         state.exiting = false;
         state.shrink = undefined;
       } else {
+        const recoveringShrink = !!state.shrink;
         const exit = !!previous && leaving(previous, current, width, height);
         if (previous && !exit && unstableMask(previous, current)) {
           warnings.push({ frame, kind: "tracking_unstable", track_ids: [track.id] });
@@ -88,12 +92,25 @@ export class MaskQuality {
             state.shrinkFrame = frame;
           }
         } else state.shrink = undefined;
+        // Large truncations keep their existing persistence rule. The new check
+        // covers smaller changes, excluding established exits/reentries.
+        if (previous && !exit && !leaving(current, previous, width, height) &&
+          !unstableMask(previous, current) && !shrunk(previous, current) &&
+          !recoveringShrink && !reset &&
+          this.previousFrame === frame - 1 && this.previousOwners?.length === owners.length &&
+          !track.prompts.some(p => p.frame === frame)) {
+          const changes = outlineChanges(this.previousOwners, owners, width, height, track.id, previous, current);
+          if (changes.outline) warnings.push({ frame, kind: "outline_changed", track_ids: [track.id] });
+          if (changes.fragmented) warnings.push({ frame, kind: "mask_fragmented", track_ids: [track.id] });
+        }
         state.previous = current;
         state.exiting = exit;
         state.exited = false;
       }
       this.states.set(track.id, state);
     }
+    this.previousOwners = owners.slice();
+    this.previousFrame = frame;
     return warnings;
   }
 }

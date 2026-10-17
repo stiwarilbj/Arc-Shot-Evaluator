@@ -216,7 +216,12 @@ Personal videos stay on your device; they are never automatically published.
 4. **Review and correct:** original reference and masked playback share one clock.
    Desktop shows them together; mobile offers a comparison toggle. The review
    timeline checks every included player, black or gray, for missing masks,
-   sudden jumps, and persistent outline shrinkage. Warnings identify the affected
+   sudden jumps, persistent outline shrinkage, abrupt local outline changes, and
+   newly detached mask fragments. Adjacent silhouettes are translation-aligned
+   with pixel-jitter tolerance; nearby outline loss/gain from ordinary motion is
+   discounted. Shape comparisons reset at camera cuts, corrections, and gaps.
+   These checks flag suspicious small hand/arm losses; they never identify
+   anatomy or generate missing limbs. Warnings identify the affected
    track and block saving until corrected. Recorded outward movement and clipping
    at the image boundary can establish a legitimate exit; an unexplained interior
    disappearance or a stationary player vanishing at the edge still needs review.

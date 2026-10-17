@@ -285,3 +285,29 @@ def test_overlap_ownership_matches_browser_fixtures():
                     assert values[ids.index(identity)].flat[pixel] > 0
                 assert identity not in frame["excluded"]
             labels[:] = 255  # Returned recordings do not share mutable history.
+
+
+def test_partial_body_diagnostics_match_browser_fixtures():
+    import json
+    from pathlib import Path
+    import numpy as np
+    from backend.jumper.mask_quality import MaskQuality
+
+    fixtures = json.loads((Path(__file__).parent / "fixtures/jumper/mask-outline.json").read_text())
+    for fixture in fixtures:
+        def make(rectangles):
+            owners = np.zeros((fixture["height"], fixture["width"]), np.uint8)
+            for identity, left, top, right, bottom in rectangles:
+                owners[top:bottom, left:right] = identity
+            return owners
+        identity, frame = fixture.get("identity", 1), fixture.get("frame", 1)
+        tracks = [dict(id=identity, prompts=[dict(frame=0)] + ([dict(frame=frame)] if fixture.get("correction") else []))]
+        quality = MaskQuality()
+        before, after = make(fixture["before"]), make(fixture["after"])
+        quality.inspect(0, before, tracks, 1)
+        before.fill(0)
+        original = after.copy()
+        warnings = quality.inspect(frame, after, tracks, 1, reset=fixture.get("reset", False))
+        assert [w["kind"] for w in warnings] == fixture["expected"], fixture["name"]
+        assert all(w["frame"] == frame and w["track_ids"] == [identity] for w in warnings)
+        np.testing.assert_array_equal(after, original)
