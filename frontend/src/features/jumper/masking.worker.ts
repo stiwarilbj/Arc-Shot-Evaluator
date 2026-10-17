@@ -628,7 +628,9 @@ async function process(
             warnings.push({
               frame,
               kind: "ambiguous_players",
-              track_ids: resolution.ambiguousTracks,
+              ...(resolution.ambiguousTracks.length
+                ? { track_ids: resolution.ambiguousTracks }
+                : {}),
             });
           for (const box of resolution.unmatched) {
             if (objects.length >= 20)

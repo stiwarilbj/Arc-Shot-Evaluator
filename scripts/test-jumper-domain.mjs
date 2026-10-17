@@ -188,6 +188,8 @@ for (const fixture of JSON.parse(
   for (const [id, x1, y1, x2, y2] of fixture.masks)
     for (let y = y1; y < y2; y++)
       for (let x = x1; x < x2; x++) owners[y * fixture.width + x] = id;
+  const originalOwners = owners.slice();
+  const originalBoxes = structuredClone(fixture.boxes);
   assert.deepEqual(
     resolvePeople(fixture.boxes, owners, fixture.width, fixture.height),
     {
@@ -197,6 +199,12 @@ for (const fixture of JSON.parse(
     },
     fixture.name,
   );
+  const reverse = resolvePeople([...fixture.boxes].reverse(), owners, fixture.width, fixture.height);
+  assert.deepEqual(reverse.unmatched, [...fixture.unmatched].reverse(), fixture.name);
+  assert.equal(reverse.ambiguous, fixture.ambiguous, fixture.name);
+  assert.deepEqual(reverse.ambiguousTracks, fixture.ambiguous_tracks, fixture.name);
+  assert.deepEqual(owners, originalOwners, "association must not change rendered mask ownership");
+  assert.deepEqual(fixture.boxes, originalBoxes);
 }
 validateMaskRequest({
   ...request,
@@ -253,6 +261,10 @@ const warningResult = {
   warnings: [{ frame: 1, kind: "target_lost", track_ids: [1] }],
 };
 assert(maskResult(warningResult));
+assert(maskResult({
+  ...warningResult,
+  warnings: [{ frame: 1, kind: "ambiguous_players" }],
+}), "uncertainty without an associated track must remain a valid review warning");
 assert(
   maskResult({
     ...warningResult,

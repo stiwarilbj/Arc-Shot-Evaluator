@@ -48,39 +48,58 @@ export function requireShooterBox(
   return [...matches[0]];
 }
 
-/** Match detections one-to-one against recorded masks, never nearest players. */
+/** Associate detections using visible occupied pixels, never mask rectangles or
+ * nearest players. Weak/competing evidence stays reviewable, not a new identity. */
 export function resolvePeople(
   boxes: number[][],
   owners: Uint8Array,
   width: number,
   height: number,
 ) {
-  const bounds = new Map<number, number[]>();
-  for (let i = 0; i < owners.length; i++) {
-    const id = owners[i];
-    if (!id) continue;
-    const x = (i % width) / width,
-      y = Math.floor(i / width) / height;
-    const b = bounds.get(id) ?? [1, 1, 0, 0];
-    b[0] = Math.min(b[0], x);
-    b[1] = Math.min(b[1], y);
-    b[2] = Math.max(b[2], x + 1 / width);
-    b[3] = Math.max(b[3], y + 1 / height);
-    bounds.set(id, b);
-  }
+  const areas = new Uint32Array(256);
+  for (const id of owners) if (id) areas[id]++;
   const pairs: { box: number; id: number; score: number }[] = [];
+  const ambiguousTracks = new Set<number>();
+  const uncertainBoxes = new Set<number>();
   boxes.forEach((box, index) => {
-    for (const [id, b] of bounds) {
-      const intersection =
-        Math.max(0, Math.min(b[2], box[2]) - Math.max(b[0], box[0])) *
-        Math.max(0, Math.min(b[3], box[3]) - Math.max(b[1], box[1]));
-      const a = (b[2] - b[0]) * (b[3] - b[1]),
-        c = (box[2] - box[0]) * (box[3] - box[1]);
-      const iou = intersection / (a + c - intersection),
-        coverage = intersection / Math.min(a, c);
-      if (iou >= 0.25 || coverage >= 0.65)
-        pairs.push({ box: index, id, score: iou });
+    // A pixel belongs to the box when its center is inside its half-open extent.
+    // Identical rasterization in native processing avoids fractional-edge drift.
+    const x1 = Math.max(0, Math.min(width, Math.ceil(box[0] * width - 0.5)));
+    const y1 = Math.max(0, Math.min(height, Math.ceil(box[1] * height - 0.5)));
+    const x2 = Math.max(x1, Math.min(width, Math.ceil(box[2] * width - 0.5)));
+    const y2 = Math.max(y1, Math.min(height, Math.ceil(box[3] * height - 0.5)));
+    const boxArea = (x2 - x1) * (y2 - y1);
+    if (!boxArea) {
+      uncertainBoxes.add(index);
+      return;
     }
+    const occupied = new Uint32Array(256);
+    for (let y = y1; y < y2; y++)
+      for (let x = x1; x < x2; x++) {
+        const id = owners[y * width + x];
+        if (id) occupied[id]++;
+      }
+    const weak: { id: number; score: number }[] = [];
+    const strong: { box: number; id: number; score: number }[] = [];
+    for (let id = 1; id < areas.length; id++) {
+      const intersection = occupied[id];
+      if (!intersection) continue;
+      const score = intersection / (areas[id] + boxArea - intersection);
+      const maskCoverage = intersection / areas[id];
+      const boxCoverage = intersection / boxArea;
+      // A tiny torso/limb fragment inside a large detection is not a body match.
+      if (boxCoverage >= 0.1 && (score >= 0.25 || maskCoverage >= 0.65))
+        strong.push({ box: index, id, score });
+      else if (maskCoverage >= 0.1 || boxCoverage >= 0.1)
+        weak.push({ id, score });
+    }
+    const best = Math.max(-1, ...strong.map((pair) => pair.score));
+    const competing = weak.filter((pair) => best - pair.score < 0.1);
+    if (competing.length) {
+      uncertainBoxes.add(index);
+      for (const pair of [...strong, ...competing]) ambiguousTracks.add(pair.id);
+    }
+    pairs.push(...strong);
   });
   pairs.sort((a, b) => b.score - a.score || a.box - b.box || a.id - b.id);
   const usedBoxes = new Set<number>(),
@@ -90,21 +109,21 @@ export function resolvePeople(
       usedBoxes.add(pair.box);
       usedTracks.add(pair.id);
     }
-  // Competing detections or near-equal assignments cannot establish identity.
-  const ambiguousTracks = new Set<number>();
   for (const pair of pairs)
-    if (!usedBoxes.has(pair.box)) ambiguousTracks.add(pair.id);
+    if (!usedBoxes.has(pair.box)) {
+      ambiguousTracks.add(pair.id);
+      uncertainBoxes.add(pair.box);
+    }
   boxes.forEach((_, i) => {
     const choices = pairs.filter((p) => p.box === i);
-    if (
-      choices.length > 1 &&
-      Math.abs(choices[0].score - choices[1].score) < 0.1
-    )
+    if (choices.length > 1 && choices[0].score - choices[1].score < 0.1) {
+      uncertainBoxes.add(i);
       choices.forEach((p) => ambiguousTracks.add(p.id));
+    }
   });
   return {
-    unmatched: boxes.filter((_, i) => !usedBoxes.has(i)),
-    ambiguous: ambiguousTracks.size > 0,
+    unmatched: boxes.filter((_, i) => !usedBoxes.has(i) && !uncertainBoxes.has(i)),
+    ambiguous: ambiguousTracks.size > 0 || uncertainBoxes.size > 0,
     ambiguousTracks: [...ambiguousTracks].sort((a, b) => a - b),
   };
 }

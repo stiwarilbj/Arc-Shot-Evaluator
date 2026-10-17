@@ -461,13 +461,10 @@ def track(
                     boxes = detect(index)
                     resolution = resolve_people(boxes, owners)
                     if resolution["ambiguous"]:
-                        warnings.append(
-                            {
-                                "frame": index,
-                                "kind": "ambiguous_players",
-                                "track_ids": resolution["ambiguous_tracks"],
-                            }
-                        )
+                        warning = {"frame": index, "kind": "ambiguous_players"}
+                        if resolution["ambiguous_tracks"]:
+                            warning["track_ids"] = resolution["ambiguous_tracks"]
+                        warnings.append(warning)
                     additions = resolution["unmatched"]
                     for box in additions:
                         if len(job["objects"]) >= 20:

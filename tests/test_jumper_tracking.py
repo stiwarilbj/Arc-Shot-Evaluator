@@ -65,11 +65,17 @@ def test_discovery_matches_browser_fixtures():
         owners = np.zeros((fixture["height"], fixture["width"]), dtype=np.uint8)
         for identity, x1, y1, x2, y2 in fixture["masks"]:
             owners[y1:y2, x1:x2] = identity
+        original = owners.copy()
         assert resolve_people(fixture["boxes"], owners) == {
             "unmatched": fixture["unmatched"],
             "ambiguous": fixture["ambiguous"],
             "ambiguous_tracks": fixture["ambiguous_tracks"],
         }, fixture["name"]
+        reverse = resolve_people(list(reversed(fixture["boxes"])), owners)
+        assert reverse["unmatched"] == list(reversed(fixture["unmatched"]))
+        assert reverse["ambiguous"] == fixture["ambiguous"]
+        assert reverse["ambiguous_tracks"] == fixture["ambiguous_tracks"]
+        np.testing.assert_array_equal(owners, original)
 
 
 def test_clicked_body_box_requires_unique_containment():

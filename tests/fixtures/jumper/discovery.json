@@ -1,8 +1,18 @@
 [
   {"name":"tracked and later entrant","width":10,"height":10,"masks":[[1,1,1,4,9]],"boxes":[[0.1,0.1,0.4,0.9],[0.6,0.1,0.9,0.9]],"unmatched":[[0.6,0.1,0.9,0.9]],"ambiguous":false,"ambiguous_tracks":[]},
   {"name":"nearby player is never matched by proximity","width":10,"height":10,"masks":[[1,1,1,4,9]],"boxes":[[0.4,0.1,0.6,0.9]],"unmatched":[[0.4,0.1,0.6,0.9]],"ambiguous":false,"ambiguous_tracks":[]},
-  {"name":"one mask cannot hide two detections","width":10,"height":10,"masks":[[1,2,1,6,9]],"boxes":[[0.2,0.1,0.6,0.9],[0.3,0.1,0.7,0.9]],"unmatched":[[0.3,0.1,0.7,0.9]],"ambiguous":true,"ambiguous_tracks":[1]},
+  {"name":"competing detection is flagged instead of creating a duplicate","width":10,"height":10,"masks":[[1,2,1,6,9]],"boxes":[[0.2,0.1,0.6,0.9],[0.3,0.1,0.7,0.9]],"unmatched":[],"ambiguous":true,"ambiguous_tracks":[1]},
   {"name":"separate tracked identities","width":10,"height":10,"masks":[[1,1,1,4,9],[2,6,1,9,9]],"boxes":[[0.6,0.1,0.9,0.9],[0.1,0.1,0.4,0.9]],"unmatched":[],"ambiguous":false,"ambiguous_tracks":[]},
   {"name":"empty frame discovers everyone","width":10,"height":10,"masks":[],"boxes":[[0.1,0.1,0.4,0.9]],"unmatched":[[0.1,0.1,0.4,0.9]],"ambiguous":false,"ambiguous_tracks":[]},
-  {"name":"overlap identifies both competing tracks","width":10,"height":10,"masks":[[1,1,1,4,9],[2,4,1,7,9]],"boxes":[[0.1,0.1,0.7,0.9]],"unmatched":[],"ambiguous":true,"ambiguous_tracks":[1,2]}
+  {"name":"overlap identifies both competing tracks","width":10,"height":10,"masks":[[1,1,1,4,9],[2,4,1,7,9]],"boxes":[[0.1,0.1,0.7,0.9]],"unmatched":[],"ambiguous":true,"ambiguous_tracks":[1,2]},
+  {"name":"empty space inside a wide mask rectangle is a new person","width":10,"height":10,"masks":[[1,1,1,2,9],[1,8,1,9,9],[1,1,8,9,9]],"boxes":[[0.3,0.2,0.7,0.7]],"unmatched":[[0.3,0.2,0.7,0.7]],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"crossing silhouettes with overlapping bounds match actual central body","width":10,"height":10,"masks":[[1,1,1,2,9],[1,8,1,9,9],[1,1,8,9,9],[2,4,3,6,7]],"boxes":[[0.3,0.2,0.7,0.7]],"unmatched":[],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"tiny fragment cannot confirm a whole body","width":10,"height":10,"masks":[[1,4,4,5,5]],"boxes":[[0.1,0.1,0.9,0.9]],"unmatched":[],"ambiguous":true,"ambiguous_tracks":[1]},
+  {"name":"thin real silhouette at minimum occupancy remains eligible","width":10,"height":10,"masks":[[255,1,1,2,3]],"boxes":[[0.1,0.1,0.6,0.5]],"unmatched":[],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"below minimum occupancy remains uncertain","width":10,"height":10,"masks":[[255,1,1,2,2]],"boxes":[[0.1,0.1,0.6,0.5]],"unmatched":[],"ambiguous":true,"ambiguous_tracks":[255]},
+  {"name":"weak crossing evidence competes with another small mask","width":10,"height":10,"masks":[[1,0,0,8,1],[1,1,1,4,2],[2,4,1,6,2]],"boxes":[[0.1,0.1,0.6,0.5]],"unmatched":[],"ambiguous":true,"ambiguous_tracks":[1,2]},
+  {"name":"subpixel detection requests review without an invalid empty track list","width":10,"height":10,"masks":[],"boxes":[[0.11,0.11,0.12,0.12]],"unmatched":[],"ambiguous":true,"ambiguous_tracks":[]},
+  {"name":"fractional box edges include pixel centers consistently","width":10,"height":10,"masks":[[1,1,1,2,3]],"boxes":[[0.15,0.15,0.25,0.35]],"unmatched":[],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"zero occupied pixels do not imply uncertainty from rectangles","width":10,"height":10,"masks":[[1,1,1,2,9],[1,8,1,9,9],[1,1,8,9,9]],"boxes":[[0.3,0.2,0.7,0.7],[0,0,0.1,0.1]],"unmatched":[[0.3,0.2,0.7,0.7],[0,0,0.1,0.1]],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"equal mask bounds cannot override different occupied bodies","width":10,"height":10,"masks":[[1,1,1,2,9],[1,8,1,9,9],[1,1,8,9,9],[2,4,3,6,7],[2,1,1,2,2],[2,8,8,9,9]],"boxes":[[0.3,0.2,0.7,0.7]],"unmatched":[],"ambiguous":false,"ambiguous_tracks":[]}
 ]

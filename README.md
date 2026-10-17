@@ -199,7 +199,10 @@ Personal videos stay on your device; they are never automatically published.
    processing waits for a unique match; it never silently falls back to a
    point-only mask. If detection keeps missing the player, turn off automatic
    discovery under corrections and verify your manual selection in the preview.
-   Other people are discovered automatically, including later entrants.
+   Other people are discovered automatically, including later entrants. During
+   tracking, detections are matched against occupied mask pixels rather than
+   rectangular mask outlines. Weak or competing overlap is flagged for review;
+   uncertain detections are not automatically added as duplicate people.
 3. **Process:** track people and render a muted video up to **720p/30 fps**. The
    shooter becomes solid black, other included players gray, and the background
    flat neutral gray. Finished silhouette outputs copy no original image pixels,
