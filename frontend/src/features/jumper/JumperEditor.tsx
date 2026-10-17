@@ -12,6 +12,7 @@ import {
 } from "./domain";
 import { listClips, saveClip } from "./storage";
 import { openVideo, preview } from "./media";
+import { clearFramePoints, needsSelection } from "./editorSelections";
 import { ClipVideo, useBlobUrl } from "./JumperLab";
 
 export default function JumperEditor({
@@ -40,6 +41,8 @@ export default function JumperEditor({
   const sourceUrl = useBlobUrl(file);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const uploadLock = useRef(false);
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [reviewed, setReviewed] = useState(false);
   const [quiz, setQuiz] = useState(false);
@@ -90,17 +93,20 @@ export default function JumperEditor({
     };
   }, [file, start, frame, view, result, dirty]);
   function invalidate() {
+    setView("source");
     setReviewed(false);
     setSaved(false);
     setDirty(true);
     savedIdentity.current = crypto.randomUUID();
   }
   async function upload(next: File | undefined) {
-    if (!next || busy || saving) return;
+    if (!next || busy || saving || uploadLock.current) return;
     if (!next.size || next.size > MAX_BYTES) {
       setError("Choose a nonempty video no larger than 100 MB.");
       return;
     }
+    uploadLock.current = true;
+    setLoading(true);
     generation.current++;
     const revision = ++sourceGeneration.current;
     setError("");
@@ -126,6 +132,9 @@ export default function JumperEditor({
       invalidate();
     } catch (error) {
       if (revision === sourceGeneration.current) setError(String(error));
+    } finally {
+      uploadLock.current = false;
+      if (revision === sourceGeneration.current) setLoading(false);
     }
   }
   function trim(nextStart: number, nextEnd: number) {
@@ -150,7 +159,7 @@ export default function JumperEditor({
     invalidate();
   }
   function point(event: React.MouseEvent<HTMLImageElement>) {
-    if (busy || saving || !image) return;
+    if (busy || saveLock.current || uploadLock.current || !image) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const xy = [
       (event.clientX - bounds.left) / bounds.width,
@@ -160,8 +169,18 @@ export default function JumperEditor({
     addPoint(xy);
   }
   function addPoint(xy: number[]) {
-    if (busy || saving || !image) return;
+    if (busy || saveLock.current || uploadLock.current || !image) return;
     let id = editing;
+    if (
+      negative &&
+      (!tracks.length ||
+        needsSelection(tracks.find((track) => track.id === id)))
+    ) {
+      setError(
+        "Start this player with an Include point, then add Exclude points if needed.",
+      );
+      return;
+    }
     if (!tracks.length && frame !== 0) {
       setError("Return to frame 1 and click the shooter first.");
       return;
@@ -172,6 +191,7 @@ export default function JumperEditor({
       setTarget(id);
       setEditing(id);
     }
+    setError("");
     setTracks((current) => {
       const values = current.length ? current : [{ id, prompts: [] }];
       return values.map((value) => {
@@ -195,7 +215,7 @@ export default function JumperEditor({
     invalidate();
   }
   async function detect() {
-    if (!file || busy || saving) return;
+    if (!file || busy || saveLock.current || uploadLock.current) return;
     const id = ++generation.current;
     const abort = new AbortController();
     controller.current = abort;
@@ -229,7 +249,7 @@ export default function JumperEditor({
     }
   }
   async function process() {
-    if (!file || busy || saving) return;
+    if (!file || busy || saveLock.current || uploadLock.current) return;
     const request = {
       start,
       end,
@@ -289,6 +309,7 @@ export default function JumperEditor({
   async function save() {
     if (
       saveLock.current ||
+      uploadLock.current ||
       !result ||
       dirty ||
       !reviewed ||
@@ -329,7 +350,7 @@ export default function JumperEditor({
         ...(quiz ? { quizVideo: result.quiz, reveal: result.reveal } : {}),
       };
       await saveClip(value);
-      setSaved(true);
+      if (identity === savedIdentity.current) setSaved(true);
       onSaved();
     } catch (error) {
       setError(
@@ -343,6 +364,13 @@ export default function JumperEditor({
   const count = Math.max(1, Math.ceil((end - start) * 30));
   const track = tracks.find((value) => value.id === editing);
   const prompts = track?.prompts.find((value) => value.frame === frame);
+  const incompleteTrack = tracks.find((track) => needsSelection(track));
+  const targetNeedsStart = !tracks
+    .find((track) => track.id === target)
+    ?.prompts.some(
+      (prompt) =>
+        prompt.frame === 0 && (prompt.box || prompt.labels?.includes(1)),
+    );
   return (
     <div className="jumper-editor">
       <aside className="jumper-panel jumper-editor-controls">
@@ -372,7 +400,7 @@ export default function JumperEditor({
           <input
             type="file"
             accept="video/*,.mkv,.ogv"
-            disabled={busy || saving || !supported}
+            disabled={busy || saving || loading || !supported}
             onChange={(event) => {
               void upload(event.target.files?.[0]);
               event.target.value = "";
@@ -381,7 +409,7 @@ export default function JumperEditor({
         </label>
         {file ? (
           <>
-            <fieldset disabled={busy || saving}>
+            <fieldset disabled={busy || saving || loading}>
               <legend>1 · Trim one complete shot</legend>
               <div className="jumper-trim">
                 <label>
@@ -414,7 +442,7 @@ export default function JumperEditor({
                 player selections.
               </small>
             </fieldset>
-            <fieldset disabled={busy || saving}>
+            <fieldset disabled={busy || saving || loading}>
               <legend>2 · Click the shooter in frame 1</legend>
               <p className="jumper-caption">
                 The clicked player stays black. Other people are found
@@ -518,11 +546,15 @@ export default function JumperEditor({
                               return;
                             }
                             setTracks((current) =>
-                              current.map((track) =>
-                                track.id === value.id
-                                  ? { ...track, ignored: true }
-                                  : track,
-                              ),
+                              needsSelection(value)
+                                ? current.filter(
+                                    (track) => track.id !== value.id,
+                                  )
+                                : current.map((track) =>
+                                    track.id === value.id
+                                      ? { ...track, ignored: true }
+                                      : track,
+                                  ),
                             );
                             setEditing(target);
                             invalidate();
@@ -579,7 +611,15 @@ export default function JumperEditor({
             <button
               type="button"
               className="button button-primary"
-              disabled={busy || saving || !supported || !tracks.length}
+              disabled={
+                busy ||
+                saving ||
+                loading ||
+                !supported ||
+                !tracks.length ||
+                !!incompleteTrack ||
+                targetNeedsStart
+              }
               onClick={process}
             >
               {result && dirty ? "Apply corrections & process" : "Process clip"}
@@ -603,6 +643,16 @@ export default function JumperEditor({
               </button>
             ) : null}
           </>
+        ) : null}
+        {loading ? <p role="status">Checking video…</p> : null}
+        {incompleteTrack || (tracks.length > 0 && targetNeedsStart) ? (
+          <p role="status">
+            Add an Include point for{" "}
+            {incompleteTrack
+              ? `track ${incompleteTrack.id}`
+              : "the shooter in frame 1"}{" "}
+            before processing.
+          </p>
         ) : null}
         {progress ? (
           <div className="jumper-progress" role="status">
@@ -741,7 +791,7 @@ export default function JumperEditor({
                   min="0"
                   max={Math.max(0, count - 1)}
                   value={Math.min(frame, count - 1)}
-                  disabled={busy || saving}
+                  disabled={busy || saving || loading}
                   onChange={(event) => setFrame(Number(event.target.value))}
                 />
               </label>
@@ -752,20 +802,18 @@ export default function JumperEditor({
                 </span>
                 <button
                   type="button"
-                  disabled={busy || !prompts}
+                  disabled={
+                    busy || saving || loading || !prompts?.points?.length
+                  }
                   onClick={() => {
+                    if (saveLock.current || uploadLock.current) return;
                     setTracks((current) =>
-                      current.map((value) =>
-                        value.id === editing
-                          ? {
-                              ...value,
-                              prompts: value.prompts.filter(
-                                (value) => value.frame !== frame,
-                              ),
-                            }
-                          : value,
-                      ),
+                      clearFramePoints(current, editing, frame),
                     );
+                    if (editing === target && frame === 0 && !prompts?.box) {
+                      setNegative(false);
+                      setView("source");
+                    }
                     invalidate();
                   }}
                 >
@@ -834,6 +882,8 @@ export default function JumperEditor({
                     className="button button-primary"
                     disabled={
                       !reviewed ||
+                      busy ||
+                      loading ||
                       saving ||
                       saved ||
                       !!result.warnings.length ||

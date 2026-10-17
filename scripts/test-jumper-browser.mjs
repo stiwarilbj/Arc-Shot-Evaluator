@@ -21,7 +21,7 @@ const fixture =
     executablePath:
       process.env.CHROME_PATH ||
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    headless: true,
+    headless: process.env.JUMPER_HEADED !== "1",
     args: [
       "--enable-unsafe-webgpu",
       "--ignore-gpu-blocklist",
@@ -170,6 +170,7 @@ const fixture =
     await p.getByRole("link", { name: "Download", exact: true }).click();
     const file = await download;
     await file.saveAs(path.join(artifacts, target + "-full.mp4"));
+    let releaseFailedSave;
     // Storage failure must preserve the finished downloadable result.
     if (target === "hosted")
       await p.evaluate(() => {
@@ -185,9 +186,12 @@ const fixture =
       });
     else {
       let rejectSave = true;
-      await p.route("**/api/jumper-lab/media", (route) => {
+      await p.route("**/api/jumper-lab/media", async (route) => {
         if (route.request().method() === "POST" && rejectSave) {
           rejectSave = false;
+          await new Promise((resolve) => {
+            releaseFailedSave = resolve;
+          });
           return route.fulfill({
             status: 503,
             contentType: "application/json",
@@ -200,6 +204,14 @@ const fixture =
     await p
       .getByRole("button", { name: "Save to My Clips", exact: true })
       .click();
+    if (target === "local") {
+      await expect.poll(() => typeof releaseFailedSave).toBe("function");
+      await expect(
+        p.getByRole("button", { name: "Clear this frame’s points" }),
+      ).toBeDisabled();
+      await expect(p.getByLabel("Correction frame")).toBeDisabled();
+      releaseFailedSave();
+    }
     await expect(
       p.locator(".jumper-editor-controls [role=alert]"),
     ).toContainText("still downloadable");

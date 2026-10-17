@@ -46,9 +46,11 @@ still use Guess/My Clips; use the downloaded editor for native processing.
 The downloaded app installs SAM from pinned upstream commit
 `2b90b9f5ceec907a1c18123530e92e794ad901a4` through `scripts/setup.sh`. It verifies
 weights before use, runs one heavy task through the existing queue, uses MPS/CUDA when available and restarts on CPU after accelerator failures.
-MPS uses equivalent real-valued rotary attention: complex-tensor rotary operations
-caused tracking drift in the tested runtime. The replacement matches the CPU
-reference on real fixture masks. Native decoded frames use a two-frame cache;
+MPS uses real-valued rotary attention to avoid complex-tensor operations, but
+accelerator tracking can still drift. A lost or unstable target, or a mask
+expanding into the background, restarts tracking from the original selections
+on CPU. Genuine tracking warnings on CPU still require correction before saving.
+Native decoded frames use a two-frame cache;
 ordinary tracking memory keeps the recent sixteen frames while retaining
 correction frames. Temporary jobs
 are cancelled and removed when released; saved media is separate in ignored

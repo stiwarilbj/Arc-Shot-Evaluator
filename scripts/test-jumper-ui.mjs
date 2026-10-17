@@ -31,7 +31,7 @@ try {
   await others.click();
   await page.getByRole("menuitem").click();
   await expect(
-    page.getByRole("heading", { name: "Your first mystery starts here" }),
+    page.getByRole("heading", { name: "Who’s That Jumper?", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Light", exact: true }).click();
   await page.getByRole("button", { name: "Create", exact: true }).click();
@@ -58,6 +58,45 @@ try {
   await expect(
     page.getByRole("button", { name: "Clear this frame’s points" }),
   ).toBeEnabled();
+  await page.getByRole("button", { name: "Clear this frame’s points" }).click();
+  await expect(
+    page.getByRole("button", { name: "Process clip", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("Add an Include point for track 1 before processing."),
+  ).toBeVisible();
+  await frame.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "Process clip", exact: true }),
+  ).toBeEnabled();
+  await page.locator(".jumper-corrections summary").click();
+  await page.getByRole("button", { name: "Add player", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Process clip", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Exclude", exact: true }).click();
+  await frame.press("Enter");
+  await expect(page.locator(".jumper-editor [role=alert]")).toContainText(
+    "Start this player with an Include point",
+  );
+  await expect(
+    page.getByRole("button", { name: "Process clip", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Include", exact: true }).click();
+  await frame.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "Process clip", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Add player", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Process clip", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Remove track 3", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Process clip", exact: true }),
+  ).toBeEnabled();
   if (requests.length) throw Error("Manual selection initialized inference");
   if (requests.length)
     throw Error("Empty Guess or invalid upload initialized inference");
@@ -73,6 +112,15 @@ try {
   await expect(
     page.getByRole("button", { name: "Clear this frame’s points" }),
   ).toBeEnabled();
+  await page.screenshot({
+    path: "/tmp/jumper-selection-mobile.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({
+    path: "/tmp/jumper-selection-desktop.png",
+    fullPage: true,
+  });
   console.log(
     "Menu keyboard/mobile, themes, invalid decode, workspace preservation, no inference: passed",
   );

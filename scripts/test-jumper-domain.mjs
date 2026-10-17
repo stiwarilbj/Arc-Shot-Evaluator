@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   normalizeName,
+  maskingErrorMessage,
   matchPlayers,
   validateMaskRequest,
   stats,
@@ -10,6 +11,58 @@ import {
   unstableMask,
   maskResult,
 } from "../frontend/src/features/jumper/domain.ts";
+import {
+  clearFramePoints,
+  needsSelection,
+} from "../frontend/src/features/jumper/editorSelections.ts";
+
+const boxedTracks = [
+  {
+    id: 1,
+    prompts: [
+      {
+        frame: 0,
+        box: [0.1, 0.1, 0.8, 0.9],
+        points: [[0.4, 0.5]],
+        labels: [1],
+      },
+      { frame: 5, points: [[0.5, 0.5]], labels: [1] },
+    ],
+  },
+  { id: 2, prompts: [{ frame: 0, points: [[0.2, 0.2]], labels: [1] }] },
+];
+const clearedBox = clearFramePoints(boxedTracks, 1, 0);
+assert.deepEqual(clearedBox[0].prompts[0], {
+  frame: 0,
+  box: [0.1, 0.1, 0.8, 0.9],
+});
+assert.equal(clearedBox[1], boxedTracks[1]);
+assert.equal(boxedTracks[0].prompts[0].points.length, 1);
+assert.equal(needsSelection(clearedBox[0]), false);
+assert.equal(needsSelection(clearFramePoints(boxedTracks, 2, 0)[1]), true);
+assert.equal(clearFramePoints(boxedTracks, 1, 5)[0].prompts.length, 1);
+assert.equal(
+  needsSelection({
+    id: 1,
+    prompts: [{ frame: 0, points: [[0.5, 0.5]], labels: [0] }],
+  }),
+  true,
+);
+assert.equal(needsSelection(undefined), true);
+const pointOnlyWithCorrection = [
+  {
+    id: 3,
+    prompts: [
+      { frame: 4, points: [[0.2, 0.2]], labels: [1] },
+      { frame: 8, points: [[0.3, 0.3]], labels: [1] },
+    ],
+  },
+];
+const clearedSeed = clearFramePoints(pointOnlyWithCorrection, 3, 4)[0];
+assert.equal(needsSelection(clearedSeed), true);
+assert.deepEqual(clearedSeed.prompts[0], { frame: 4 });
+assert.equal(clearedSeed.prompts[1], pointOnlyWithCorrection[0].prompts[1]);
+
 const players = [
   { id: "1", name: "Nikola Jokić", aliases: ["Joker"] },
   { id: "2", name: "Stephen Curry", aliases: ["Steph Curry"] },
@@ -153,3 +206,16 @@ for (const change of [
 ])
   assert.throws(() => validateMaskRequest({ ...request, ...change }));
 console.log("Silhouette options and one-to-one discovery passed");
+
+const gpuFailure = maskingErrorMessage(
+  new Error(
+    "OrtRun failed: A valid external Instance reference no longer exists. mapAsync",
+  ),
+);
+assert.match(gpuFailure, /video and selections are unchanged/);
+assert.match(gpuFailure, /free downloaded editor/);
+assert.doesNotMatch(gpuFailure, /OrtRun|mapAsync/);
+assert.match(
+  maskingErrorMessage(new Error("Model integrity check failed")),
+  /integrity check failed/,
+);

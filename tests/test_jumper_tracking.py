@@ -1,4 +1,5 @@
 import torch
+import pytest
 import numpy as np
 from PIL import Image
 from backend.jumper.mps import rotate
@@ -91,8 +92,21 @@ def test_mps_background_expansion_uses_cpu_retry_without_hiding_real_cuts():
     check_device_mask_area("cuda", 2500, 157000, 160000)
 
 
+def test_mps_loss_and_instability_request_cpu_verification():
+    import pytest
+    from backend.jumper.pipeline import check_device_tracking
+
+    for kind in ("target_lost", "tracking_unstable"):
+        with pytest.raises(RuntimeError, match="retry on CPU"):
+            check_device_tracking("mps", kind)
+        check_device_tracking("cpu", kind)
+        check_device_tracking("cuda", kind)
+    check_device_tracking("mps", "possible_camera_cut")
+
+
+@pytest.mark.parametrize("failure", ["memory", "target_lost", "tracking_unstable"])
 def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, failure
 ):
     import hashlib
     import json
@@ -131,8 +145,12 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
             dict(id=2, prompts=[dict(frame=0, box=[0, 0, 0.2, 0.2])])
         )
         if device == "mps":
-            raise RuntimeError("GPU memory limit")
-        return []
+            from backend.jumper.pipeline import check_device_tracking
+
+            if failure == "memory":
+                raise RuntimeError("GPU memory limit")
+            check_device_tracking(device, failure)
+        return [{"frame": 2, "kind": "target_lost"}]
 
     monkeypatch.setattr(runner, "track", tracking)
 
@@ -146,3 +164,4 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
     assert budgets == [0.5]
     result = json.loads((tmp_path / "result.json").read_text())
     assert [o["id"] for o in result["objects"]] == [1, 2]
+    assert result["warnings"] == [{"frame": 2, "kind": "target_lost"}]

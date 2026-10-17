@@ -5,6 +5,7 @@ import ortWasm from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import { ALL_FORMATS, BlobSource, CanvasSink, Input } from "mediabunny";
 import {
   validateMaskRequest,
+  maskingErrorMessage,
   unstableMask,
   type MaskExtent,
   MAX_BYTES,
@@ -595,7 +596,7 @@ context.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
     send({
       kind: "error",
       id: data.id,
-      error: `${error instanceof Error ? error.message : error}. If this device cannot complete WebGPU processing, use the downloaded editor.`,
+      error: maskingErrorMessage(error),
     });
   } finally {
     running = false;

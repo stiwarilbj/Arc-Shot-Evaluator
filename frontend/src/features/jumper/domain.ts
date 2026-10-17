@@ -1,5 +1,15 @@
 export const MAX_BYTES = 100 * 1024 * 1024;
 export const FPS = 30;
+export function maskingErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    /mapAsync|valid external Instance|device.*lost|GPU.*out.of.memory/i.test(
+      message,
+    )
+  )
+    return "The GPU stopped while tracking. Your video and selections are unchanged. Close other GPU-heavy tabs and retry, try a shorter segment, or use the free downloaded editor.";
+  return `${message}. If this device cannot complete WebGPU processing, use the downloaded editor.`;
+}
 export type Variant = "highlight" | "quiz" | "reveal";
 export interface Player {
   id: string;

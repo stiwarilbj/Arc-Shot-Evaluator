@@ -245,6 +245,13 @@ def check_device_mask_area(device, previous, current, pixels):
         )
 
 
+def check_device_tracking(device, kind):
+    # MPS numerical drift can erase a target as well as expand its mask. Retry
+    # once on CPU; genuine occlusion/cut warnings must survive that retry.
+    if device == "mps" and kind in {"target_lost", "tracking_unstable"}:
+        raise RuntimeError(f"MPS {kind}; retry on CPU")
+
+
 def track(
     frames: list[Path],
     destination: Path,
@@ -457,6 +464,7 @@ def track(
                         labels[labels == obj["id"]] = 0
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
                 if not np.any(labels == job["target_id"]):
+                    check_device_tracking(device, "target_lost")
                     warnings.append({"frame": index, "kind": "target_lost"})
                 ys, xs = np.nonzero(labels == job["target_id"])
                 if len(xs):
@@ -474,6 +482,7 @@ def track(
                         )
                         > 0.2
                     ):
+                        check_device_tracking(device, "tracking_unstable")
                         warnings.append({"frame": index, "kind": "tracking_unstable"})
                     previous_extent = extent
                 else:
