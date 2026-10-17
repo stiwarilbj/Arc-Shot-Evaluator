@@ -18,7 +18,14 @@ state when switching workspaces. Dark mode remains the default.
    the free masking model if needed; uploading alone does not. It is not
    a finished clip or tracking approval. Changing the starting selection clears
    the check; cancelling it preserves your drawing.
-3. Process, then inspect the entire result in motion. In **Correct masks & player
+3. Process, then inspect the entire result in motion. Desktop review shows the
+   original reference beside the masked output; on mobile use **Masked / Original
+   reference** to switch views. Both share one 1× playback clock aligned to your
+   trim start. **Review position** seeks both and pauses playback (keyboard arrows
+   work too). Leaving Create or hiding the browser tab pauses both without
+   automatically restarting. Only the masked output is saved or downloaded.
+   If the original reference cannot decode, masked review remains available.
+   In **Correct masks & player
    selection**, select a track, scrub to a problem frame, and add Include/Exclude
    points. Remove spectators/artwork; removed tracks retain stable identities so
    discovery does not immediately add them back. Reprocess after any correction.

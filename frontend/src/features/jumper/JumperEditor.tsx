@@ -18,6 +18,7 @@ import MaskTimeline from "./MaskTimeline";
 import ShooterPreview from "./ShooterPreview";
 import SelectionMagnifier from "./SelectionMagnifier";
 import { ClipVideo, useBlobUrl } from "./JumperLab";
+import ReviewComparison from "./ReviewComparison";
 
 export default function JumperEditor({
   active,
@@ -966,9 +967,12 @@ export default function JumperEditor({
               <section className="jumper-panel">
                 <span className="jumper-eyebrow">3 · REVIEW IN MOTION</span>
                 <h2>Your finished clip</h2>
-                <ClipVideo
-                  src={videoUrl}
-                  label="Finished silhouette clip"
+                <ReviewComparison
+                  key={videoUrl}
+                  original={sourceUrl}
+                  masked={videoUrl}
+                  start={start}
+                  duration={result.duration}
                   active={active}
                 />
                 {result.warnings.length ? (

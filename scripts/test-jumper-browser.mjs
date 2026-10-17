@@ -159,6 +159,38 @@ const fixture =
         "False detections removed; approval invalidated and corrected tracking completed",
       );
     }
+    const comparison = p.getByRole("region", {
+      name: "Synchronized video review",
+    });
+    const position = comparison.getByRole("slider");
+    const reviewPlay = comparison.getByRole("button", {
+      name: "Play review",
+      exact: true,
+    });
+    await expect(reviewPlay).toBeEnabled();
+    await position.focus();
+    await position.press("ArrowRight");
+    await p.waitForTimeout(200);
+    const alignment = await comparison.evaluate((element) => {
+      const [original, masked] = element.querySelectorAll("video");
+      return {
+        delta: original.currentTime - masked.currentTime,
+        paused: original.paused && masked.paused,
+      };
+    });
+    expect(
+      Math.abs(alignment.delta - Number(process.env.JUMPER_TRIM_START || 0)),
+    ).toBeLessThan(0.04);
+    expect(alignment.paused).toBe(true);
+    await reviewPlay.click();
+    await p.waitForTimeout(100);
+    await comparison
+      .getByRole("button", { name: "Pause review", exact: true })
+      .click();
+    await comparison.screenshot({
+      path: path.join(artifacts, target + "-comparison.png"),
+    });
+    console.log("Real output comparison aligned and shared playback verified");
     console.log(
       "warnings",
       await p.locator(".jumper-editor-main [role=alert]").allTextContents(),

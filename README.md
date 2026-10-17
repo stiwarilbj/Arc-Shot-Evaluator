@@ -3,7 +3,9 @@
 The hosted demo and local app include Shot Analyzer, Playbook, Counter Lab, and
 **Others → Who’s That Jumper?** for private personal clips. Upload a short video,
 click the shooter in the first frame, process and review the masks, then download
-or save it. The shooter is black, other players gray, and the background neutral,
+or save it. Review compares the original reference with the masked result on one
+playback clock (side by side on desktop, a toggle on mobile). Downloads and saves
+use only the masked output. The shooter is black, other players gray, and the background neutral,
 with no audio. Enable “Use in my guessing game” and add the player's name to quiz
 yourself; the video stays masked after answering. Guess never downloads models.
 
