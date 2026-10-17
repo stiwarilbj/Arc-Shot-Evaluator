@@ -277,7 +277,7 @@ export default function ReviewComparison({
             aria-valuetext={`${time.toFixed(2)} of ${duration.toFixed(2)} seconds`}
           />
         </label>
-        <output>
+        <output aria-live="off">
           {time.toFixed(2)} / {duration.toFixed(2)} s
         </output>
       </div>
