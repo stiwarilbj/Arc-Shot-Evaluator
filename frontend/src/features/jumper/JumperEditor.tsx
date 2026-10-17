@@ -13,6 +13,8 @@ import {
 import { listClips, saveClip } from "./storage";
 import { openVideo, preview } from "./media";
 import { clearFramePoints, needsSelection } from "./editorSelections";
+import ShooterPreview from "./ShooterPreview";
+import SelectionMagnifier from "./SelectionMagnifier";
 import { ClipVideo, useBlobUrl } from "./JumperLab";
 
 export default function JumperEditor({
@@ -732,6 +734,28 @@ export default function JumperEditor({
                           addPoint(cursor);
                         }
                       }}
+                      onPointerMove={(event) => {
+                        if (busy || saving || loading) return;
+                        const bounds =
+                          event.currentTarget.getBoundingClientRect();
+                        setCursor([
+                          Math.max(
+                            0,
+                            Math.min(
+                              1,
+                              (event.clientX - bounds.left) / bounds.width,
+                            ),
+                          ),
+                          Math.max(
+                            0,
+                            Math.min(
+                              1,
+                              (event.clientY - bounds.top) / bounds.height,
+                            ),
+                          ),
+                        ]);
+                        setCursorVisible(true);
+                      }}
                       onClick={point}
                       draggable={false}
                     />
@@ -783,6 +807,68 @@ export default function JumperEditor({
                   <p role="status">Decoding preview…</p>
                 )}
               </div>
+              {imageUrl && view === "source" ? (
+                <div className="jumper-selection-tools">
+                  <SelectionMagnifier src={imageUrl} cursor={cursor} />
+                  <div>
+                    <p className="jumper-caption">
+                      Move over the frame to aim. On touchscreens, tap near the
+                      player, then use the nudge buttons to place a precise
+                      point. Keyboard: arrows to aim, Enter to select.
+                    </p>
+                    <div
+                      className="jumper-nudge"
+                      role="group"
+                      aria-label="Fine selection controls"
+                    >
+                      {(
+                        [
+                          ["Left", -1, 0],
+                          ["Up", 0, -1],
+                          ["Down", 0, 1],
+                          ["Right", 1, 0],
+                        ] as const
+                      ).map(([label, dx, dy]) => (
+                        <button
+                          key={label}
+                          className="button button-outline"
+                          type="button"
+                          disabled={busy || saving || loading}
+                          aria-label={`Aim ${label.toLowerCase()}`}
+                          onClick={() => {
+                            setCursorVisible(true);
+                            setCursor((current) => [
+                              Math.max(0, Math.min(1, current[0] + dx * 0.005)),
+                              Math.max(0, Math.min(1, current[1] + dy * 0.005)),
+                            ]);
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        disabled={busy || saving || loading}
+                        className="button button-outline"
+                        onClick={() => addPoint(cursor)}
+                      >
+                        Place point
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {file && frame === 0 && view === "source" ? (
+                <ShooterPreview
+                  key={`${start}:${end}:${target}:${JSON.stringify(tracks.find((t) => t.id === target)?.prompts.find((p) => p.frame === 0))}`}
+                  file={file}
+                  start={start}
+                  end={end}
+                  track={tracks.find((t) => t.id === target)}
+                  active={active}
+                  paused={busy || saving || loading}
+                />
+              ) : null}
               <label className="jumper-scrubber">
                 Frame {frame + 1} of {count}
                 <input

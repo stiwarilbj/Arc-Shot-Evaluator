@@ -534,3 +534,60 @@
 .jumper-corrections > button {
   margin-block: 6px;
 }
+
+.jumper-selection-tools {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+.jumper-magnifier {
+  flex: 0 0 132px;
+  width: 132px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.jumper-magnifier canvas {
+  display: block;
+  width: 132px;
+  height: 132px;
+  border: 2px solid #ee733f;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+.jumper-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jumper-nudge button {
+  min-height: 44px;
+}
+.jumper-selection-check {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.jumper-shooter-preview {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  background: #e0e0e0;
+  border-radius: 8px;
+}
+@media (max-width: 600px) {
+  .jumper-selection-tools {
+    align-items: start;
+    gap: 12px;
+  }
+  .jumper-magnifier {
+    flex-basis: 104px;
+    width: 104px;
+  }
+  .jumper-magnifier canvas {
+    width: 104px;
+    height: 104px;
+  }
+}

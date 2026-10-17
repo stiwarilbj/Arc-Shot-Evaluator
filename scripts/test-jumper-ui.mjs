@@ -52,6 +52,8 @@ try {
     "Selected video frame; click to add a mask point",
   );
   await frame.waitFor();
+  if (requests.length)
+    throw Error("Guess or upload initialized inference before a selection");
   await frame.focus();
   await frame.press("ArrowLeft");
   await frame.press("Enter");
@@ -97,9 +99,7 @@ try {
   await expect(
     page.getByRole("button", { name: "Process clip", exact: true }),
   ).toBeEnabled();
-  if (requests.length) throw Error("Manual selection initialized inference");
-  if (requests.length)
-    throw Error("Empty Guess or invalid upload initialized inference");
+
   if (errors.length) throw Error(errors.join("\n"));
   if (
     await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
@@ -127,7 +127,7 @@ try {
     fullPage: true,
   });
   console.log(
-    "Menu keyboard/mobile, themes, invalid decode, workspace preservation, no inference: passed",
+    "Menu keyboard/mobile, themes, invalid decode, workspace preservation, no inference before selection: passed",
   );
 } finally {
   await browser.close();

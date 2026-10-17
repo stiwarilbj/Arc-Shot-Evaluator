@@ -10,7 +10,14 @@ state when switching workspaces. Dark mode remains the default.
    black. Other people are detected automatically throughout the segment,
    including later entrants. No player name or manual roster is required.
    Keyboard users focus the frame, move with arrows (Shift for larger steps),
-   and press Enter/Space. Use **Select shooter again** to restart selection.
+   and press Enter/Space. The magnified view follows your cursor; touch users can
+   aim with the directional buttons and use **Place point**. Use **Select shooter
+   again** to restart selection.
+   After selection, a short starting sample is checked automatically, showing the
+   first frame with only the selected person black. This check loads
+   the free masking model if needed; uploading alone does not. It is not
+   a finished clip or tracking approval. Changing the starting selection clears
+   the check; cancelling it preserves your drawing.
 3. Process, then inspect the entire result in motion. In **Correct masks & player
    selection**, select a track, scrub to a problem frame, and add Include/Exclude
    points. Remove spectators/artwork; removed tracks retain stable identities so
@@ -39,7 +46,7 @@ anonymized preview; they have not been reprocessed automatically.
 
 Hosted creation uses a dedicated WebGPU worker, SAM 2.1 Tiny vision, decoder,
 attention and memory encoder graphs, and Mediabunny/WebCodecs. It downloads about
-170 MB of model assets on first processing; browser cache reuse depends on quota.
+170 MB of model assets on first processing or silhouette preview; browser cache reuse depends on quota.
 The detector loads when automatic discovery or manual proposals are requested. Devices without WebGPU/video encoding can
 still use Guess/My Clips; use the downloaded editor for native processing.
 
@@ -175,3 +182,9 @@ including tracking cancellation/restart, storage failure/retry, save/reload and
 exactly-once personal guessing. The reveal kept the masked video, the guessing
 round made no inference requests, and hosted processing called no local API.
 Live keyboard/mobile/theme/workspace checks also passed.
+
+`JUMPER_FIXTURE=/path/to/video.mp4 JUMPER_POINT=.485,.482
+JUMPER_URL=http://127.0.0.1:5173/ node scripts/test-jumper-selection-preview.mjs`
+checks real first-frame segmentation, the magnifier, mobile layout, clearing,
+and cancellation. For hosted GPU testing, use the Pages preview URL and
+`JUMPER_HEADED=1`. Choose a point inside the shooter for your footage.
