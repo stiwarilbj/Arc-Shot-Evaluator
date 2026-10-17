@@ -110,8 +110,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   background: var(--header-bg);
 }
 .brand-lockup, .header-actions, .complete-state, .button, .privacy-row span { display: flex; align-items: center; }
-.brand-lockup { gap: 18px; padding: 7px 8px; margin: -7px -8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font-size: 15px; white-space: nowrap; text-align: left; cursor: pointer; }
-.brand-mark { color: var(--orange); font-size: 28px; font-weight: 850; letter-spacing: -0.12em; transform: skewX(-7deg); }
+.brand-lockup { gap: 18px; padding: 11px 14px; margin: -11px -14px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font-size: 15px; white-space: nowrap; text-align: left; cursor: pointer; }
+.brand-mark { color: var(--orange); font-size: 28px; font-weight: 850; letter-spacing: -0.12em; transform: translateX(6px) skewX(-7deg); }
+/* Retain the original text metrics so the surrounding header stays in place. */
+.brand-placeholder { visibility: hidden; }
 .header-filename { text-align: center; font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .header-filename { min-width: 0; }
 .header-actions { min-width: 0; justify-content: flex-end; gap: 12px; }

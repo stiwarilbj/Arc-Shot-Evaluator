@@ -50,7 +50,7 @@ export function AppHeader({
         <div className="brand-mark" aria-label="ARC">
           ARC
         </div>
-        <span>Online Shot Analysis</span>
+        <span className="brand-placeholder" aria-hidden="true">Online Shot Analysis</span>
       </button>
       {onWorkspaceChange ? (
         <nav className="workspace-nav" aria-label="ARC workspaces">
