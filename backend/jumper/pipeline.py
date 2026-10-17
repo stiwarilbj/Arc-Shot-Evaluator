@@ -13,6 +13,7 @@ import imageio_ffmpeg
 import numpy as np
 
 from .mask_quality import MaskQuality
+from .mask_ownership import MaskOwnership
 from .video_validation import (
     validate_composite,
     silhouette_proof,
@@ -432,6 +433,7 @@ def track(
                 )
             previous = None
             quality = MaskQuality()
+            ownership = MaskOwnership(width, height)
             previous_areas = {}
 
             def propagation():
@@ -515,15 +517,18 @@ def track(
                         device, previous_areas.get(identity), area, height * width
                     )
                     previous_areas[identity] = area
-                # Exactly one visible owner per pixel. Negative logits stay
-                # background; no expansion or generated body pixels are used.
-                owners = np.argmax(values, axis=0)
-                labels = np.zeros((height, width), dtype=np.uint8)
-                valid = np.max(values, axis=0) > 0
-                labels[valid] = np.asarray(ids, dtype=np.uint8)[owners[valid]]
-                for obj in job["objects"]:
-                    if obj.get("ignored"):
-                        labels[labels == obj["id"]] = 0
+                current = cv2.resize(cv2.imread(str(frames[index])), (64, 36))
+                cut = previous is not None and np.abs(current.astype(float) - previous).mean() > 55
+                if cut:
+                    warnings.append({"frame": index, "kind": "possible_camera_cut"})
+                previous = current.astype(float)
+                # Discovery and SAM memory keep raw scores. Apply bounded
+                # consistency only to the final, mutually exclusive output.
+                labels = ownership.resolve(
+                    ids, values,
+                    excluded={o["id"] for o in job["objects"] if o.get("ignored")},
+                    reset=cut or any(p["frame"] == index for o in job["objects"] for p in o["prompts"]),
+                )
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
                 frame_warnings = quality.inspect(
                     index, labels, job["objects"], job["target_id"]
@@ -531,13 +536,6 @@ def track(
                 for warning in frame_warnings:
                     check_device_tracking(device, warning["kind"])
                 warnings.extend(frame_warnings)
-                current = cv2.resize(cv2.imread(str(frames[index])), (64, 36))
-                if (
-                    previous is not None
-                    and np.abs(current.astype(float) - previous).mean() > 55
-                ):
-                    warnings.append({"frame": index, "kind": "possible_camera_cut"})
-                previous = current.astype(float)
                 prune_tracking(state, index)
                 if device == "mps":
                     torch.mps.synchronize()

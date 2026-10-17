@@ -159,6 +159,9 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
     from backend.jumper import runner
     from backend import config
 
+    # This unit test exercises retry ownership, not host RAM availability.
+    # Resource admission has its own deterministic cross-target fixtures.
+    monkeypatch.setattr(runner, "check_resources", lambda *args, **kwargs: None)
     weights = tmp_path / "weights"
     weights.mkdir()
     checkpoint = weights / "sam2.1_hiera_tiny.pt"
@@ -254,3 +257,31 @@ def test_per_player_mask_quality_matches_browser_fixtures():
             for identity, extent in mask_extents(owners).items():
                 assert extent["area"] == np.count_nonzero(owners == identity)
     assert MaskQuality().states == {}
+
+
+def test_overlap_ownership_matches_browser_fixtures():
+    import json
+    from pathlib import Path
+    from backend.jumper.mask_ownership import MaskOwnership
+
+    fixtures = json.loads(
+        (Path(__file__).parent / "fixtures/jumper/mask-ownership.json").read_text()
+    )
+    for fixture in fixtures:
+        ownership = MaskOwnership(fixture["width"], fixture["height"])
+        for index, frame in enumerate(fixture["frames"]):
+            values = np.full((len(frame["scores"]), fixture["height"], fixture["width"]), -2, np.float32)
+            ids = []
+            for row, (identity, sparse) in enumerate(frame["scores"]):
+                ids.append(identity)
+                for pixel, score in sparse:
+                    values[row].flat[pixel] = score
+            original = values.copy()
+            labels = ownership.resolve(ids, values, frame["excluded"], frame["reset"])
+            assert list(labels.flat) == frame["labels"], (fixture["name"], index)
+            np.testing.assert_array_equal(values, original)
+            for pixel, identity in enumerate(labels.flat):
+                if identity:
+                    assert values[ids.index(identity)].flat[pixel] > 0
+                assert identity not in frame["excluded"]
+            labels[:] = 255  # Returned recordings do not share mutable history.

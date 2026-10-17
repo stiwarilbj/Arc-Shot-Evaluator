@@ -223,6 +223,13 @@ Personal videos stay on your device; they are never automatically published.
    These are temporal mask checks, not anatomical guarantees: inspect limbs and
    overlaps in the full video, including frames without warnings. The timeline
    also flags uncertain matches and possible camera cuts.
+   To reduce black/gray boundary flicker, both processors can retain a previous
+   pixel owner for at most two frames when current scores are close, both masks
+   still cover that pixel, and nearby current pixels clearly support that owner.
+   Stronger occlusion evidence wins immediately; missing masks, camera cuts, new
+   tracks, and correction frames bypass this consistency check. It favors no
+   player or color, does not add body pixels, and cannot guarantee correct depth
+   ordering during every overlap.
    Expand corrections to remove spectators, manage tracks, or add Include/Exclude
    points on problem frames. **Find people in first frame** preserves the chosen
    shooter, track IDs, removed tracks, and every correction. It adds distinct

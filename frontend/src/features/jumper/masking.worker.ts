@@ -28,6 +28,7 @@ import {
 } from "./frameCache";
 import { requireShooterBox, PeopleDiscovery } from "./discovery";
 import { MaskQuality } from "./maskQuality";
+import { MaskOwnership } from "./maskOwnership";
 import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
 import { validateComposite, silhouetteProof } from "./videoValidation";
@@ -535,6 +536,7 @@ async function process(
     const discovery = new PeopleDiscovery();
     let previous: Uint8ClampedArray | undefined;
     const quality = new MaskQuality();
+    const ownership = new MaskOwnership(width, height);
     const small = new OffscreenCanvas(64, 36),
       smallContext = small.getContext("2d", { willReadFrequently: true })!;
     for (let frame = 0; frame < count; frame++) {
@@ -546,9 +548,8 @@ async function process(
       if (!sample)
         throw Error("The selected segment could not be fully decoded");
       const feats = await features(frame, sample.canvas);
-      const owners = new Uint8Array(width * height),
-        best = new Float32Array(width * height);
-      best.fill(0);
+      ownership.begin();
+      const owners = ownership.owners;
       try {
         for (const object of trackedObjects) {
           if (frame < object.prompts[0].frame) continue;
@@ -609,11 +610,7 @@ async function process(
           // propagate_in_video resizes its stored 256px logits directly to the
           // source frame. The 1024px masks are used only by the memory encoder.
           const values = bilinear(prediction.low, 256, 256, width, height);
-          for (let i = 0; i < values.length; i++)
-            if (values[i] > best[i]) {
-              best[i] = values[i];
-              owners[i] = object.id;
-            }
+          ownership.add(object.id, values);
           for (const old of recents.get(object.id)!.keys())
             if (old < frame - 15) recents.get(object.id)!.delete(old);
         }
@@ -662,34 +659,31 @@ async function process(
                 .get(id)!
                 .set(frame, await remember(sampleFeatures, prediction, frame));
               const values = bilinear(prediction.low, 256, 256, width, height);
-              for (let i = 0; i < values.length; i++)
-                if (values[i] > best[i]) {
-                  best[i] = values[i];
-                  owners[i] = id;
-                }
+              ownership.add(id, values);
             }
           }
         }
       } finally {
         dispose(feats);
       }
-      // Ignored tracks still participate in matching so removal survives reprocessing.
-      for (const object of objects)
-        if (object.ignored)
-          for (let i = 0; i < owners.length; i++)
-            if (owners[i] === object.id) owners[i] = 0;
-      warnings.push(...quality.inspect(frame, owners, width, height, objects, target_id));
       smallContext.drawImage(sample.canvas, 0, 0, 64, 36);
       const pixels = smallContext.getImageData(0, 0, 64, 36).data;
+      let cut = false;
       if (previous) {
         let diff = 0;
         for (let i = 0; i < pixels.length; i++)
           if (i % 4 !== 3) diff += Math.abs(pixels[i] - previous[i]);
-        if (diff / (64 * 36 * 3) > 55)
-          warnings.push({ frame, kind: "possible_camera_cut" });
+        cut = diff / (64 * 36 * 3) > 55;
+        if (cut) warnings.push({ frame, kind: "possible_camera_cut" });
       }
       previous = pixels;
-      exportCheckpoint.add(frame, owners);
+      // Discovery and tracking above retain raw scores; only output ownership is stabilized.
+      const labels = ownership.finish(
+        new Set(objects.filter(o => o.ignored).map(o => o.id)),
+        cut || objects.some(o => o.prompts.some(p => p.frame === frame)),
+      );
+      warnings.push(...quality.inspect(frame, labels, width, height, objects, target_id));
+      exportCheckpoint.add(frame, labels);
       if (!encodingError) {
         report(
           `Rendering silhouettes · frame ${frame + 1} / ${count}`,
@@ -701,7 +695,7 @@ async function process(
             sourceContext.drawImage(sample.canvas, 0, 0, width, height);
             rgb = sourceContext.getImageData(0, 0, width, height).data;
           }
-          renderPixels(owners, rgb);
+          renderPixels(labels, rgb);
           for (const output of outputs)
             await output.source.add(frame / 30, 1 / 30);
         } catch (error) {
