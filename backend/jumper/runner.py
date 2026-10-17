@@ -10,6 +10,7 @@ import sys
 import urllib.request
 
 from backend.jumper.pipeline import extract, render, track
+from backend.jumper.export_checkpoint import render_with_retry
 from backend.jumper.resources import (
     check_resources,
     estimate_resources,
@@ -150,16 +151,16 @@ def run(directory: Path):
                 cache_source=directory / "source",
             )
         progress("Rendering masked videos")
-        outputs = render(
+        outputs = render_with_retry(
+            render,
             frames,
             directory / "masks",
             directory / "output",
             job["target_id"],
             directory.name,
+            start=job["start"],
             silhouette=job.get("presentation") == "silhouette",
-            progress=lambda done, total: progress(
-                "Rendering masked videos", done, total
-            ),
+            progress=progress,
         )
         result = {
             "duration": len(frames) / 30,

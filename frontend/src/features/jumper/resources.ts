@@ -32,7 +32,7 @@ export function estimateResources(
   const memories = players * Math.min(16, frames) + corrections;
   const largestBufferBytes = Math.max(16 * MIB, (maxConditions + 6) * MIB);
   const bytes = Math.ceil(
-    (1536 + 192 + (request.auto_detect_others ? 256 : 0)) * MIB +
+    (1536 + 192 + 96 + (request.auto_detect_others ? 256 : 0)) * MIB +
       memories * 2.5 * MIB +
       (maxConditions + 6) * 8 * MIB +
       width * height * 48 +

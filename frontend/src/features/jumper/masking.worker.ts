@@ -24,6 +24,7 @@ import {
 } from "./frameCache";
 import { clickedPersonBox, resolvePeople } from "./discovery";
 import { checkResources, estimateResources } from "./resources";
+import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
 import { samPixels } from "./preprocessing";
 import {
   bilinear,
@@ -165,6 +166,8 @@ async function process(
     ReturnType<Awaited<ReturnType<typeof writers>>["create"]>
   >[] = [];
   let cache: FrameCache | undefined;
+  const exportCheckpoint = new ExportCheckpoint(width, height, count, start);
+  let encodingError: unknown;
   try {
     const adapter = await navigator.gpu.requestAdapter();
     const gpu = adapter?.info;
@@ -457,8 +460,53 @@ async function process(
         dispose(feats);
       }
     }
-    for (let i = 0; i < (silhouette ? 1 : 3); i++)
-      outputs.push(await format.create());
+    async function cancelOutputs() {
+      for (const output of outputs.splice(0)) {
+        try {
+          await output.output.cancel();
+        } catch {}
+      }
+    }
+    async function createOutputs() {
+      for (let i = 0; i < (silhouette ? 1 : 3); i++)
+        outputs.push(await format.create());
+    }
+    async function finishOutputs() {
+      const completed = await Promise.allSettled(
+        outputs.map((output) => output.finish()),
+      );
+      const failure = completed.find((value) => value.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+      return completed.map(
+        (value) => (value as PromiseFulfilledResult<Blob>).value,
+      );
+    }
+    function renderPixels(rgb: Uint8ClampedArray, owners: Uint8Array) {
+      for (let i = 0; i < outputs.length; i++) {
+        outputs[i].context.putImageData(
+          new ImageData(
+            compositePixels(
+              rgb,
+              owners,
+              target_id,
+              silhouette
+                ? "quiz"
+                : (["highlight", "quiz", "reveal"] as const)[i],
+            ),
+            width,
+            height,
+          ),
+          0,
+          0,
+        );
+      }
+    }
+    try {
+      await createOutputs();
+    } catch (error) {
+      encodingError = error ?? Error("Video encoding failed");
+      await cancelOutputs();
+    }
     const warnings: MaskResult["warnings"] = [];
     let previous: Uint8ClampedArray | undefined;
     let previousMask: MaskExtent | null = null;
@@ -630,37 +678,70 @@ async function process(
           warnings.push({ frame, kind: "possible_camera_cut" });
       }
       previous = pixels;
-      const canvasContext = outputs[0].context;
-      canvasContext.drawImage(sample.canvas, 0, 0, width, height);
-      const rgb = canvasContext.getImageData(0, 0, width, height).data;
-      report(
-        `Rendering silhouettes · frame ${frame + 1} / ${count}`,
-        frame / count,
-      );
-      for (let i = 0; i < outputs.length; i++) {
-        outputs[i].context.putImageData(
-          new ImageData(
-            compositePixels(
-              rgb,
-              owners,
-              target_id,
-              silhouette
-                ? "quiz"
-                : (["highlight", "quiz", "reveal"] as const)[i],
-            ),
-            width,
-            height,
-          ),
-          0,
-          0,
+      exportCheckpoint.add(frame, owners);
+      if (!encodingError) {
+        sourceContext.drawImage(sample.canvas, 0, 0, width, height);
+        const rgb = sourceContext.getImageData(0, 0, width, height).data;
+        report(
+          `Rendering silhouettes · frame ${frame + 1} / ${count}`,
+          frame / count,
         );
-        await outputs[i].source.add(frame / 30, 1 / 30);
+        try {
+          renderPixels(rgb, owners);
+          for (const output of outputs)
+            await output.source.add(frame / 30, 1 / 30);
+        } catch (error) {
+          encodingError = error ?? Error("Video encoding failed");
+          await cancelOutputs();
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    report("Finalizing videos", 1);
-    const [highlight, quiz, reveal] = await Promise.all(
-      outputs.map((output) => output.finish()),
+    exportCheckpoint.seal();
+    // Tracking is complete. Free inference resources before allocating encoders again.
+    conditions.clear();
+    recents.clear();
+    corrected.clear();
+    for (const session of sessions.splice(0)) {
+      try {
+        await session.release();
+      } catch {}
+    }
+    try {
+      await detector?.release();
+    } catch {}
+    detector = undefined;
+    const [highlight, quiz, reveal] = await retryExport(
+      async () => {
+        if (encodingError) throw encodingError;
+        report("Finalizing videos", 1);
+        return finishOutputs();
+      },
+      async () => {
+        report("Retrying export from completed masks", 0);
+        await cancelOutputs();
+        await createOutputs();
+        for (let frame = 0; frame < count; frame++) {
+          const owners = exportCheckpoint.frame(frame);
+          const sample = await sink.getCanvas(start + frame / 30);
+          if (!sample) throw Error("Could not decode the export retry frame");
+          sourceContext.drawImage(sample.canvas, 0, 0, width, height);
+          renderPixels(
+            sourceContext.getImageData(0, 0, width, height).data,
+            owners,
+          );
+          for (const output of outputs)
+            await output.source.add(frame / 30, 1 / 30);
+          report(
+            `Retrying export · frame ${frame + 1} / ${count}`,
+            frame / count,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        report("Finalizing retried export", 1);
+        return finishOutputs();
+      },
+      () => exportCheckpoint.ready(),
     );
     return {
       highlight,
@@ -671,6 +752,7 @@ async function process(
       objects,
     };
   } finally {
+    exportCheckpoint.clear();
     cache?.close();
     input.dispose();
     try {

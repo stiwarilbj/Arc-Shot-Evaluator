@@ -23,7 +23,7 @@ def estimate_resources(
     maximum = max([1, *counts])
     memories = players * min(16, frames) + corrections
     amount = math.ceil(
-        (1536 + 192 + (256 if job.get("auto_detect_others") else 0)) * MIB
+        (1536 + 192 + 96 + (256 if job.get("auto_detect_others") else 0)) * MIB
         + memories * 2.5 * MIB
         + (maximum + 6) * 8 * MIB
         + width * height * 48

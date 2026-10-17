@@ -21,6 +21,15 @@ The local editor checks currently available RAM; browser capacity is approximate
 and may be unavailable, so these checks cannot guarantee against exhaustion.
 No clip is silently shortened or reduced to fit.
 
+Export failures retry once automatically from completed masks without repeating
+segmentation. Browser checkpoints are lossless, capped at 96 MiB in worker memory;
+local checkpoints reference at most 512 MiB of the job's existing temporary mask
+files. Both expire ten minutes after tracking completes and check format/timeline
+compatibility before reuse. Normal streaming export still works when a checkpoint
+is too large. Checkpoints are job-local, cleared on completion/failure/cancellation,
+and do not survive reloads. Local temporary files follow the existing job cleanup.
+No personal footage or masks are uploaded to a service.
+
 Corrections reuse device-local person detections and, on verified execution paths,
 unchanged SAM frame features. Tracking memory, identities, masks, warnings, and
 finished outputs are rebuilt. Browser features/detections use a private IndexedDB
