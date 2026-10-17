@@ -207,6 +207,66 @@ def test_release_permanently_rejects_late_execution(client, monkeypatch):
     assert job["cancel"].is_set()
 
 
+@pytest.mark.parametrize(
+    "stage,cancelled,codes,expected",
+    [
+        ("Tracking players · MPS", False, [-9, 0], "done"),
+        ("Tracking players · CUDA", False, [-15, 0], "done"),
+        ("Tracking players · MPS", False, [-9, -9], "error"),
+        ("Tracking players · CPU", False, [-9], "error"),
+        ("Tracking players · MPS", True, [-9], "cancelled"),
+    ],
+)
+def test_killed_accelerator_retries_cpu_once(
+    client, monkeypatch, stage, cancelled, codes, expected
+):
+    identity, job = uploaded_job(client)
+    job.update(generation=1, status="queued")
+    (job["directory"] / "progress.json").write_text(json.dumps({"stage": stage}))
+    launches = []
+
+    def popen(*args, **kwargs):
+        launches.append(kwargs["env"]["ARCADE_JUMPER_CPU_FALLBACK"])
+        for name in ("frames", "masks", "output"):
+            directory = job["directory"] / name
+            assert not directory.exists()
+            directory.mkdir()
+            (directory / "partial").write_bytes(b"incomplete")
+        assert (job["directory"] / "source").read_bytes() == b"bytes"
+        if cancelled:
+            job["cancel"].set()
+        code = codes[len(launches) - 1]
+        return type("Completed", (), {"returncode": code, "poll": lambda self: code})()
+
+    monkeypatch.setattr(jumper.subprocess, "Popen", popen)
+    monkeypatch.setattr(jumper, "completed_result", lambda directory: {})
+    jumper.execute(identity, 1)
+    assert launches == ["0", "1"][: len(codes)]
+    assert job["status"] == expected
+
+
+def test_killed_accelerator_cannot_clear_a_new_generation(client, monkeypatch):
+    identity, job = uploaded_job(client)
+    job.update(generation=1, status="queued")
+    (job["directory"] / "progress.json").write_text(json.dumps({"stage": "MPS"}))
+    frames = job["directory"] / "frames"
+    frames.mkdir()
+    retained = frames / "newer-frame"
+    retained.write_bytes(b"keep")
+    launched = []
+
+    def popen(*args, **kwargs):
+        launched.append(1)
+        job.update(generation=2, cancel=threading.Event(), status="queued")
+        return type("Killed", (), {"returncode": -9, "poll": lambda self: -9})()
+
+    monkeypatch.setattr(jumper.subprocess, "Popen", popen)
+    jumper.execute(identity, 1)
+    assert launched == [1]
+    assert retained.read_bytes() == b"keep"
+    assert job["status"] == "queued" and job["generation"] == 2
+
+
 def test_submit_failure_and_bad_status_are_recoverable(client, monkeypatch):
     identity, job = uploaded_job(client)
     executor = ThreadPoolExecutor(1)

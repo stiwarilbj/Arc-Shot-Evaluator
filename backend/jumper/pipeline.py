@@ -50,7 +50,10 @@ def validate_job(job: object) -> dict:
         and type(job["shooter_selection_resolved"]) is not bool
     ):
         raise ValueError("Invalid resolved shooter selection flag")
-    if "presentation" in job and job["presentation"] != "silhouette":
+    if "presentation" in job and job["presentation"] not in (
+        "silhouette",
+        "silhouette-palette-v1",
+    ):
         raise ValueError("Invalid presentation")
     start, end = job.get("start"), job.get("end")
     if (
@@ -147,15 +150,21 @@ def validate_job(job: object) -> dict:
     return job
 
 
-def silhouette_pixels(labels: np.ndarray, target_id: int) -> np.ndarray:
+def silhouette_pixels(
+    labels: np.ndarray, target_id: int, palette: bool = False
+) -> np.ndarray:
     """Render from labels alone: source colors/text can never enter this path."""
     if labels.dtype != np.uint8 or labels.ndim != 2:
         raise ValueError("Expected an 8-bit foreground label map")
     if type(target_id) is not int or not 1 <= target_id <= 255:
         raise ValueError("Invalid target identity")
-    palette = np.full(256, OTHER_PLAYER, np.uint8)
-    palette[0], palette[target_id] = BACKGROUND, 0
-    return np.repeat(palette[labels][..., None], 3, axis=2)
+    shades = (
+        (64 + ((np.arange(256, dtype=np.int32) - 1) * 47 % 137)).astype(np.uint8)
+        if palette
+        else np.full(256, OTHER_PLAYER, np.uint8)
+    )
+    shades[0], shades[target_id] = BACKGROUND, 0
+    return np.repeat(shades[labels][..., None], 3, axis=2)
 
 
 def composite(
@@ -392,11 +401,7 @@ def track(
             ),
             None,
         )
-        if (
-            initial["frame"] == 0
-            and "box" not in initial
-            and point is not None
-        ):
+        if initial["frame"] == 0 and "box" not in initial and point is not None:
             boxes = detect(0)
             initial["box"] = require_shooter_box(
                 boxes, initial["points"], initial["labels"]
@@ -518,16 +523,28 @@ def track(
                         device, previous_areas.get(identity), area, height * width
                     )
                     previous_areas[identity] = area
-                current = cv2.cvtColor(cv2.resize(cv2.imread(str(frames[index])), (64, 36)), cv2.COLOR_BGR2RGB)
+                current = cv2.cvtColor(
+                    cv2.resize(cv2.imread(str(frames[index])), (64, 36)),
+                    cv2.COLOR_BGR2RGB,
+                )
                 transition = camera_cuts.inspect(index, current)
                 cut = transition["reset"]
-                warnings.extend({"frame": at, "kind": "possible_camera_cut"} for at in transition["cuts"])
+                warnings.extend(
+                    {"frame": at, "kind": "possible_camera_cut"}
+                    for at in transition["cuts"]
+                )
                 # Discovery and SAM memory keep raw scores. Apply bounded
                 # consistency only to the final, mutually exclusive output.
                 labels = ownership.resolve(
-                    ids, values,
+                    ids,
+                    values,
                     excluded={o["id"] for o in job["objects"] if o.get("ignored")},
-                    reset=cut or any(p["frame"] == index for o in job["objects"] for p in o["prompts"]),
+                    reset=cut
+                    or any(
+                        p["frame"] == index
+                        for o in job["objects"]
+                        for p in o["prompts"]
+                    ),
                 )
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
                 frame_warnings = quality.inspect(
@@ -554,7 +571,9 @@ def track(
         torch.mps.empty_cache()
     if len(list(destination.glob("*.npy"))) != len(frames):
         raise RuntimeError("Incomplete mask propagation")
-    warnings.extend({"frame": at, "kind": "possible_camera_cut"} for at in camera_cuts.finish())
+    warnings.extend(
+        {"frame": at, "kind": "possible_camera_cut"} for at in camera_cuts.finish()
+    )
     return warnings
 
 
@@ -616,6 +635,7 @@ def render(
     target: int,
     token: str,
     silhouette: bool = False,
+    palette: bool = False,
     progress=None,
 ) -> dict:
     output.mkdir(exist_ok=True)
@@ -639,12 +659,12 @@ def render(
             if labels.shape != (height, width):
                 raise ValueError("Mask dimensions changed during export")
             if silhouette:
-                composites = (silhouette_pixels(labels, target),)
+                composites = (silhouette_pixels(labels, target, palette),)
             else:
                 rgb = cv2.cvtColor(cv2.imread(str(frame)), cv2.COLOR_BGR2RGB)
                 composites = composite(rgb, labels, target)
             for kind, image in zip(kinds, composites):
-                validate_composite(image, labels, target, kind)
+                validate_composite(image, labels, target, kind, palette=palette)
             proofs.append(silhouette_proof(composites[0]))
             if index == 0:
                 thumbnail = (

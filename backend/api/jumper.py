@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import importlib.util
 import hashlib
 import json
+import os
 import math
 from pathlib import Path
 import shutil
@@ -25,6 +26,9 @@ from backend.jumper.backup import (
     import_archive,
     library_contents,
     MAX_ARCHIVE,
+    metadata as clean_metadata,
+    kinds as media_kinds,
+    suffix as media_suffix,
 )
 from backend.config import PROJECT_ROOT, MODEL_WEIGHTS_DIR
 from backend.jumper.pipeline import validate_job, run_ffmpeg, propose_people
@@ -202,26 +206,54 @@ def execute(identity, generation):
                 return
     process = None
     try:
-        with LOCK:
-            if cancelled.is_set() or not owns():
-                return
-            job["status"] = "processing"
-            process = subprocess.Popen(
-                [sys.executable, "-m", "backend.jumper.runner", str(directory)],
-                cwd=PROJECT_ROOT,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            job["process"] = process
-        while process.poll() is None:
-            if cancelled.wait(0.1):
-                process.terminate()
-                try:
-                    process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+        for cpu_retry in (False, True):
+            with LOCK:
+                if cancelled.is_set() or not owns():
+                    if owns() and cancelled.is_set():
+                        job["status"] = "cancelled"
+                    return
+                job["status"] = "processing"
+                process = subprocess.Popen(
+                    [sys.executable, "-m", "backend.jumper.runner", str(directory)],
+                    cwd=PROJECT_ROOT,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env={
+                        **os.environ,
+                        "ARCADE_JUMPER_CPU_FALLBACK": "1" if cpu_retry else "0",
+                    },
+                )
+                job["process"] = process
+            while process.poll() is None:
+                if cancelled.wait(0.1):
+                    process.terminate()
+                    try:
+                        process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    break
+            if cpu_retry or cancelled.is_set() or process.returncode not in (-9, -15):
                 break
+            # An OS-terminated accelerator cannot raise Python's catchable OOM.
+            # Retry once in a fresh CPU process, using the original selections.
+            with LOCK:
+                if cancelled.is_set() or not owns():
+                    if owns() and cancelled.is_set():
+                        job["status"] = "cancelled"
+                    return
+                try:
+                    stage = json.loads((directory / "progress.json").read_text())[
+                        "stage"
+                    ]
+                except (OSError, ValueError, KeyError):
+                    break
+                if not any(device in stage for device in ("MPS", "CUDA")):
+                    break
+                for name in ("frames", "masks", "output"):
+                    shutil.rmtree(directory / name, ignore_errors=True)
+                for name in ("error.json", "result.json"):
+                    (directory / name).unlink(missing_ok=True)
         with LOCK:
             if not owns():
                 return
@@ -286,6 +318,8 @@ def completed_result(directory):
 @router.post("/jobs/{identity}/process")
 async def process(identity: str, request: Request):
     job = job_for(identity)
+    if job.get("kind") == "edit":
+        raise HTTPException(404, "Masking job unavailable")
     try:
         payload = await request.json()
         payload = validate_job(
@@ -335,6 +369,8 @@ async def process(identity: str, request: Request):
 @router.get("/jobs/{identity}")
 def status(identity: str):
     job = job_for(identity)
+    if job.get("kind") == "edit":
+        raise HTTPException(404, "Masking job unavailable")
     with LOCK:
         value = {
             "id": identity,
@@ -366,6 +402,8 @@ def status(identity: str):
 @router.post("/jobs/{identity}/cancel")
 def cancel(identity: str):
     job = job_for(identity)
+    if job.get("kind") == "edit":
+        raise HTTPException(404, "Masking job unavailable")
     with LOCK:
         job["cancel"].set()
         if job["status"] in ("uploaded", "queued"):
@@ -376,6 +414,8 @@ def cancel(identity: str):
 @router.get("/jobs/{identity}/output/{kind}")
 def output(identity: str, kind: str):
     job = job_for(identity)
+    if job.get("kind") == "edit":
+        raise HTTPException(404, "Masking job unavailable")
     if job["status"] != "done":
         raise HTTPException(409, "Video is not ready")
     if kind not in ("quiz", "reveal", "highlight"):
@@ -428,30 +468,10 @@ def library():
 async def save(request: Request):
     form = await request.form()
     try:
-        metadata = json.loads(str(form.get("metadata")))
-        if not isinstance(metadata, dict) or not isinstance(
-            metadata.get("player"), dict
-        ):
-            raise ValueError("Invalid metadata")
+        metadata = clean_metadata(json.loads(str(form.get("metadata"))))
         identity = identifier(metadata["id"])
-        if not isinstance(metadata.get("quiz"), bool):
-            raise ValueError("Invalid quiz flag")
-        if metadata.get("presentation") not in (None, "silhouette"):
-            raise ValueError("Invalid presentation")
-        datetime.fromisoformat(metadata["createdAt"].replace("Z", "+00:00"))
-        name = metadata["player"]["name"]
-        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
-            raise ValueError("Invalid player name")
-        if (
-            type(metadata.get("version")) is not int
-            or metadata["version"] != 1
-            or type(metadata.get("duration")) not in (int, float)
-            or not 0 < metadata["duration"] <= 15
-        ):
-            raise ValueError("Invalid clip")
-        kinds = (
-            ["highlight", "quiz", "reveal"] if metadata.get("quiz") else ["highlight"]
-        )
+        identifier(metadata["player"]["id"])
+        kinds = media_kinds(metadata)
         staging = ROOT / "saved" / ("." + identity)
         final = ROOT / "saved" / identity
         with LOCK:
@@ -466,13 +486,7 @@ async def save(request: Request):
                 upload = form.get(kind)
                 if upload is None or not hasattr(upload, "read"):
                     raise ValueError("Missing video")
-                suffix = (
-                    ".mp4"
-                    if metadata["mime"] == "video/mp4"
-                    else ".webm" if metadata["mime"] == "video/webm" else None
-                )
-                if suffix is None:
-                    raise ValueError("Invalid video format")
+                suffix = media_suffix(metadata, kind)
                 total = 0
                 checksum = hashlib.sha256()
                 with (staging / (kind + suffix)).open("wb") as out:
@@ -485,34 +499,46 @@ async def save(request: Request):
                 if total == 0:
                     raise ValueError("Empty export")
                 checksums.append(checksum.digest())
-            if metadata.get("presentation") == "silhouette":
-                if len(set(checksums)) != 1:
-                    raise ValueError(
-                        "Silhouette variants must use the same masked video"
+            presentation = metadata.get("presentation")
+            if (
+                presentation in ("silhouette", "silhouette-palette-v1")
+                and len(set(checksums)) != 1
+            ):
+                raise ValueError("Silhouette variants must use the same masked video")
+            if presentation and presentation.startswith("silhouette"):
+                for kind in kinds:
+                    project = metadata.get("project")
+                    duration = (
+                        project["baseFrames"] / 30
+                        if kind == "base"
+                        else metadata["duration"]
                     )
-                await run_in_threadpool(
-                    validate_saved_silhouette,
-                    staging / ("highlight" + suffix),
-                    metadata["duration"],
-                )
-            clean = {
-                "version": 1,
-                "id": identity,
-                "player": {
-                    "id": identifier(metadata["player"]["id"]),
-                    "name": name.strip(),
-                    "aliases": [],
-                },
-                "duration": float(metadata["duration"]),
-                "createdAt": metadata["createdAt"],
-                "mime": metadata["mime"],
-                "quiz": bool(metadata.get("quiz")),
-                **(
-                    {"presentation": "silhouette"}
-                    if metadata.get("presentation") == "silhouette"
-                    else {}
-                ),
-            }
+                    profile = (
+                        project["baseProfile"]
+                        if kind == "base"
+                        else (
+                            "edited"
+                            if project
+                            else (
+                                "palette"
+                                if presentation == "silhouette-palette-v1"
+                                else "legacy"
+                            )
+                        )
+                    )
+                    if kind == "base" and duration > 15:
+                        profile = "edited"
+                    await run_in_threadpool(
+                        validate_saved_silhouette,
+                        staging / (kind + media_suffix(metadata, kind)),
+                        duration,
+                        profile,
+                    )
+                if project and metadata["quiz"] and checksums[1] != checksums[2]:
+                    raise ValueError(
+                        "Quiz and reveal must share the same clean timeline"
+                    )
+            clean = metadata
             atomic(staging / "clip.json", clean)
             with LOCK:
                 staging.rename(final)
@@ -529,13 +555,15 @@ async def save(request: Request):
 @router.get("/media/{identity}/{kind}")
 def saved_video(identity: str, kind: str):
     identifier(identity)
-    if kind not in ("highlight", "quiz", "reveal"):
+    if kind not in ("highlight", "quiz", "reveal", "base"):
         raise HTTPException(404, "Unknown variant")
     directory = ROOT / "saved" / identity
     if not (directory / "clip.json").exists():
         raise HTTPException(404, "Clip not found")
     metadata = json.loads((directory / "clip.json").read_text())
-    path = directory / (kind + (".mp4" if metadata["mime"] == "video/mp4" else ".webm"))
+    if kind not in media_kinds(metadata):
+        raise HTTPException(404, "Variant not found")
+    path = directory / (kind + media_suffix(metadata, kind))
     if not path.exists():
         raise HTTPException(404, "Variant not found")
     return FileResponse(path)
@@ -604,3 +632,113 @@ def backup_index():
             return library_contents(ROOT)[0]
     except (ValueError, OSError, KeyError) as error:
         raise HTTPException(400, str(error))
+
+
+# Edit jobs share the existing bounded queue and heavy-work lock. Only masked media enters here.
+@router.post("/edits")
+async def create_edit(request: Request):
+    from backend.jumper.editing import validate_project, render
+
+    form = await request.form()
+    directory = None
+    try:
+        project = validate_project(json.loads(str(form.get("project"))))
+        upload = form.get("base")
+        if not hasattr(upload, "read"):
+            raise ValueError("A masked base video is required")
+        if EXECUTOR is None:
+            raise HTTPException(503, "The local work queue is unavailable")
+        identity = str(uuid.uuid4())
+        directory = ROOT / "jobs" / identity
+        directory.mkdir(parents=True)
+        base = directory / "base"
+        total = 0
+        with base.open("wb") as out:
+            while chunk := await upload.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_BYTES:
+                    raise ValueError("Masked base exceeds 100 MB")
+                out.write(chunk)
+        if not total:
+            raise ValueError("Empty masked base")
+        job = {
+            "directory": directory,
+            "cancel": threading.Event(),
+            "kind": "edit",
+            "last_seen": time.monotonic(),
+            "progress": 0,
+            "done": False,
+        }
+        with LOCK:
+            JOBS[identity] = job
+
+        def work():
+            acquired = False
+            try:
+                while not acquired:
+                    if job["cancel"].is_set():
+                        return
+                    acquired = PROCESS_LOCK.acquire(timeout=0.1)
+
+                def progress(value):
+                    with LOCK:
+                        if JOBS.get(identity) is job and not job["cancel"].is_set():
+                            job["progress"] = value
+
+                render(base, project, directory, job["cancel"], progress)
+                with LOCK:
+                    if JOBS.get(identity) is job and not job["cancel"].is_set():
+                        job["done"] = True
+            except Exception as error:
+                with LOCK:
+                    if JOBS.get(identity) is job:
+                        job["error"] = str(error)
+            finally:
+                if acquired:
+                    PROCESS_LOCK.release()
+                if job["cancel"].is_set():
+                    shutil.rmtree(directory, ignore_errors=True)
+
+        try:
+            EXECUTOR.submit(work)
+        except RuntimeError:
+            with LOCK:
+                JOBS.pop(identity, None)
+            shutil.rmtree(directory, ignore_errors=True)
+            raise HTTPException(
+                503, "The local work queue is unavailable; retry rendering"
+            )
+        return {"id": identity}
+    except (ValueError, TypeError, KeyError) as error:
+        if directory:
+            shutil.rmtree(directory, ignore_errors=True)
+        raise HTTPException(400, str(error))
+    finally:
+        await form.close()
+
+
+@router.get("/edits/{identity}")
+def edit_status(identity: str):
+    job = job_for(identity)
+    if job.get("kind") != "edit":
+        raise HTTPException(404, "Edit job unavailable")
+    return {"done": job["done"], "progress": job["progress"], "error": job.get("error")}
+
+
+@router.get("/edits/{identity}/{kind}")
+def edit_video(identity: str, kind: str):
+    job = job_for(identity)
+    if (
+        job.get("kind") != "edit"
+        or not job.get("done")
+        or kind not in ("highlight", "clean")
+    ):
+        raise HTTPException(404, "Rendered video unavailable")
+    return FileResponse(job["directory"] / (kind + ".mp4"), media_type="video/mp4")
+
+
+@router.delete("/edits/{identity}")
+def release_edit(identity: str):
+    if job_for(identity).get("kind") != "edit":
+        raise HTTPException(404, "Edit job unavailable")
+    return release(identity)

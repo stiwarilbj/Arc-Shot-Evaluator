@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Download,
   Plus,
@@ -30,6 +30,7 @@ import ShooterPreview from "./ShooterPreview";
 import SelectionMagnifier from "./SelectionMagnifier";
 import { ClipVideo, useBlobUrl } from "./JumperLab";
 import ReviewComparison from "./ReviewComparison";
+import VideoEditPanel, { type EditOutput } from "./VideoEditPanel";
 import ProcessingProgress from "./ProcessingProgress";
 import { CorrectionHistory, type CorrectionState } from "./correctionHistory";
 
@@ -62,7 +63,21 @@ export default function JumperEditor({
   const imageUrl = useBlobUrl(image);
   const [view, setView] = useState<"source" | "masked">("source");
   const [result, setResult] = useState<MaskResult | null>(null);
-  const videoUrl = useBlobUrl(result?.highlight ?? null);
+  const [edits, setEdits] = useState<EditOutput | null>(null);
+  const [referenceOpen, setReferenceOpen] = useState(false);
+  const baseUrl = useBlobUrl(result?.highlight ?? null);
+  const videoUrl = useBlobUrl(edits?.highlight ?? result?.highlight ?? null);
+  const editSignature = useRef("");
+  const acceptEdits = useCallback((value: EditOutput) => {
+    const signature = JSON.stringify(value.project);
+    if (editSignature.current !== signature || value.stale || value.rendering) {
+      setReviewed(false);
+      setSaved(false);
+      savedIdentity.current = crypto.randomUUID();
+    }
+    editSignature.current = signature;
+    setEdits(value);
+  }, []);
   const sourceUrl = useBlobUrl(file);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -90,8 +105,13 @@ export default function JumperEditor({
   }, [file, aimContext]);
   function aim(xy: number[]) {
     if (
-      busy || saveLock.current || uploadLock.current || !image || view !== "source"
-    ) return;
+      busy ||
+      saveLock.current ||
+      uploadLock.current ||
+      !image ||
+      view !== "source"
+    )
+      return;
     setCursor(xy.map((value) => Math.max(0, Math.min(1, value))));
     pendingAimRef.current = aimContext;
     setPendingAim(aimContext);
@@ -358,7 +378,7 @@ export default function JumperEditor({
       target_id: target,
       objects: tracks,
       auto_detect_others: automatic,
-      presentation: "silhouette" as const,
+      presentation: "silhouette-palette-v1" as const,
     };
     try {
       if (end > duration + 0.01)
@@ -394,6 +414,8 @@ export default function JumperEditor({
         setTracks(value.objects);
       }
       resultTarget.current = target;
+      setEdits(null);
+      editSignature.current = "";
       setResult(value);
       setDirty(false);
       setReviewed(false);
@@ -406,7 +428,9 @@ export default function JumperEditor({
         if (error instanceof ShooterSelectionError) {
           setError(error.message);
           setProgress({ stage: "Select your shooter again", progress: 0 });
-        } else if (!(error instanceof DOMException && error.name === "AbortError"))
+        } else if (
+          !(error instanceof DOMException && error.name === "AbortError")
+        )
           setError(String(error));
         else
           setProgress({
@@ -423,6 +447,9 @@ export default function JumperEditor({
       saveLock.current ||
       uploadLock.current ||
       !result ||
+      !edits ||
+      edits.stale ||
+      edits.rendering ||
       dirty ||
       !reviewed ||
       saved ||
@@ -446,20 +473,21 @@ export default function JumperEditor({
       );
       const value: PersonalClip = {
         version: 1,
-        presentation: "silhouette",
+        presentation: "silhouette-edited-v1",
+        project: edits.project,
+        base: result.highlight,
         id: identity,
         player: {
           id: existing?.player.id ?? identity,
           name: name.trim() || "Selected player",
           aliases: [],
         },
-        duration: result.duration,
+        duration: edits.duration,
         createdAt: new Date().toISOString(),
-        mime:
-          result.highlight.type === "video/mp4" ? "video/mp4" : "video/webm",
+        mime: edits.highlight.type === "video/mp4" ? "video/mp4" : "video/webm",
         quiz,
-        highlight: result.highlight,
-        ...(quiz ? { quizVideo: result.quiz, reveal: result.reveal } : {}),
+        highlight: edits.highlight,
+        ...(quiz ? { quizVideo: edits.clean, reveal: edits.clean } : {}),
       };
       await saveClip(value);
       if (identity === savedIdentity.current) setSaved(true);
@@ -513,7 +541,8 @@ export default function JumperEditor({
         <h2>One shot. No clues.</h2>
         <p>
           Aim at the shooter and press Place point to turn them black. Other
-          players become gray, with a flat background and no original colors or audio.
+          players become gray, with a flat background and no original colors or
+          audio.
         </p>
         {!supported ? (
           <div className="jumper-notice">
@@ -581,8 +610,8 @@ export default function JumperEditor({
               <legend>2 · Aim and place a point on the shooter</legend>
               <p className="jumper-caption">
                 Place one point inside the shooter to keep them black. Other
-                people are found automatically throughout the clip. Review the whole result
-                before saving.
+                people are found automatically throughout the clip. Review the
+                whole result before saving.
               </p>
               <button
                 type="button"
@@ -904,8 +933,10 @@ export default function JumperEditor({
                           event.preventDefault();
                           const delta = direction[event.key];
                           aim(
-                            cursor.map((value, index) =>
-                              value + delta[index] * (event.shiftKey ? 0.05 : 0.01),
+                            cursor.map(
+                              (value, index) =>
+                                value +
+                                delta[index] * (event.shiftKey ? 0.05 : 0.01),
                             ),
                           );
                         }
@@ -994,7 +1025,10 @@ export default function JumperEditor({
                           disabled={busy || saving || loading}
                           aria-label={`Aim ${label.toLowerCase()}`}
                           onClick={() => {
-                            aim([cursor[0] + dx * 0.005, cursor[1] + dy * 0.005]);
+                            aim([
+                              cursor[0] + dx * 0.005,
+                              cursor[1] + dy * 0.005,
+                            ]);
                           }}
                         >
                           {label}
@@ -1078,17 +1112,39 @@ export default function JumperEditor({
               </div>
             </section>
             {result && !dirty ? (
-              <section className="jumper-panel">
-                <span className="jumper-eyebrow">3 · REVIEW IN MOTION</span>
+              <section
+                className="jumper-panel"
+                style={{ gridColumn: "1 / -1" }}
+              >
+                <VideoEditPanel
+                  key={baseUrl}
+                  base={result.highlight}
+                  baseDuration={result.duration}
+                  active={active && !busy}
+                  disabled={saving || busy}
+                  onChange={acceptEdits}
+                />
+                <span className="jumper-eyebrow">4 · REVIEW IN MOTION</span>
                 <h2>Your finished clip</h2>
-                <ReviewComparison
-                  key={videoUrl}
-                  original={sourceUrl}
-                  masked={videoUrl}
-                  start={start}
-                  duration={result.duration}
+                <ClipVideo
+                  src={videoUrl}
+                  label="Finished edited silhouette video"
                   active={active}
                 />
+                <details
+                  onToggle={(event) =>
+                    setReferenceOpen(event.currentTarget.open)
+                  }
+                >
+                  <summary>Original / masked tracking reference</summary>
+                  <ReviewComparison
+                    original={sourceUrl}
+                    masked={baseUrl}
+                    start={start}
+                    duration={result.duration}
+                    active={active && referenceOpen}
+                  />
+                </details>
                 {result.warnings.length ? (
                   <div className="jumper-notice" role="alert">
                     Tracking needs attention on{" "}
@@ -1109,7 +1165,9 @@ export default function JumperEditor({
                   <input
                     type="checkbox"
                     checked={reviewed}
-                    disabled={saving}
+                    disabled={
+                      saving || !edits || edits.stale || edits.rendering
+                    }
                     onChange={(event) => setReviewed(event.target.checked)}
                   />{" "}
                   I reviewed the full motion: correct player, all bodies masked,
@@ -1131,6 +1189,9 @@ export default function JumperEditor({
                     className="button button-primary"
                     disabled={
                       !reviewed ||
+                      !edits ||
+                      edits.stale ||
+                      edits.rendering ||
                       busy ||
                       loading ||
                       saving ||
@@ -1153,7 +1214,7 @@ export default function JumperEditor({
                   <a
                     className="button button-outline"
                     href={videoUrl}
-                    download={`jumper-${savedIdentity.current}.${result.highlight.type === "video/mp4" ? "mp4" : "webm"}`}
+                    download={`jumper-${savedIdentity.current}.${(edits?.highlight ?? result.highlight).type === "video/mp4" ? "mp4" : "webm"}`}
                   >
                     <Download size={16} /> Download
                   </a>

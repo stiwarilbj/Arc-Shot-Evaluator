@@ -1,3 +1,4 @@
+import { isProject, projectFrames, type EditProject } from "./editProject.ts";
 export const MAX_BYTES = 100 * 1024 * 1024;
 export const FPS = 30;
 export function maskingErrorMessage(error: unknown): string {
@@ -10,7 +11,7 @@ export function maskingErrorMessage(error: unknown): string {
     return "The GPU stopped while tracking. Your video and selections are unchanged. Close other GPU-heavy tabs and retry, try a shorter segment, or use the free downloaded editor.";
   return `${message}. If this device cannot complete WebGPU processing, use the downloaded editor.`;
 }
-export type Variant = "highlight" | "quiz" | "reveal";
+export type Variant = "highlight" | "quiz" | "reveal" | "base";
 export interface Player {
   id: string;
   name: string;
@@ -24,10 +25,15 @@ export interface Clip {
   createdAt: string;
   mime: "video/mp4" | "video/webm";
   quiz: boolean;
-  presentation?: "silhouette";
+  presentation?:
+    | "silhouette"
+    | "silhouette-palette-v1"
+    | "silhouette-edited-v1";
+  project?: EditProject;
 }
 export interface PersonalClip extends Clip {
   highlight: Blob;
+  base?: Blob;
   quizVideo?: Blob;
   reveal?: Blob;
 }
@@ -68,7 +74,7 @@ export interface Track {
 export interface MaskRequest {
   auto_detect_others?: boolean;
   shooter_selection_resolved?: boolean;
-  presentation?: "silhouette";
+  presentation?: "silhouette" | "silhouette-palette-v1";
   start: number;
   end: number;
   target_id: number;
@@ -189,11 +195,18 @@ export function clip(value: unknown): value is Clip {
     player(v.player) &&
     Number.isFinite(v.duration) &&
     v.duration > 0 &&
-    v.duration <= 15 &&
+    v.duration <= (v.presentation === "silhouette-edited-v1" ? 60 : 15) &&
+    (v.presentation !== "silhouette-edited-v1"
+      ? v.project === undefined
+      : isProject(v.project) &&
+        Math.abs(projectFrames(v.project) / 30 - v.duration) < 0.002) &&
     typeof v.createdAt === "string" &&
     Number.isFinite(Date.parse(v.createdAt)) &&
     ["video/mp4", "video/webm"].includes(v.mime) &&
-    (v.presentation === undefined || v.presentation === "silhouette") &&
+    (v.presentation === undefined ||
+      ["silhouette", "silhouette-palette-v1", "silhouette-edited-v1"].includes(
+        v.presentation,
+      )) &&
     typeof v.quiz === "boolean"
   );
 }
@@ -220,7 +233,8 @@ export function validateMaskRequest(
       typeof v.auto_detect_others !== "boolean") ||
     (v.shooter_selection_resolved !== undefined &&
       typeof v.shooter_selection_resolved !== "boolean") ||
-    (v.presentation !== undefined && v.presentation !== "silhouette") ||
+    (v.presentation !== undefined &&
+      !["silhouette", "silhouette-palette-v1"].includes(v.presentation)) ||
     !Number.isFinite(v.start) ||
     !Number.isFinite(v.end) ||
     v.start < 0 ||

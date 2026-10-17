@@ -33,6 +33,7 @@ import { LibraryBackup } from "./LibraryBackup";
 import type { JumperView } from "../../app/workspaceLocation";
 import "./jumper.css";
 const Editor = lazy(() => import("./JumperEditor"));
+const EditClipCopy = lazy(() => import("./EditClipCopy"));
 export function useBlobUrl(blob: Blob | null) {
   const [url, setUrl] = useState("");
   useEffect(() => {
@@ -96,6 +97,7 @@ export default function JumperLab({
   tab: JumperView;
   onTabChange: (tab: JumperView) => void;
 }) {
+  const [editingCopy, setEditingCopy] = useState<Clip | null>(null);
   const [opened, setOpened] = useState(tab === "create");
   useEffect(() => {
     if (tab === "create") setOpened(true);
@@ -201,12 +203,23 @@ export default function JumperLab({
       {opened || tab === "create" ? (
         <section hidden={tab !== "create"}>
           <Suspense fallback={<p role="status">Opening editor…</p>}>
-            <Editor
-              active={active && tab === "create"}
-              onSaved={() => {
-                void refresh();
-              }}
-            />
+            <div hidden={!!editingCopy}>
+              <Editor
+                active={active && tab === "create" && !editingCopy}
+                onSaved={() => {
+                  void refresh();
+                }}
+              />
+            </div>
+            {editingCopy ? (
+              <EditClipCopy
+                key={editingCopy.id}
+                clip={editingCopy}
+                active={active && tab === "create"}
+                onClose={() => setEditingCopy(null)}
+                onSaved={() => void refresh()}
+              />
+            ) : null}
           </Suspense>
         </section>
       ) : null}
@@ -216,6 +229,10 @@ export default function JumperLab({
           loading={loading}
           active={active && tab === "clips"}
           onCreate={() => change("create")}
+          onEdit={(value) => {
+            setEditingCopy(value);
+            change("create");
+          }}
           onChange={refresh}
           onError={setError}
           onRestored={async () => {
@@ -686,7 +703,9 @@ function Library({
   onChange,
   onError,
   onRestored,
+  onEdit,
 }: {
+  onEdit: (value: Clip) => void;
   clips: Clip[];
   loading: boolean;
   active: boolean;
@@ -706,7 +725,12 @@ function Library({
     setBlob(null);
     setVideoError("");
     if (selected)
-      videoBlob(selected.id, selected.quiz ? "quiz" : "highlight")
+      videoBlob(
+        selected.id,
+        selected.quiz && !selected.presentation?.startsWith("silhouette")
+          ? "quiz"
+          : "highlight",
+      )
         .then((value) => {
           if (!cancelled) setBlob(value);
         })
@@ -758,7 +782,7 @@ function Library({
                 {value.duration.toFixed(1)}s ·{" "}
                 {value.quiz
                   ? "Quiz ready · masked"
-                  : value.presentation === "silhouette"
+                  : value.presentation?.startsWith("silhouette")
                     ? "Silhouette"
                     : "Legacy · original colors may remain"}{" "}
                 · {new Date(value.createdAt).toLocaleDateString()}
@@ -770,6 +794,13 @@ function Library({
                   onClick={() => setSelected(value)}
                 >
                   Open clip
+                </button>
+                <button
+                  type="button"
+                  className="button button-outline"
+                  onClick={() => onEdit(value)}
+                >
+                  Edit copy
                 </button>
                 <button
                   type="button"
@@ -810,7 +841,8 @@ function Library({
           </div>
           {url ? (
             <>
-              {selected.presentation === "silhouette" || selected.quiz ? (
+              {selected.presentation?.startsWith("silhouette") ||
+              selected.quiz ? (
                 <ClipVideo
                   src={url}
                   label={`${selected.player.name} silhouette`}

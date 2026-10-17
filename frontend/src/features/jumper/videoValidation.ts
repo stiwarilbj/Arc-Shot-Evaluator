@@ -3,7 +3,10 @@ export const BLOCK = 8;
 export const CHROMA_TOLERANCE = 8;
 export const LUMA_TOLERANCE = 16;
 export type ExportGeometry = { width: number; height: number; count: number };
-export function validateGeometry({ width, height, count }: ExportGeometry) {
+export function validateGeometry(
+  { width, height, count }: ExportGeometry,
+  edited = false,
+) {
   if (
     !Number.isInteger(width) ||
     !Number.isInteger(height) ||
@@ -15,7 +18,7 @@ export function validateGeometry({ width, height, count }: ExportGeometry) {
     height % 2 ||
     !Number.isInteger(count) ||
     count < 2 ||
-    count > 450
+    count > (edited ? 1800 : 450)
   )
     throw Error("Invalid finished-video geometry or frame count");
 }
@@ -24,6 +27,7 @@ export function validateComposite(
   owners: Uint8Array,
   target: number,
   kind: "quiz" | "highlight" | "reveal",
+  palette = false,
 ) {
   if (pixels.length !== owners.length * 4)
     throw Error("Invalid output frame size");
@@ -39,7 +43,9 @@ export function validateComposite(
       ? 224
       : kind === "quiz" && owners[i] === target
         ? 0
-        : 128;
+        : palette
+          ? 64 + (((owners[i] - 1) * 47) % 137)
+          : 128;
     if (
       pixels[at] !== expected ||
       pixels[at + 1] !== expected ||

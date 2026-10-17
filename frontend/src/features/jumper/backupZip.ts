@@ -3,7 +3,7 @@
 export const MAX_BACKUP_BYTES = 512 * 1024 * 1024;
 export const MAX_METADATA_BYTES = 8 * 1024 * 1024;
 const MAX_ENTRY_BYTES = 100 * 1024 * 1024;
-const MAX_ENTRIES = 3001;
+const MAX_ENTRIES = 4001;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const table = Uint32Array.from({ length: 256 }, (_, value) => {

@@ -14,10 +14,18 @@ CHROMA_TOLERANCE = 8
 LUMA_TOLERANCE = 16
 
 
-def validate_composite(image, labels, target, kind):
+def validate_composite(image, labels, target, kind, palette=False):
     if image.dtype != np.uint8 or image.shape != (*labels.shape, 3):
         raise ValueError("Invalid output frame size")
-    expected = np.where(labels == 0, 224, np.where(labels == target, 0, 128))
+    expected = np.where(
+        labels == 0,
+        224,
+        np.where(
+            labels == target,
+            0,
+            64 + ((labels.astype(np.int32) - 1) * 47 % 137) if palette else 128,
+        ),
+    )
     checked = np.ones(labels.shape, dtype=bool)
     if kind == "reveal":
         checked = labels == 0
@@ -79,13 +87,20 @@ def validate_decoded_pixels(image, proof):
 
 
 def validate_finished_video(
-    path: Path, width: int, height: int, count: int, proofs=None, *, neutral=False
+    path: Path,
+    width: int,
+    height: int,
+    count: int,
+    proofs=None,
+    *,
+    neutral=False,
+    profile="legacy",
 ):
     if not (
         2 <= width <= 1280
         and 2 <= height <= 720
         and width % 2 == height % 2 == 0
-        and 2 <= count <= 450
+        and 2 <= count <= (1800 if profile == "edited" else 450)
     ):
         raise ValueError("Invalid finished-video geometry or frame count")
     if proofs is not None and len(proofs) != count:
@@ -161,7 +176,14 @@ def validate_finished_video(
             if proofs is not None:
                 validate_decoded_pixels(image, proofs[index])
             elif neutral:
-                validate_neutral_pixels(image)
+                if profile == "legacy":
+                    validate_neutral_pixels(image)
+                elif np.any(
+                    image.max(axis=2).astype(np.int16)
+                    - image.min(axis=2).astype(np.int16)
+                    > CHROMA_TOLERANCE
+                ):
+                    raise ValueError("Edited video contains original colors")
             index += 1
         if index != count:
             raise ValueError("Export contains missing or undecodable frames")
@@ -169,7 +191,7 @@ def validate_finished_video(
         capture.release()
 
 
-def validate_saved_silhouette(path: Path, duration: float):
+def validate_saved_silhouette(path: Path, duration: float, profile="legacy"):
     """Verify a received canonical export once, before publishing its aliases."""
     capture = cv2.VideoCapture(str(path))
     try:
@@ -180,4 +202,4 @@ def validate_saved_silhouette(path: Path, duration: float):
     count = round(duration * 30)
     if abs(count / 30 - duration) > 0.002:
         raise ValueError("Invalid saved-video timeline")
-    validate_finished_video(path, width, height, count, neutral=True)
+    validate_finished_video(path, width, height, count, neutral=True, profile=profile)

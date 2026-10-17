@@ -48,13 +48,28 @@ export async function inspectLibraryBackup(file: Blob, progress: Progress) {
     );
     for (const [kind, ref] of Object.entries(value.files)) {
       // If a file is both a legacy colored variant and a quiz, use the stricter check.
-      const neutral = value.presentation === "silhouette" || kind === "quiz";
-      const key = ref.path + ":" + neutral + ":" + value.duration;
+      const neutral =
+        value.presentation?.startsWith("silhouette") === true ||
+        kind === "quiz";
+      const duration =
+        kind === "base" ? value.project!.baseFrames / 30 : value.duration;
+      const profile =
+        kind === "base"
+          ? value.project!.baseProfile === "palette"
+            ? "palette"
+            : "legacy"
+          : value.project
+            ? "edited"
+            : value.presentation === "silhouette-palette-v1"
+              ? "palette"
+              : "legacy";
+      const mime = kind === "base" ? value.project!.baseMime : value.mime;
+      const key = ref.path + ":" + neutral + ":" + duration + ":" + profile;
       if (checked.has(key)) continue;
       const blob = backup.media.get(ref.path)!;
       const header = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
       if (
-        value.mime === "video/mp4"
+        mime === "video/mp4"
           ? String.fromCharCode(...header.slice(4, 8)) !== "ftyp"
           : header[0] !== 0x1a ||
             header[1] !== 0x45 ||
@@ -70,15 +85,19 @@ export async function inspectLibraryBackup(file: Blob, progress: Progress) {
       } finally {
         input.dispose();
       }
-      const count = Math.round(value.duration * 30);
-      if (Math.abs(count / 30 - value.duration) > 0.002)
+      const count = Math.round(duration * 30);
+      if (Math.abs(count / 30 - duration) > 0.002)
         throw Error("A backup clip has an invalid timeline");
-      validateGeometry({ width, height, count });
+      validateGeometry(
+        { width, height, count },
+        profile === "edited" || (kind === "base" && count > 450),
+      );
       await validateFinishedVideo(
         blob,
         { width, height, count },
         undefined,
         neutral,
+        profile === "legacy" && count > 450 ? "edited" : profile,
       );
       checked.add(key);
     }

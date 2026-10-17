@@ -86,8 +86,9 @@ export function LibraryBackup({
       </summary>
       <p>
         Move your personal clips between devices or protect them before clearing
-        browser data. One private ZIP contains finished videos, player labels,
-        and quiz eligibility. No account or cloud upload.
+        browser data. One private ZIP contains finished videos, masked bases,
+        edit recipes, player labels, and quiz eligibility. No account or cloud
+        upload.
       </p>
       <div className="jumper-toolbar">
         <label>
@@ -132,9 +133,9 @@ export function LibraryBackup({
         </div>
       </div>
       <p className="jumper-caption">
-        ARCade Hoops backups only · Up to 512 MiB and 1,000 clips. Original uploads,
-        tracking data, and models are excluded. Older clips retain their legacy
-        status.
+        ARCade Hoops backups only · Up to 512 MiB and 1,000 clips. Original
+        uploads, tracking data, and models are excluded. Older clips retain
+        their legacy status.
       </p>
       {status ? (
         <p role="status" aria-live="polite">

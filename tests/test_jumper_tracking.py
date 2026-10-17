@@ -151,8 +151,9 @@ def test_mps_loss_and_instability_request_cpu_verification():
 
 
 @pytest.mark.parametrize("failure", ["memory", "target_lost", "player_lost", "tracking_unstable"])
+@pytest.mark.parametrize("force_cpu", [False, True])
 def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
-    tmp_path, monkeypatch, failure
+    tmp_path, monkeypatch, failure, force_cpu
 ):
     import hashlib
     import json
@@ -162,6 +163,7 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
     # This unit test exercises retry ownership, not host RAM availability.
     # Resource admission has its own deterministic cross-target fixtures.
     monkeypatch.setattr(runner, "check_resources", lambda *args, **kwargs: None)
+    monkeypatch.setenv("ARCADE_JUMPER_CPU_FALLBACK", "1" if force_cpu else "0")
     weights = tmp_path / "weights"
     weights.mkdir()
     checkpoint = weights / "sam2.1_hiera_tiny.pt"
@@ -209,8 +211,8 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
 
     monkeypatch.setattr(runner, "render", rendering)
     runner.run(tmp_path)
-    assert attempts == ["mps", "cpu"]
-    assert budgets == [0.5]
+    assert attempts == (["cpu"] if force_cpu else ["mps", "cpu"])
+    assert budgets == ([] if force_cpu else [0.5])
     result = json.loads((tmp_path / "result.json").read_text())
     assert [o["id"] for o in result["objects"]] == [1, 2]
     assert result["warnings"] == [{"frame": 2, "kind": "target_lost"}]

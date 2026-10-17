@@ -10,7 +10,7 @@ import imageio_ffmpeg
 import numpy as np
 
 
-def validate(path: Path):
+def validate(path: Path, edited=False):
     capture = cv2.VideoCapture(str(path))
     fps = capture.get(cv2.CAP_PROP_FPS)
     width, height = (
@@ -46,7 +46,7 @@ def validate(path: Path):
         or abs(fps - 30) > 0.001
         or width > 1280
         or height > 720
-        or count > 450
+        or count > (1800 if edited else 450)
         or chroma > 2
     ):
         raise ValueError(
@@ -65,4 +65,10 @@ def validate(path: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("video", type=Path)
-    print(json.dumps(validate(parser.parse_args().video), indent=2))
+    parser.add_argument(
+        "--edited",
+        action="store_true",
+        help="Allow finished edit timelines up to 60 seconds",
+    )
+    args = parser.parse_args()
+    print(json.dumps(validate(args.video, args.edited), indent=2))

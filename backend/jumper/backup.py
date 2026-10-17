@@ -14,6 +14,7 @@ import zipfile
 
 import cv2
 from .video_validation import validate_finished_video
+from .editing import validate_project, length, PROFILE, PALETTE
 
 MAX_ARCHIVE = 512 * 1024 * 1024
 MAX_FILE = 100 * 1024 * 1024
@@ -53,14 +54,23 @@ def player(value):
 def metadata(value):
     if (
         not isinstance(value, dict)
+        or type(value.get("version")) is not int
         or value.get("version") != 1
         or type(value.get("duration")) not in (int, float)
-        or not 0 < value["duration"] <= 15
+        or not 0
+        < value["duration"]
+        <= (60 if value.get("presentation") == PROFILE else 15)
         or type(value.get("quiz")) is not bool
         or value.get("mime") not in ("video/mp4", "video/webm")
-        or value.get("presentation") not in (None, "silhouette")
+        or value.get("presentation") not in (None, "silhouette", PROFILE, PALETTE)
     ):
         raise ValueError("Invalid clip metadata")
+    if value.get("presentation") == PROFILE:
+        validate_project(value.get("project"))
+        if abs(length(value["project"]) / 30 - value["duration"]) > 0.002:
+            raise ValueError("Edit duration does not match its timeline")
+    elif "project" in value:
+        raise ValueError("Unexpected edit project")
     if not isinstance(value.get("createdAt"), str):
         raise ValueError("Invalid clip date")
     datetime.fromisoformat(value["createdAt"].replace("Z", "+00:00"))
@@ -73,19 +83,21 @@ def metadata(value):
         "mime": value["mime"],
         "quiz": value["quiz"],
         **(
-            {"presentation": "silhouette"}
-            if value.get("presentation") == "silhouette"
-            else {}
+            {"presentation": value["presentation"]} if value.get("presentation") else {}
         ),
+        **({"project": value["project"]} if value.get("project") else {}),
     }
 
 
 def kinds(value):
-    return KINDS if value["quiz"] else ("highlight",)
+    return (KINDS if value["quiz"] else ("highlight",)) + (
+        ("base",) if value.get("project") else ()
+    )
 
 
-def suffix(value):
-    return ".mp4" if value["mime"] == "video/mp4" else ".webm"
+def suffix(value, kind="highlight"):
+    mime = value["project"]["baseMime"] if kind == "base" else value["mime"]
+    return ".mp4" if mime == "video/mp4" else ".webm"
 
 
 def library_contents(root: Path):
@@ -96,12 +108,12 @@ def library_contents(root: Path):
         value = metadata(json.loads(path.read_text()))
         refs = {}
         for kind in kinds(value):
-            video = path.parent / (kind + suffix(value))
+            video = path.parent / (kind + suffix(value, kind))
             size = video.stat().st_size
             if not 0 < size <= MAX_FILE:
                 raise ValueError("A saved video is empty or exceeds the backup limit")
             digest = checksum(video)
-            name = f"media/{digest}{suffix(value)}"
+            name = f"media/{digest}{suffix(value, kind)}"
             refs[kind] = {"path": name, "sha256": digest, "bytes": size}
             files[name] = video
         records.append({**value, "files": refs})
@@ -142,7 +154,7 @@ def inspect_archive(source: Path):
         entries = archive.infolist()
         names = [entry.filename for entry in entries]
         if (
-            not 1 <= len(entries) <= 3001
+            not 1 <= len(entries) <= 4001
             or len(set(names)) != len(names)
             or "manifest.json" not in names
         ):
@@ -184,12 +196,27 @@ def inspect_archive(source: Path):
             refs = raw.get("files")
             if not isinstance(refs, dict) or set(refs) != set(kinds(clip)):
                 raise ValueError("Incomplete clip variants")
-            for ref in refs.values():
+            if clip["quiz"] and (
+                (
+                    clip.get("presentation") in ("silhouette", PALETTE)
+                    and len(
+                        {r.get("sha256") for r in refs.values() if isinstance(r, dict)}
+                    )
+                    != 1
+                )
+                or (
+                    clip.get("project")
+                    and refs.get("quiz", {}).get("sha256")
+                    != refs.get("reveal", {}).get("sha256")
+                )
+            ):
+                raise ValueError("Quiz variants do not share the expected clean video")
+            for kind, ref in refs.items():
                 if (
                     not isinstance(ref, dict)
                     or not isinstance(ref.get("sha256"), str)
                     or not re.fullmatch(r"[a-f0-9]{64}", ref["sha256"])
-                    or ref.get("path") != f"media/{ref['sha256']}{suffix(clip)}"
+                    or ref.get("path") != f"media/{ref['sha256']}{suffix(clip, kind)}"
                     or type(ref.get("bytes")) is not int
                     or not 0 < ref["bytes"] <= MAX_FILE
                 ):
@@ -231,19 +258,43 @@ def import_archive(root: Path, source: Path, lock):
             directory.mkdir()
             for kind in kinds(value):
                 ref = raw["files"][kind]
-                destination = directory / (kind + suffix(value))
+                destination = directory / (kind + suffix(value, kind))
                 with archive.open(ref["path"]) as stream, destination.open("wb") as out:
                     shutil.copyfileobj(stream, out, 1024 * 1024)
                 if checksum(destination) != ref["sha256"]:
                     raise ValueError("Backup video checksum failed")
                 with destination.open("rb") as stream:
                     header = stream.read(12)
-                if (value["mime"] == "video/mp4" and header[4:8] != b"ftyp") or (
-                    value["mime"] == "video/webm" and header[:4] != b"\x1a\x45\xdf\xa3"
+                mime = value["project"]["baseMime"] if kind == "base" else value["mime"]
+                if (mime == "video/mp4" and header[4:8] != b"ftyp") or (
+                    mime == "video/webm" and header[:4] != b"\x1a\x45\xdf\xa3"
                 ):
                     raise ValueError("Backup video format does not match its filename")
-                neutral = value.get("presentation") == "silhouette" or kind == "quiz"
-                key = (ref["path"], neutral, value["duration"])
+                neutral = (
+                    str(value.get("presentation", "")).startswith("silhouette")
+                    or kind == "quiz"
+                )
+                duration = (
+                    value["project"]["baseFrames"] / 30
+                    if kind == "base"
+                    else value["duration"]
+                )
+                profile = (
+                    value["project"]["baseProfile"]
+                    if kind == "base"
+                    else (
+                        "edited"
+                        if value.get("project")
+                        else (
+                            "palette"
+                            if value.get("presentation") == PALETTE
+                            else "legacy"
+                        )
+                    )
+                )
+                if kind == "base" and duration > 15:
+                    profile = "edited"
+                key = (ref["path"], neutral, duration, profile)
                 if key not in verified:
                     capture = cv2.VideoCapture(str(destination))
                     try:
@@ -253,8 +304,8 @@ def import_archive(root: Path, source: Path, lock):
                         )
                     finally:
                         capture.release()
-                    count = round(value["duration"] * 30)
-                    if abs(count / 30 - value["duration"]) > 0.002:
+                    count = round(duration * 30)
+                    if abs(count / 30 - duration) > 0.002:
                         raise ValueError("Backup clip timeline changed")
                     if not (2 <= width <= 1280 and 2 <= height <= 720):
                         raise ValueError("Invalid backup video dimensions")
@@ -264,6 +315,7 @@ def import_archive(root: Path, source: Path, lock):
                         height,
                         count,
                         neutral=neutral,
+                        profile=profile,
                     )
                     verified.add(key)
             (directory / "clip.json").write_text(json.dumps(value, allow_nan=False))
@@ -275,8 +327,8 @@ def import_archive(root: Path, source: Path, lock):
                 if final.exists():
                     existing = metadata(json.loads((final / "clip.json").read_text()))
                     if existing != value or any(
-                        not (final / (kind + suffix(value))).exists()
-                        or checksum(final / (kind + suffix(value)))
+                        not (final / (kind + suffix(value, kind))).exists()
+                        or checksum(final / (kind + suffix(value, kind)))
                         != refs[kind]["sha256"]
                         for kind in kinds(value)
                     ):

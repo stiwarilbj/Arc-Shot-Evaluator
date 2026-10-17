@@ -3,6 +3,46 @@
 Open **Others → Guess the Jumper**. Guess, Create and My Clips preserve their
 state when switching workspaces. Dark mode remains the default.
 
+## Edit a finished masked video
+
+Open **Edit video** after a successful masking run. No editing action invokes
+person detection or SAM. The private masked base is the only source for edits.
+
+- **Cut:** choose a piece in the timeline. Set source start/end with sliders or
+  seconds, split at the playhead, delete, and move left/right. The last piece
+  cannot be deleted. All times snap to 30 fps; the timeline cannot exceed 60s.
+- **Text:** enter up to 200 characters, then **Add at current time**. A caption
+  starts there and lasts two seconds or until the end. Edit its interval,
+  size, and top/center/bottom placement. White text has a black backing. Moving
+  pieces leaves captions at their edited times; shortening the video clamps
+  their intervals and flags them for inspection.
+- **Effects:** select 0.5×/1×/2× per piece; insert a one-second freeze and adjust
+  its duration in Cut (0.5–3s). Set start/end zoom from 1–2× and drag the preview
+  or use horizontal/vertical framing sliders. Fades last approximately 0.25s.
+  Slow motion repeats recorded frames; it does not invent body motion.
+- **Undo edit / Redo edit** keep up to 50 operations separately from mask history.
+  **Reset edits** restores the complete base timeline. Editing requires another
+  final-motion review. Mask warnings still block saving until corrected.
+- **Update finished video** commits the preview to downloadable media. Cancellation
+  or failure retains the previous successful download. Stale results cannot be
+  approved or saved. Playback pauses in hidden workspaces and hidden browser tabs.
+
+The **Clean quiz preview** toggle uses identical cuts, speed, and freezes, with
+no captions, zoom/pan, or fades. The same clean file plays before and after a
+personal quiz answer. My Clips playback/download uses the edited viewing version.
+
+**My Clips → Edit copy** reloads the base and version-1 recipe. Saving makes a
+new clip, preserving the original. Private backups atomically include base,
+recipe, and finished variants, within the existing 512 MiB archive budget. A
+flattened older masked clip can also be edited; original-color legacy highlights
+must be masked in Create first. Raw uploads, tracking tensors, and models are
+never included in saved edit projects or backups.
+
+Browser export uses Mediabunny/WebCodecs in a dedicated worker and chooses MP4,
+then WebM according to encoder support. The local app can fall back to queued
+FFmpeg rendering without starting inference. Both use integer frame mapping,
+bounded decoding, a bundled OFL caption font, and independent output validation.
+
 ## Create
 
 1. Choose a decodable video up to 100 MB; trim to at most 15 seconds.
@@ -53,12 +93,13 @@ state when switching workspaces. Dark mode remains the default.
    saving. Detection cannot establish identity through every overlap. The editor
    stops rather than silently dropping people when more than twenty tracks are
    needed. Shorten the clip or use manual selection in a closer view.
-5. Review the complete motion, then save or download. A player name is required
+5. Edit the masked result using **Cut**, **Text**, and **Effects** (see above).
+6. Update the finished video and review the complete motion, then save or download. A player name is required
    only for **Use in my guessing game**. Personal quiz answers reveal the name
    while keeping the same silhouette footage. Failed saves retain the download.
 
-Finished previews, downloads, saved clips and personal quiz playback use exactly
-one masked timeline: target black, other included people gray, flat neutral gray
+Finished previews, downloads, saved clips and personal quiz playback use a
+masked timeline: target black, other included people in stable per-track gray shades, flat neutral gray
 background. The silhouette compositor copies no original pixels, even inside a
 bad mask, and exports contain no audio. Original footage is only an editing
 reference. Masks can still include background shapes or miss limbs: approve only
@@ -68,9 +109,11 @@ The personal rendering path reads only label masks, never source image pixels;
 an encoding retry likewise needs only the completed masks. Offline preparation
 can still explicitly produce original-foreground reveals for licensed public
 clips, but the personal editor always requests silhouettes. The native server
-validates a silhouette save's video once and requires byte-identical masked
-variants, rejecting color/audio leaks, corrupt exports and mismatched timelines
-before publishing metadata. Backup restores check neutral video interiors as
+validates saved media before publishing metadata. Original silhouette profiles
+require byte-identical variants and retain their strict three-color checks. The
+new `silhouette-edited-v1` profile allows the viewing and clean quiz versions to
+differ, while requiring identical clean quiz/reveal files and matching 30 fps
+timelines, neutral colors, correct orientation, and no audio. Backup restores check neutral video interiors as
 well as decoding; compression edges allow bounded tolerance. These checks do not
 identify every possible incorrectly segmented background shape.
 
@@ -96,6 +139,9 @@ MPS uses real-valued rotary attention to avoid complex-tensor operations, but
 accelerator tracking can still drift. A lost or unstable target, or a mask
 expanding into the background, restarts tracking from the original selections
 on CPU. Genuine tracking warnings on CPU still require correction before saving.
+If the OS terminates an accelerator subprocess before Python can catch the
+failure, the local queue retries once in a fresh CPU process. Released or
+cancelled jobs cannot retry; a failed CPU attempt reports an error.
 Native decoded frames use a two-frame cache;
 ordinary tracking memory keeps the recent sixteen frames while retaining
 correction frames. Temporary jobs
@@ -252,7 +298,7 @@ processing time; it does not silently accept a failed GPU result.
 Corrective browser/native tracking on identical
 decoded inputs measured mean IoU 0.999912 and minimum 0.999601 over nine samples.
 
-Regression results for this update: the complete frontend suite, 169 backend
+Regression results for the silhouette-default release: the complete frontend suite, 169 backend
 tests, both build targets, mobile/keyboard/theme checks, and GPU-unavailable,
 cancelled-startup, storage-unavailable and unsupported-encoder states passed.
 The Pages artifact is approximately 62 MiB, below the 800 MiB budget. The checks
@@ -284,3 +330,36 @@ nudging, exactly-once placement, undo/redo, keyboard controls and pending-aim
 reset when context changes. It uses the existing technical video fixture;
 `JUMPER_TEST_VIDEO` can select another decodable source. Inference workers are
 held idle in this interaction regression; it does not verify segmentation.
+
+## Video-editing verification
+
+`pnpm --dir frontend test:jumper` includes frame-mapping and native parity
+regressions for cuts, fractional times, speed, freezes, caption boundaries,
+framing, fades, clean quiz separation, 50-operation history and the 60-second
+limit. `tests/test_jumper_editing.py` also exercises real FFmpeg encoding,
+edited/base persistence and backup round trips, invalid recipes, queue failure,
+cancellation and released-job ownership. No additional Actions workflow is used.
+
+The production Pages build was exercised with a real 54-frame, 640×250 personal
+jumpshot and corrective SAM tracking. Its edited result had 114 frames (3.8s),
+including reordered cuts, slow motion, a freeze, timed text, zoom/pan and fades.
+Independent decoding confirmed 30 fps, neutral channels and no audio. Preview
+samples at cuts, freeze and effect boundaries differed from the encoded viewing
+video by less than 0.02 intensity levels on average (0–255 scale).
+Every clean frame was compared with its recipe-mapped base frame; mean pixel
+error stayed below 0.023. Quiz and reveal files were byte-identical.
+
+Save/reload, editing a separate copy, backup/restore, exactly-once guessing,
+mobile layout and both themes passed. Forced worker failure, cancellation and
+storage exhaustion preserved the previous downloadable result; retries worked.
+Editing and prepared guessing made no inference/model-download requests.
+The downloaded-app workflow also passed with real native tracking and a fresh
+CPU recovery after an interrupted accelerator process. Correcting the flagged
+frames removed the warnings before approval. A forced browser-renderer failure
+then exercised the actual queued FFmpeg fallback, followed by save/reload,
+editing a fresh copy, backup/restore and personal guessing. Independent decoding
+of all eight saved variants/base files confirmed their expected 54/114 frame
+counts, 30 fps, zero color-channel differences and no audio.
+The complete frontend regressions, 249 backend tests and both builds passed.
+These are tested fixture results, not a guarantee for every codec, device or
+mask. Tracking warnings still require correction and final-motion review.

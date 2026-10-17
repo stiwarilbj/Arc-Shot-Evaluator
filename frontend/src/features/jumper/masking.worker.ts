@@ -145,7 +145,7 @@ async function process(
     video = opened.track;
   const { start, end, target_id } = request.request;
   const objects = structuredClone(request.request.objects);
-  const silhouette = request.request.presentation === "silhouette";
+  const silhouette = request.request.presentation?.startsWith("silhouette") === true;
   const trackedObjects = objects.filter(
     (object) => !object.ignored || request.request.auto_detect_others,
   );
@@ -515,9 +515,9 @@ async function process(
           : (["highlight", "quiz", "reveal"] as const)[i];
         if (!silhouette && !rgb) throw Error("Missing source frame");
         const pixels = silhouette
-          ? silhouettePixels(owners, target_id)
+          ? silhouettePixels(owners, target_id, request.request.presentation === "silhouette-palette-v1")
           : compositePixels(rgb!, owners, target_id, kind);
-        validateComposite(pixels, owners, target_id, kind);
+        validateComposite(pixels, owners, target_id, kind, request.request.presentation === "silhouette-palette-v1");
         if (kind === "quiz")
           colorProofs.push(silhouetteProof(pixels, width, height));
         outputs[i].context.putImageData(

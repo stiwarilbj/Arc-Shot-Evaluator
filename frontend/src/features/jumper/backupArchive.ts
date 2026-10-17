@@ -5,6 +5,7 @@ import {
   type PersonalClip,
   type Attempt,
   type Player,
+  type Variant,
 } from "./domain.ts";
 import {
   checkedEntry,
@@ -16,7 +17,12 @@ import {
 } from "./backupZip.ts";
 export type MediaRef = { path: string; sha256: string; bytes: number };
 export type BackupClip = Clip & {
-  files: { highlight: MediaRef; quiz?: MediaRef; reveal?: MediaRef };
+  files: {
+    highlight: MediaRef;
+    quiz?: MediaRef;
+    reveal?: MediaRef;
+    base?: MediaRef;
+  };
 };
 export type BackupManifest = {
   format: "arc-jumper-library";
@@ -43,6 +49,7 @@ export function cleanClip(value: Clip): Clip {
     mime: value.mime,
     quiz: value.quiz,
     ...(value.presentation ? { presentation: value.presentation } : {}),
+    ...(value.project ? { project: structuredClone(value.project) } : {}),
   };
 }
 export function cleanAttempt(value: Attempt): Attempt {
@@ -92,18 +99,32 @@ export function validateManifest(
       !clip(item) ||
       !item.files ||
       Object.keys(item.files).some(
-        (k) => !["highlight", "quiz", "reveal"].includes(k),
+        (k) => !["highlight", "quiz", "reveal", "base"].includes(k),
       )
     )
       throw Error("Invalid saved clip in backup");
-    const required = item.quiz
-      ? (["highlight", "quiz", "reveal"] as const)
-      : (["highlight"] as const);
+    const required: Variant[] = [
+      ...(item.quiz
+        ? (["highlight", "quiz", "reveal"] as const)
+        : (["highlight"] as const)),
+      ...(item.project ? (["base"] as const) : []),
+    ];
     if (Object.keys(item.files).length !== required.length)
       throw Error("Incomplete clip variants in backup");
+    if (
+      item.quiz &&
+      (((item.presentation === "silhouette" ||
+        item.presentation === "silhouette-palette-v1") &&
+        new Set(Object.values(item.files).map((r) => r?.sha256)).size !== 1) ||
+        (item.project && item.files.quiz?.sha256 !== item.files.reveal?.sha256))
+    )
+      throw Error("Quiz variants do not share the expected clean video");
     for (const kind of required) {
       const ref = item.files[kind],
-        extension = item.mime === "video/mp4" ? "mp4" : "webm";
+        extension =
+          (kind === "base" ? item.project!.baseMime : item.mime) === "video/mp4"
+            ? "mp4"
+            : "webm";
       if (
         !ref ||
         !/^[a-f0-9]{64}$/.test(ref.sha256) ||
@@ -136,9 +157,13 @@ export async function collectBackup(
     if (!clip(value)) throw Error("Cannot back up invalid saved metadata");
     progress(`Reading clip ${index + 1} of ${clips.length}`);
     const files: BackupClip["files"] = {} as BackupClip["files"];
-    for (const kind of value.quiz
-      ? (["highlight", "quiz", "reveal"] as const)
-      : (["highlight"] as const)) {
+    const variants: Variant[] = [
+      ...(value.quiz
+        ? (["highlight", "quiz", "reveal"] as const)
+        : (["highlight"] as const)),
+      ...(value.project ? (["base"] as const) : []),
+    ];
+    for (const kind of variants) {
       const blob = kind === "quiz" ? value.quizVideo : value[kind];
       if (
         !(blob instanceof Blob) ||
@@ -147,7 +172,7 @@ export async function collectBackup(
       )
         throw Error("A saved video is missing or too large");
       const hash = await sha256(blob),
-        path = `media/${hash}.${value.mime === "video/mp4" ? "mp4" : "webm"}`;
+        path = `media/${hash}.${(kind === "base" ? value.project!.baseMime : value.mime) === "video/mp4" ? "mp4" : "webm"}`;
       files[kind] = { path, sha256: hash, bytes: blob.size };
       media.set(path, blob);
     }
@@ -231,6 +256,9 @@ export function personalClips(backup: LoadedBackup): PersonalClip[] {
   return backup.manifest.clips.map((value) => ({
     ...cleanClip(value),
     highlight: backup.media.get(value.files.highlight.path)!,
+    ...(value.project
+      ? { base: backup.media.get(value.files.base!.path)! }
+      : {}),
     ...(value.quiz
       ? {
           quizVideo: backup.media.get(value.files.quiz!.path)!,
@@ -255,6 +283,7 @@ function signature(clip: BackupClip) {
     id: undefined,
     files: {
       highlight: ref(clip.files.highlight),
+      ...(clip.project ? { base: ref(clip.files.base!) } : {}),
       ...(clip.quiz
         ? { quiz: ref(clip.files.quiz!), reveal: ref(clip.files.reveal!) }
         : {}),

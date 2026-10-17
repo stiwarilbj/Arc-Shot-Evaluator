@@ -2,6 +2,7 @@ import { IS_GITHUB_PAGES } from "../../runtime";
 import {
   attempt,
   clip,
+  MAX_BYTES,
   type Attempt,
   type Clip,
   type PersonalClip,
@@ -79,6 +80,7 @@ export async function listClips(): Promise<Clip[]> {
         mime,
         quiz,
         presentation,
+        project,
       }) => ({
         version,
         id,
@@ -88,6 +90,7 @@ export async function listClips(): Promise<Clip[]> {
         mime,
         quiz,
         ...(presentation ? { presentation } : {}),
+        ...(project ? { project: structuredClone(project) } : {}),
       }),
     )
     .sort(
@@ -96,10 +99,18 @@ export async function listClips(): Promise<Clip[]> {
     );
 }
 export async function saveClip(value: PersonalClip): Promise<Clip> {
+  const validVideo = (blob: unknown, mime: string) =>
+    blob instanceof Blob &&
+    blob.size > 0 &&
+    blob.size <= MAX_BYTES &&
+    blob.type === mime;
   if (
     !clip(value) ||
-    !value.highlight.size ||
-    (value.quiz && (!value.quizVideo?.size || !value.reveal?.size))
+    !validVideo(value.highlight, value.mime) ||
+    (value.project && !validVideo(value.base, value.project.baseMime)) ||
+    (value.quiz &&
+      (!validVideo(value.quizVideo, value.mime) ||
+        !validVideo(value.reveal, value.mime)))
   )
     throw Error("Complete videos are required before saving");
   if (IS_GITHUB_PAGES) {
@@ -107,11 +118,12 @@ export async function saveClip(value: PersonalClip): Promise<Clip> {
     return value;
   }
   const data = new FormData();
-  const { highlight, quizVideo, reveal, ...metadata } = value;
+  const { highlight, quizVideo, reveal, base, ...metadata } = value;
   data.set("metadata", JSON.stringify(metadata));
   data.set("highlight", highlight);
   if (quizVideo) data.set("quiz", quizVideo);
   if (reveal) data.set("reveal", reveal);
+  if (base) data.set("base", base);
   const saved: unknown = await (
     await api("/media", { method: "POST", body: data })
   ).json();
@@ -119,7 +131,10 @@ export async function saveClip(value: PersonalClip): Promise<Clip> {
     !clip(saved) ||
     saved.id !== value.id ||
     saved.presentation !== value.presentation ||
-    saved.quiz !== value.quiz
+    saved.quiz !== value.quiz ||
+    saved.duration !== value.duration ||
+    saved.mime !== value.mime ||
+    JSON.stringify(saved.project) !== JSON.stringify(value.project)
   )
     throw Error("The saved clip could not be verified");
   return saved;

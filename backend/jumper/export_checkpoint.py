@@ -83,7 +83,17 @@ def valid(checkpoint, frames, masks, target, start, *, now=None):
 
 
 def render_with_retry(
-    render, frames, masks, output, target, token, *, start, silhouette, progress
+    render,
+    frames,
+    masks,
+    output,
+    target,
+    token,
+    *,
+    start,
+    silhouette,
+    progress,
+    palette=False,
 ):
     checkpoint = seal(frames, masks, target, start)
     try:
@@ -95,6 +105,7 @@ def render_with_retry(
                 target,
                 token,
                 silhouette=silhouette,
+                **({"palette": True} if palette else {}),
                 progress=lambda done, total: progress(
                     "Rendering masked videos", done, total
                 ),
@@ -111,6 +122,7 @@ def render_with_retry(
                 target,
                 token,
                 silhouette=silhouette,
+                **({"palette": True} if palette else {}),
                 progress=lambda done, total: progress(
                     "Retrying export from completed masks", done, total
                 ),

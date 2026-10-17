@@ -95,11 +95,13 @@ def run(directory: Path):
                 raise ValueError("Model checksum failed; retry the download")
             temporary.replace(checkpoint)
         device = (
-            "mps"
-            if torch.backends.mps.is_available()
-            else "cuda"
-            if torch.cuda.is_available()
-            else "cpu"
+            "cpu"
+            if os.environ.get("ARCADE_JUMPER_CPU_FALLBACK") == "1"
+            else (
+                "mps"
+                if torch.backends.mps.is_available()
+                else "cuda" if torch.cuda.is_available() else "cpu"
+            )
         )
         # MPS defaults permit allocations beyond physical RAM. Leave room for
         # the browser/OS and fail into the existing CPU retry before jetsam kills
@@ -159,7 +161,8 @@ def run(directory: Path):
             job["target_id"],
             directory.name,
             start=job["start"],
-            silhouette=job.get("presentation") == "silhouette",
+            silhouette=job.get("presentation", "").startswith("silhouette"),
+            palette=job.get("presentation") == "silhouette-palette-v1",
             progress=progress,
         )
         result = {

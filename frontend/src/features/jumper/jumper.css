@@ -792,3 +792,92 @@
     flex: 1 1 160px;
   }
 }
+/* Masked-video editing keeps the same canvas and clock across every tool. */
+.jumper-edit-panel {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.jumper-edit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(250px, 1fr);
+  gap: 1.2rem;
+  align-items: start;
+}
+.jumper-edit-preview {
+  min-width: 0;
+}
+.jumper-edit-canvas {
+  width: 100%;
+  background: #e0e0e0;
+  border-radius: 10px;
+  display: block;
+  touch-action: none;
+  max-height: 60vh;
+  object-fit: contain;
+}
+.jumper-edit-controls fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+.jumper-edit-panel button:not(.button) {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 6px;
+  min-height: 42px;
+  padding: 8px 12px;
+}
+.jumper-edit-controls label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+.jumper-edit-controls label {
+  display: grid;
+  gap: 0.35rem;
+}
+.jumper-edit-controls input:not([type="checkbox"]),
+.jumper-edit-controls select {
+  width: 100%;
+  min-width: 0;
+}
+.jumper-edit-pieces {
+  display: flex;
+  gap: 0.3rem;
+  overflow-x: auto;
+  padding: 0.5rem 0;
+}
+.jumper-edit-pieces button {
+  flex-shrink: 0;
+  min-width: 85px;
+  min-height: 42px;
+  border: 1px solid var(--border-color, #555);
+}
+.jumper-edit-panel button[aria-pressed="true"] {
+  border-color: #ff753c;
+  color: #ff753c;
+}
+.jumper-caption-editor {
+  border-top: 1px solid #7775;
+  padding-top: 0.7rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.jumper-edit-panel input[type="range"] {
+  width: 100%;
+  accent-color: #ff753c;
+  min-height: 28px;
+}
+@media (max-width: 850px) {
+  .jumper-edit-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .jumper-edit-controls {
+    border-top: 1px solid #7775;
+    padding-top: 1rem;
+  }
+}

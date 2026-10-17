@@ -132,13 +132,24 @@ export function compositePixels(
 }
 
 /** Finished personal videos have no dependency on original image pixels. */
-export function silhouettePixels(owners: Uint8Array, target: number) {
+export function silhouettePixels(
+  owners: Uint8Array,
+  target: number,
+  palette = false,
+) {
   if (!Number.isInteger(target) || target < 1 || target > 255)
     throw Error("Invalid target identity");
   const result = new Uint8ClampedArray(owners.length * 4);
   for (let i = 0; i < owners.length; i++) {
     const at = i * 4;
-    const value = owners[i] === 0 ? 224 : owners[i] === target ? 0 : 128;
+    const value =
+      owners[i] === 0
+        ? 224
+        : owners[i] === target
+          ? 0
+          : palette
+            ? 64 + (((owners[i] - 1) * 47) % 137)
+            : 128;
     result[at] = result[at + 1] = result[at + 2] = value;
     result[at + 3] = 255;
   }
@@ -151,8 +162,9 @@ export async function validateFinishedVideo(
   geometry: ExportGeometry,
   proofs?: readonly Uint8Array[],
   neutral = false,
+  profile: "legacy" | "palette" | "edited" = "legacy",
 ) {
-  validateGeometry(geometry);
+  validateGeometry(geometry, profile === "edited");
   if (proofs && proofs.length !== geometry.count)
     throw Error("Missing output color checks");
   const { input, track, duration } = await openVideo(blob);
@@ -202,7 +214,17 @@ export async function validateFinishedVideo(
             geometry.height,
             proofs[index],
           );
-        else validateNeutralPixels(pixels, geometry.width, geometry.height);
+        else if (profile === "legacy")
+          validateNeutralPixels(pixels, geometry.width, geometry.height);
+        else {
+          for (let i = 0; i < pixels.length; i += 4)
+            if (
+              Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) -
+                Math.min(pixels[i], pixels[i + 1], pixels[i + 2]) >
+              8
+            )
+              throw Error("Edited video contains original colors");
+        }
       }
       index++;
     }

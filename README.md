@@ -18,7 +18,7 @@ no account, paid inference API, or cloud-processing service is required.
 | [Shot Analyzer](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#shot-analyzer)      | Upload footage, review attempt windows and available measurements, correct results, and export shot data.             |
 | [Playbook](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#playbook)                | Draw and simulate half-court actions, customize players, and save or export diagrams.                                 |
 | [Counter Lab](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#counter-lab)          | Test a play against different defenses, inspect breakdowns, and compare verified repairs.                             |
-| [Others → Guess the Jumper](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#jumper) | Create silhouette videos from your own footage, keep a private clip library, and guess the shooter from their motion. |
+| [Others → Guess the Jumper](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#jumper) | Mask and edit your own jumpshot videos, keep a private clip library, and guess the shooter from their motion. |
 
 The front page includes a goal-based quick chooser, feature cards, interactive
 illustrative mini demos, and direct links to each workspace. **Create a clip**
@@ -252,9 +252,29 @@ Personal videos stay on your device; they are never automatically published.
    ambiguous or unmatched tracks leave the selections unchanged with guidance.
    Overlapping new detections require manual selection. Undo/redo supports up
    to 50 correction edits.
-5. **Save/download:** reprocess corrections and review the complete motion before
-   approving the result. Save privately or download MP4 when supported, otherwise
-   WebM. A name is required only when enabling **Use in my guessing game**.
+5. **Edit video:** after masking, split, trim, delete, or reorder pieces in **Cut**.
+   Add timed captions in **Text**. **Effects** offers 0.5×/1×/2× speed,
+   0.5–3-second freezes, 1–2× zoom/pan, and optional 0.25-second fades.
+   The preview and export use the same 30 fps timeline; finished edits can reach
+   **60 seconds**. Undo/redo retains 50 edit operations separately from corrections.
+6. **Review and save/download:** click **Update finished video** after edits,
+   review the entire finished motion, and save privately or download MP4 when
+   supported, otherwise WebM. A failed render keeps the last successful download.
+   A name is required only when enabling **Use in my guessing game**.
+
+Editing reads the finished masked base and never reruns detection or segmentation.
+Other players use stable per-track gray shades unrelated to clothing or teams;
+the shooter stays black and the background light gray. Captions use white text
+on black backing and are never populated from names or filenames automatically.
+Caption times stay attached to the edited timeline when pieces change; captions
+clamped by a shorter timeline show a warning. Numeric times and move buttons
+provide keyboard alternatives to dragging.
+
+**My Clips → Edit copy** restores the private masked base and recipe and saves a
+new identity, leaving the original intact. Backups include the base and edits
+alongside finished videos; raw uploads are not retained for re-editing. Older
+masked clips can be edited as flattened copies. Legacy color highlights still
+require masking in Create before they can become silhouette edits.
 
 Progress separates model downloads, detection, tracking, and export, with estimates
 based on measured processing speed. Resource checks flag oversized jobs.
@@ -266,10 +286,19 @@ videos are decoded and checked for timeline, dimensions, neutral colors, and no
 audio before becoming ready for review.
 
 Personal silhouette rendering uses label masks alone, without rereading original
-pixels or creating color reveals. Highlight, quiz, and answer playback share that
-same masked video. The local server also checks received silhouette saves before
-publishing them to My Clips; invalid files, mismatched variants, colors, audio,
-and broken timelines fail without leaving a partial saved clip. Cancelled or
+pixels or creating color reveals. Edited clips store a viewing version and a
+separate **clean quiz video**, used identically before and after answering. The
+clean version preserves cuts, speeds, and freezes but omits captions, zoom/pan,
+and fades. This keeps presentation text from giving away quiz answers.
+The versioned edited profile validates each video and its shared timeline; older
+silhouette profiles retain their identical-variant and strict color checks.
+The local server validates saves before publishing them to My Clips. Invalid
+files, colors, audio, or broken timelines leave no partial saved clip.
+Browser exports use a dedicated cancellable rendering worker. The downloaded
+app uses the same renderer when supported and a queued local FFmpeg fallback
+otherwise. Native masking also retries an OS-terminated accelerator once in a
+fresh CPU process; cancellation never starts that retry.
+Editing uses no paid service and does not download inference models. Cancelled or
 released local jobs cannot take ownership of a later retry. Browser worker
 communication failures stop cleanly and allow another attempt.
 

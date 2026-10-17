@@ -103,7 +103,7 @@ export async function processVideo(
           cleanup();
           if (
             maskResult(data.result) &&
-            (request.presentation !== "silhouette" ||
+            (!request.presentation?.startsWith("silhouette") ||
               (data.result.highlight === data.result.quiz &&
                 data.result.quiz === data.result.reveal)) &&
             (!request.auto_detect_others ||
@@ -207,7 +207,7 @@ export async function processVideo(
             "Local editor returned an incomplete result. Retry processing.",
           );
         const kinds =
-          request.presentation === "silhouette"
+          request.presentation?.startsWith("silhouette")
             ? ["quiz"]
             : ["highlight", "quiz", "reveal"];
         const values = await Promise.all(
