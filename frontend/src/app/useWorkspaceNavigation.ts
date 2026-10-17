@@ -43,6 +43,22 @@ export function useWorkspaceNavigation() {
     };
   }, [update]);
 
+  useEffect(() => {
+    const titles: Record<AppWorkspace, string> = {
+      home: "Basketball tools & games",
+      analyzer: "Shot Analyzer",
+      playbook: "Playbook",
+      counterlab: "Counter Lab",
+      jumper:
+        location.jumperView === "create"
+          ? "Create · Guess the Jumper"
+          : location.jumperView === "clips"
+            ? "My Clips · Guess the Jumper"
+            : "Guess the Jumper",
+    };
+    document.title = `ARC · ${titles[location.workspace]}`;
+  }, [location.workspace, location.jumperView]);
+
   const navigate = useCallback(
     (patch: Partial<WorkspaceLocation>) => {
       const next = { ...current.current, ...patch };

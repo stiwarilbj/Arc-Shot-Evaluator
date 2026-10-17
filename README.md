@@ -1,5 +1,7 @@
 # ARC
 
+[![ARC — See your game from every angle. Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper.](frontend/public/assets/arc-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
+
 Basketball footage review, play design, defensive testing, and private jumpshot
 quizzes in one app.
 
@@ -17,12 +19,17 @@ no account, paid inference API, or cloud-processing service is required.
 | [Counter Lab](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#counter-lab)          | Test a play against different defenses, inspect breakdowns, and compare verified repairs.                             |
 | [Others → Guess the Jumper](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#jumper) | Create silhouette videos from your own footage, keep a private clip library, and guess the shooter from their motion. |
 
-The front page introduces each tool with an interactive illustrative mini demo and
-a link to its workspace. Click the **ARC logo** to return there. Shot Analyzer
+The front page includes a goal-based quick chooser, feature cards, interactive
+illustrative mini demos, and direct links to each workspace. **Create a clip**
+opens the silhouette editor directly; **Explore the tools** jumps to the cards.
+The downloaded-app link opens setup instructions. Promotional copy and link-preview
+artwork cover all four tools. Feature descriptions distinguish browser review from
+full local analysis. Click the **ARC logo** to return to the front page. Shot Analyzer
 stays first in the navigation. **Others** opens by hover, click, keyboard, or mobile
 tap. Dark mode is the default; the header also offers light mode and a usage guide.
 
-Each workspace has its own URL fragment. Reloading reopens that workspace/view;
+Each workspace has its own URL fragment and descriptive browser-tab title.
+Reloading reopens that workspace/view;
 Back and Forward follow tab changes. Nested views include
 `#shot-analyzer/overview`, `#shot-analyzer/tracking`, `#jumper/create`, and
 `#jumper/my-clips`. Switching workspaces keeps open drafts, uploads, and reports in

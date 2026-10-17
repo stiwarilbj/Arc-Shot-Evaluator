@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0d0f10"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="58" y="84" fill="#ee733f" font-size="44" font-weight="900" font-style="oblique" letter-spacing="-5">ARC</text>
+    <text x="1140" y="78" text-anchor="end" fill="#9da2a3" font-size="16" letter-spacing="3">THE BASKETBALL TOOLKIT</text>
+    <path d="M60 110H1140" stroke="#2b3032"/>
+    <text x="60" y="195" fill="#f3f1ec" font-size="58" font-weight="750" letter-spacing="-2">See your game</text>
+    <text x="60" y="263" fill="#f3f1ec" font-size="58" font-weight="750" letter-spacing="-2">from every <tspan fill="#ee733f">angle.</tspan></text>
+    <text x="62" y="317" fill="#9da2a3" font-size="22">Study. Design. Test. Play.</text>
+    <g transform="translate(830 150)">
+      <path d="M0 0H300V198H0Z M104 0V85H196V0 M15 0V45Q150 242 285 45V0" stroke="#3a4042" stroke-width="2" fill="none"/>
+      <circle cx="150" cy="85" r="30" stroke="#3a4042" stroke-width="2" fill="none"/>
+      <circle cx="150" cy="23" r="7" stroke="#ee733f" stroke-width="2" fill="none"/>
+      <path d="M65 150Q159 178 201 103 M190 108L201 103L200 116" stroke="#ee733f" stroke-width="3" fill="none"/>
+      <path d="M202 103L245 65" stroke="#9da2a3" stroke-width="2" stroke-dasharray="5 6"/>
+      <g fill="#151819" stroke="#ee733f" stroke-width="2"><circle cx="65" cy="150" r="14"/><circle cx="155" cy="129" r="14"/><circle cx="245" cy="65" r="14"/></g>
+      <g fill="#f3f1ec" font-size="14" text-anchor="middle"><text x="65" y="155">1</text><text x="155" y="134">5</text><text x="245" y="70">3</text></g>
+    </g>
+    <g fill="#151819" stroke="#2b3032"><rect x="60" y="383" width="258" height="126" rx="10"/><rect x="334" y="383" width="258" height="126" rx="10"/><rect x="608" y="383" width="258" height="126" rx="10"/><rect x="882" y="383" width="258" height="126" rx="10"/></g>
+    <g fill="#ee733f" font-size="13" font-weight="700" letter-spacing="2"><text x="80" y="413">01 / REVIEW</text><text x="354" y="413">02 / DESIGN</text><text x="628" y="413">03 / TEST</text><text x="902" y="413">04 / GUESS</text></g>
+    <g fill="#f3f1ec" font-size="24" font-weight="700"><text x="80" y="450">Shot Analyzer</text><text x="354" y="450">Playbook</text><text x="628" y="450">Counter Lab</text><text x="902" y="450">Guess the Jumper</text></g>
+    <g fill="#9da2a3" font-size="16"><text x="80" y="481">Look closer at your shot.</text><text x="354" y="481">Bring an idea to the court.</text><text x="628" y="481">Find a better answer.</text><text x="902" y="481">Make motion the clue.</text></g>
+    <text x="60" y="572" fill="#9da2a3" font-size="16">No account. Device-local processing. Basketball, from a new perspective.</text>
+    <text x="1140" y="572" text-anchor="end" fill="#ee733f" font-size="18">Explore ARC →</text>
+  </g>
+</svg>

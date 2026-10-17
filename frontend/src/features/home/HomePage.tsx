@@ -1,5 +1,14 @@
 import { useState, type ReactNode } from "react";
-import { ArrowRight, Play, RotateCcw } from "lucide-react";
+import {
+  ArrowRight,
+  CircleDot,
+  ClipboardList,
+  FlaskConical,
+  ScanLine,
+  ShieldCheck,
+  Play,
+  RotateCcw,
+} from "lucide-react";
 import "./home.css";
 
 // These small, illustrative diagrams never run the analysis or inference engines.
@@ -7,19 +16,84 @@ export function HomePage() {
   return (
     <main className="arc-home">
       <header className="home-intro">
-        <h1>See your game from every angle.</h1>
-        <p>
-          Analyze a shot, draw a play, test a defense, or create a silhouette
-          quiz.
-          <br className="home-desktop-break" /> Pick a tool to get started.
-        </p>
+        <div className="home-hero-copy">
+          <p className="home-eyebrow">
+            A basketball toolkit. A new perspective.
+          </p>
+          <h1>
+            See your game
+            <br />
+            from every <span>angle.</span>
+          </h1>
+          <p className="home-hero-description">
+            Study your shot. Draw your next play. Challenge a defense. Turn a
+            jumpshot into a mystery.
+          </p>
+          <div className="home-hero-actions">
+            <HomeLink className="home-primary-link" href="#shot-analyzer">
+              Review a shot <ArrowRight size={18} aria-hidden="true" />
+            </HomeLink>
+            <button
+              type="button"
+              className="home-browse-link"
+              onClick={() => {
+                const heading = document.getElementById("home-tools-heading");
+                heading?.scrollIntoView({ block: "start" });
+                heading?.focus({ preventScroll: true });
+              }}
+            >
+              Explore the tools <span aria-hidden="true">↓</span>
+            </button>
+          </div>
+          <p className="home-privacy">
+            <ShieldCheck size={15} aria-hidden="true" /> No account. No paid
+            inference API. Your uploads stay on your device.
+          </p>
+        </div>
+        <nav className="home-start" aria-label="Choose a basketball tool">
+          <p className="home-start-label">What are you working on?</p>
+          <StartLink
+            href="#shot-analyzer"
+            icon={<CircleDot />}
+            title="My shooting motion"
+            description="Review footage with Shot Analyzer"
+          />
+          <StartLink
+            href="#playbook"
+            icon={<ClipboardList />}
+            title="An idea for a play"
+            description="Draw it on the Playbook court"
+          />
+          <StartLink
+            href="#counter-lab"
+            icon={<FlaskConical />}
+            title="A defense to beat"
+            description="Test your idea in Counter Lab"
+          />
+          <StartLink
+            href="#jumper/create"
+            icon={<ScanLine />}
+            title="A mystery jumpshot"
+            description="Create a clip in Guess the Jumper"
+          />
+        </nav>
       </header>
+      <div className="home-tools-heading">
+        <div>
+          <p className="home-eyebrow">Explore ARC</p>
+          <h2 id="home-tools-heading" tabIndex={-1}>
+            Four ways to work on your game.
+          </h2>
+        </div>
+        <p>Try a mini demo, then make it your own.</p>
+      </div>
       <div className="home-features">
         <Feature
           number="01"
           title="Shot Analyzer"
           subtitle="Look closer at your shooting motion."
-          description="Upload basketball footage, review your pose and tracking, and explore shot data and coaching notes."
+          description="Find attempt windows, review outcomes, and keep shot notes. The downloaded app adds full vision analysis and Coach Notes."
+          detail="Browser review · Full analysis locally"
           href="#shot-analyzer"
         >
           <ShotDemo />
@@ -28,7 +102,8 @@ export function HomePage() {
           number="02"
           title="Playbook"
           subtitle="Turn an idea into a court diagram."
-          description="Create and edit player routes, screens, and passes. Start from a blank court or explore a library of starter plays."
+          description="Shape routes, screens, and passes, then watch your idea move. Start from a blank court or adapt one of 24 starter plays."
+          detail="24 starters · Editable courts · PNG export"
           href="#playbook"
         >
           <PlayDemo />
@@ -37,7 +112,8 @@ export function HomePage() {
           number="03"
           title="Counter Lab"
           subtitle="Find where a play breaks down."
-          description="Bring in a Playbook play, compare defensive responses, inspect breakdowns, and try repairs tested by the simulation."
+          description="Compare defensive responses, find the first breakdown, and test small repairs. Save an improved copy back to Playbook."
+          detail="Drawn + adaptive offense · Simulation scores"
           href="#counter-lab"
         >
           <CounterDemo />
@@ -46,13 +122,86 @@ export function HomePage() {
           number="04"
           title="Guess the Jumper"
           subtitle="Make the jumpshot the only clue."
-          description="Turn your own footage into silhouettes. Save private clips, download them, or guess player names in your personal collection."
+          description="Click a shooter to make them black, other players gray, and the background neutral. Save private clips and quiz yourself."
+          detail="Personal clips · Public NBA pack unavailable"
+          secondaryHref="#jumper/create"
+          secondaryLabel="Create a clip"
           href="#jumper"
         >
           <JumperDemo />
         </Feature>
       </div>
+      <aside className="home-local" aria-labelledby="home-local-heading">
+        <div>
+          <p className="home-eyebrow">Take ARC with you</p>
+          <h2 id="home-local-heading">Browser convenience. Local control.</h2>
+          <p>
+            Use the tools here, or run the downloaded app for full shot analysis
+            and native clip processing. Both keep personal media on your device.
+          </p>
+        </div>
+        <a
+          href="https://github.com/stiwarilbj/Arc-Shot-Evaluator#run-the-downloaded-app"
+          className="home-feature-link"
+        >
+          Get the downloaded app <ArrowRight size={18} aria-hidden="true" />
+        </a>
+      </aside>
     </main>
+  );
+}
+
+function HomeLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      className={className}
+      onClick={(event) => {
+        if (
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey &&
+          event.button === 0
+        )
+          window.scrollTo(0, 0);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+function StartLink({
+  href,
+  icon,
+  title,
+  description,
+}: {
+  href: string;
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <HomeLink href={href} className="home-start-link">
+      <span className="home-start-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span>
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
+      <ArrowRight size={17} aria-hidden="true" />
+    </HomeLink>
   );
 }
 
@@ -61,6 +210,9 @@ function Feature({
   title,
   subtitle,
   description,
+  detail,
+  secondaryHref,
+  secondaryLabel,
   href,
   children,
 }: {
@@ -68,6 +220,9 @@ function Feature({
   title: string;
   subtitle: string;
   description: string;
+  detail: string;
+  secondaryHref?: string;
+  secondaryLabel?: string;
   href: string;
   children: ReactNode;
 }) {
@@ -83,23 +238,18 @@ function Feature({
         <h2 id={`home-feature-${number}`}>{title}</h2>
         <p className="home-feature-subtitle">{subtitle}</p>
         <p className="home-feature-description">{description}</p>
-        <a
-          className="home-feature-link"
-          href={href}
-          onClick={(event) => {
-            if (
-              !event.metaKey &&
-              !event.ctrlKey &&
-              !event.shiftKey &&
-              !event.altKey &&
-              event.button === 0
-            )
-              window.scrollTo(0, 0);
-          }}
-        >
-          Open {title}
-          <ArrowRight size={18} aria-hidden="true" />
-        </a>
+        <p className="home-feature-detail">{detail}</p>
+        <div className="home-feature-actions">
+          <HomeLink className="home-feature-link" href={href}>
+            Open {title}
+            <ArrowRight size={18} aria-hidden="true" />
+          </HomeLink>
+          {secondaryHref ? (
+            <HomeLink className="home-secondary-link" href={secondaryHref}>
+              {secondaryLabel}
+            </HomeLink>
+          ) : null}
+        </div>
       </div>
       <div className="home-preview">
         {children}
