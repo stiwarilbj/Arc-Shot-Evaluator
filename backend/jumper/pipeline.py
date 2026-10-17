@@ -374,7 +374,7 @@ def track(
         return boxes.tolist()
 
     if detector is not None:
-        from backend.jumper.discovery import clicked_person_box
+        from backend.jumper.discovery import require_shooter_box
 
         initial = next(o for o in job["objects"] if o["id"] == job["target_id"])[
             "prompts"
@@ -390,15 +390,14 @@ def track(
             None,
         )
         if (
-            not job.get("shooter_selection_resolved")
-            and initial["frame"] == 0
+            initial["frame"] == 0
             and "box" not in initial
             and point is not None
         ):
             boxes = detect(0)
-            box = clicked_person_box(boxes, point)
-            if box is not None:
-                initial["box"] = box
+            initial["box"] = require_shooter_box(
+                boxes, initial["points"], initial["labels"]
+            )
     with torch.inference_mode():
         state = bounded_state(predictor, frames)
         try:

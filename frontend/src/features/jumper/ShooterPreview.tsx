@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { JobProgress, Track } from "./domain";
+import { ShooterSelectionError } from "./discovery";
 import { preview } from "./media";
 import { useBlobUrl } from "./JumperLab";
 
@@ -88,7 +89,9 @@ export default function ShooterPreview({
         } catch (error) {
           if (!abort.signal.aborted)
             setStatus(
-              `Selection check unavailable: ${String(error)}. You can adjust your selection or retry.`,
+              error instanceof ShooterSelectionError
+                ? error.message
+                : `Selection check unavailable: ${String(error)}. You can adjust your selection or retry.`,
             );
         }
       })();

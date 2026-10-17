@@ -193,6 +193,12 @@ Personal videos stay on your device; they are never automatically published.
    The preview and full run reuse the same starting-frame shooter selection,
    including the detected body box when automatic discovery is enabled. The
    preview only tracks the shooter; full processing also discovers other people.
+   If the points overlap several detected players, add an Include point on a
+   visible part of the shooter away from the overlap in the first frame. If no
+   player matches, clear the first-frame points and select again. Automatic
+   processing waits for a unique match; it never silently falls back to a
+   point-only mask. If detection keeps missing the player, turn off automatic
+   discovery under corrections and verify your manual selection in the preview.
    Other people are discovered automatically, including later entrants.
 3. **Process:** track people and render a muted video up to **720p/30 fps**. The
    shooter becomes solid black, other included players gray, and the background

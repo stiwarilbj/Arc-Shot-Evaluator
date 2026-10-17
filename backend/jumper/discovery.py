@@ -12,6 +12,29 @@ def clicked_person_box(boxes, point):
     return list(matches[0]) if len(matches) == 1 else None
 
 
+def require_shooter_box(boxes, points, labels):
+    """Match the browser's automatic-selection gate; negatives refine masks only."""
+    included = [p for p, label in zip(points, labels) if label == 1]
+    matches = [
+        box
+        for box in boxes
+        if included
+        and all(
+            box[0] <= p[0] <= box[2] and box[1] <= p[1] <= box[3]
+            for p in included
+        )
+    ]
+    if len(matches) > 1:
+        raise ValueError(
+            "Your selection overlaps more than one detected player. Add another Include point on a part of the shooter away from the other player in the first frame."
+        )
+    if not matches:
+        raise ValueError(
+            "Your points do not identify one detected player. Clear the first-frame points and click inside the shooter again. If detection keeps missing them, use manual selection under corrections and check the silhouette preview."
+        )
+    return list(matches[0])
+
+
 def resolve_people(boxes, owners):
     height, width = owners.shape
     bounds = {}

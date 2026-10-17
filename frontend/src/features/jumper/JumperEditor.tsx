@@ -23,6 +23,7 @@ import {
 import { listClips, saveClip } from "./storage";
 import { openVideo, preview } from "./media";
 import { clearFramePoints, needsSelection } from "./editorSelections";
+import { ShooterSelectionError } from "./discovery";
 import MaskTimeline from "./MaskTimeline";
 import ShooterPreview from "./ShooterPreview";
 import SelectionMagnifier from "./SelectionMagnifier";
@@ -376,7 +377,10 @@ export default function JumperEditor({
       setProgress({ stage: "Ready for review", progress: 1 });
     } catch (error) {
       if (id === generation.current) {
-        if (!(error instanceof DOMException && error.name === "AbortError"))
+        if (error instanceof ShooterSelectionError) {
+          setError(error.message);
+          setProgress({ stage: "Select your shooter again", progress: 0 });
+        } else if (!(error instanceof DOMException && error.name === "AbortError"))
           setError(String(error));
         else
           setProgress({

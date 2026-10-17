@@ -3,7 +3,7 @@ import {
   type MaskRequest,
   type PointPrompt,
 } from "./domain.ts";
-import { clickedPersonBox } from "./discovery.ts";
+import { requireShooterBox } from "./discovery.ts";
 
 type Detect = (
   file: File,
@@ -24,7 +24,7 @@ export class ShooterSelectionCache {
     validateMaskRequest(request);
     signal.throwIfAborted();
     const resolved = structuredClone(request);
-    if (!resolved.shooter_selection_resolved && resolved.auto_detect_others) {
+    if (resolved.auto_detect_others) {
       const target = resolved.objects.find(
         (track) => track.id === resolved.target_id,
       )!;
@@ -38,19 +38,15 @@ export class ShooterSelectionCache {
         if (cached?.key === key)
           target.prompts[0] = structuredClone(cached.prompt);
         else {
-          const box = clickedPersonBox(
-            await detect(file, resolved.start, signal),
-            point,
-          );
+          const boxes = await detect(file, resolved.start, signal);
           signal.throwIfAborted();
-          if (box) seed.box = box;
+          seed.box = requireShooterBox(boxes, seed.points!, seed.labels!);
           validateMaskRequest(resolved);
           this.seeds.set(file, { key, prompt: structuredClone(seed) });
         }
       }
     }
-    // A point-only result is also authoritative: an ambiguous detection must
-    // not be resolved differently by the native/worker tracking pass.
+    // Only verified automatic seeds (or explicitly manual selections) reach tracking.
     resolved.shooter_selection_resolved = true;
     return resolved;
   }

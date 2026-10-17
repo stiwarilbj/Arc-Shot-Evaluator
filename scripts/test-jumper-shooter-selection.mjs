@@ -65,14 +65,30 @@ await cache.resolve(new File(["different footage"], file.name), request, async (
 }, signal);
 assert.equal(newSource, true, "matching filenames must not share selections");
 
-for (const boxes of [[], [body, body]]) {
+// Failed automatic selections must never become authoritative or cached.
+for (const [boxes, message] of [[[], /Clear the first-frame points/], [[body, body], /Add another Include point/]]) {
   const isolated = new ShooterSelectionCache();
-  const uncertain = await isolated.resolve(file, request, async () => boxes, signal);
-  assert.equal(uncertain.objects[0].prompts[0].box, undefined);
-  const repeated = await isolated.resolve(file, fullRequest, never, signal);
-  assert.equal(repeated.shooter_selection_resolved, true);
-  assert.deepEqual(repeated.objects[0].prompts[0], uncertain.objects[0].prompts[0]);
+  await assert.rejects(isolated.resolve(file, request, async () => boxes, signal), message);
+  await assert.rejects(isolated.resolve(file, fullRequest, async () => boxes, signal), message);
+  await assert.rejects(isolated.resolve(file, { ...request, shooter_selection_resolved: true }, async () => boxes, signal), message);
+  const recovered = await isolated.resolve(file, request, async () => [body], signal);
+  assert.deepEqual(recovered.objects[0].prompts[0].box, body);
 }
+const { requireShooterBox, ShooterSelectionError } = await import("../frontend/src/features/jumper/discovery.ts");
+const overlap = [[0.1, 0.1, 0.6, 0.9], [0.3, 0.2, 0.8, 0.9]];
+assert.throws(() => requireShooterBox(overlap, [[0.4, 0.4]], [1]), ShooterSelectionError);
+const corrected = structuredClone(request);
+corrected.objects[0].prompts[0] = {
+  frame: 0, points: [[0.4, 0.4], [0.2, 0.5], [0.5, 0.5]], labels: [1, 1, 0],
+};
+const correctedCache = new ShooterSelectionCache();
+const confirmed = await correctedCache.resolve(file, corrected, async () => overlap, signal);
+assert.deepEqual(confirmed.objects[0].prompts[0].box, overlap[0]);
+assert.deepEqual(confirmed.objects[0].prompts[0].points, corrected.objects[0].prompts[0].points);
+await correctedCache.resolve(file, { ...corrected, end: 8 }, never, signal);
+assert.throws(() => requireShooterBox(overlap, [[0.2, 0.5], [0.7, 0.5]], [1, 1]), /Clear the first-frame points/);
+assert.throws(() => requireShooterBox(overlap, [[0.2, 0.5]], [0]), /Clear the first-frame points/);
+assert.deepEqual(requireShooterBox(overlap, [[0.1, 0.1]], [1]), overlap[0]);
 
 const aborted = new AbortController();
 const isolated = new ShooterSelectionCache();

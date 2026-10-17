@@ -166,3 +166,24 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
     result = json.loads((tmp_path / "result.json").read_text())
     assert [o["id"] for o in result["objects"]] == [1, 2]
     assert result["warnings"] == [{"frame": 2, "kind": "target_lost"}]
+
+
+def test_automatic_shooter_selection_requires_consistent_include_points():
+    import pytest
+    from backend.jumper.discovery import require_shooter_box
+
+    boxes = [[0.1, 0.1, 0.6, 0.9], [0.3, 0.2, 0.8, 0.9]]
+    with pytest.raises(ValueError, match="Add another Include point"):
+        require_shooter_box(boxes, [[0.4, 0.4]], [1])
+    with pytest.raises(ValueError, match="Clear the first-frame points"):
+        require_shooter_box([], [[0.4, 0.4]], [1])
+    with pytest.raises(ValueError, match="Clear the first-frame points"):
+        require_shooter_box(boxes, [[0.2, 0.5], [0.7, 0.5]], [1, 1])
+    with pytest.raises(ValueError, match="Clear the first-frame points"):
+        require_shooter_box(boxes, [[0.2, 0.5]], [0])
+    assert require_shooter_box(
+        boxes, [[0.4, 0.4], [0.2, 0.5], [0.5, 0.5]], [1, 1, 0]
+    ) == boxes[0]
+    result = require_shooter_box(boxes, [[0.1, 0.1]], [1])
+    result[0] = 0
+    assert boxes[0][0] == 0.1

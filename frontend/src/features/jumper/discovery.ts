@@ -10,6 +10,44 @@ export function clickedPersonBox(boxes: number[][], point: number[]) {
   return matches.length === 1 ? [...matches[0]] : undefined;
 }
 
+/** Expected selection problems are actionable, not model/processing failures. */
+export class ShooterSelectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ShooterSelectionError";
+  }
+}
+
+/** All include points must identify the same body. Exclude points refine its mask,
+ * not its box: overlapping boxes often contain part of the other player. */
+export function requireShooterBox(
+  boxes: number[][],
+  points: number[][],
+  labels: number[],
+) {
+  const included = points.filter((_, i) => labels[i] === 1);
+  const matches = boxes.filter(
+    (box) =>
+      included.length > 0 &&
+      included.every(
+        (point) =>
+          point[0] >= box[0] &&
+          point[0] <= box[2] &&
+          point[1] >= box[1] &&
+          point[1] <= box[3],
+      ),
+  );
+  if (matches.length > 1)
+    throw new ShooterSelectionError(
+      "Your selection overlaps more than one detected player. Add another Include point on a part of the shooter away from the other player in the first frame.",
+    );
+  if (!matches.length)
+    throw new ShooterSelectionError(
+      "Your points do not identify one detected player. Clear the first-frame points and click inside the shooter again. If detection keeps missing them, use manual selection under corrections and check the silhouette preview.",
+    );
+  return [...matches[0]];
+}
+
 /** Match detections one-to-one against recorded masks, never nearest players. */
 export function resolvePeople(
   boxes: number[][],

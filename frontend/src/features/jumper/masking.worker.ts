@@ -28,7 +28,7 @@ import {
   validDetections,
   type CachedFeatures,
 } from "./frameCache";
-import { clickedPersonBox, resolvePeople } from "./discovery";
+import { requireShooterBox, resolvePeople } from "./discovery";
 import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
 import { validateComposite, silhouetteProof } from "./videoValidation";
@@ -429,7 +429,6 @@ async function process(
         .prompts[0];
       const point = initial.points?.find((_, i) => initial.labels?.[i] === 1);
       if (
-        !request.request.shooter_selection_resolved &&
         initial.frame === 0 &&
         !initial.box &&
         point
@@ -437,8 +436,11 @@ async function process(
         report("Detecting the selected shooter", 0);
         const sample = await sink.getCanvas(start);
         if (!sample) throw Error("Could not decode the starting frame");
-        const box = clickedPersonBox(await detect(0, sample.canvas), point);
-        if (box) initial.box = box;
+        initial.box = requireShooterBox(
+          await detect(0, sample.canvas),
+          initial.points!,
+          initial.labels!,
+        );
       }
     }
     const promptFrames = [
