@@ -1,7 +1,7 @@
 [Open the live ARC GitHub Pages demo →](https://stiwarilbj.github.io/Arc-Shot-Evaluator/)
 
 The hosted demo and local app include Shot Analyzer, Playbook, Counter Lab, and
-**Others → Who’s That Jumper?** for private personal clips. Upload a short video,
+**Others → Guess the Jumper** for private personal clips. Upload a short video,
 click the shooter in the first frame, process and review the masks, then download
 or save it. Review compares the original reference with the masked result on one
 playback clock (side by side on desktop, a toggle on mobile). Downloads and saves

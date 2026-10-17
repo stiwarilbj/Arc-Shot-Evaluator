@@ -44,7 +44,7 @@ export function HomePage() {
         </Feature>
         <Feature
           number="04"
-          title="Who’s That Jumper?"
+          title="Guess the Jumper"
           subtitle="Make the jumpshot the only clue."
           description="Turn your own footage into silhouettes. Save private clips, download them, or guess player names in your personal collection."
           href="#jumper"

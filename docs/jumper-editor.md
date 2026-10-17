@@ -1,6 +1,6 @@
 # Personal Jumper clips
 
-Open **Others → Who’s That Jumper?**. Guess, Create and My Clips preserve their
+Open **Others → Guess the Jumper**. Guess, Create and My Clips preserve their
 state when switching workspaces. Dark mode remains the default.
 
 ## Create

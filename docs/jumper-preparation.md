@@ -1,4 +1,4 @@
-# Who’s That Jumper? — preparation status
+# Guess the Jumper — preparation status
 
 **Public collection: zero approved clips.** The personal-first application is
 implemented separately; see [the editor guide](jumper-editor.md). The 300-shot /

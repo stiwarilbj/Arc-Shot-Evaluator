@@ -31,7 +31,7 @@ try {
   await others.click();
   await page.getByRole("menuitem").click();
   await expect(
-    page.getByRole("heading", { name: "Who’s That Jumper?", exact: true }),
+    page.getByRole("heading", { name: "Guess the Jumper", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Light", exact: true }).click();
   await page.getByRole("button", { name: "Create", exact: true }).click();

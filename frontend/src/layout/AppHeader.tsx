@@ -138,7 +138,7 @@ export function AppHeader({
                   setOthersOpen(false);
                 }}
               >
-                Who’s That Jumper?
+                Guess the Jumper
               </button>
             </div>
           </div>

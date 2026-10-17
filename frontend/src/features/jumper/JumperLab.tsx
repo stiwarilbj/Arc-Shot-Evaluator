@@ -147,7 +147,7 @@ export default function JumperLab({
       <header className="jumper-heading">
         <div>
           <span className="jumper-eyebrow">THE SHOT IS THE CLUE</span>
-          <h1>Who’s That Jumper?</h1>
+          <h1>Guess the Jumper</h1>
           <p>Recognize the release. Make your own mystery clips.</p>
         </div>
         <span className="jumper-private">Device-local · No accounts</span>
