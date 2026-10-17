@@ -100,6 +100,7 @@ def run(directory: Path):
                     done,
                     total,
                 ),
+                cache_source=directory / "source",
             )
         except (RuntimeError, NotImplementedError) as error:
             if device == "cpu":
@@ -121,6 +122,7 @@ def run(directory: Path):
                 checkpoint,
                 "cpu",
                 lambda done, total: progress("Tracking players · CPU", done, total),
+                cache_source=directory / "source",
             )
         progress("Rendering masked videos")
         outputs = render(

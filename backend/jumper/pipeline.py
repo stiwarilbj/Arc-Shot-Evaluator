@@ -259,6 +259,7 @@ def track(
     checkpoint: Path,
     device: str,
     progress=None,
+    cache_source=None,
 ) -> list[dict]:
     """Use native SAM 2.1 video tracking memory and per-frame corrections."""
     import torch
@@ -279,6 +280,18 @@ def track(
         from backend.jumper.mps import enable_real_rotary
 
         enable_real_rotary(predictor)
+    from backend.jumper.cache import FrameCache, cache_backbone, identity
+    from backend.config import PROJECT_ROOT
+
+    cache = None
+    try:
+        cache = FrameCache(
+            PROJECT_ROOT / "jumper-media" / "calculation-cache",
+            identity(cache_source, job, checkpoint, device, frames),
+        )
+        cache_backbone(predictor, cache, device=device)
+    except Exception:
+        pass
     warnings = []
     detector = None
     if job.get("auto_detect_others"):
@@ -291,6 +304,46 @@ def track(
                 "Local person detector is missing. Run the downloaded app setup again."
             )
         detector = YOLO(str(detector_path))
+        from importlib.metadata import version
+
+        detector_key = digest(detector_path) + version("ultralytics")
+
+    def detect(index):
+        key = f"people:{detector_key}:{index}"
+        cached = cache.get(key) if cache else None
+        if cached is not None:
+            boxes = cached.get("boxes")
+            if (
+                isinstance(boxes, np.ndarray)
+                and np.issubdtype(boxes.dtype, np.floating)
+                and boxes.ndim == 2
+                and boxes.shape[1] == 4
+                and len(boxes) <= 20
+                and np.isfinite(boxes).all()
+                and np.all((boxes >= 0) & (boxes <= 1))
+                and np.all(boxes[:, 0] < boxes[:, 2])
+                and np.all(boxes[:, 1] < boxes[:, 3])
+            ):
+                return boxes.tolist()
+        detections = detector.predict(
+            cv2.imread(str(frames[index])),
+            classes=[0],
+            conf=0.25,
+            iou=0.45,
+            imgsz=640,
+            rect=False,
+            device="cpu",
+            verbose=False,
+        )[0]
+        boxes = detections.boxes.xyxy.cpu().numpy() / [width, height, width, height]
+        if len(boxes) > 20:
+            raise ValueError(
+                "More than 20 people detected. Trim to a closer view or use manual selection."
+            )
+        if cache:
+            cache.put(key, {"boxes": boxes})
+        return boxes.tolist()
+
     height, width = cv2.imread(str(frames[0])).shape[:2]
     if detector is not None:
         from backend.jumper.discovery import clicked_person_box
@@ -309,23 +362,7 @@ def track(
             None,
         )
         if initial["frame"] == 0 and "box" not in initial and point is not None:
-            detections = detector.predict(
-                cv2.imread(str(frames[0])),
-                classes=[0],
-                conf=0.25,
-                iou=0.45,
-                imgsz=640,
-                rect=False,
-                device="cpu",
-                verbose=False,
-            )[0]
-            boxes = (
-                detections.boxes.xyxy.cpu().numpy() / [width, height, width, height]
-            ).tolist()
-            if len(boxes) > 20:
-                raise ValueError(
-                    "More than 20 people detected. Trim to a closer view or use manual selection."
-                )
+            boxes = detect(0)
             box = clicked_person_box(boxes, point)
             if box is not None:
                 initial["box"] = box
@@ -389,24 +426,7 @@ def track(
                     owners[valid] = np.asarray(ids, dtype=np.uint8)[
                         values.argmax(axis=0)[valid]
                     ]
-                    detections = detector.predict(
-                        cv2.imread(str(frames[index])),
-                        classes=[0],
-                        conf=0.25,
-                        iou=0.45,
-                        imgsz=640,
-                        rect=False,
-                        device="cpu",
-                        verbose=False,
-                    )[0]
-                    boxes = (
-                        detections.boxes.xyxy.cpu().numpy()
-                        / [width, height, width, height]
-                    ).tolist()
-                    if len(boxes) > 20:
-                        raise ValueError(
-                            "More than 20 people detected. Trim to a closer view or disable automatic discovery and select court players manually."
-                        )
+                    boxes = detect(index)
                     resolution = resolve_people(boxes, owners)
                     if resolution["ambiguous"]:
                         warnings.append(

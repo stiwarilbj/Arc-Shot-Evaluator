@@ -15,7 +15,13 @@ import {
   type WorkerResponse,
 } from "./domain";
 import { compositePixels, openVideo, writers } from "./media";
-import { createPersonDetector } from "./personDetector";
+import { createPersonDetector, PERSON_DETECTOR_SHA } from "./personDetector";
+import {
+  FrameCache,
+  validFeatures,
+  validDetections,
+  type CachedFeatures,
+} from "./frameCache";
 import { clickedPersonBox, resolvePeople } from "./discovery";
 import { samPixels } from "./preprocessing";
 import {
@@ -157,7 +163,27 @@ async function process(
   const outputs: Awaited<
     ReturnType<Awaited<ReturnType<typeof writers>>["create"]>
   >[] = [];
+  let cache: FrameCache | undefined;
   try {
+    const adapter = await navigator.gpu.requestAdapter();
+    const gpu = adapter?.info;
+    cache = await FrameCache.open(request.file, {
+      schema: "sam-pixels-v1-canvas-v1",
+      start,
+      end,
+      width,
+      height,
+      fps: 30,
+      models: ASSETS,
+      detector: PERSON_DETECTOR_SHA,
+      runtime: ort.env.versions,
+      execution: "webgpu-default-fp32",
+      browser: navigator.userAgent,
+      adapter: gpu
+        ? [gpu.vendor, gpu.architecture, gpu.device, gpu.description]
+        : null,
+      detection: { size: 640, confidence: 0.25, iou: 0.45 },
+    });
     const format = await writers(width, height);
     if (request.request.auto_detect_others) {
       report("Preparing automatic player detection", 0);
@@ -204,7 +230,28 @@ async function process(
       trackedObjects.map((object) => [object.id, new Map()]),
     );
     const corrected = new Map<number, Map<number, Prediction>>();
-    async function features(canvas: HTMLCanvasElement | OffscreenCanvas) {
+    async function detect(
+      frame: number,
+      canvas: HTMLCanvasElement | OffscreenCanvas,
+    ) {
+      const cached = await cache?.get<unknown>(`people:${frame}`);
+      if (validDetections(cached)) return cached;
+      const boxes = await detector!.detect(canvas);
+      await cache?.put(`people:${frame}`, boxes, 256 + boxes.length * 32);
+      return boxes;
+    }
+    async function features(
+      frame: number,
+      canvas: HTMLCanvasElement | OffscreenCanvas,
+    ) {
+      const cached = await cache?.get<unknown>(`features:${frame}`);
+      if (validFeatures(cached))
+        return Object.fromEntries(
+          Object.entries(cached).map(([key, item]) => [
+            key,
+            tensor(item.data, item.dims),
+          ]),
+        );
       sourceContext!.drawImage(canvas, 0, 0, width, height);
       const pixels = samPixels(
         sourceContext!.getImageData(0, 0, width, height).data,
@@ -213,12 +260,44 @@ async function process(
       );
       const value = tensor(pixels, [1, 3, 1024, 1024]);
       try {
-        return await vision.run({ pixel_values: value }, [
+        const result = await vision.run({ pixel_values: value }, [
           "feats0",
           "feats1",
           "feats2",
           "pos2",
         ]);
+        if (
+          cache &&
+          (await cache.canPut(
+            `features:${frame}`,
+            512 +
+              Object.values(result).reduce(
+                (sum, item) => sum + item.size * 4,
+                0,
+              ),
+          ))
+        ) {
+          try {
+            const stored: Record<string, CachedFeatures> = {};
+            for (const [key, item] of Object.entries(result))
+              stored[key] = {
+                dims: [...item.dims],
+                data: Float32Array.from((await item.getData()) as Float32Array),
+              };
+            await cache.put(
+              `features:${frame}`,
+              stored,
+              512 +
+                Object.values(stored).reduce(
+                  (sum, item) => sum + item.data.byteLength,
+                  0,
+                ),
+            );
+          } catch {
+            /* Retain live tensors and continue without caching. */
+          }
+        }
+        return result;
       } finally {
         value.dispose();
       }
@@ -321,10 +400,7 @@ async function process(
         report("Detecting the selected shooter", 0);
         const sample = await sink.getCanvas(start);
         if (!sample) throw Error("Could not decode the starting frame");
-        const box = clickedPersonBox(
-          await detector.detect(sample.canvas),
-          point,
-        );
+        const box = clickedPersonBox(await detect(0, sample.canvas), point);
         if (box) initial.box = box;
       }
     }
@@ -339,7 +415,7 @@ async function process(
       report(`Applying selections · frame ${frame + 1}`, frame / count);
       const sample = await sink.getCanvas(start + frame / 30);
       if (!sample) throw Error("Could not decode a correction frame");
-      const feats = await features(sample.canvas);
+      const feats = await features(frame, sample.canvas);
       try {
         for (const object of trackedObjects) {
           const prompt = object.prompts.find(
@@ -376,7 +452,7 @@ async function process(
       const sample = await sink.getCanvas(start + frame / 30);
       if (!sample)
         throw Error("The selected segment could not be fully decoded");
-      const feats = await features(sample.canvas);
+      const feats = await features(frame, sample.canvas);
       const owners = new Uint8Array(width * height),
         best = new Float32Array(width * height);
       best.fill(0);
@@ -453,7 +529,7 @@ async function process(
             `Finding players · frame ${frame + 1} / ${count}`,
             frame / count,
           );
-          const boxes = await detector.detect(sample.canvas);
+          const boxes = await detect(frame, sample.canvas);
           const resolution = resolvePeople(boxes, owners, width, height);
           if (resolution.ambiguous)
             warnings.push({
@@ -574,6 +650,7 @@ async function process(
       objects,
     };
   } finally {
+    cache?.close();
     input.dispose();
     try {
       await detector?.release();

@@ -139,7 +139,7 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
     (tmp_path / "request.json").write_text(json.dumps(job))
     attempts = []
 
-    def tracking(frames, masks, value, checkpoint, device, progress):
+    def tracking(frames, masks, value, checkpoint, device, progress, cache_source=None):
         attempts.append(device)
         assert [o["id"] for o in value["objects"]] == [1]
         value["objects"].append(

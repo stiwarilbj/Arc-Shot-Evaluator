@@ -1,4 +1,6 @@
 import * as ort from "onnxruntime-web/webgpu";
+export const PERSON_DETECTOR_SHA =
+  "ae0eb4ed805163adc419b3db5454b3dfcf8b3620148fc4e294b0a1e5cccc26d5";
 export async function createPersonDetector() {
   const url = new URL(
     `${import.meta.env.BASE_URL}jumper/models/person-detector.onnx`,
@@ -15,9 +17,7 @@ export async function createPersonDetector() {
   const sha = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
     .map((v) => v.toString(16).padStart(2, "0"))
     .join("");
-  if (
-    sha !== "ae0eb4ed805163adc419b3db5454b3dfcf8b3620148fc4e294b0a1e5cccc26d5"
-  ) {
+  if (sha !== PERSON_DETECTOR_SHA) {
     await cache?.delete(url);
     throw Error("Person detector integrity check failed; retry processing.");
   }

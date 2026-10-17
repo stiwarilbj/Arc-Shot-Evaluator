@@ -12,6 +12,19 @@ yourself; the video stays masked after answering. Guess never downloads models.
 Creating clips requires WebGPU and video encoding in Chrome on the hosted site,
 or the downloaded app’s native SAM 2.1 engine. Models download only when needed;
 processing stays on-device and uses no paid inference service.
+
+Corrections reuse device-local person detections and, on verified execution paths,
+unchanged SAM frame features. Tracking memory, identities, masks, warnings, and
+finished outputs are rebuilt. Browser features/detections use a private IndexedDB
+cache capped at 192 MiB; the local cache lives in ignored
+`jumper-media/calculation-cache` and is capped at 256 MiB. Entries expire after an
+hour without use and are pruned on cache access. Source content, trim, models,
+preprocessing, and execution versions invalidate the cache. A large clip retains
+only the frames that fit. Denied/full cache storage falls back to normal processing.
+Native CPU features and browser WebGPU features pass exact correction parity;
+native GPU features are recomputed to preserve their existing numerical behavior,
+while native person detections can still be reused. Nothing is uploaded.
+
 Personal videos remain in this browser (hosted) or `jumper-media/` (local).
 Download important clips: clearing browser storage removes hosted personal data.
 
