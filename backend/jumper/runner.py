@@ -10,6 +10,11 @@ import sys
 import urllib.request
 
 from backend.jumper.pipeline import extract, render, track
+from backend.jumper.resources import (
+    check_resources,
+    estimate_resources,
+    resident_memory,
+)
 
 CHECKPOINT_URL = (
     "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt"
@@ -33,6 +38,26 @@ def run(directory: Path):
         )
 
     try:
+        progress("Checking device resources")
+        import cv2
+
+        source = cv2.VideoCapture(str(directory / "source"))
+        try:
+            sw = source.get(cv2.CAP_PROP_FRAME_WIDTH)
+            sh = source.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        finally:
+            source.release()
+        # Metadata may be missing for damaged files; extraction retains its own
+        # decoding validation. Include source decoder surfaces, not just output.
+        import math
+
+        if not all(math.isfinite(v) and v > 0 for v in (sw, sh)):
+            sw, sh = 1280, 720
+        scale = min(1, 1280 / sw, 720 / sh)
+        check_resources(
+            estimate_resources(job, sw * scale, sh * scale, sw, sh),
+            previous_bytes=resident_memory(),
+        )
         progress("Decoding selected segment")
         frames = extract(
             directory / "source", directory / "frames", job["start"], job["end"]

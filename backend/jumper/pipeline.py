@@ -262,6 +262,15 @@ def track(
     cache_source=None,
 ) -> list[dict]:
     """Use native SAM 2.1 video tracking memory and per-frame corrections."""
+    from backend.jumper.resources import (
+        check_resources,
+        estimate_resources,
+        resident_memory,
+    )
+
+    height, width = cv2.imread(str(frames[0])).shape[:2]
+    initial_estimate = estimate_resources(job, width, height)
+    check_resources(initial_estimate, previous_bytes=resident_memory())
     import torch
     from sam2.build_sam import build_sam2_video_predictor
     from backend.jumper.frames import bounded_state, prune_tracking
@@ -344,7 +353,6 @@ def track(
             cache.put(key, {"boxes": boxes})
         return boxes.tolist()
 
-    height, width = cv2.imread(str(frames[0])).shape[:2]
     if detector is not None:
         from backend.jumper.discovery import clicked_person_box
 
@@ -449,6 +457,10 @@ def track(
                             )
                         prompt = {"frame": index, "box": box}
                         job["objects"].append({"id": identity, "prompts": [prompt]})
+                        check_resources(
+                            estimate_resources(job, width, height),
+                            previous_bytes=initial_estimate["bytes"],
+                        )
                         predictor.add_new_points_or_box(
                             state,
                             frame_idx=index,

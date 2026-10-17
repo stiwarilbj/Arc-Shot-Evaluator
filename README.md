@@ -13,6 +13,14 @@ Creating clips requires WebGPU and video encoding in Chrome on the hosted site,
 or the downloaded app’s native SAM 2.1 engine. Models download only when needed;
 processing stays on-device and uses no paid inference service.
 
+Before loading masking models, both editors estimate working memory from model
+allowances, decode/output resolution, clip length, player count, and correction
+frames. Automatic discovery reserves room for ten people and rechecks as more
+tracks appear. Clearly oversized jobs stop with trimming/correction guidance.
+The local editor checks currently available RAM; browser capacity is approximate
+and may be unavailable, so these checks cannot guarantee against exhaustion.
+No clip is silently shortened or reduced to fit.
+
 Corrections reuse device-local person detections and, on verified execution paths,
 unchanged SAM frame features. Tracking memory, identities, masks, warnings, and
 finished outputs are rebuilt. Browser features/detections use a private IndexedDB

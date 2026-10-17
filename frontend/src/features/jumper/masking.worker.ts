@@ -23,6 +23,7 @@ import {
   type CachedFeatures,
 } from "./frameCache";
 import { clickedPersonBox, resolvePeople } from "./discovery";
+import { checkResources, estimateResources } from "./resources";
 import { samPixels } from "./preprocessing";
 import {
   bilinear,
@@ -167,6 +168,25 @@ async function process(
   try {
     const adapter = await navigator.gpu.requestAdapter();
     const gpu = adapter?.info;
+    const resourceLimits = {
+      deviceMemoryGB: (navigator as WorkerNavigator & { deviceMemory?: number })
+        .deviceMemory,
+      maxBufferSize: adapter?.limits.maxBufferSize,
+      maxStorageBufferBindingSize: adapter?.limits.maxStorageBufferBindingSize,
+    };
+    const checkWorkload = () =>
+      checkResources(
+        estimateResources(
+          { ...request.request, objects },
+          width,
+          height,
+          video.displayWidth,
+          video.displayHeight,
+        ),
+        resourceLimits,
+      );
+    report("Checking device resources", 0);
+    checkWorkload();
     cache = await FrameCache.open(request.file, {
       schema: "sam-pixels-v1-canvas-v1",
       start,
@@ -550,6 +570,7 @@ async function process(
             const prompt = { frame, box };
             const object = { id, prompts: [prompt] };
             objects.push(object);
+            checkWorkload();
             trackedObjects.push(object);
             conditions.set(id, new Map());
             recents.set(id, new Map());
