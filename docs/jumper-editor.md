@@ -77,6 +77,9 @@ anonymized preview; they have not been reprocessed automatically.
 Hosted creation uses a dedicated WebGPU worker, SAM 2.1 Tiny vision, decoder,
 attention and memory encoder graphs, and Mediabunny/WebCodecs. It downloads about
 170 MB of model assets on first processing or silhouette preview; browser cache reuse depends on quota.
+Download progress supports compressed responses from Pages: decoded byte counts
+never exceed the valid progress range or abort processing. Unknown or compressed
+totals show bytes received without estimating a completion time from that length.
 The detector loads when automatic discovery or manual proposals are requested. Devices without WebGPU/video encoding can
 still use Guess/My Clips; use the downloaded editor for native processing.
 

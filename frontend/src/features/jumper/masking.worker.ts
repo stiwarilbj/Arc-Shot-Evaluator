@@ -33,6 +33,7 @@ import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
 import { validateComposite, silhouetteProof } from "./videoValidation";
 import { samPixels } from "./preprocessing";
+import { downloadProgress } from "./processingEstimate";
 import {
   bilinear,
   buildBank,
@@ -71,7 +72,7 @@ const ASSETS = {
 };
 async function checkedAsset(
   asset: { url: string; sha: string },
-  progress: (done: number, total: number) => void,
+  progress: (done: number, fraction: number) => void,
 ) {
   const url = new URL(asset.url, context.location.href).href;
   let cache: Cache | undefined;
@@ -86,13 +87,14 @@ async function checkedAsset(
     const reader = fetched.body.getReader();
     const pieces: Uint8Array<ArrayBuffer>[] = [];
     const total = Number(fetched.headers.get("Content-Length") ?? 0);
+    const encoding = fetched.headers.get("Content-Encoding");
     let done = 0;
     while (true) {
       const chunk = await reader.read();
       if (chunk.done) break;
       pieces.push(new Uint8Array(chunk.value));
       done += chunk.value.length;
-      progress(done, total);
+      progress(done, downloadProgress(done, total, encoding));
     }
     response = new Response(new Blob(pieces));
   }
@@ -223,10 +225,10 @@ async function process(
     for (const [key, asset] of Object.entries(ASSETS)) {
       if (key === "weights") continue;
       report(`Checking cached masking model · ${key}`, 0);
-      const bytes = await checkedAsset(asset, (done, total) =>
+      const bytes = await checkedAsset(asset, (done, fraction) =>
         report(
           `Downloading masking model · ${key} · ${(done / 1024 / 1024).toFixed(1)} MB`,
-          total ? done / total : 0,
+          fraction,
         ),
       );
       report(`Preparing ${key} model`, 0);

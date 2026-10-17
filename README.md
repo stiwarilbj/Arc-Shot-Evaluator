@@ -204,8 +204,10 @@ Personal videos stay on your device; they are never automatically published.
    WebM. A name is required only when enabling **Use in my guessing game**.
 
 Progress separates model downloads, detection, tracking, and export, with estimates
-based on measured processing speed. Resource checks flag oversized jobs. Corrections
-can reuse unchanged detections/frame features, and an export failure can retry
+based on measured processing speed. Resource checks flag oversized jobs.
+Compressed model downloads retain byte progress without assuming the compressed
+transfer length equals the decoded model size.
+Corrections can reuse unchanged detections/frame features, and an export failure can retry
 from a bounded temporary mask checkpoint without rerunning segmentation. Finished
 videos are decoded and checked for timeline, dimensions, neutral colors, and no
 audio before becoming ready for review.

@@ -1,8 +1,22 @@
 import assert from "node:assert/strict";
 import {
+  downloadProgress,
   ProcessingEstimate,
   processingPhase,
 } from "../frontend/src/features/jumper/processingEstimate.ts";
+// Pages gzip models: decoded streams exceed the advertised transfer length.
+// Unknown/compressed totals must remain usable, not fail worker validation or
+// invent a countdown; hidden cross-origin encodings still need bounded progress.
+assert.equal(downloadProgress(17827854, 16425175, "gzip"), 0);
+assert.equal(downloadProgress(17827854, 16425175, null), 1);
+assert.equal(downloadProgress(5, 10, "identity"), 0.5);
+assert.equal(downloadProgress(5, 10, null), 0.5);
+for (const encoding of ["br", "gzip", "zstd", "deflate"])
+  assert.equal(downloadProgress(50, 100, encoding), 0);
+for (const total of [0, -1, NaN, Infinity])
+  assert.equal(downloadProgress(50, total, null), 0);
+for (const received of [-1, NaN, Infinity])
+  assert.equal(downloadProgress(received, 100, null), 0);
 const e = new ProcessingEstimate();
 const update = (stage, progress, time) => e.update({ stage, progress }, time);
 update("Tracking and rendering · frame 1 / 20", 0, 0);
@@ -64,3 +78,12 @@ for (let i = 0; i <= 3; i++)
   );
 assert.match(native.hint(3000), /left for tracking\./);
 assert.doesNotMatch(native.hint(3000), /tracking and rendering/);
+
+const compressed = new ProcessingEstimate();
+for (let i = 0; i < 5; i++)
+  compressed.update(
+    { stage: `Downloading masking model · vision · ${i} MB`, progress: 0 },
+    i * 10000,
+  );
+assert.doesNotMatch(compressed.hint(45000), /No new download|About/);
+assert.match(compressed.hint(55000), /No new download/);

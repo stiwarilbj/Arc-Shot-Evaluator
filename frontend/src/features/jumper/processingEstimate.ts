@@ -1,5 +1,23 @@
 import type { JobProgress } from "./domain";
 
+/** Fetch exposes decoded bytes, but Content-Length can describe compressed bytes. */
+export function downloadProgress(
+  received: number,
+  total: number,
+  encoding: string | null,
+): number {
+  if (
+    (encoding && encoding.toLowerCase().trim() !== "identity") ||
+    !Number.isFinite(received) ||
+    !Number.isFinite(total) ||
+    received < 0 ||
+    total <= 0
+  )
+    return 0;
+  // Cross-origin responses may hide Content-Encoding. Never emit invalid progress.
+  return Math.min(1, received / total);
+}
+
 export function processingPhase(stage: string): string {
   if (/frame \d/i.test(stage) && !stage.startsWith("Applying selections"))
     return "browser-tracking";
@@ -14,6 +32,7 @@ export class ProcessingEstimate {
   private samples: { time: number; value: number }[] = [];
   private changedAt = 0;
   private value = 0;
+  private stage = "";
 
   update(update: JobProgress, now: number) {
     const phase = processingPhase(update.stage);
@@ -28,6 +47,10 @@ export class ProcessingEstimate {
       this.samples = this.samples.slice(-12);
       this.changedAt = now;
     }
+    // Byte counts still prove activity when a compressed/unknown total has no ETA.
+    if (/Downloading/i.test(phase) && update.stage !== this.stage)
+      this.changedAt = now;
+    this.stage = update.stage;
     this.value = value;
   }
 
