@@ -3,7 +3,7 @@ import type { MaskWarning } from "./domain";
 export const warningLabels = {
   target_lost: "Missing shooter",
   tracking_unstable: "Unstable outline",
-  ambiguous_players: "Ambiguous overlap",
+  ambiguous_players: "Uncertain player match",
   possible_camera_cut: "Possible camera cut",
 } as const;
 export const warningKinds = Object.keys(warningLabels) as MaskWarning["kind"][];

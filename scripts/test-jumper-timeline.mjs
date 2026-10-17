@@ -51,7 +51,7 @@ try {
     timeline.getByRole("button", { name: /flagged frames?/ }),
   ).toHaveCount(4);
   const overlap = timeline.getByRole("button", {
-    name: "Ambiguous overlap: 3 flagged frames",
+    name: "Uncertain player match: 3 flagged frames",
     exact: true,
   });
   const rail = await overlap.locator("svg").boundingBox();

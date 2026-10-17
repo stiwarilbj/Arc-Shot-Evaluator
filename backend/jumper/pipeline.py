@@ -437,7 +437,9 @@ def track(
                 if detector is None:
                     yield from predictor.propagate_in_video(state, start_frame_idx=0)
                     return
-                from backend.jumper.discovery import resolve_people
+                from backend.jumper.discovery import PeopleDiscovery
+
+                discovery = PeopleDiscovery()
 
                 for index in range(len(frames)):
                     _, ids, logits = next(
@@ -459,7 +461,7 @@ def track(
                         values.argmax(axis=0)[valid]
                     ]
                     boxes = detect(index)
-                    resolution = resolve_people(boxes, owners)
+                    resolution = discovery.resolve(index, boxes, owners, job["objects"])
                     if resolution["ambiguous"]:
                         warning = {"frame": index, "kind": "ambiguous_players"}
                         if resolution["ambiguous_tracks"]:

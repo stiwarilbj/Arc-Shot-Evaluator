@@ -203,6 +203,12 @@ Personal videos stay on your device; they are never automatically published.
    tracking, detections are matched against occupied mask pixels rather than
    rectangular mask outlines. Weak or competing overlap is flagged for review;
    uncertain detections are not automatically added as duplicate people.
+   Missing tracks retain a short presence record and their existing tracking
+   identity. Returning players reuse that identity only when current mask evidence
+   supports it. If an unmatched person appears while an existing track is missing,
+   automatic discovery requests correction rather than guessing an identity or
+   consuming another track slot. Longer absences remain unresolved until tracking
+   evidence or a correction identifies the player.
 3. **Process:** track people and render a muted video up to **720p/30 fps**. The
    shooter becomes solid black, other included players gray, and the background
    flat neutral gray. Finished silhouette outputs copy no original image pixels,

@@ -28,7 +28,7 @@ import {
   validDetections,
   type CachedFeatures,
 } from "./frameCache";
-import { requireShooterBox, resolvePeople } from "./discovery";
+import { requireShooterBox, PeopleDiscovery } from "./discovery";
 import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
 import { validateComposite, silhouetteProof } from "./videoValidation";
@@ -533,6 +533,7 @@ async function process(
       await cancelOutputs();
     }
     const warnings: MaskResult["warnings"] = [];
+    const discovery = new PeopleDiscovery();
     let previous: Uint8ClampedArray | undefined;
     let previousMask: MaskExtent | null = null;
     const small = new OffscreenCanvas(64, 36),
@@ -623,7 +624,9 @@ async function process(
             frame / count,
           );
           const boxes = await detect(frame, sample.canvas);
-          const resolution = resolvePeople(boxes, owners, width, height);
+          const resolution = discovery.resolve(
+            frame, boxes, owners, width, height, objects,
+          );
           if (resolution.ambiguous)
             warnings.push({
               frame,

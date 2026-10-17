@@ -50,7 +50,7 @@ export function requireShooterBox(
 
 /** Associate detections using visible occupied pixels, never mask rectangles or
  * nearest players. Weak/competing evidence stays reviewable, not a new identity. */
-export function resolvePeople(
+function associatePeople(
   boxes: number[][],
   owners: Uint8Array,
   width: number,
@@ -125,5 +125,63 @@ export function resolvePeople(
     unmatched: boxes.filter((_, i) => !usedBoxes.has(i) && !uncertainBoxes.has(i)),
     ambiguous: ambiguousTracks.size > 0 || uncertainBoxes.size > 0,
     ambiguousTracks: [...ambiguousTracks].sort((a, b) => a - b),
+    confirmedTracks: [...usedTracks].filter((id) => !ambiguousTracks.has(id)),
   };
+}
+
+export function resolvePeople(
+  boxes: number[][],
+  owners: Uint8Array,
+  width: number,
+  height: number,
+) {
+  const { confirmedTracks: _, ...result } = associatePeople(
+    boxes, owners, width, height,
+  );
+  return result;
+}
+
+/** Per-job presence ledger. Tracking memory, not a stale location or detection
+ * order, must establish a returning identity. Keep recent timestamps for 1.5s;
+ * expired entries remain small tombstones until evidence/correction resolves them. */
+export class PeopleDiscovery {
+  readonly lastSeen = new Map<number, number | null>();
+
+  resolve(
+    frame: number,
+    boxes: number[][],
+    owners: Uint8Array,
+    width: number,
+    height: number,
+    tracks: readonly { id: number; prompts: readonly { frame: number }[] }[],
+  ) {
+    const { confirmedTracks, ...result } = associatePeople(
+      boxes, owners, width, height,
+    );
+    const confirmed = new Set(confirmedTracks);
+    const missing: number[] = [];
+    for (const track of tracks) {
+      // A future correction is not a missing person in earlier frames.
+      if (track.prompts[0].frame > frame) continue;
+      if (confirmed.has(track.id)) this.lastSeen.set(track.id, frame);
+      else {
+        const last = this.lastSeen.get(track.id);
+        this.lastSeen.set(
+          track.id,
+          last != null && frame - last <= 45 ? last : null,
+        );
+        missing.push(track.id);
+      }
+    }
+    if (result.unmatched.length && missing.length) {
+      // A box alone cannot distinguish a return from an entrant. Do not re-prompt
+      // an old identity or spend another track slot on a guess.
+      result.unmatched = [];
+      result.ambiguous = true;
+      result.ambiguousTracks = [
+        ...new Set([...result.ambiguousTracks, ...missing]),
+      ].sort((a, b) => a - b);
+    }
+    return result;
+  }
 }

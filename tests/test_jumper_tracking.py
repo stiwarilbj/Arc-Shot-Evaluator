@@ -78,6 +78,45 @@ def test_discovery_matches_browser_fixtures():
         np.testing.assert_array_equal(owners, original)
 
 
+def test_returning_people_match_browser_fixtures():
+    import json
+    from pathlib import Path
+    from backend.jumper.discovery import PeopleDiscovery
+
+    fixtures = json.loads((Path(__file__).parent / "fixtures/jumper/returning-people.json").read_text())
+    for fixture in fixtures:
+        discovery = PeopleDiscovery()
+        tracks = json.loads(json.dumps(fixture["tracks"]))
+        for step in fixture["steps"]:
+            owners = np.zeros((fixture["height"], fixture["width"]), dtype=np.uint8)
+            for identity, x1, y1, x2, y2 in step["masks"]:
+                owners[y1:y2, x1:x2] = identity
+            original = owners.copy()
+            assert discovery.resolve(step["frame"], step["boxes"], owners, tracks) == {
+                "unmatched": step["unmatched"],
+                "ambiguous": bool(step["ambiguous_tracks"]),
+                "ambiguous_tracks": step["ambiguous_tracks"],
+            }, (fixture["name"], step["frame"])
+            assert {str(k): v for k, v in discovery.last_seen.items()} == step["last_seen"]
+            np.testing.assert_array_equal(owners, original)
+            assert tracks == fixture["tracks"]
+
+
+def test_repeated_returns_do_not_exhaust_track_limit():
+    from backend.jumper.discovery import PeopleDiscovery
+
+    discovery = PeopleDiscovery()
+    tracks = [dict(id=i + 1, ignored=i == 19, prompts=[dict(frame=0)]) for i in range(20)]
+    boxes = [[i / 20, 0, (i + 1) / 20, 1] for i in range(20)]
+    for frame in range(200):
+        owners = np.array([[0 if frame % 2 and i == 20 else i for i in range(1, 21)]], dtype=np.uint8)
+        result = discovery.resolve(frame, boxes, owners, tracks)
+        assert result["unmatched"] == []
+        assert result["ambiguous_tracks"] == ([20] if frame % 2 else [])
+        assert len(discovery.last_seen) == len(tracks) == 20
+    assert PeopleDiscovery().last_seen == {}
+
+
 def test_clicked_body_box_requires_unique_containment():
     from backend.jumper.discovery import clicked_person_box
 

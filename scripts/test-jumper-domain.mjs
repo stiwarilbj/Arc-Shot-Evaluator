@@ -169,7 +169,7 @@ assert(
 
 // Browser/native association uses the same input fixtures and expectations.
 const { readFileSync } = await import("node:fs");
-const { resolvePeople, clickedPersonBox } = await import(
+const { resolvePeople, clickedPersonBox, PeopleDiscovery } = await import(
   "../frontend/src/features/jumper/discovery.ts"
 );
 const bodies = [
@@ -217,7 +217,45 @@ for (const change of [
   { objects: request.objects.map((o) => ({ ...o, ignored: true })) },
 ])
   assert.throws(() => validateMaskRequest({ ...request, ...change }));
-console.log("Silhouette options and one-to-one discovery passed");
+for (const fixture of JSON.parse(readFileSync(
+  new URL("../tests/fixtures/jumper/returning-people.json", import.meta.url),
+))) {
+  const discovery = new PeopleDiscovery();
+  const tracks = structuredClone(fixture.tracks);
+  for (const step of fixture.steps) {
+    const owners = new Uint8Array(fixture.width * fixture.height);
+    for (const [id, x1, y1, x2, y2] of step.masks)
+      for (let y = y1; y < y2; y++)
+        for (let x = x1; x < x2; x++) owners[y * fixture.width + x] = id;
+    const original = owners.slice();
+    assert.deepEqual(discovery.resolve(step.frame, step.boxes, owners,
+      fixture.width, fixture.height, tracks), {
+      unmatched: step.unmatched,
+      ambiguous: step.ambiguous_tracks.length > 0,
+      ambiguousTracks: step.ambiguous_tracks,
+    }, `${fixture.name}: frame ${step.frame}`);
+    assert.deepEqual(Object.fromEntries(discovery.lastSeen), step.last_seen);
+    assert.deepEqual(owners, original);
+    assert.deepEqual(tracks, fixture.tracks, "association never edits identities/corrections");
+  }
+}
+// A full twenty-track job can lose/reacquire one person repeatedly without
+// allocating a twenty-first identity. Ignored tracks retain the same protection.
+const discovery = new PeopleDiscovery();
+const roster = Array.from({length:20}, (_, i) => ({
+  id:i+1, ignored:i===19, prompts:[{frame:0}],
+}));
+const boxes = roster.map((_, i) => [i/20,0,(i+1)/20,1]);
+for (let frame=0; frame<200; frame++) {
+  const owners = Uint8Array.from(roster, o => frame%2 && o.id===20 ? 0 : o.id);
+  const result = discovery.resolve(frame, boxes, owners, 20, 1, roster);
+  assert.deepEqual(result.unmatched, []);
+  assert.deepEqual(result.ambiguousTracks, frame%2 ? [20] : []);
+  assert.equal(discovery.lastSeen.size, 20);
+  assert.equal(roster.length, 20);
+}
+assert.equal(new PeopleDiscovery().lastSeen.size, 0, "jobs never share presence state");
+console.log("Silhouette options, mask association, and returning-player discovery passed");
 
 const gpuFailure = maskingErrorMessage(
   new Error(

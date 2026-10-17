@@ -35,7 +35,7 @@ def require_shooter_box(boxes, points, labels):
     return list(matches[0])
 
 
-def resolve_people(boxes, owners):
+def _associate_people(boxes, owners):
     """Match the browser's occupied-pixel evidence and uncertainty handling."""
     import math
 
@@ -94,4 +94,44 @@ def resolve_people(boxes, owners):
         ],
         "ambiguous": bool(ambiguous_tracks or uncertain_boxes),
         "ambiguous_tracks": sorted(ambiguous_tracks),
+        "confirmed_tracks": sorted(used_tracks - ambiguous_tracks),
     }
+
+
+def resolve_people(boxes, owners):
+    result = _associate_people(boxes, owners)
+    result.pop("confirmed_tracks")
+    return result
+
+
+class PeopleDiscovery:
+    """Per-job presence ledger matching the browser; never spatial reidentification."""
+
+    def __init__(self):
+        self.last_seen = {}
+
+    def resolve(self, frame, boxes, owners, tracks):
+        result = _associate_people(boxes, owners)
+        confirmed = set(result.pop("confirmed_tracks"))
+        missing = []
+        for track in tracks:
+            if track["prompts"][0]["frame"] > frame:
+                continue
+            identity = track["id"]
+            if identity in confirmed:
+                self.last_seen[identity] = frame
+            else:
+                last = self.last_seen.get(identity)
+                # Retain 1.5s of recent presence, then only an unresolved ID.
+                # Forgetting the ID would admit the same player as a new track.
+                self.last_seen[identity] = (
+                    last if last is not None and frame - last <= 45 else None
+                )
+                missing.append(identity)
+        if result["unmatched"] and missing:
+            result["unmatched"] = []
+            result["ambiguous"] = True
+            result["ambiguous_tracks"] = sorted(
+                set(result["ambiguous_tracks"]) | set(missing)
+            )
+        return result
