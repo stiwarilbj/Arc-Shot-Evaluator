@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from contextlib import asynccontextmanager
 import importlib.util
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -27,6 +28,7 @@ from backend.jumper.backup import (
 )
 from backend.config import PROJECT_ROOT, MODEL_WEIGHTS_DIR
 from backend.jumper.pipeline import validate_job, run_ffmpeg, propose_people
+from backend.jumper.video_validation import validate_saved_silhouette
 
 
 @asynccontextmanager
@@ -186,15 +188,24 @@ def execute(identity, generation):
             return
         if job["generation"] != generation or job["cancel"].is_set():
             return
-        job["status"] = "processing"
+        cancelled = job["cancel"]
+
+    def owns():
+        # A retry owns a new generation AND event. Never consult its event from
+        # an older queued callback, or resurrect a job after release/expiry.
+        return JOBS.get(identity) is job and job["generation"] == generation
+
     directory = job["directory"]
     while not PROCESS_LOCK.acquire(timeout=0.1):
-        if job["cancel"].is_set():
-            return
+        with LOCK:
+            if cancelled.is_set() or not owns():
+                return
+    process = None
     try:
         with LOCK:
-            if job["cancel"].is_set():
+            if cancelled.is_set() or not owns():
                 return
+            job["status"] = "processing"
             process = subprocess.Popen(
                 [sys.executable, "-m", "backend.jumper.runner", str(directory)],
                 cwd=PROJECT_ROOT,
@@ -203,7 +214,7 @@ def execute(identity, generation):
             )
             job["process"] = process
         while process.poll() is None:
-            if job["cancel"].wait(0.1):
+            if cancelled.wait(0.1):
                 process.terminate()
                 try:
                     process.wait(timeout=2)
@@ -212,7 +223,9 @@ def execute(identity, generation):
                     process.wait()
                 break
         with LOCK:
-            if job["cancel"].is_set():
+            if not owns():
+                return
+            if cancelled.is_set():
                 job["status"] = "cancelled"
             elif process.returncode != 0:
                 job["status"] = "error"
@@ -223,14 +236,51 @@ def execute(identity, generation):
                     else f"Local masking process stopped (exit {process.returncode}). Retry a shorter clip or restart the downloaded app."
                 )
             else:
+                completed_result(directory)
                 job["status"] = "done"
     except Exception as error:
         with LOCK:
-            job.update(status="error", error=str(error))
+            if owns():
+                if cancelled.is_set():
+                    job["status"] = "cancelled"
+                else:
+                    job.update(status="error", error=str(error))
     finally:
         with LOCK:
-            job.pop("process", None)
+            if job.get("process") is process:
+                job.pop("process", None)
         PROCESS_LOCK.release()
+
+
+def completed_result(directory):
+    """Do not announce success for an incomplete subprocess result."""
+    try:
+        result = json.loads((directory / "result.json").read_text())
+        if (
+            not isinstance(result, dict)
+            or type(result.get("duration")) not in (int, float)
+            or not 0 < result["duration"] <= 15
+            or not isinstance(result.get("warnings"), list)
+            or not isinstance(result.get("objects"), list)
+            or not isinstance(result.get("outputs"), dict)
+        ):
+            raise ValueError()
+        for kind in ("quiz", "reveal", "highlight"):
+            value = result["outputs"][kind]
+            name = value["file"]
+            if (
+                not isinstance(name, str)
+                or Path(name).name != name
+                or not (directory / "output" / name).is_file()
+            ):
+                raise ValueError()
+            if not 0 < (directory / "output" / name).stat().st_size <= MAX_BYTES:
+                raise ValueError()
+        return result
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        raise ValueError(
+            "Local export is incomplete. Retry processing; no clip was saved."
+        ) from error
 
 
 @router.post("/jobs/{identity}/process")
@@ -254,6 +304,8 @@ async def process(identity: str, request: Request):
     if not capabilities()["native"]:
         raise HTTPException(503, "Run setup again to install the local masking engine")
     with LOCK:
+        if JOBS.get(identity) is not job:
+            raise HTTPException(404, "Job expired; upload again")
         if job["status"] in ("queued", "processing"):
             raise HTTPException(409, "Cancel the current processing job first")
         if EXECUTOR is None:
@@ -269,7 +321,14 @@ async def process(identity: str, request: Request):
             cancel=threading.Event(),
             generation=job["generation"] + 1,
         )
-        EXECUTOR.submit(execute, identity, job["generation"])
+        try:
+            EXECUTOR.submit(execute, identity, job["generation"])
+        except RuntimeError as error:
+            job.update(
+                status="error",
+                error="Local processing queue is unavailable; restart the downloaded app.",
+            )
+            raise HTTPException(503, job["error"]) from error
     return {"id": identity, "status": "queued"}
 
 
@@ -285,9 +344,22 @@ def status(identity: str):
             "error": job.get("error"),
         }
         if (job["directory"] / "progress.json").exists():
-            value.update(json.loads((job["directory"] / "progress.json").read_text()))
+            try:
+                progress = json.loads((job["directory"] / "progress.json").read_text())
+                if (
+                    isinstance(progress.get("stage"), str)
+                    and type(progress.get("progress")) in (int, float)
+                    and 0 <= progress["progress"] <= 1
+                ):
+                    value.update(stage=progress["stage"], progress=progress["progress"])
+            except (OSError, ValueError, AttributeError):
+                pass  # A missing progress update must not destroy a running job.
         if job["status"] == "done":
-            value["result"] = json.loads((job["directory"] / "result.json").read_text())
+            try:
+                value["result"] = completed_result(job["directory"])
+            except ValueError as error:
+                job.update(status="error", error=str(error))
+                value.update(status="error", error=str(error))
         return value
 
 
@@ -306,24 +378,30 @@ def output(identity: str, kind: str):
     job = job_for(identity)
     if job["status"] != "done":
         raise HTTPException(409, "Video is not ready")
-    result = json.loads((job["directory"] / "result.json").read_text())
-    if kind not in result["outputs"]:
+    if kind not in ("quiz", "reveal", "highlight"):
         raise HTTPException(404, "Unknown video")
+    try:
+        result = completed_result(job["directory"])
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
     return FileResponse(job["directory"] / "output" / result["outputs"][kind]["file"])
 
 
 @router.delete("/jobs/{identity}")
 def release(identity: str):
     job = job_for(identity)
-    cancel(identity)
+    with LOCK:
+        job["cancel"].set()
+        # Permanent removal happens before cleanup. Queued callbacks cannot
+        # launch a process while their directory is being deleted.
+        JOBS.pop(identity, None)
+        process = job.get("process")
 
     # Running subprocess cleanup is deferred until it exits; it never owns saved media.
     def cleanup():
-        while job.get("process") is not None:
-            time.sleep(0.05)
-        with LOCK:
-            JOBS.pop(identity, None)
-            shutil.rmtree(job["directory"], ignore_errors=True)
+        if process is not None:
+            process.wait()
+        shutil.rmtree(job["directory"], ignore_errors=True)
 
     threading.Thread(target=cleanup, daemon=True).start()
     return {"deleted": True}
@@ -364,7 +442,12 @@ async def save(request: Request):
         name = metadata["player"]["name"]
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
             raise ValueError("Invalid player name")
-        if metadata.get("version") != 1 or not 0 < float(metadata["duration"]) <= 15:
+        if (
+            type(metadata.get("version")) is not int
+            or metadata["version"] != 1
+            or type(metadata.get("duration")) not in (int, float)
+            or not 0 < metadata["duration"] <= 15
+        ):
             raise ValueError("Invalid clip")
         kinds = (
             ["highlight", "quiz", "reveal"] if metadata.get("quiz") else ["highlight"]
@@ -378,6 +461,7 @@ async def save(request: Request):
                 raise HTTPException(409, "Save is already pending")
             staging.mkdir(parents=True)
         try:
+            checksums = []
             for kind in kinds:
                 upload = form.get(kind)
                 if upload is None or not hasattr(upload, "read"):
@@ -385,21 +469,32 @@ async def save(request: Request):
                 suffix = (
                     ".mp4"
                     if metadata["mime"] == "video/mp4"
-                    else ".webm"
-                    if metadata["mime"] == "video/webm"
-                    else None
+                    else ".webm" if metadata["mime"] == "video/webm" else None
                 )
                 if suffix is None:
                     raise ValueError("Invalid video format")
                 total = 0
+                checksum = hashlib.sha256()
                 with (staging / (kind + suffix)).open("wb") as out:
                     while data := await upload.read(1024 * 1024):
                         total += len(data)
                         if total > MAX_BYTES:
                             raise ValueError("Export exceeds storage limit")
                         out.write(data)
+                        checksum.update(data)
                 if total == 0:
                     raise ValueError("Empty export")
+                checksums.append(checksum.digest())
+            if metadata.get("presentation") == "silhouette":
+                if len(set(checksums)) != 1:
+                    raise ValueError(
+                        "Silhouette variants must use the same masked video"
+                    )
+                await run_in_threadpool(
+                    validate_saved_silhouette,
+                    staging / ("highlight" + suffix),
+                    metadata["duration"],
+                )
             clean = {
                 "version": 1,
                 "id": identity,

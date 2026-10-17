@@ -110,6 +110,31 @@ export function validateDecodedPixels(
         throw Error("Encoded video changed the silhouette colors");
     }
 }
+
+/** Imported neutral videos have no original mask proof. Check grayscale and
+ * palette interiors, allowing compression edges; identity still needs review. */
+export function validateNeutralPixels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+) {
+  if (pixels.length !== width * height * 4)
+    throw Error("Invalid decoded output size");
+  const quantized = new Uint8ClampedArray(pixels.length);
+  for (let i = 0; i < pixels.length; i += 4) {
+    const lo = Math.min(pixels[i], pixels[i + 1], pixels[i + 2]);
+    // Nearest palette value; ties select the lower value on both targets.
+    const value = lo <= 64 ? 0 : lo <= 176 ? 128 : 224;
+    quantized[i] = quantized[i + 1] = quantized[i + 2] = value;
+    quantized[i + 3] = 255;
+  }
+  validateDecodedPixels(
+    pixels,
+    width,
+    height,
+    silhouetteProof(quantized, width, height),
+  );
+}
 export function validateFrameTime(
   index: number,
   timestamp: number,

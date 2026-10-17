@@ -16,6 +16,7 @@ import {
 } from "./domain";
 import {
   compositePixels,
+  silhouettePixels,
   openVideo,
   writers,
   validateFinishedVideo,
@@ -497,12 +498,15 @@ async function process(
       }
       return blobs;
     }
-    function renderPixels(rgb: Uint8ClampedArray, owners: Uint8Array) {
+    function renderPixels(owners: Uint8Array, rgb?: Uint8ClampedArray) {
       for (let i = 0; i < outputs.length; i++) {
         const kind = silhouette
           ? "quiz"
           : (["highlight", "quiz", "reveal"] as const)[i];
-        const pixels = compositePixels(rgb, owners, target_id, kind);
+        if (!silhouette && !rgb) throw Error("Missing source frame");
+        const pixels = silhouette
+          ? silhouettePixels(owners, target_id)
+          : compositePixels(rgb!, owners, target_id, kind);
         validateComposite(pixels, owners, target_id, kind);
         if (kind === "quiz")
           colorProofs.push(silhouetteProof(pixels, width, height));
@@ -692,14 +696,17 @@ async function process(
       previous = pixels;
       exportCheckpoint.add(frame, owners);
       if (!encodingError) {
-        sourceContext.drawImage(sample.canvas, 0, 0, width, height);
-        const rgb = sourceContext.getImageData(0, 0, width, height).data;
         report(
           `Rendering silhouettes · frame ${frame + 1} / ${count}`,
           frame / count,
         );
         try {
-          renderPixels(rgb, owners);
+          let rgb: Uint8ClampedArray | undefined;
+          if (!silhouette) {
+            sourceContext.drawImage(sample.canvas, 0, 0, width, height);
+            rgb = sourceContext.getImageData(0, 0, width, height).data;
+          }
+          renderPixels(owners, rgb);
           for (const output of outputs)
             await output.source.add(frame / 30, 1 / 30);
         } catch (error) {
@@ -735,13 +742,14 @@ async function process(
         await createOutputs();
         for (let frame = 0; frame < count; frame++) {
           const owners = exportCheckpoint.frame(frame);
-          const sample = await sink.getCanvas(start + frame / 30);
-          if (!sample) throw Error("Could not decode the export retry frame");
-          sourceContext.drawImage(sample.canvas, 0, 0, width, height);
-          renderPixels(
-            sourceContext.getImageData(0, 0, width, height).data,
-            owners,
-          );
+          let rgb: Uint8ClampedArray | undefined;
+          if (!silhouette) {
+            const sample = await sink.getCanvas(start + frame / 30);
+            if (!sample) throw Error("Could not decode the export retry frame");
+            sourceContext.drawImage(sample.canvas, 0, 0, width, height);
+            rgb = sourceContext.getImageData(0, 0, width, height).data;
+          }
+          renderPixels(owners, rgb);
           for (const output of outputs)
             await output.source.add(frame / 30, 1 / 30);
           report(

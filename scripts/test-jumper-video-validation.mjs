@@ -5,6 +5,7 @@ import {
   validateDecodedPixels,
   validateGeometry,
   validateFrameTime,
+  validateNeutralPixels,
 } from "../frontend/src/features/jumper/videoValidation.ts";
 const width = 64,
   height = 32;
@@ -19,12 +20,26 @@ for (let i = 0; i < owners.length; i++) {
 validateComposite(pixels, owners, 1, "quiz");
 const proof = silhouetteProof(pixels, width, height);
 validateDecodedPixels(pixels, width, height, proof);
+validateNeutralPixels(pixels, width, height);
 const lossy = pixels.slice();
 for (let i = 0; i < lossy.length; i += 4) {
   const c = Math.min(255, lossy[i] + 6);
   lossy.set([c, c + 1, c, 255], i);
 }
 validateDecodedPixels(lossy, width, height, proof);
+validateNeutralPixels(lossy, width, height);
+assert.throws(
+  () =>
+    validateNeutralPixels(
+      new Uint8ClampedArray(pixels.length).fill(64),
+      width,
+      height,
+    ),
+  /color/,
+);
+const colored = pixels.slice();
+colored.set([200, 220, 224, 255]);
+assert.throws(() => validateNeutralPixels(colored, width, height), /color/);
 const bad = pixels.slice();
 bad[0] = 200;
 assert.throws(() => validateComposite(bad, owners, 1, "quiz"), /color/);

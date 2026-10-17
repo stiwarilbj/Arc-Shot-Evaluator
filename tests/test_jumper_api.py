@@ -1,10 +1,13 @@
 import json
 import uuid
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
+import numpy as np
 from backend.api import jumper
+from backend.jumper.pipeline import encoder, silhouette_pixels
 
 
 @pytest.fixture
@@ -30,12 +33,12 @@ def metadata():
     )
 
 
-def save(client, value, missing=None):
+def save(client, value, missing=None, videos=None):
     return client.post(
         "/api/jumper-lab/media",
         data={"metadata": json.dumps(value)},
         files={
-            kind: (kind + ".mp4", b"test video", "video/mp4")
+            kind: (kind + ".mp4", (videos or {}).get(kind, b"test video"), "video/mp4")
             for kind in ["highlight", "quiz", "reveal"]
             if kind != missing
         },
@@ -61,6 +64,9 @@ def test_atomic_save_reload_delete_and_idempotency(client):
         {"duration": 16},
         {"quiz": "yes"},
         {"version": 2},
+        {"version": True},
+        {"duration": True},
+        {"duration": float("nan")},
         {"createdAt": "bad"},
         {"player": None},
         {"id": "../escape"},
@@ -98,8 +104,136 @@ def test_empty_upload_and_invalid_job(client):
     assert client.delete(f"/api/jumper-lab/jobs/{identity}").status_code == 200
 
 
-def test_silhouette_metadata_survives_reload(client):
-    value = {**metadata(), "presentation": "silhouette"}
-    assert save(client, value).json() == value
+def encoded_video(tmp_path, colored=False):
+    labels = np.zeros((48, 64), np.uint8)
+    labels[8:40, 16:32] = 1
+    labels[8:40, 40:56] = 2
+    pixels = silhouette_pixels(labels, 1)
+    if colored:
+        pixels[8:40, 16:32] = (255, 0, 0)
+    path = tmp_path / ("colored.mp4" if colored else "neutral.mp4")
+    with encoder(path, 64, 48) as stream:
+        for _ in range(3):
+            stream.write(pixels.tobytes())
+    return path.read_bytes()
+
+
+def test_silhouette_metadata_survives_reload(client, tmp_path):
+    value = {**metadata(), "presentation": "silhouette", "duration": 0.1}
+    video = encoded_video(tmp_path)
+    videos = dict.fromkeys(("highlight", "quiz", "reveal"), video)
+    assert save(client, value, videos=videos).json() == value
     assert client.get("/api/jumper-lab/media").json() == [value]
     assert save(client, {**metadata(), "presentation": "original"}).status_code == 400
+
+
+@pytest.mark.parametrize("failure", ["corrupt", "colored", "reveal", "duration"])
+def test_unsafe_silhouette_not_published(client, tmp_path, failure):
+    value = {**metadata(), "presentation": "silhouette", "duration": 0.1}
+    video = encoded_video(tmp_path, colored=failure == "colored")
+    if failure == "corrupt":
+        video = b"invalid video"
+    if failure == "duration":
+        value["duration"] = 3
+    videos = dict.fromkeys(("highlight", "quiz", "reveal"), video)
+    if failure == "reveal":
+        videos["reveal"] = encoded_video(tmp_path, colored=True)
+    response = save(client, value, videos=videos)
+    assert response.status_code == 400, response.text
+    assert client.get("/api/jumper-lab/media").json() == []
+    assert not list((jumper.ROOT / "saved").iterdir())
+
+
+def uploaded_job(client):
+    identity = client.post(
+        "/api/jumper-lab/jobs", files={"file": ("private.mp4", b"bytes")}
+    ).json()["id"]
+    return identity, jumper.JOBS[identity]
+
+
+def test_cancelled_waiter_cannot_take_ownership_of_retry(client, monkeypatch):
+    identity, job = uploaded_job(client)
+    entered = threading.Event()
+    gate = threading.Lock()
+    gate.acquire()
+
+    class QueueLock:
+        def acquire(self, **kwargs):
+            entered.set()
+            return gate.acquire(**kwargs)
+
+        def release(self):
+            gate.release()
+
+    monkeypatch.setattr(jumper, "PROCESS_LOCK", QueueLock())
+    launched = []
+
+    def popen(*args, **kwargs):
+        launched.append(threading.current_thread().name)
+        return type("Completed", (), {"returncode": 0, "poll": lambda self: 0})()
+
+    monkeypatch.setattr(jumper.subprocess, "Popen", popen)
+    monkeypatch.setattr(jumper, "completed_result", lambda directory: {})
+    job.update(status="queued", generation=1)
+    old = threading.Thread(target=jumper.execute, args=(identity, 1), name="old")
+    new = threading.Thread(target=jumper.execute, args=(identity, 2), name="new")
+    old.start()
+    try:
+        assert entered.wait(2)
+        assert job["status"] == "queued"
+        with jumper.LOCK:
+            job["cancel"].set()
+            job.update(generation=2, cancel=threading.Event())
+        new.start()
+    finally:
+        gate.release()
+        old.join(2)
+        if new.ident:
+            new.join(2)
+    assert not old.is_alive() and not new.is_alive()
+    assert launched == ["new"]
+    assert job["status"] == "done"
+
+
+def test_release_permanently_rejects_late_execution(client, monkeypatch):
+    identity, job = uploaded_job(client)
+    job.update(generation=1, status="queued")
+    assert client.delete(f"/api/jumper-lab/jobs/{identity}").status_code == 200
+    monkeypatch.setattr(
+        jumper.subprocess, "Popen", lambda *a, **k: pytest.fail("released job launched")
+    )
+    jumper.execute(identity, 1)
+    assert client.get(f"/api/jumper-lab/jobs/{identity}").status_code == 404
+    assert job["cancel"].is_set()
+
+
+def test_submit_failure_and_bad_status_are_recoverable(client, monkeypatch):
+    identity, job = uploaded_job(client)
+    executor = ThreadPoolExecutor(1)
+    executor.shutdown()
+    monkeypatch.setattr(jumper, "EXECUTOR", executor)
+    monkeypatch.setattr(jumper, "capabilities", lambda: {"native": True})
+    response = client.post(
+        f"/api/jumper-lab/jobs/{identity}/process",
+        json={
+            "start": 0,
+            "end": 0.1,
+            "target_id": 1,
+            "objects": [
+                {
+                    "id": 1,
+                    "prompts": [{"frame": 0, "points": [[0.5, 0.5]], "labels": [1]}],
+                }
+            ],
+        },
+    )
+    assert response.status_code == 503
+    assert job["status"] == "error"
+    (job["directory"] / "progress.json").write_text(
+        '{"status":"done","stage":"Fake","progress":0.5}'
+    )
+    assert client.get(f"/api/jumper-lab/jobs/{identity}").json()["status"] == "error"
+    (job["directory"] / "progress.json").write_text("{")
+    assert client.get(f"/api/jumper-lab/jobs/{identity}").status_code == 200
+    job["status"] = "done"
+    assert client.get(f"/api/jumper-lab/jobs/{identity}").json()["status"] == "error"

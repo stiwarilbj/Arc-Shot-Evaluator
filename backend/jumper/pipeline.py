@@ -139,6 +139,17 @@ def validate_job(job: object) -> dict:
     return job
 
 
+def silhouette_pixels(labels: np.ndarray, target_id: int) -> np.ndarray:
+    """Render from labels alone: source colors/text can never enter this path."""
+    if labels.dtype != np.uint8 or labels.ndim != 2:
+        raise ValueError("Expected an 8-bit foreground label map")
+    if type(target_id) is not int or not 1 <= target_id <= 255:
+        raise ValueError("Invalid target identity")
+    palette = np.full(256, OTHER_PLAYER, np.uint8)
+    palette[0], palette[target_id] = BACKGROUND, 0
+    return np.repeat(palette[labels][..., None], 3, axis=2)
+
+
 def composite(
     frame: np.ndarray, labels: np.ndarray, target_id: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -154,9 +165,7 @@ def composite(
     if labels.dtype != np.uint8 or labels.shape != frame.shape[:2]:
         raise ValueError("Expected a matching 8-bit foreground label map")
     foreground, target = labels != 0, labels == target_id
-    quiz = np.full_like(frame, BACKGROUND)
-    quiz[foreground] = OTHER_PLAYER
-    quiz[target] = 0
+    quiz = silhouette_pixels(labels, target_id)
     reveal = np.full_like(frame, BACKGROUND)
     reveal[foreground] = frame[foreground]
     highlight = np.full_like(frame, BACKGROUND)
@@ -632,7 +641,10 @@ def render(
     progress=None,
 ) -> dict:
     output.mkdir(exist_ok=True)
-    height, width = cv2.imread(str(frames[0])).shape[:2]
+    if silhouette:
+        height, width = np.load(masks / "000000.npy", allow_pickle=False).shape
+    else:
+        height, width = cv2.imread(str(frames[0])).shape[:2]
     kinds = ("quiz",) if silhouette else ("quiz", "reveal", "highlight")
     paths = {
         kind: output
@@ -646,9 +658,14 @@ def render(
         ]
         for index, frame in enumerate(frames):
             labels = np.load(masks / f"{index:06d}.npy", allow_pickle=False)
-            rgb = cv2.cvtColor(cv2.imread(str(frame)), cv2.COLOR_BGR2RGB)
-            composites = composite(rgb, labels, target)
-            for kind, image in zip(("quiz", "reveal", "highlight"), composites):
+            if labels.shape != (height, width):
+                raise ValueError("Mask dimensions changed during export")
+            if silhouette:
+                composites = (silhouette_pixels(labels, target),)
+            else:
+                rgb = cv2.cvtColor(cv2.imread(str(frame)), cv2.COLOR_BGR2RGB)
+                composites = composite(rgb, labels, target)
+            for kind, image in zip(kinds, composites):
                 validate_composite(image, labels, target, kind)
             proofs.append(silhouette_proof(composites[0]))
             if index == 0:

@@ -50,11 +50,13 @@ const fixture =
           ? "http://127.0.0.1:5173"
           : "http://127.0.0.1:5175/Arc-Shot-Evaluator/"),
     );
-    await expect(p).toHaveTitle("ARC · Online Shot Analysis");
+    await expect(p).toHaveTitle("ARC · Basketball tools & games");
     console.log("Page identity", p.url(), await p.title());
     async function open() {
       await p.getByRole("button", { name: /Others/ }).click();
       await p.getByRole("menuitem").click();
+      // Workspace links remember the active subview across reloads.
+      await p.getByRole("button", { name: "Guess", exact: true }).click();
     }
     await open();
     await p.getByRole("button", { name: "Create", exact: true }).click();
@@ -245,6 +247,7 @@ const fixture =
     const download = p.waitForEvent("download");
     await p.getByRole("link", { name: "Download", exact: true }).click();
     const file = await download;
+    expect(file.suggestedFilename()).toMatch(/^jumper-[a-f0-9-]+\.(mp4|webm)$/);
     await file.saveAs(path.join(artifacts, target + "-full.mp4"));
     let releaseFailedSave;
     // Storage failure must preserve the finished downloadable result.

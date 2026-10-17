@@ -1,6 +1,6 @@
 # ARC
 
-[![ARC — See your game from every angle. Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper.](frontend/public/assets/arc-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
+[![ARC: See your game from every angle. Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper.](frontend/public/assets/arc-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
 
 Basketball footage review, play design, defensive testing, and private jumpshot
 quizzes in one app.
@@ -130,7 +130,7 @@ Playbook and Counter Lab share one browser-persisted **Arrows** preference:
 | Setting                 | Visible routes                                                           |
 | ----------------------- | ------------------------------------------------------------------------ |
 | Off                     | No saved or simulated route overlays.                                    |
-| Main on-ball — default  | Passes, drives, handoffs, and connected screens, slips, rolls, and pops. |
+| Main on-ball (default)  | Passes, drives, handoffs, and connected screens, slips, rolls, and pops. |
 | Main on-ball + off-ball | Main actions, including cuts and off-ball screens.                       |
 | All on-ball movements   | Main on-ball actions plus smaller related adjustments.                   |
 | All movements           | Main actions and smaller on-ball/off-ball movement trails.               |
@@ -209,6 +209,14 @@ can reuse unchanged detections/frame features, and an export failure can retry
 from a bounded temporary mask checkpoint without rerunning segmentation. Finished
 videos are decoded and checked for timeline, dimensions, neutral colors, and no
 audio before becoming ready for review.
+
+Personal silhouette rendering uses label masks alone, without rereading original
+pixels or creating color reveals. Highlight, quiz, and answer playback share that
+same masked video. The local server also checks received silhouette saves before
+publishing them to My Clips; invalid files, mismatched variants, colors, audio,
+and broken timelines fail without leaving a partial saved clip. Cancelled or
+released local jobs cannot take ownership of a later retry. Browser worker
+communication failures stop cleanly and allow another attempt.
 
 These checks do not prove tracking accuracy. Review the full motion and correct
 or reject uncertain masks; unresolved tracking warnings prevent approval. The

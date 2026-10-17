@@ -2,6 +2,7 @@ import {
   validateGeometry,
   validateFrameTime,
   validateDecodedPixels,
+  validateNeutralPixels,
   type ExportGeometry,
 } from "./videoValidation.ts";
 import {
@@ -113,16 +114,32 @@ export function compositePixels(
   target: number,
   kind: "highlight" | "quiz" | "reveal",
 ) {
+  if (source.length !== owners.length * 4)
+    throw Error("Invalid source frame size");
+  if (kind === "quiz") return silhouettePixels(owners, target);
   const result = new Uint8ClampedArray(source.length);
   for (let i = 0; i < owners.length; i++) {
     const at = i * 4;
     const original =
       owners[i] !== 0 &&
       (kind === "reveal" || (kind === "highlight" && owners[i] === target));
-    const neutral =
-      owners[i] === 0 ? 224 : kind === "quiz" && owners[i] === target ? 0 : 128;
+    const neutral = owners[i] === 0 ? 224 : 128;
     for (let c = 0; c < 3; c++)
       result[at + c] = original ? source[at + c] : neutral;
+    result[at + 3] = 255;
+  }
+  return result;
+}
+
+/** Finished personal videos have no dependency on original image pixels. */
+export function silhouettePixels(owners: Uint8Array, target: number) {
+  if (!Number.isInteger(target) || target < 1 || target > 255)
+    throw Error("Invalid target identity");
+  const result = new Uint8ClampedArray(owners.length * 4);
+  for (let i = 0; i < owners.length; i++) {
+    const at = i * 4;
+    const value = owners[i] === 0 ? 224 : owners[i] === target ? 0 : 128;
+    result[at] = result[at + 1] = result[at + 2] = value;
     result[at + 3] = 255;
   }
   return result;
@@ -133,6 +150,7 @@ export async function validateFinishedVideo(
   blob: Blob,
   geometry: ExportGeometry,
   proofs?: readonly Uint8Array[],
+  neutral = false,
 ) {
   validateGeometry(geometry);
   if (proofs && proofs.length !== geometry.count)
@@ -166,17 +184,25 @@ export async function validateFinishedVideo(
         sample.canvas.height !== geometry.height
       )
         throw Error("Decoded frame dimensions changed");
-      if (proofs) {
+      if (proofs || neutral) {
         const context = sample.canvas.getContext("2d", {
           willReadFrequently: true,
         });
         if (!context) throw Error("Cannot inspect finished video");
-        validateDecodedPixels(
-          context.getImageData(0, 0, geometry.width, geometry.height).data,
+        const pixels = context.getImageData(
+          0,
+          0,
           geometry.width,
           geometry.height,
-          proofs[index],
-        );
+        ).data;
+        if (proofs)
+          validateDecodedPixels(
+            pixels,
+            geometry.width,
+            geometry.height,
+            proofs[index],
+          );
+        else validateNeutralPixels(pixels, geometry.width, geometry.height);
       }
       index++;
     }

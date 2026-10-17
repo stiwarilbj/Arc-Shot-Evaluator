@@ -13,9 +13,7 @@ import uuid
 import zipfile
 
 import cv2
-import numpy as np
-
-from .video_validation import BLOCK, validate_finished_video
+from .video_validation import validate_finished_video
 
 MAX_ARCHIVE = 512 * 1024 * 1024
 MAX_FILE = 100 * 1024 * 1024
@@ -260,24 +258,12 @@ def import_archive(root: Path, source: Path, lock):
                         raise ValueError("Backup clip timeline changed")
                     if not (2 <= width <= 1280 and 2 <= height <= 720):
                         raise ValueError("Invalid backup video dimensions")
-                    proof = (
-                        np.full(
-                            (
-                                (height + BLOCK - 1) // BLOCK,
-                                (width + BLOCK - 1) // BLOCK,
-                            ),
-                            255,
-                            np.uint8,
-                        )
-                        if neutral
-                        else None
-                    )
                     validate_finished_video(
                         destination,
                         width,
                         height,
                         count,
-                        [proof] * count if neutral else None,
+                        neutral=neutral,
                     )
                     verified.add(key)
             (directory / "clip.json").write_text(json.dumps(value, allow_nan=False))

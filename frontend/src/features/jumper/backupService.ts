@@ -19,7 +19,7 @@ import {
   type Progress,
 } from "./backupArchive";
 import { openVideo, validateFinishedVideo } from "./media";
-import { BLOCK, validateGeometry } from "./videoValidation";
+import { validateGeometry } from "./videoValidation";
 export async function exportLibrary(
   includeHistory: boolean,
   progress: Progress,
@@ -74,15 +74,11 @@ export async function inspectLibraryBackup(file: Blob, progress: Progress) {
       if (Math.abs(count / 30 - value.duration) > 0.002)
         throw Error("A backup clip has an invalid timeline");
       validateGeometry({ width, height, count });
-      const proof = neutral
-        ? new Uint8Array(
-            Math.ceil(width / BLOCK) * Math.ceil(height / BLOCK),
-          ).fill(255)
-        : undefined;
       await validateFinishedVideo(
         blob,
         { width, height, count },
-        proof ? Array.from({ length: count }, () => proof) : undefined,
+        undefined,
+        neutral,
       );
       checked.add(key);
     }

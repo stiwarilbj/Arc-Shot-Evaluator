@@ -29,22 +29,35 @@ def validate_composite(image, labels, target, kind):
 
 
 def silhouette_proof(image):
-    height, width = image.shape[:2]
-    proof = np.full(
-        ((height + BLOCK - 1) // BLOCK, (width + BLOCK - 1) // BLOCK), 255, np.uint8
+    # Same clipped 8px blocks + 2px guard, using native min/max filters rather
+    # than thousands of Python scans per frame. Constant borders exclude padding.
+    channel = image[:, :, 0]
+    kernel = np.ones((BLOCK + 4, BLOCK + 4), np.uint8)
+    low = cv2.erode(
+        channel, kernel, anchor=(2, 2), borderType=cv2.BORDER_CONSTANT, borderValue=255
+    )[::BLOCK, ::BLOCK]
+    high = cv2.dilate(
+        channel, kernel, anchor=(2, 2), borderType=cv2.BORDER_CONSTANT, borderValue=0
+    )[::BLOCK, ::BLOCK]
+    return np.where(low == high, low, 255).astype(np.uint8)
+
+
+def validate_neutral_pixels(image):
+    """Check imported silhouettes with lossy-edge tolerance, without mask evidence.
+
+    This rejects colors and textured interiors; it cannot establish track identity
+    or that every foreground surface belongs to a player. Those require review.
+    """
+    low = image.min(axis=2).astype(np.int16)
+    high = image.max(axis=2).astype(np.int16)
+    if np.any(high - low > CHROMA_TOLERANCE):
+        raise ValueError("Silhouette video contains original colors")
+    palette = np.array([0, 128, 224], np.int16)
+    expected = palette[np.abs(low[..., None] - palette).argmin(axis=2)]
+    # Use the same guarded-block policy as browser backup validation.
+    validate_decoded_pixels(
+        image, silhouette_proof(expected.astype(np.uint8)[..., None])
     )
-    for by in range(proof.shape[0]):
-        for bx in range(proof.shape[1]):
-            x, y = bx * BLOCK, by * BLOCK
-            value = image[y, x, 0]
-            region = image[
-                max(0, y - 2) : min(height, y + BLOCK + 2),
-                max(0, x - 2) : min(width, x + BLOCK + 2),
-                0,
-            ]
-            if np.all(region == value):
-                proof[by, bx] = value
-    return proof
 
 
 def validate_decoded_pixels(image, proof):
@@ -66,7 +79,7 @@ def validate_decoded_pixels(image, proof):
 
 
 def validate_finished_video(
-    path: Path, width: int, height: int, count: int, proofs=None
+    path: Path, width: int, height: int, count: int, proofs=None, *, neutral=False
 ):
     if not (
         2 <= width <= 1280
@@ -147,8 +160,24 @@ def validate_finished_video(
                 raise ValueError("Encoded video has an incorrect frame timeline")
             if proofs is not None:
                 validate_decoded_pixels(image, proofs[index])
+            elif neutral:
+                validate_neutral_pixels(image)
             index += 1
         if index != count:
             raise ValueError("Export contains missing or undecodable frames")
     finally:
         capture.release()
+
+
+def validate_saved_silhouette(path: Path, duration: float):
+    """Verify a received canonical export once, before publishing its aliases."""
+    capture = cv2.VideoCapture(str(path))
+    try:
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    finally:
+        capture.release()
+    count = round(duration * 30)
+    if abs(count / 30 - duration) > 0.002:
+        raise ValueError("Invalid saved-video timeline")
+    validate_finished_video(path, width, height, count, neutral=True)

@@ -58,6 +58,16 @@ bad mask, and exports contain no audio. Original footage is only an editing
 reference. Masks can still include background shapes or miss limbs: approve only
 after reviewing all frames and correct or reject uncertain results.
 
+The personal rendering path reads only label masks, never source image pixels;
+an encoding retry likewise needs only the completed masks. Offline preparation
+can still explicitly produce original-foreground reveals for licensed public
+clips, but the personal editor always requests silhouettes. The native server
+validates a silhouette save's video once and requires byte-identical masked
+variants, rejecting color/audio leaks, corrupt exports and mismatched timelines
+before publishing metadata. Backup restores check neutral video interiors as
+well as decoding; compression edges allow bounded tolerance. These checks do not
+identify every possible incorrectly segmented background shape.
+
 Existing personal quiz clips also use their masked video after answering. Older
 highlight-only clips are labeled **Legacy** and offered as downloads without an
 anonymized preview; they have not been reprocessed automatically.
@@ -82,6 +92,13 @@ ordinary tracking memory keeps the recent sixteen frames while retaining
 correction frames. Temporary jobs
 are cancelled and removed when released; saved media is separate in ignored
 `jumper-media/saved/`. No processing service receives personal footage.
+
+Queued native work retains its own cancellation event and generation. Cancelling
+and retrying cannot revive an old callback; release/expiry removes ownership
+immediately, with temporary files deleted after any running subprocess exits.
+Incomplete subprocess outputs and unavailable queues report recoverable errors.
+Browser workers are terminated on send/receive failures as well as cancellation,
+and invalid or stale job updates cannot be accepted as finished videos.
 
 Hosted videos, attempts and shuffle progress use IndexedDB. Local videos use the
 local media directory; quiz attempts/progress remain in that browser. Download

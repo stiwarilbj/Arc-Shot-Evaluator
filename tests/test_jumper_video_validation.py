@@ -15,6 +15,7 @@ from backend.jumper.video_validation import (
     silhouette_proof,
     validate_decoded_pixels,
     validate_finished_video,
+    validate_neutral_pixels,
 )
 
 
@@ -37,6 +38,7 @@ def test_exact_and_lossy_colors(tmp_path):
     validate_composite(image, labels, 1, "quiz")
     proofs = [silhouette_proof(image)] * 3
     validate_finished_video(video, 64, 48, 3, proofs)
+    validate_finished_video(video, 64, 48, 3, neutral=True)
     tolerant = np.minimum(image.astype(int) + 6, 255).astype(np.uint8)
     validate_decoded_pixels(tolerant, proofs[0])
     wrong = image.copy()
@@ -178,3 +180,57 @@ def test_failed_validation_retries_encoding_not_tracking(tmp_path, monkeypatch):
             progress=lambda *args: None,
         )
     assert len(calls) == 2  # no invalid ready result or unbounded retry
+
+
+def test_silhouette_export_never_reads_original_frames(tmp_path, monkeypatch):
+    masks = tmp_path / "masks"
+    masks.mkdir()
+    labels = np.zeros((48, 64), np.uint8)
+    labels[8:40, 16:32] = 1
+    labels[8:40, 40:56] = 2
+    for index in range(3):
+        np.save(masks / f"{index:06d}.npy", labels)
+    monkeypatch.setattr(
+        pipeline.cv2,
+        "imread",
+        lambda *a: pytest.fail("original pixels read during silhouette export"),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "composite",
+        lambda *a: pytest.fail("original-color composites created"),
+    )
+    result = pipeline.render(
+        [tmp_path / "absent-source.png"] * 3,
+        masks,
+        tmp_path / "output",
+        1,
+        "test",
+        silhouette=True,
+    )
+    assert result["quiz"] == result["highlight"] == result["reveal"]
+    validate_finished_video(
+        tmp_path / "output" / result["quiz"]["file"], 64, 48, 3, neutral=True
+    )
+
+
+def test_native_proof_matches_guarded_reference():
+    rng = np.random.default_rng(42)
+    for height, width in [(2, 2), (15, 21), (48, 64), (720, 1280)]:
+        labels = rng.integers(
+            0, 3, ((height + 17) // 18, (width + 17) // 18), dtype=np.uint8
+        )
+        labels = labels.repeat(18, axis=0).repeat(18, axis=1)[:height, :width]
+        image = pipeline.silhouette_pixels(labels, 1)
+        reference = np.full(((height + 7) // 8, (width + 7) // 8), 255, np.uint8)
+        for by in range(reference.shape[0]):
+            for bx in range(reference.shape[1]):
+                x, y = bx * 8, by * 8
+                value = image[y, x, 0]
+                if np.all(
+                    image[max(0, y - 2) : y + 10, max(0, x - 2) : x + 10, 0] == value
+                ):
+                    reference[by, bx] = value
+        np.testing.assert_array_equal(silhouette_proof(image), reference)
+    with pytest.raises(ValueError, match="color"):
+        validate_neutral_pixels(np.full((48, 64, 3), 64, np.uint8))

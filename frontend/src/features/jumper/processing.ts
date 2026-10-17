@@ -33,28 +33,41 @@ export async function processVideo(
         { type: "module" },
       );
       const id = crypto.randomUUID();
+      let settled = false;
       const cleanup = () => {
+        settled = true;
         worker.terminate();
         signal.removeEventListener("abort", abort);
       };
-      const abort = () => {
+      const fail = (error: unknown) => {
+        if (settled) return;
         cleanup();
-        reject(new DOMException("Processing cancelled", "AbortError"));
+        reject(error);
+      };
+      const abort = () => {
+        fail(new DOMException("Processing cancelled", "AbortError"));
       };
       signal.addEventListener("abort", abort, { once: true });
       worker.onerror = () => {
-        cleanup();
-        reject(
+        fail(
           Error(
             "Masking worker stopped. Your source is unchanged; retry. If this page was updated, reload ARC and select your video again, or use the free downloaded editor.",
           ),
         );
       };
+      worker.onmessageerror = () =>
+        fail(
+          Error(
+            "The masking worker response could not be read. Retry processing.",
+          ),
+        );
       worker.onmessage = ({ data }: MessageEvent<WorkerResponse>) => {
-        if (!data || data.id !== id) return;
+        if (settled || !data || data.id !== id) return;
         if (
           data.kind === "progress" &&
           Number.isFinite(data.progress) &&
+          data.progress >= 0 &&
+          data.progress <= 1 &&
           typeof data.stage === "string"
         )
           progress(data);
@@ -65,6 +78,9 @@ export async function processVideo(
           cleanup();
           if (
             maskResult(data.result) &&
+            (request.presentation !== "silhouette" ||
+              (data.result.highlight === data.result.quiz &&
+                data.result.quiz === data.result.reveal)) &&
             (!request.auto_detect_others ||
               data.result.objects?.some(
                 (o) => o.id === request.target_id && !o.ignored,
@@ -77,9 +93,22 @@ export async function processVideo(
                 "The masking worker returned invalid videos. Retry processing.",
               ),
             );
-        }
+        } else
+          fail(
+            Error(
+              "The masking worker returned an invalid response. Retry processing.",
+            ),
+          );
       };
-      worker.postMessage({ kind: "process", id, file, request });
+      try {
+        worker.postMessage({ kind: "process", id, file, request });
+      } catch {
+        fail(
+          Error(
+            "Could not send the video to the masking worker. Retry processing.",
+          ),
+        );
+      }
     });
   }
   let id: string | undefined;
@@ -102,6 +131,12 @@ export async function processVideo(
     const form = new FormData();
     form.set("file", file);
     id = (await (await api("/jobs", { method: "POST", body: form })).json()).id;
+    if (typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id)) {
+      id = undefined;
+      throw Error(
+        "Local editor returned an invalid upload identity. Retry uploading.",
+      );
+    }
     await api(`/jobs/${id}/process`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -109,13 +144,43 @@ export async function processVideo(
     });
     while (true) {
       signal.throwIfAborted();
-      const state = await (await api(`/jobs/${id}`)).json();
+      const state: {
+        id: string;
+        status: string;
+        stage: string;
+        progress: number;
+        error?: string;
+        result?: Pick<MaskResult, "objects" | "duration" | "warnings">;
+      } = await (await api(`/jobs/${id}`)).json();
+      if (
+        !state ||
+        state.id !== id ||
+        ![
+          "uploaded",
+          "queued",
+          "processing",
+          "error",
+          "cancelled",
+          "done",
+        ].includes(state.status) ||
+        typeof state.stage !== "string" ||
+        !Number.isFinite(state.progress) ||
+        state.progress < 0 ||
+        state.progress > 1
+      )
+        throw Error(
+          "Local editor returned an invalid job update. Retry processing.",
+        );
       progress({ stage: state.stage, progress: state.progress });
       if (state.status === "error")
         throw Error(state.error ?? "Local processing failed");
       if (state.status === "cancelled")
         throw new DOMException("Processing cancelled", "AbortError");
       if (state.status === "done") {
+        if (!state.result || typeof state.result !== "object")
+          throw Error(
+            "Local editor returned an incomplete result. Retry processing.",
+          );
         const kinds =
           request.presentation === "silhouette"
             ? ["quiz"]
