@@ -8,12 +8,16 @@ import {
   type JobProgress,
   type WorkerResponse,
 } from "./domain";
-export async function processVideo(
+import { ShooterSelectionCache } from "./shooterSelection";
+
+const shooterSelections = new ShooterSelectionCache();
+
+export async function prepareShooterSelection(
   file: File,
   request: MaskRequest,
   progress: (value: JobProgress) => void,
   signal: AbortSignal,
-): Promise<MaskResult> {
+): Promise<MaskRequest> {
   validateMaskRequest(request);
   if (file.size > MAX_BYTES) throw Error("Files must be at most 100 MB");
   signal.throwIfAborted();
@@ -27,6 +31,27 @@ export async function processVideo(
         "WebGPU is unavailable on this device. Use the downloaded editor.",
       );
     signal.throwIfAborted();
+  }
+  return shooterSelections.resolve(
+    file,
+    request,
+    async (source, time, abort) => {
+      progress({ stage: "Finding your selected shooter's body", progress: 0 });
+      const { detectPeople } = await import("./detection");
+      return detectPeople(source, time, abort);
+    },
+    signal,
+  );
+}
+
+export async function processVideo(
+  file: File,
+  request: MaskRequest,
+  progress: (value: JobProgress) => void,
+  signal: AbortSignal,
+): Promise<MaskResult> {
+  request = await prepareShooterSelection(file, request, progress, signal);
+  if (IS_GITHUB_PAGES) {
     return new Promise((resolve, reject) => {
       const worker = new Worker(
         new URL("./masking.worker.ts", import.meta.url),

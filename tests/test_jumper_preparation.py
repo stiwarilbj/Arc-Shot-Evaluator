@@ -525,6 +525,7 @@ def test_personal_silhouette_exports_share_only_masked_video(tmp_path):
     "change",
     [
         {"auto_detect_others": "yes"},
+        {"shooter_selection_resolved": "yes"},
         {"presentation": "original"},
         {
             "objects": [

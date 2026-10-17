@@ -1017,6 +1017,7 @@ export default function JumperEditor({
                   start={start}
                   end={end}
                   track={tracks.find((t) => t.id === target)}
+                  automatic={automatic}
                   active={active}
                   paused={busy || saving || loading}
                 />

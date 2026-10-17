@@ -428,7 +428,12 @@ async function process(
       const initial = objects.find((object) => object.id === target_id)!
         .prompts[0];
       const point = initial.points?.find((_, i) => initial.labels?.[i] === 1);
-      if (initial.frame === 0 && !initial.box && point) {
+      if (
+        !request.request.shooter_selection_resolved &&
+        initial.frame === 0 &&
+        !initial.box &&
+        point
+      ) {
         report("Detecting the selected shooter", 0);
         const sample = await sink.getCanvas(start);
         if (!sample) throw Error("Could not decode the starting frame");

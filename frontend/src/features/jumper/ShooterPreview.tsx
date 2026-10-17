@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Track } from "./domain";
+import type { JobProgress, Track } from "./domain";
 import { preview } from "./media";
 import { useBlobUrl } from "./JumperLab";
 
@@ -9,6 +9,7 @@ export default function ShooterPreview({
   start,
   end,
   track,
+  automatic,
   active,
   paused,
 }: {
@@ -16,6 +17,7 @@ export default function ShooterPreview({
   start: number;
   end: number;
   track?: Track;
+  automatic: boolean;
   active: boolean;
   paused: boolean;
 }) {
@@ -30,7 +32,7 @@ export default function ShooterPreview({
     setRequested(true);
     setImage(null);
     setStatus("");
-  }, [file, start, end, track?.id, signature]);
+  }, [file, start, end, track?.id, signature, automatic]);
   useEffect(() => {
     if (
       image ||
@@ -48,20 +50,28 @@ export default function ShooterPreview({
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const { processVideo } = await import("./processing");
-          const result = await processVideo(
+          const { prepareShooterSelection, processVideo } =
+            await import("./processing");
+          const report = (update: JobProgress) => {
+            if (!abort.signal.aborted) setStatus(update.stage);
+          };
+          const request = await prepareShooterSelection(
             file,
             {
               start,
               end: Math.min(end, start + 0.1),
               target_id: track.id,
               objects: [{ id: track.id, prompts: [seed] }],
-              auto_detect_others: false,
+              auto_detect_others: automatic,
               presentation: "silhouette",
             },
-            (update) => {
-              if (!abort.signal.aborted) setStatus(update.stage);
-            },
+            report,
+            abort.signal,
+          );
+          const result = await processVideo(
+            file,
+            { ...request, auto_detect_others: false },
+            report,
             abort.signal,
           );
           if (result.warnings.some((w) => w.frame === 0))
@@ -95,6 +105,7 @@ export default function ShooterPreview({
     end,
     track?.id,
     signature,
+    automatic,
     requested,
     active,
     paused,

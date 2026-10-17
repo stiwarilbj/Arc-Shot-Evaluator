@@ -67,6 +67,7 @@ export interface Track {
 }
 export interface MaskRequest {
   auto_detect_others?: boolean;
+  shooter_selection_resolved?: boolean;
   presentation?: "silhouette";
   start: number;
   end: number;
@@ -214,6 +215,8 @@ export function validateMaskRequest(
     !v ||
     (v.auto_detect_others !== undefined &&
       typeof v.auto_detect_others !== "boolean") ||
+    (v.shooter_selection_resolved !== undefined &&
+      typeof v.shooter_selection_resolved !== "boolean") ||
     (v.presentation !== undefined && v.presentation !== "silhouette") ||
     !Number.isFinite(v.start) ||
     !Number.isFinite(v.end) ||

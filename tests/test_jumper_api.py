@@ -237,3 +237,42 @@ def test_submit_failure_and_bad_status_are_recoverable(client, monkeypatch):
     assert client.get(f"/api/jumper-lab/jobs/{identity}").status_code == 200
     job["status"] = "done"
     assert client.get(f"/api/jumper-lab/jobs/{identity}").json()["status"] == "error"
+
+
+@pytest.mark.parametrize("resolved", [True, False])
+def test_processing_preserves_resolved_shooter_prompt(client, monkeypatch, resolved):
+    from concurrent.futures import Future
+    from types import SimpleNamespace
+
+    identity, job = uploaded_job(client)
+    monkeypatch.setattr(jumper, "capabilities", lambda: {"native": True})
+    monkeypatch.setattr(
+        jumper, "EXECUTOR", SimpleNamespace(submit=lambda *args: Future())
+    )
+    payload = {
+        "start": 2,
+        "end": 5,
+        "target_id": 7,
+        "auto_detect_others": True,
+        "shooter_selection_resolved": resolved,
+        "presentation": "silhouette",
+        "objects": [
+            {
+                "id": 7,
+                "prompts": [
+                    {
+                        "frame": 0,
+                        "box": [0.1, 0.1, 0.5, 0.9],
+                        "points": [[0.3, 0.4]],
+                        "labels": [1],
+                    }
+                ],
+            }
+        ],
+    }
+    response = client.post(f"/api/jumper-lab/jobs/{identity}/process", json=payload)
+    assert response.status_code == 200
+    stored = json.loads((job["directory"] / "request.json").read_text())
+    assert stored["shooter_selection_resolved"] is resolved
+    assert stored["objects"] == payload["objects"]
+    assert stored["auto_detect_others"] is True

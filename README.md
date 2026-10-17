@@ -190,6 +190,9 @@ Personal videos stay on your device; they are never automatically published.
 2. **Click shooter:** select the target in the segment's first frame. A magnifier
    and keyboard/touch controls help with small players. A short silhouette preview
    confirms the selected person before full processing; it can load the models.
+   The preview and full run reuse the same starting-frame shooter selection,
+   including the detected body box when automatic discovery is enabled. The
+   preview only tracks the shooter; full processing also discovers other people.
    Other people are discovered automatically, including later entrants.
 3. **Process:** track people and render a muted video up to **720p/30 fps**. The
    shooter becomes solid black, other included players gray, and the background

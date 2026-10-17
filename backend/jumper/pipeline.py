@@ -42,6 +42,11 @@ def validate_job(job: object) -> dict:
             raise ValueError(f"Missing {key}")
     if "auto_detect_others" in job and type(job["auto_detect_others"]) is not bool:
         raise ValueError("Invalid automatic discovery flag")
+    if (
+        "shooter_selection_resolved" in job
+        and type(job["shooter_selection_resolved"]) is not bool
+    ):
+        raise ValueError("Invalid resolved shooter selection flag")
     if "presentation" in job and job["presentation"] != "silhouette":
         raise ValueError("Invalid presentation")
     start, end = job.get("start"), job.get("end")
@@ -384,7 +389,12 @@ def track(
             ),
             None,
         )
-        if initial["frame"] == 0 and "box" not in initial and point is not None:
+        if (
+            not job.get("shooter_selection_resolved")
+            and initial["frame"] == 0
+            and "box" not in initial
+            and point is not None
+        ):
             boxes = detect(0)
             box = clicked_person_box(boxes, point)
             if box is not None:
