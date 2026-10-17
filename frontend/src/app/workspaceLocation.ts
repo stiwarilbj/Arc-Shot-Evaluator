@@ -1,4 +1,9 @@
-export type AppWorkspace = "analyzer" | "playbook" | "counterlab" | "jumper";
+export type AppWorkspace =
+  | "home"
+  | "analyzer"
+  | "playbook"
+  | "counterlab"
+  | "jumper";
 export type AnalysisView = "overview" | "shot" | "tracking";
 export type JumperView = "guess" | "create" | "clips";
 export type WorkspaceLocation = {
@@ -8,7 +13,7 @@ export type WorkspaceLocation = {
 };
 
 export const DEFAULT_LOCATION: WorkspaceLocation = {
-  workspace: "analyzer",
+  workspace: "home",
   analysisView: "shot",
   jumperView: "guess",
 };
@@ -19,6 +24,8 @@ export function readWorkspaceHash(
   current: WorkspaceLocation = DEFAULT_LOCATION,
 ): WorkspaceLocation {
   switch (hash) {
+    case "#shot-analyzer":
+      return { ...current, workspace: "analyzer", analysisView: "shot" };
     case "#playbook":
       return { ...current, workspace: "playbook" };
     case "#counter-lab":
@@ -35,11 +42,12 @@ export function readWorkspaceHash(
     case "#shot-analyzer/tracking":
       return { ...current, workspace: "analyzer", analysisView: "tracking" };
     default:
-      return { ...current, workspace: "analyzer", analysisView: "shot" };
+      return { ...current, workspace: "home" };
   }
 }
 
 export function workspaceHash(value: WorkspaceLocation): string {
+  if (value.workspace === "home") return "#home";
   if (value.workspace === "playbook") return "#playbook";
   if (value.workspace === "counterlab") return "#counter-lab";
   if (value.workspace === "jumper") {

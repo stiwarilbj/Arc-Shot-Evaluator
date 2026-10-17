@@ -10,6 +10,7 @@ import { VideoUpload } from "../features/upload/VideoUpload";
 import { PlaybookBoard } from "../features/playbook/PlaybookBoard";
 import type { PlaybookDocument, PlaybookDraft } from "../features/playbook/types";
 import { AppHeader } from "../layout/AppHeader";
+import { HomePage } from "../features/home/HomePage";
 import { useWorkspaceNavigation } from "./useWorkspaceNavigation";
 import { IS_GITHUB_PAGES } from "../runtime";
 import { isProcessingMode } from "../domain/analysisModes";
@@ -511,8 +512,9 @@ export function ArcShotEvaluatorApp() {
   );
 
   return (
-    <div className={`app-shell ${workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : session ? "analysis-session-shell" : ""}`}>
-      <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={changeWorkspace} />
+    <div className={`app-shell ${workspace === "home" ? "home-app-shell" : workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : session ? "analysis-session-shell" : ""}`}>
+      <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} onHome={() => { changeWorkspace("home"); window.scrollTo(0, 0); }} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={changeWorkspace} />
+      {workspace === "home" ? <HomePage /> : null}
       <div className={workspace === "playbook" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "playbook"}>
         <PlaybookBoard active={workspace === "playbook"} onTestInCounterLab={testInCounterLab} onDraftChange={setCounterLabPlay} requestedPlay={playbookRequest} />
       </div>

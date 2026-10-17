@@ -18,6 +18,7 @@ interface AppHeaderProps {
   complete: boolean;
   showReset?: boolean;
   onReset: () => void;
+  onHome?: () => void;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
   workspace?: AppWorkspace;
@@ -29,6 +30,7 @@ export function AppHeader({
   complete,
   showReset = false,
   onReset,
+  onHome,
   theme,
   onThemeChange,
   workspace = "analyzer",
@@ -42,7 +44,7 @@ export function AppHeader({
       <button
         className="brand-lockup"
         type="button"
-        onClick={onReset}
+        onClick={onHome ?? onReset}
         aria-label="Go to ARC home"
       >
         <div className="brand-mark" aria-label="ARC">

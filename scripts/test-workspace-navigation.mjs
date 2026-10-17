@@ -6,6 +6,7 @@ import {
 } from "../frontend/src/app/workspaceLocation.ts";
 
 const routes = [
+  ["#home", { workspace: "home" }],
   ["#shot-analyzer", { workspace: "analyzer", analysisView: "shot" }],
   [
     "#shot-analyzer/overview",
@@ -55,7 +56,10 @@ assert.equal(
   readWorkspaceHash("#shot-analyzer", playbook).analysisView,
   "shot",
 );
-assert.equal(DEFAULT_LOCATION.workspace, "analyzer");
+const home = readWorkspaceHash("#home", remembered);
+assert.equal(home.analysisView, "tracking");
+assert.equal(home.jumperView, "create");
+assert.equal(DEFAULT_LOCATION.workspace, "home");
 console.log(
   "Workspace fragments: unique routes, nested views, canonical defaults, malformed fragments and remembered views passed",
 );
