@@ -132,7 +132,7 @@ export function LibraryBackup({
         </div>
       </div>
       <p className="jumper-caption">
-        ARC backups only · Up to 512 MiB and 1,000 clips. Original uploads,
+        ARCade Hoops backups only · Up to 512 MiB and 1,000 clips. Original uploads,
         tracking data, and models are excluded. Older clips retain their legacy
         status.
       </p>

@@ -17,8 +17,8 @@ export function HomePage() {
     <main className="arc-home">
       <header className="home-intro">
         <div className="home-hero-copy">
-          <p className="home-eyebrow">
-            A basketball toolkit. A new perspective.
+          <p className="home-eyebrow home-app-name">
+            ARCade Hoops · A basketball toolkit.
           </p>
           <h1>
             See your game
@@ -80,7 +80,7 @@ export function HomePage() {
       </header>
       <div className="home-tools-heading">
         <div>
-          <p className="home-eyebrow">Explore ARC</p>
+          <p className="home-eyebrow">Explore ARCade Hoops</p>
           <h2 id="home-tools-heading" tabIndex={-1}>
             Four ways to work on your game.
           </h2>
@@ -133,7 +133,7 @@ export function HomePage() {
       </div>
       <aside className="home-local" aria-labelledby="home-local-heading">
         <div>
-          <p className="home-eyebrow">Take ARC with you</p>
+          <p className="home-eyebrow">Take ARCade Hoops with you</p>
           <h2 id="home-local-heading">Browser convenience. Local control.</h2>
           <p>
             Use the tools here, or run the downloaded app for full shot analysis

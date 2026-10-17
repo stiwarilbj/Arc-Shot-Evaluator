@@ -86,7 +86,7 @@ export function validateManifest(
     new Set(v.clips.map((c) => c?.id)).size !== v.clips.length ||
     (v.history !== undefined && !validHistory(v.history))
   )
-    throw Error("Invalid ARC backup metadata");
+    throw Error("Invalid ARCade Hoops backup metadata");
   for (const item of v.clips) {
     if (
       !clip(item) ||

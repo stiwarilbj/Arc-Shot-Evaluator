@@ -136,7 +136,7 @@ def export_archive(root: Path, destination: Path):
 
 def inspect_archive(source: Path):
     if not 22 <= source.stat().st_size <= MAX_ARCHIVE:
-        raise ValueError("Choose an ARC backup ZIP no larger than 512 MiB")
+        raise ValueError("Choose an ARCade Hoops backup ZIP no larger than 512 MiB")
     archive = zipfile.ZipFile(source)
     try:
         entries = archive.infolist()
@@ -172,7 +172,7 @@ def inspect_archive(source: Path):
             or len(value["clips"]) > 1000
             or not isinstance(value.get("createdAt"), str)
         ):
-            raise ValueError("Invalid ARC backup manifest")
+            raise ValueError("Invalid ARCade Hoops backup manifest")
         datetime.fromisoformat(value["createdAt"].replace("Z", "+00:00"))
         expected = set()
         identities = set()

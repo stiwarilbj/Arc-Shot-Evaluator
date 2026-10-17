@@ -1295,7 +1295,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <ToolButton active={tool === "pin-down"} icon={<UsersRound size={15} />} label="Pin-down" title={TOOL_LABELS["pin-down"]} onClick={() => chooseTool("pin-down")} />
             <ToolButton active={tool === "backdoor-cut"} icon={<ArrowUpRight size={15} />} label="Backdoor cut" title={TOOL_LABELS["backdoor-cut"]} onClick={() => chooseTool("backdoor-cut")} />
             <span className="toolbar-spacer" />
-            <ToolButton icon={<BrainCircuit size={15} />} label="AI defense" title="Apply ARC defensive AI" onClick={applyAIDefense} />
+            <ToolButton icon={<BrainCircuit size={15} />} label="AI defense" title="Apply ARCade Hoops defensive AI" onClick={applyAIDefense} />
             <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : simulationPaused ? "Resume" : "Play"} title={!draft.players.length ? "Add at least one offensive player before simulating" : simulationPlaying ? "Pause play simulation" : simulationPaused ? "Resume play simulation" : "Play simulation with defensive AI"} disabled={!draft.players.length && !simulationActive} onClick={() => {
               if (simulationPlaying) setSimulationPlaying(false);
               else startSimulation();
@@ -1306,7 +1306,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           </div>
           <div className="playbook-simulation-bar" role="region" aria-label="Play simulation controls">
             <ArrowVisibilityControl />
-            <span className="simulation-ai-label"><ShieldCheck size={14} /> ARC defensive AI</span>
+            <span className="simulation-ai-label"><ShieldCheck size={14} /> ARCade Hoops defensive AI</span>
             {simulationActive && simulationFrame.activeDefenseScheme ? <span className="simulation-scheme-label" role="status"><ShieldCheck size={13} />{currentDefenseSchemeLabel}</span> : null}
             <span className="simulation-copy">{simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeActionLabel ? `${simulationFrame.activeActionLabel} in progress` : simulationFrame.adaptiveReadLabel ? `Read: ${simulationFrame.adaptiveReadLabel}` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
             {simulationActive && simulationFrame.adaptiveReadReason ? <span className="simulation-read-copy" role="status">{simulationFrame.adaptiveReadReason}</span> : null}

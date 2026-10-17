@@ -353,7 +353,7 @@ export async function analyzeVideoInBrowser(
     },
     summary,
     analysis_version: "browser-motion-2",
-    models: { motion: "ARC browser motion pass", pose: poseOverlay ? "ARC pose overlay track" : "Unavailable for uploads" },
+    models: { motion: "ARCade Hoops browser motion pass", pose: poseOverlay ? "ARCade Hoops pose overlay track" : "Unavailable for uploads" },
     processing_mode: processingMode,
     shot_mode: shotMode,
     context: { shot_mode: shotMode },

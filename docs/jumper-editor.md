@@ -114,7 +114,7 @@ Open **My Clips → Back up or restore library** on either build target.
 
 1. Optionally enable **Include guessing history in backup**, then choose
    **Download backup**. Keep the ZIP on your own device or backup drive.
-2. On the destination device, choose **Choose backup ZIP**. ARC verifies its
+2. On the destination device, choose **Choose backup ZIP**. ARCade Hoops verifies its
    manifest, checksums, required video variants, and full video decoding before
    showing a restore preview. No masking model or inference service is needed.
 3. Review the clip and answer counts. If history is present, choose whether to

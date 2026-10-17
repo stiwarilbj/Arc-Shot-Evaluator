@@ -1,4 +1,4 @@
-/** ARC backups use ordinary, uncompressed ZIP entries: videos are already compressed.
+/** ARCade Hoops backups use ordinary, uncompressed ZIP entries: videos are already compressed.
  * The deliberately narrow reader accepts our format without inflating untrusted data. */
 export const MAX_BACKUP_BYTES = 512 * 1024 * 1024;
 export const MAX_METADATA_BYTES = 8 * 1024 * 1024;
@@ -91,7 +91,7 @@ export function writeZip(entries: ZipEntry[]) {
 }
 export async function readZip(file: Blob) {
   if (file.size < 22 || file.size > MAX_BACKUP_BYTES)
-    throw Error("Choose an ARC backup ZIP no larger than 512 MiB");
+    throw Error("Choose an ARCade Hoops backup ZIP no larger than 512 MiB");
   const end = new DataView(await file.slice(-22).arrayBuffer());
   const count = end.getUint16(10, true),
     size = end.getUint32(12, true),
@@ -107,7 +107,7 @@ export async function readZip(file: Blob) {
     offset + size + 22 !== file.size ||
     end.getUint16(20, true)
   )
-    throw Error("Unsupported or damaged ARC backup ZIP");
+    throw Error("Unsupported or damaged ARCade Hoops backup ZIP");
   const bytes = new Uint8Array(
       await file.slice(offset, offset + size).arrayBuffer(),
     ),
@@ -169,6 +169,6 @@ export async function readZip(file: Blob) {
     at += 46 + nameLength;
   }
   if (at !== size || nextOffset !== offset || !entries.has("manifest.json"))
-    throw Error("Incomplete ARC backup");
+    throw Error("Incomplete ARCade Hoops backup");
   return entries;
 }

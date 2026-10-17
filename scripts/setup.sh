@@ -22,7 +22,7 @@ elif command -v npm >/dev/null 2>&1; then
   npm --prefix frontend install --no-package-lock --no-audit --no-fund
   npm --prefix frontend run build
 else
-  echo "ARC needs Node.js to build the frontend. Install Node.js, then run ./scripts/setup.sh again." >&2
+  echo "ARCade Hoops needs Node.js to build the frontend. Install Node.js, then run ./scripts/setup.sh again." >&2
   exit 1
 fi
 
@@ -31,4 +31,4 @@ fi
 
 .venv/bin/python scripts/jumper_pack.py budget frontend/dist
 
-echo "ARC is ready. Run ./scripts/start.sh"
+echo "ARCade Hoops is ready. Run ./scripts/start.sh"

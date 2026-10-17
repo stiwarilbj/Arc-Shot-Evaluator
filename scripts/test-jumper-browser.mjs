@@ -50,7 +50,7 @@ const fixture =
           ? "http://127.0.0.1:5173"
           : "http://127.0.0.1:5175/Arc-Shot-Evaluator/"),
     );
-    await expect(p).toHaveTitle("ARC · Basketball tools & games");
+    await expect(p).toHaveTitle("ARCade Hoops · Basketball tools & games");
     console.log("Page identity", p.url(), await p.title());
     async function open() {
       await p.getByRole("button", { name: /Others/ }).click();

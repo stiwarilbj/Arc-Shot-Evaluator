@@ -425,7 +425,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
       {isJumpShot ? (
         <section className="rail-panel correction-panel calibration-panel">
           <h3>Court setup</h3>
-          <p className="basis-note">Four floor landmarks let ARC turn projected feet into a court-plane distance. Coordinates are source-video pixels and court metres.</p>
+          <p className="basis-note">Four floor landmarks let ARCade Hoops turn projected feet into a court-plane distance. Coordinates are source-video pixels and court metres.</p>
           <div className="correction-field">
             <span>Court rules</span>
             <ArcSelect ariaLabel="Court rules" className="arc-select--full" value={courtPreset} options={[

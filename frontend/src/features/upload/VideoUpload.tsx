@@ -48,7 +48,7 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
       <section className="upload-intro">
         <h1>See the shot; fix the form</h1>
         <p>
-          Upload a basketball clip to review movement, release timing, and shot attempts in ARC; use Playbook to draw screens, cuts, handoffs, and adaptive reads across 24 editable starters
+          Upload a basketball clip to review movement, release timing, and shot attempts in ARCade Hoops; use Playbook to draw screens, cuts, handoffs, and adaptive reads across 24 editable starters
         </p>
       </section>
       <div className="analysis-depth-control">

@@ -1,4 +1,4 @@
-"""ARC local basketball shot evaluator.
+"""ARCade Hoops local basketball shot evaluator.
 
 The package is grouped by responsibility:
 

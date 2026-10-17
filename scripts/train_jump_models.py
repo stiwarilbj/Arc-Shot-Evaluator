@@ -2,7 +2,7 @@
 
 The command is deliberately a candidate evaluator. It trains two small
 baselines on a grouped development split and writes metrics for review, but it
-never writes a release model or changes ARC's model registry. Calibration and
+never writes a release model or changes ARCade Hoops's model registry. Calibration and
 the final held-out test are separate release gates.
 """
 
@@ -249,7 +249,7 @@ def main() -> None:
     try:
         import sklearn  # noqa: F401
     except ImportError as error:
-        raise SystemExit("Install scikit-learn in the training environment; ARC runtime does not require it") from error
+        raise SystemExit("Install scikit-learn in the training environment; ARCade Hoops runtime does not require it") from error
     eligible_rows = [row for row in rows if _rights_allowed(row)]
     report = {
         "status": "candidate_only",

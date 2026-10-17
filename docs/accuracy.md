@@ -1,6 +1,6 @@
 # Accuracy and review protocol
 
-ARC reports four different things for a shot:
+ARCade Hoops reports four different things for a shot:
 
 - `outcome` is the observed make, miss, or review state.
 - `confidence` (also exported as `observation_confidence`) describes the
@@ -38,7 +38,7 @@ a nearby referee or teammate is not counted as a defender.
 ## Jump-shot mode
 
 The landing page defaults to `free_throw`; `jump_shot` is captured per queued
-upload and can be selected for three-pointers or mid-range jump shots. ARC
+upload and can be selected for three-pointers or mid-range jump shots. ARCade Hoops
 tracks gather, takeoff, release, follow-through, landing, all visible players,
 and the hands of likely opponents. Defender distance and approach speed are
 reported in projected image units until court calibration and player identity
@@ -50,7 +50,7 @@ floor contact before release to the basket ground projection. A four-point
 manual court calibration can be saved from the shot panel; NBA, WNBA, NCAA,
 FIBA, high-school, custom, and unknown presets are supported. Marking the
 basket ground projection gives a calibrated court-plane result; if it is not
-marked, ARC labels the rim-center projection as review-only. Measurements stay
+marked, ARCade Hoops labels the rim-center projection as review-only. Measurements stay
 unavailable when the court projection is underconstrained. Three-point
 classification keeps a line-width uncertainty band and sends close calls to
 review.

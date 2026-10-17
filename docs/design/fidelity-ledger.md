@@ -1,4 +1,4 @@
-# ARC fidelity ledger
+# ARCade Hoops fidelity ledger
 
 Compared on 2026-08-21 against `arc-dashboard-concept.png` using the browser-rendered `arc-dashboard-implementation.png` at the app browser's 1277 × 960 capture surface. Layout was separately evaluated at the selected native viewport of 1584 × 960.
 

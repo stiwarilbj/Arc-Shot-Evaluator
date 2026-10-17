@@ -45,7 +45,7 @@ export function AppHeader({
         className="brand-lockup"
         type="button"
         onClick={onHome ?? onReset}
-        aria-label="Go to ARC home"
+        aria-label="Go to ARCade Hoops home"
       >
         <div className="brand-mark" aria-label="ARC">
           ARC
@@ -53,7 +53,7 @@ export function AppHeader({
         <span className="brand-placeholder" aria-hidden="true">Online Shot Analysis</span>
       </button>
       {onWorkspaceChange ? (
-        <nav className="workspace-nav" aria-label="ARC workspaces">
+        <nav className="workspace-nav" aria-label="ARCade Hoops workspaces">
           <button
             type="button"
             className={workspace === "analyzer" ? "is-active" : ""}

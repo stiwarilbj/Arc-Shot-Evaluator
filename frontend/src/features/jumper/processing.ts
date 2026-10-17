@@ -51,7 +51,7 @@ export async function processVideo(
       worker.onerror = () => {
         fail(
           Error(
-            "Masking worker stopped. Your source is unchanged; retry. If this page was updated, reload ARC and select your video again, or use the free downloaded editor.",
+            "Masking worker stopped. Your source is unchanged; retry. If this page was updated, reload ARCade Hoops and select your video again, or use the free downloaded editor.",
           ),
         );
       };

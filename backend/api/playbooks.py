@@ -1,4 +1,4 @@
-"""Local persistence routes for ARC's lightweight basketball playbook editor."""
+"""Local persistence routes for ARCade Hoops's lightweight basketball playbook editor."""
 
 from __future__ import annotations
 

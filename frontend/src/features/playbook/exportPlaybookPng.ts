@@ -23,7 +23,7 @@ export async function exportPlaybookPng(svg: SVGSVGElement, name: string): Promi
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#f3f1ec";
     context.font = "600 30px Inter, Arial, sans-serif";
-    context.fillText(name || "ARC play", 48, 48);
+    context.fillText(name || "ARCade Hoops play", 48, 48);
     context.drawImage(source, 0, 80, canvas.width, 1152);
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PNG export could not create the image file. Please try again.")), "image/png");

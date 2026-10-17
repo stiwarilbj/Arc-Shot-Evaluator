@@ -23,7 +23,7 @@ function db() {
     };
     request.onblocked = () => {
       database = undefined;
-      reject(Error("Close other ARC tabs to upgrade clip storage"));
+      reject(Error("Close other ARCade Hoops tabs to upgrade clip storage"));
     };
     request.onsuccess = () => {
       request.result.onversionchange = () => {

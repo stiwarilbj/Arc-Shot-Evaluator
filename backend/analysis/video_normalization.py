@@ -25,7 +25,7 @@ def _source_fps(path: Path) -> float:
 def normalized_fps(source_fps: float) -> int:
     """Preserve a real source cadence without inventing high-speed frames.
 
-    Older ARC versions promoted low frame-rate clips to 20 fps and capped
+    Older ARCade Hoops versions promoted low frame-rate clips to 20 fps and capped
     high-speed clips at 60 fps. That silently changed the time base used for
     release speed and occlusion timing. We now keep the source cadence within
     the supported video range; callers can sample inference separately while

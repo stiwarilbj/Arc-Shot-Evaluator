@@ -1,4 +1,4 @@
-# ARC design system
+# ARCade Hoops design system
 
 The accepted visual specification is `arc-dashboard-concept.png` (1584 × 960).
 

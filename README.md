@@ -1,9 +1,10 @@
-# ARC
+# ARCade Hoops
 
-[![ARC: See your game from every angle. Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper.](frontend/public/assets/arc-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
+[![ARCade Hoops: See your game from every angle. Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper.](frontend/public/assets/arcade-hoops-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
 
-Basketball footage review, play design, defensive testing, and private jumpshot
-quizzes in one app.
+ARCade Hoops leads with **Shot Analyzer** for basketball footage review, alongside
+Playbook, Counter Lab, and Guess the Jumper. The original **ARC logo** remains the
+app’s main mark.
 
 [Open the live website](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home) or
 [run the downloaded app](#run-the-downloaded-app) on your own computer. Both
@@ -87,7 +88,7 @@ sources. **Why these tips?** connects the note to its measurement and source.
 There is no online chatbot or paid language-model call.
 
 <p align="center">
-  <img src="docs/screenshots/current/arc-coach-notes.png" alt="Local ARC shot review with video, queue, Coach Notes, and shot data" width="900" />
+  <img src="docs/screenshots/current/arc-coach-notes.png" alt="Local ARCade Hoops shot review with video, queue, Coach Notes, and shot data" width="900" />
 </p>
 
 ## Playbook

@@ -56,7 +56,7 @@ export function useWorkspaceNavigation() {
             ? "My Clips · Guess the Jumper"
             : "Guess the Jumper",
     };
-    document.title = `ARC · ${titles[location.workspace]}`;
+    document.title = `ARCade Hoops · ${titles[location.workspace]}`;
   }, [location.workspace, location.jumperView]);
 
   const navigate = useCallback(

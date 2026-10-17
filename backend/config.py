@@ -1,4 +1,4 @@
-"""Shared filesystem locations for the local ARC application."""
+"""Shared filesystem locations for the local ARCade Hoops application."""
 
 from pathlib import Path
 

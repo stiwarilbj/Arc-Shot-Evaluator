@@ -48,7 +48,7 @@ EXAMPLE_FILES = (
     "YTDown.com_YouTube_LeBron-Jokes-After-Steph-Misses-Free-Thr_Media_welHDbZ0KBY_001_720p.mp4",
 )
 
-app = FastAPI(title="ARC Local Shot Analysis", version="3.1.0")
+app = FastAPI(title="ARCade Hoops Local Shot Analysis", version="3.1.0")
 app.include_router(playbooks_router)
 app.include_router(jumper_api.router)
 jobs: dict[str, dict] = {}
@@ -736,7 +736,7 @@ def serve_frontend_app(path: str):
 
 
 def run_local_server() -> None:
-    """Run ARC on the local-only development port."""
+    """Run ARCade Hoops on the local-only development port."""
     import uvicorn
 
     port = int(os.environ.get("ARC_PORT", "7888"))

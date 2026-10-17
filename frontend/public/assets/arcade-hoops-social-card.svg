@@ -2,6 +2,7 @@
   <rect width="1200" height="630" fill="#0d0f10"/>
   <g font-family="Arial, Helvetica, sans-serif">
     <text x="58" y="84" fill="#ee733f" font-size="44" font-weight="900" font-style="oblique" letter-spacing="-5">ARC</text>
+    <text x="174" y="78" fill="#f3f1ec" font-size="28" font-weight="700" letter-spacing="-0.5">ARCade Hoops</text>
     <text x="1140" y="78" text-anchor="end" fill="#9da2a3" font-size="16" letter-spacing="3">THE BASKETBALL TOOLKIT</text>
     <path d="M60 110H1140" stroke="#2b3032"/>
     <text x="60" y="195" fill="#f3f1ec" font-size="58" font-weight="750" letter-spacing="-2">See your game</text>
@@ -21,6 +22,6 @@
     <g fill="#f3f1ec" font-size="24" font-weight="700"><text x="80" y="450">Shot Analyzer</text><text x="354" y="450">Playbook</text><text x="628" y="450">Counter Lab</text><text x="902" y="450">Guess the Jumper</text></g>
     <g fill="#9da2a3" font-size="16"><text x="80" y="481">Look closer at your shot.</text><text x="354" y="481">Bring an idea to the court.</text><text x="628" y="481">Find a better answer.</text><text x="902" y="481">Make motion the clue.</text></g>
     <text x="60" y="572" fill="#9da2a3" font-size="16">No account. Device-local processing. Basketball, from a new perspective.</text>
-    <text x="1140" y="572" text-anchor="end" fill="#ee733f" font-size="18">Explore ARC →</text>
+    <text x="1140" y="572" text-anchor="end" fill="#ee733f" font-size="18">Explore ARCade Hoops →</text>
   </g>
 </svg>

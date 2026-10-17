@@ -32,7 +32,7 @@ The report includes separate release and release-plus-200-ms cutoffs, grouped
 development metrics, and the selected candidate. It intentionally does not
 promote weights or enable probabilities in the application.
 
-Public sources must permit the intended public or commercial ARC use. Research
+Public sources must permit the intended public or commercial ARCade Hoops use. Research
 only sources remain documented for experiments and are excluded from the
 release manifest. User footage requires permission and a recorded consent
 scope.

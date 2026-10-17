@@ -25,7 +25,7 @@ export function UsageGuide() {
   }
 
   return <>
-    <button ref={triggerRef} type="button" className="guide-trigger" aria-label="How to use ARC" title="How to use ARC" onClick={() => setOpen(true)}>
+    <button ref={triggerRef} type="button" className="guide-trigger" aria-label="How to use ARCade Hoops" title="How to use ARCade Hoops" onClick={() => setOpen(true)}>
       <BookOpen size={17} /><span>How to use</span>
     </button>
     {open ? <div className="playbook-modal-backdrop guide-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
@@ -45,10 +45,10 @@ export function UsageGuide() {
         }
       }}>
         <div className="modal-heading">
-          <div><span className="section-kicker">Quick guide</span><h2 id="guide-title">How to use ARC</h2></div>
+          <div><span className="section-kicker">Quick guide</span><h2 id="guide-title">How to use ARCade Hoops</h2></div>
           <button ref={closeRef} type="button" className="icon-button" onClick={close} aria-label="Close guide"><X size={17} /></button>
         </div>
-        <p className="guide-intro" id="guide-intro">ARC includes Shot Analyzer for footage review, Playbook for drawing plays, and Counter Lab for testing defensive answers, and Others → Guess the Jumper for personal mystery clips.</p>
+        <p className="guide-intro" id="guide-intro">ARCade Hoops starts with Shot Analyzer for footage review. Use Playbook to draw plays, Counter Lab to test defenses, and Others → Guess the Jumper to create and play personal mystery clips.</p>
         <div className="guide-grid">
           <article className="guide-card"><h3>Guess the Jumper</h3><ol><li>Open Others, then Guess the Jumper → Create.</li><li>Upload up to 100 MB and trim to a complete shot of at most 15 seconds.</li><li>Click the shooter in the first frame. Other people are found automatically.</li><li>Process and inspect the entire motion. Open corrections to remove spectators or false detections and add include/exclude points, then process again.</li><li>Review, save or download: black shooter, gray players, neutral background, no audio. A player name is required only for “Use in my guessing game”; answering reveals the name while the video stays masked.</li><li>In My Clips, open “Back up or restore library” to download your clips and labels as a private ZIP, optionally with guessing history. Restore it on either app target; identical clips are skipped and conflicting IDs become separate copies.</li></ol><p>Processing stays on this device and uses no paid inference service. Time estimates use measured progress for the current stage, separate model downloads from tracking and export, and adjust as device speed changes. Pauses show guidance rather than a fixed countdown. Guess uses finished clips without inference. The public NBA collection is unavailable until its reviewed pack is ready.</p></article>
           <article className="guide-card">
@@ -83,7 +83,7 @@ export function UsageGuide() {
           <article className="guide-card">
             <h3>Simulate and save</h3>
             <ul>
-              <li>Choose Play to run the sequence; ARC moves defenders, adjusts help and closeouts, then reads the live defense for an open cut, roll, post, drive, or perimeter pass before the shot</li>
+              <li>Choose Play to run the sequence; ARCade Hoops moves defenders, adjusts help and closeouts, then reads the live defense for an open cut, roll, post, drive, or perimeter pass before the shot</li>
               <li>Playback advances on a steady clock and blends positions between updates; passes and handoffs travel from the live ball position into a moving receiver's hands, and resuming after a pause or hidden tab does not jump ahead</li>
               <li>Use Auto actions in the left rail to choose which screens, handoffs, pick and rolls, and off-ball screens the simulator may add when a matchup allows</li>
               <li>Open Settings to tune offensive cuts or spacing, defensive reads, and movement intensity; pause to edit before resuming</li>
