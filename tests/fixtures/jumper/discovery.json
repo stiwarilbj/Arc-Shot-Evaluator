@@ -1,7 +1,8 @@
 [
-  {"name":"tracked and later entrant", "width":10,"height":10,"masks":[[1,1,1,4,9]],"boxes":[[0.1,0.1,0.4,0.9],[0.6,0.1,0.9,0.9]],"unmatched":[[0.6,0.1,0.9,0.9]],"ambiguous":false},
-  {"name":"nearby player is never matched by proximity", "width":10,"height":10,"masks":[[1,1,1,4,9]],"boxes":[[0.4,0.1,0.6,0.9]],"unmatched":[[0.4,0.1,0.6,0.9]],"ambiguous":false},
-  {"name":"one mask cannot hide two detections", "width":10,"height":10,"masks":[[1,2,1,6,9]],"boxes":[[0.2,0.1,0.6,0.9],[0.3,0.1,0.7,0.9]],"unmatched":[[0.3,0.1,0.7,0.9]],"ambiguous":true},
-  {"name":"separate tracked identities", "width":10,"height":10,"masks":[[1,1,1,4,9],[2,6,1,9,9]],"boxes":[[0.6,0.1,0.9,0.9],[0.1,0.1,0.4,0.9]],"unmatched":[],"ambiguous":false},
-  {"name":"empty frame discovers everyone", "width":10,"height":10,"masks":[],"boxes":[[0.1,0.1,0.4,0.9]],"unmatched":[[0.1,0.1,0.4,0.9]],"ambiguous":false}
+  {"name":"tracked and later entrant","width":10,"height":10,"masks":[[1,1,1,4,9]],"boxes":[[0.1,0.1,0.4,0.9],[0.6,0.1,0.9,0.9]],"unmatched":[[0.6,0.1,0.9,0.9]],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"nearby player is never matched by proximity","width":10,"height":10,"masks":[[1,1,1,4,9]],"boxes":[[0.4,0.1,0.6,0.9]],"unmatched":[[0.4,0.1,0.6,0.9]],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"one mask cannot hide two detections","width":10,"height":10,"masks":[[1,2,1,6,9]],"boxes":[[0.2,0.1,0.6,0.9],[0.3,0.1,0.7,0.9]],"unmatched":[[0.3,0.1,0.7,0.9]],"ambiguous":true,"ambiguous_tracks":[1]},
+  {"name":"separate tracked identities","width":10,"height":10,"masks":[[1,1,1,4,9],[2,6,1,9,9]],"boxes":[[0.6,0.1,0.9,0.9],[0.1,0.1,0.4,0.9]],"unmatched":[],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"empty frame discovers everyone","width":10,"height":10,"masks":[],"boxes":[[0.1,0.1,0.4,0.9]],"unmatched":[[0.1,0.1,0.4,0.9]],"ambiguous":false,"ambiguous_tracks":[]},
+  {"name":"overlap identifies both competing tracks","width":10,"height":10,"masks":[[1,1,1,4,9],[2,4,1,7,9]],"boxes":[[0.1,0.1,0.7,0.9]],"unmatched":[],"ambiguous":true,"ambiguous_tracks":[1,2]}
 ]

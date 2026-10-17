@@ -101,6 +101,15 @@ const fixture =
     async function waitForResult() {
       for (let i = 0; i < 900; i++) {
         await p.waitForTimeout(1000);
+        if (!(await p.locator(".jumper-progress").count())) {
+          await p.screenshot({
+            path: path.join(artifacts, target + "-interrupted.png"),
+            fullPage: true,
+          });
+          throw Error(
+            `Editor progress disappeared at ${p.url()}: ${(await p.locator("body").innerText()).slice(0, 1200)}`,
+          );
+        }
         const status = await p.locator(".jumper-progress").innerText();
         if (i % 20 === 0) console.log(status);
         const errors = await p
@@ -160,6 +169,28 @@ const fixture =
       ).toBeDisabled();
       if (!(await p.locator(".jumper-editor-main [role=alert]").count()))
         throw Error("Expected tracking warning");
+      const timeline = p.getByRole("region", { name: "Mask-quality timeline" });
+      await expect(timeline).toBeVisible();
+      const marker = timeline
+        .getByRole("button", { name: /flagged frames?/ })
+        .first();
+      await marker.press("Enter");
+      await expect(p.locator(".jumper-corrections")).toHaveAttribute(
+        "open",
+        "",
+      );
+      await expect(p.getByLabel("Inspection view")).toHaveValue("source");
+      await p.waitForTimeout(250); // Let the newly selected source frame finish decoding before capture.
+      await expect(img).toBeVisible();
+      await timeline.screenshot({
+        path: path.join(artifacts, target + "-warning-timeline.png"),
+      });
+      console.log(
+        "REAL WARNING TIMELINE: selected frame",
+        await p.getByLabel("Correction frame", { exact: true }).inputValue(),
+      );
+      expect(pageErrors).toHaveLength(0);
+      if (target === "hosted") expect(localRequests).toHaveLength(0);
       console.log("UNCERTAIN FOOTAGE CORRECTLY BLOCKED");
       return;
     }

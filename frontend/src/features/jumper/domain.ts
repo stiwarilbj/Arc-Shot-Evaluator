@@ -73,13 +73,22 @@ export interface MaskRequest {
   target_id: number;
   objects: Track[];
 }
+export interface MaskWarning {
+  frame: number;
+  kind:
+    | "target_lost"
+    | "tracking_unstable"
+    | "ambiguous_players"
+    | "possible_camera_cut";
+  track_ids?: number[];
+}
 export interface MaskResult {
   objects?: Track[];
   highlight: Blob;
   quiz: Blob;
   reveal: Blob;
   duration: number;
-  warnings: { frame: number; kind: string }[];
+  warnings: MaskWarning[];
 }
 export interface JobProgress {
   stage: string;
@@ -340,7 +349,19 @@ export function maskResult(value: unknown): value is MaskResult {
           "possible_camera_cut",
           "tracking_unstable",
           "ambiguous_players",
-        ].includes(w.kind),
+        ].includes(w.kind) &&
+        (w.track_ids === undefined ||
+          (Array.isArray(w.track_ids) &&
+            w.track_ids.length > 0 &&
+            w.track_ids.length <= 20 &&
+            new Set(w.track_ids).size === w.track_ids.length &&
+            w.track_ids.every(
+              (id) =>
+                Number.isInteger(id) &&
+                id > 0 &&
+                id <= 255 &&
+                (!v.objects || v.objects.some((o) => o.id === id)),
+            ))),
     )
   );
 }

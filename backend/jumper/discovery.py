@@ -43,12 +43,15 @@ def resolve_people(boxes, owners):
         if index not in used_boxes and identity not in used_tracks:
             used_boxes.add(index)
             used_tracks.add(identity)
-    ambiguous = any(index not in used_boxes for index, _, _ in pairs)
+    ambiguous_tracks = {
+        identity for index, identity, _ in pairs if index not in used_boxes
+    }
     for index in range(len(boxes)):
         choices = [p for p in pairs if p[0] == index]
         if len(choices) > 1 and abs(choices[0][2] - choices[1][2]) < 0.1:
-            ambiguous = True
+            ambiguous_tracks.update(p[1] for p in choices)
     return {
         "unmatched": [b for i, b in enumerate(boxes) if i not in used_boxes],
-        "ambiguous": ambiguous,
+        "ambiguous": bool(ambiguous_tracks),
+        "ambiguous_tracks": sorted(ambiguous_tracks),
     }

@@ -68,6 +68,7 @@ def test_discovery_matches_browser_fixtures():
         assert resolve_people(fixture["boxes"], owners) == {
             "unmatched": fixture["unmatched"],
             "ambiguous": fixture["ambiguous"],
+            "ambiguous_tracks": fixture["ambiguous_tracks"],
         }, fixture["name"]
 
 

@@ -409,7 +409,13 @@ def track(
                         )
                     resolution = resolve_people(boxes, owners)
                     if resolution["ambiguous"]:
-                        warnings.append({"frame": index, "kind": "ambiguous_players"})
+                        warnings.append(
+                            {
+                                "frame": index,
+                                "kind": "ambiguous_players",
+                                "track_ids": resolution["ambiguous_tracks"],
+                            }
+                        )
                     additions = resolution["unmatched"]
                     for box in additions:
                         if len(job["objects"]) >= 20:
@@ -465,7 +471,13 @@ def track(
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
                 if not np.any(labels == job["target_id"]):
                     check_device_tracking(device, "target_lost")
-                    warnings.append({"frame": index, "kind": "target_lost"})
+                    warnings.append(
+                        {
+                            "frame": index,
+                            "kind": "target_lost",
+                            "track_ids": [job["target_id"]],
+                        }
+                    )
                 ys, xs = np.nonzero(labels == job["target_id"])
                 if len(xs):
                     extent = (
@@ -483,7 +495,13 @@ def track(
                         > 0.2
                     ):
                         check_device_tracking(device, "tracking_unstable")
-                        warnings.append({"frame": index, "kind": "tracking_unstable"})
+                        warnings.append(
+                            {
+                                "frame": index,
+                                "kind": "tracking_unstable",
+                                "track_ids": [job["target_id"]],
+                            }
+                        )
                     previous_extent = extent
                 else:
                     previous_extent = None

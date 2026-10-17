@@ -53,14 +53,20 @@ export function resolvePeople(
       usedTracks.add(pair.id);
     }
   // Competing detections or near-equal assignments cannot establish identity.
-  const ambiguous =
-    pairs.some((pair) => !usedBoxes.has(pair.box)) ||
-    boxes.some((_, i) => {
-      const choices = pairs.filter((p) => p.box === i);
-      return (
-        choices.length > 1 &&
-        Math.abs(choices[0].score - choices[1].score) < 0.1
-      );
-    });
-  return { unmatched: boxes.filter((_, i) => !usedBoxes.has(i)), ambiguous };
+  const ambiguousTracks = new Set<number>();
+  for (const pair of pairs)
+    if (!usedBoxes.has(pair.box)) ambiguousTracks.add(pair.id);
+  boxes.forEach((_, i) => {
+    const choices = pairs.filter((p) => p.box === i);
+    if (
+      choices.length > 1 &&
+      Math.abs(choices[0].score - choices[1].score) < 0.1
+    )
+      choices.forEach((p) => ambiguousTracks.add(p.id));
+  });
+  return {
+    unmatched: boxes.filter((_, i) => !usedBoxes.has(i)),
+    ambiguous: ambiguousTracks.size > 0,
+    ambiguousTracks: [...ambiguousTracks].sort((a, b) => a - b),
+  };
 }

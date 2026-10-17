@@ -190,7 +190,11 @@ for (const fixture of JSON.parse(
       for (let x = x1; x < x2; x++) owners[y * fixture.width + x] = id;
   assert.deepEqual(
     resolvePeople(fixture.boxes, owners, fixture.width, fixture.height),
-    { unmatched: fixture.unmatched, ambiguous: fixture.ambiguous },
+    {
+      unmatched: fixture.unmatched,
+      ambiguous: fixture.ambiguous,
+      ambiguousTracks: fixture.ambiguous_tracks,
+    },
     fixture.name,
   );
 }
@@ -218,4 +222,50 @@ assert.doesNotMatch(gpuFailure, /OrtRun|mapAsync/);
 assert.match(
   maskingErrorMessage(new Error("Model integrity check failed")),
   /integrity check failed/,
+);
+
+const { warningFrames, warningRanges, nearestWarningFrame } = await import(
+  "../frontend/src/features/jumper/warningTimeline.ts"
+);
+const timelineWarnings = [
+  { frame: 8, kind: "target_lost", track_ids: [1] },
+  { frame: 3, kind: "tracking_unstable", track_ids: [1] },
+  { frame: 2, kind: "target_lost", track_ids: [1] },
+  { frame: 3, kind: "target_lost", track_ids: [1] },
+  { frame: 2, kind: "target_lost", track_ids: [1] },
+];
+assert.deepEqual(warningFrames(timelineWarnings, "target_lost"), [2, 3, 8]);
+assert.deepEqual(warningRanges([2, 3, 8]), [
+  { start: 2, end: 3 },
+  { start: 8, end: 8 },
+]);
+assert.deepEqual(warningRanges([]), []);
+assert.equal(nearestWarningFrame([0, 10, 449], 448.8), 449);
+assert.equal(nearestWarningFrame([0, 10], 5), 0);
+assert.equal(nearestWarningFrame([0], 400), 0);
+const video = new Blob(["x"], { type: "video/mp4" });
+const warningResult = {
+  highlight: video,
+  quiz: video,
+  reveal: video,
+  duration: 3,
+  objects: request.objects,
+  warnings: [{ frame: 1, kind: "target_lost", track_ids: [1] }],
+};
+assert(maskResult(warningResult));
+assert(
+  maskResult({
+    ...warningResult,
+    warnings: [{ frame: 1, kind: "target_lost" }],
+  }),
+);
+for (const track_ids of [[], [0], [256], [1, 1], [2], ["1"], null])
+  assert(
+    !maskResult({
+      ...warningResult,
+      warnings: [{ frame: 1, kind: "target_lost", track_ids }],
+    }),
+  );
+console.log(
+  "Warning timeline: sorted unique frames, contiguous ranges, exact/end/tied seeks, legacy and track metadata validation passed",
 );

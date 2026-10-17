@@ -456,7 +456,11 @@ async function process(
           const boxes = await detector.detect(sample.canvas);
           const resolution = resolvePeople(boxes, owners, width, height);
           if (resolution.ambiguous)
-            warnings.push({ frame, kind: "ambiguous_players" });
+            warnings.push({
+              frame,
+              kind: "ambiguous_players",
+              track_ids: resolution.ambiguousTracks,
+            });
           for (const box of resolution.unmatched) {
             if (objects.length >= 20)
               throw Error(
@@ -511,10 +515,14 @@ async function process(
         }
       const extent = { area, x: area ? x / area : 0, y: area ? y / area : 0 };
       if (unstableMask(previousMask, extent))
-        warnings.push({ frame, kind: "tracking_unstable" });
+        warnings.push({
+          frame,
+          kind: "tracking_unstable",
+          track_ids: [target_id],
+        });
       previousMask = extent;
       if (!owners.includes(target_id))
-        warnings.push({ frame, kind: "target_lost" });
+        warnings.push({ frame, kind: "target_lost", track_ids: [target_id] });
       smallContext.drawImage(sample.canvas, 0, 0, 64, 36);
       const pixels = smallContext.getImageData(0, 0, 64, 36).data;
       if (previous) {

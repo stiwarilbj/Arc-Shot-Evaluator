@@ -23,6 +23,13 @@ state when switching workspaces. Dark mode remains the default.
    points. Remove spectators/artwork; removed tracks retain stable identities so
    discovery does not immediately add them back. Reprocess after any correction.
    Automatic discovery can be disabled for manually selected court participants.
+   The **Frames to review** timeline marks missing-shooter masks, unstable outlines,
+   ambiguous overlaps, and possible camera cuts. Click a colored band to inspect
+   the nearest flagged frame and its recorded track; overlap hints offer each
+   involved track separately. Focus a row and use Left/Right for keyboard seeking.
+   These are review hints, not accuracy guarantees: unmarked frames can still
+   contain errors. Corrections retain the previous run’s hints, labeled as stale,
+   until reprocessing. Resetting the shooter or replacing the roster clears them.
 4. Resolve lost-target, ambiguous-player, instability or cut warnings before
    saving. Detection cannot establish identity through every overlap. The editor
    stops rather than silently dropping people when more than twenty tracks are
@@ -188,3 +195,9 @@ JUMPER_URL=http://127.0.0.1:5173/ node scripts/test-jumper-selection-preview.mjs
 checks real first-frame segmentation, the magnifier, mobile layout, clearing,
 and cancellation. For hosted GPU testing, use the Pages preview URL and
 `JUMPER_HEADED=1`. Choose a point inside the shooter for your footage.
+
+`JUMPER_URL=http://127.0.0.1:5177/Arc-Shot-Evaluator/ node scripts/test-jumper-timeline.mjs`
+checks all warning kinds with controlled worker evidence, exact frame and track
+selection, overlapping-track choices, keyboard navigation, stale hints, roster
+reset and both themes/mobile layouts. `JUMPER_EXPECT_WARNING=1` on the real browser
+workflow additionally checks the timeline against actual inference warnings.

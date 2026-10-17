@@ -519,7 +519,7 @@
 
 .jumper-corrections {
   margin-top: 12px;
-  border-top: 1px solid var(--border-color, #454545);
+  border-top: 1px solid var(--line-strong);
   padding-top: 12px;
 }
 .jumper-corrections summary {
@@ -566,7 +566,7 @@
 }
 .jumper-selection-check {
   margin-top: 16px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line-strong);
   padding-top: 16px;
 }
 .jumper-shooter-preview {
@@ -590,4 +590,84 @@
     width: 104px;
     height: 104px;
   }
+}
+
+.jumper-mask-timeline {
+  margin: 16px 0;
+  padding: 14px 0;
+  border-block: 1px solid var(--line-strong);
+}
+.jumper-warning-lanes {
+  display: grid;
+  gap: 4px;
+}
+.jumper-warning-lane {
+  display: grid;
+  grid-template-columns: minmax(120px, 155px) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+.jumper-warning-lane > span {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.jumper-warning-lane svg {
+  display: block;
+  width: 100%;
+  height: 24px;
+}
+.jumper-warning-rail {
+  fill: var(--surface);
+}
+.jumper-warning-target_lost {
+  color: #ed754f;
+}
+.jumper-warning-tracking_unstable {
+  color: #d99d31;
+}
+.jumper-warning-ambiguous_players {
+  color: #a58ce0;
+}
+.jumper-warning-possible_camera_cut {
+  color: #3b9eaf;
+}
+.jumper-warning-lane:focus-visible {
+  outline: 2px solid #ee733f;
+  outline-offset: 2px;
+}
+.jumper-warning-lane:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+.jumper-warning-detail {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.jumper-warning-detail small {
+  display: block;
+  color: var(--muted);
+}
+@media (max-width: 600px) {
+  .jumper-warning-lane {
+    grid-template-columns: minmax(0, 110px) minmax(0, 1fr);
+    gap: 6px;
+  }
+}
+.jumper-warning-tracks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }

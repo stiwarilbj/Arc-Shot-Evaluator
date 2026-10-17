@@ -9,10 +9,12 @@ import {
   type MaskResult,
   type Track,
   type PersonalClip,
+  type MaskWarning,
 } from "./domain";
 import { listClips, saveClip } from "./storage";
 import { openVideo, preview } from "./media";
 import { clearFramePoints, needsSelection } from "./editorSelections";
+import MaskTimeline from "./MaskTimeline";
 import ShooterPreview from "./ShooterPreview";
 import SelectionMagnifier from "./SelectionMagnifier";
 import { ClipVideo, useBlobUrl } from "./JumperLab";
@@ -34,8 +36,13 @@ export default function JumperEditor({
   const [target, setTarget] = useState(1);
   const [editing, setEditing] = useState(1);
   const [frame, setFrame] = useState(0);
+  const editorRoot = useRef<HTMLDivElement>(null);
+  const correctionPanel = useRef<HTMLDetailsElement>(null);
+  const frameImage = useRef<HTMLImageElement>(null);
+  const resultTarget = useRef(1);
   const [negative, setNegative] = useState(false);
   const [image, setImage] = useState<Blob | null>(null);
+  const [previewRatio, setPreviewRatio] = useState<number>();
   const imageUrl = useBlobUrl(image);
   const [view, setView] = useState<"source" | "masked">("source");
   const [result, setResult] = useState<MaskResult | null>(null);
@@ -117,6 +124,7 @@ export default function JumperEditor({
       const length = opened.duration;
       opened.input.dispose();
       if (revision !== sourceGeneration.current) return;
+      setPreviewRatio(undefined);
       setFile(next);
       setName("");
       setDuration(length);
@@ -228,6 +236,7 @@ export default function JumperEditor({
       const { detectPeople } = await import("./detection");
       const boxes = await detectPeople(file, start, abort.signal);
       if (abort.signal.aborted || generation.current !== id) return;
+      setResult(null);
       setTracks(
         boxes.map((box, index) => ({
           id: index + 1,
@@ -287,6 +296,7 @@ export default function JumperEditor({
       );
       if (id !== generation.current || abort.signal.aborted) return;
       if (value.objects) setTracks(value.objects);
+      resultTarget.current = target;
       setResult(value);
       setDirty(false);
       setReviewed(false);
@@ -363,6 +373,29 @@ export default function JumperEditor({
       setSaving(false);
     }
   }
+  function inspectWarning(warning: MaskWarning, requestedId?: number) {
+    if (busy || saveLock.current || uploadLock.current) return;
+    const available = tracks.filter((t) => !t.ignored);
+    const recorded =
+      warning.track_ids ??
+      (warning.kind === "target_lost" || warning.kind === "tracking_unstable"
+        ? [resultTarget.current]
+        : []);
+    const id =
+      requestedId ??
+      (recorded.includes(editing) && available.some((t) => t.id === editing)
+        ? editing
+        : recorded.find((id) => available.some((t) => t.id === id))) ??
+      (available.some((t) => t.id === editing) ? editing : target);
+    setFrame(warning.frame);
+    setEditing(id);
+    setNegative(false);
+    setView("source");
+    if (correctionPanel.current) correctionPanel.current.open = true;
+    editorRoot.current
+      ?.querySelectorAll("video")
+      .forEach((video) => video.pause());
+  }
   const count = Math.max(1, Math.ceil((end - start) * 30));
   const track = tracks.find((value) => value.id === editing);
   const prompts = track?.prompts.find((value) => value.frame === frame);
@@ -374,7 +407,7 @@ export default function JumperEditor({
         prompt.frame === 0 && (prompt.box || prompt.labels?.includes(1)),
     );
   return (
-    <div className="jumper-editor">
+    <div ref={editorRoot} className="jumper-editor">
       <aside className="jumper-panel jumper-editor-controls">
         <span className="jumper-eyebrow">MAKE A MYSTERY</span>
         <h2>One shot. No clues.</h2>
@@ -455,6 +488,7 @@ export default function JumperEditor({
                 type="button"
                 className="button button-outline"
                 onClick={() => {
+                  setResult(null);
                   setTracks([]);
                   setTarget(1);
                   setEditing(1);
@@ -479,7 +513,7 @@ export default function JumperEditor({
                   }}
                 />
               </label>
-              <details className="jumper-corrections">
+              <details ref={correctionPanel} className="jumper-corrections">
                 <summary>Correct masks & player selection</summary>
                 <label className="jumper-check">
                   <input
@@ -694,10 +728,20 @@ export default function JumperEditor({
                   </option>
                 </select>
               </div>
-              <div className="jumper-point-surface">
+              <div
+                className="jumper-point-surface"
+                style={previewRatio ? { aspectRatio: previewRatio } : undefined}
+              >
                 {imageUrl ? (
                   <>
                     <img
+                      onLoad={(event) =>
+                        setPreviewRatio(
+                          event.currentTarget.naturalWidth /
+                            event.currentTarget.naturalHeight,
+                        )
+                      }
+                      ref={frameImage}
                       src={imageUrl}
                       alt="Selected video frame; click to add a mask point"
                       tabIndex={0}
@@ -881,6 +925,17 @@ export default function JumperEditor({
                   onChange={(event) => setFrame(Number(event.target.value))}
                 />
               </label>
+              {result ? (
+                <MaskTimeline
+                  warnings={result.warnings}
+                  count={count}
+                  frame={frame}
+                  tracks={tracks}
+                  stale={dirty}
+                  disabled={busy || saving || loading}
+                  onInspect={inspectWarning}
+                />
+              ) : null}
               <div className="jumper-toolbar">
                 <span>
                   Editing track {editing} ·{" "}
@@ -925,21 +980,11 @@ export default function JumperEditor({
                     }{" "}
                     frame(s). Correct the selected track or shorten the segment
                     before saving.
-                    <div>
-                      {result.warnings.slice(0, 6).map((warning, index) => (
-                        <button
-                          type="button"
-                          key={index}
-                          onClick={() => {
-                            setFrame(warning.frame);
-                            setView("source");
-                          }}
-                        >
-                          {warning.kind.replaceAll("_", " ")} · frame{" "}
-                          {warning.frame + 1}
-                        </button>
-                      ))}
-                    </div>
+                    <p>
+                      Use the mask-quality timeline above to inspect every
+                      flagged frame. These hints do not detect every masking
+                      error.
+                    </p>
                   </div>
                 ) : null}
                 <label className="jumper-check">
