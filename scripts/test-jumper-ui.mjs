@@ -117,6 +117,11 @@ try {
     fullPage: true,
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await others.click();
+  await page.mouse.move(10, 300);
+  await expect(others).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("menuitem").click();
+  await expect(others).toHaveAttribute("aria-expanded", "false");
   await page.screenshot({
     path: "/tmp/jumper-selection-desktop.png",
     fullPage: true,

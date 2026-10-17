@@ -80,7 +80,10 @@ export function AppHeader({
           <div
             className="workspace-others"
             onMouseEnter={() => setOthersOpen(true)}
-            onMouseLeave={() => setOthersOpen(false)}
+            onMouseLeave={(event) => {
+              if (!event.currentTarget.contains(document.activeElement))
+                setOthersOpen(false);
+            }}
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget))
                 setOthersOpen(false);
