@@ -76,6 +76,27 @@ export default function JumperEditor({
   const [dirty, setDirty] = useState(false);
   const [cursor, setCursor] = useState([0.5, 0.5]);
   const [cursorVisible, setCursorVisible] = useState(false);
+  const aimContext = `${start}:${end}:${frame}:${editing}:${target}:${negative}:${view}:${active}`;
+  const [pendingAim, setPendingAim] = useState<string | null>(null);
+  // Consume synchronously: repeated activation must not append the same prompt.
+  const pendingAimRef = useRef<string | null>(null);
+  function clearAim() {
+    pendingAimRef.current = null;
+    setPendingAim(null);
+    setCursorVisible(false);
+  }
+  useEffect(() => {
+    clearAim();
+  }, [file, aimContext]);
+  function aim(xy: number[]) {
+    if (
+      busy || saveLock.current || uploadLock.current || !image || view !== "source"
+    ) return;
+    setCursor(xy.map((value) => Math.max(0, Math.min(1, value))));
+    pendingAimRef.current = aimContext;
+    setPendingAim(aimContext);
+    setCursorVisible(true);
+  }
   const controller = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const saveLock = useRef(false);
@@ -125,6 +146,7 @@ export default function JumperEditor({
     refreshHistory((value) => value + 1);
   }
   function clearHistory() {
+    clearAim();
     history.clear();
     refreshHistory((value) => value + 1);
   }
@@ -132,6 +154,7 @@ export default function JumperEditor({
     if (!active || busy || saveLock.current || uploadLock.current) return;
     const state = history[direction](correctionState());
     if (!state) return;
+    clearAim();
     setTracks(state.tracks);
     setTarget(state.target);
     setEditing(state.editing);
@@ -232,18 +255,18 @@ export default function JumperEditor({
     if (!tracks.length) setTarget(id);
     invalidate();
   }
-  function point(event: React.MouseEvent<HTMLImageElement>) {
+  function aimPoint(event: React.MouseEvent<HTMLImageElement>) {
     if (busy || saveLock.current || uploadLock.current || !image) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const xy = [
       (event.clientX - bounds.left) / bounds.width,
       (event.clientY - bounds.top) / bounds.height,
     ];
-    setCursor(xy);
-    addPoint(xy);
+    aim(xy);
   }
   function addPoint(xy: number[]) {
     if (busy || saveLock.current || uploadLock.current || !image) return;
+    if (view !== "source" || pendingAimRef.current !== aimContext) return;
     let id = editing;
     if (
       negative &&
@@ -256,9 +279,13 @@ export default function JumperEditor({
       return;
     }
     if (!tracks.length && frame !== 0) {
-      setError("Return to frame 1 and click the shooter first.");
+      setError(
+        "Return to frame 1, aim at the shooter, and press Place point first.",
+      );
       return;
     }
+    pendingAimRef.current = null;
+    setPendingAim(null);
     remember(negative ? "Exclude point" : "Include point");
     if (!tracks.length) {
       id = 1;
@@ -293,7 +320,9 @@ export default function JumperEditor({
     if (!file || busy || saveLock.current || uploadLock.current) return;
     const shooter = tracks.find((track) => track.id === target);
     if (needsSelection(shooter) || shooter?.prompts[0]?.frame !== 0) {
-      setError("Click the shooter in the first frame before finding other people.");
+      setError(
+        "Aim at the shooter in the first frame and press Place point before finding other people.",
+      );
       return;
     }
     const id = ++generation.current;
@@ -483,8 +512,8 @@ export default function JumperEditor({
         <span className="jumper-eyebrow">MAKE A MYSTERY</span>
         <h2>One shot. No clues.</h2>
         <p>
-          Click the shooter to turn them black. Other players become gray, with
-          a flat background and no original colors or audio.
+          Aim at the shooter and press Place point to turn them black. Other
+          players become gray, with a flat background and no original colors or audio.
         </p>
         {!supported ? (
           <div className="jumper-notice">
@@ -549,10 +578,10 @@ export default function JumperEditor({
               </small>
             </fieldset>
             <fieldset disabled={busy || saving || loading}>
-              <legend>2 · Click the shooter in frame 1</legend>
+              <legend>2 · Aim and place a point on the shooter</legend>
               <p className="jumper-caption">
-                The clicked player stays black. Other people are found
-                automatically throughout the clip. Review the whole result
+                Place one point inside the shooter to keep them black. Other
+                people are found automatically throughout the clip. Review the whole result
                 before saving.
               </p>
               <button
@@ -561,6 +590,7 @@ export default function JumperEditor({
                 disabled={!tracks.length && frame === 0}
                 onClick={() => {
                   remember("Reset shooter selection");
+                  clearAim();
                   setResult(null);
                   setTracks([]);
                   setTarget(1);
@@ -852,13 +882,18 @@ export default function JumperEditor({
                       }
                       ref={frameImage}
                       src={imageUrl}
-                      alt="Selected video frame; click to add a mask point"
+                      alt="Selected video frame; click to aim a mask point"
                       tabIndex={0}
                       role="button"
-                      aria-label="Add mask points: arrow keys move the cursor, Enter places a point"
+                      aria-label="Aim a mask point: click or use arrow keys, then Enter or Place point to confirm"
                       onFocus={() => setCursorVisible(true)}
                       onBlur={() => setCursorVisible(false)}
                       onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          clearAim();
+                          return;
+                        }
                         const direction: Record<string, number[]> = {
                           ArrowLeft: [-1, 0],
                           ArrowRight: [1, 0],
@@ -868,48 +903,18 @@ export default function JumperEditor({
                         if (direction[event.key]) {
                           event.preventDefault();
                           const delta = direction[event.key];
-                          setCursor((current) =>
-                            current.map((value, index) =>
-                              Math.max(
-                                0,
-                                Math.min(
-                                  1,
-                                  value +
-                                    delta[index] *
-                                      (event.shiftKey ? 0.05 : 0.01),
-                                ),
-                              ),
+                          aim(
+                            cursor.map((value, index) =>
+                              value + delta[index] * (event.shiftKey ? 0.05 : 0.01),
                             ),
                           );
                         }
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          addPoint(cursor);
+                          if (!event.repeat) addPoint(cursor);
                         }
                       }}
-                      onPointerMove={(event) => {
-                        if (busy || saving || loading) return;
-                        const bounds =
-                          event.currentTarget.getBoundingClientRect();
-                        setCursor([
-                          Math.max(
-                            0,
-                            Math.min(
-                              1,
-                              (event.clientX - bounds.left) / bounds.width,
-                            ),
-                          ),
-                          Math.max(
-                            0,
-                            Math.min(
-                              1,
-                              (event.clientY - bounds.top) / bounds.height,
-                            ),
-                          ),
-                        ]);
-                        setCursorVisible(true);
-                      }}
-                      onClick={point}
+                      onClick={aimPoint}
                       draggable={false}
                     />
                     <svg
@@ -965,9 +970,9 @@ export default function JumperEditor({
                   <SelectionMagnifier src={imageUrl} cursor={cursor} />
                   <div>
                     <p className="jumper-caption">
-                      Move over the frame to aim. On touchscreens, tap near the
-                      player, then use the nudge buttons to place a precise
-                      point. Keyboard: arrows to aim, Enter to select.
+                      Click or tap to aim, adjust with the nudge buttons, then
+                      press Place point. Aiming does not add a point. Keyboard:
+                      arrows to aim, Enter to place one point.
                     </p>
                     <div
                       className="jumper-nudge"
@@ -989,11 +994,7 @@ export default function JumperEditor({
                           disabled={busy || saving || loading}
                           aria-label={`Aim ${label.toLowerCase()}`}
                           onClick={() => {
-                            setCursorVisible(true);
-                            setCursor((current) => [
-                              Math.max(0, Math.min(1, current[0] + dx * 0.005)),
-                              Math.max(0, Math.min(1, current[1] + dy * 0.005)),
-                            ]);
+                            aim([cursor[0] + dx * 0.005, cursor[1] + dy * 0.005]);
                           }}
                         >
                           {label}
@@ -1001,7 +1002,9 @@ export default function JumperEditor({
                       ))}
                       <button
                         type="button"
-                        disabled={busy || saving || loading}
+                        disabled={
+                          busy || saving || loading || pendingAim !== aimContext
+                        }
                         className="button button-outline"
                         onClick={() => addPoint(cursor)}
                       >
@@ -1059,6 +1062,7 @@ export default function JumperEditor({
                   onClick={() => {
                     if (saveLock.current || uploadLock.current) return;
                     remember("Clear frame points");
+                    clearAim();
                     setTracks((current) =>
                       clearFramePoints(current, editing, frame),
                     );
@@ -1175,13 +1179,14 @@ export default function JumperEditor({
             <Upload size={42} />
             <h2>Bring your own jumpshot</h2>
             <p>
-              Upload, click the shooter, and turn one short shot into a clip
+              Upload, aim at the shooter, and turn one short shot into a clip
               with every background clue removed.
             </p>
             <ol>
               <li>Trim to the gather, shot, and follow-through.</li>
               <li>
-                Click the shooter in frame 1; find other people automatically.
+                Aim at the shooter in frame 1 and press Place point; find other
+                people automatically.
               </li>
               <li>Process, fix any mask errors, and save or download.</li>
             </ol>

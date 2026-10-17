@@ -122,7 +122,7 @@ export function HomePage() {
           number="04"
           title="Guess the Jumper"
           subtitle="Make the jumpshot the only clue."
-          description="Click a shooter to make them black, other players gray, and the background neutral. Save private clips and quiz yourself."
+          description="Aim and place a point on the shooter to make them black, other players gray, and the background neutral. Save private clips and quiz yourself."
           detail="Personal clips · Public NBA pack unavailable"
           secondaryHref="#jumper/create"
           secondaryLabel="Create a clip"

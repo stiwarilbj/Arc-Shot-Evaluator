@@ -81,7 +81,7 @@ const output =
       );
     await p.getByPlaceholder("e.g. Stephen Curry").fill("Test Shooter");
     const img = p.getByAltText(
-      "Selected video frame; click to add a mask point",
+      "Selected video frame; click to aim a mask point",
     );
     await img.waitFor();
     const box = await img.boundingBox();
@@ -91,6 +91,7 @@ const output =
     await img.click({
       position: { x: box.width * point[0], y: box.height * point[1] },
     });
+    await p.getByRole("button", { name: "Place point", exact: true }).click();
     await p.locator(".jumper-corrections summary").click();
     // Compare the same explicit identities/prompts rather than detector differences.
     await p
@@ -102,6 +103,7 @@ const output =
       await img.click({
         position: { x: box.width * second[0], y: box.height * second[1] },
       });
+      await p.getByRole("button", { name: "Place point", exact: true }).click();
       await p.getByRole("button", { name: "Track 1", exact: true }).click();
     }
     if (process.env.JUMPER_CORRECTION) {
@@ -111,10 +113,12 @@ const output =
       await img.click({
         position: { x: box.width * 0.1, y: box.height * 0.1 },
       });
+      await p.getByRole("button", { name: "Place point", exact: true }).click();
       await p.getByRole("button", { name: "Include", exact: true }).click();
       await img.click({
         position: { x: box.width * point[0], y: box.height * point[1] },
       });
+      await p.getByRole("button", { name: "Place point", exact: true }).click();
     }
     await p.getByRole("button", { name: "Process clip", exact: true }).click();
     await p

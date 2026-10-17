@@ -67,7 +67,7 @@ const fixture =
       await p.getByLabel("End (s)").fill(process.env.JUMPER_TRIM_END);
     }
     const img = p.getByAltText(
-      "Selected video frame; click to add a mask point",
+      "Selected video frame; click to aim a mask point",
     );
     await img.waitFor();
     const bounds = await img.boundingBox();
@@ -77,6 +77,7 @@ const fixture =
     await img.click({
       position: { x: bounds.width * point[0], y: bounds.height * point[1] },
     });
+    await p.getByRole("button", { name: "Place point", exact: true }).click();
     // Restore the actual seed through correction history before real tracking.
     await p
       .getByRole("button", { name: "Undo correction", exact: true })

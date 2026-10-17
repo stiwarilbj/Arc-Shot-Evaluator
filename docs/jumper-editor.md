@@ -6,11 +6,17 @@ state when switching workspaces. Dark mode remains the default.
 ## Create
 
 1. Choose a decodable video up to 100 MB; trim to at most 15 seconds.
-2. Click the shooter in the selected segment’s first frame. That person becomes
+2. Click or tap to aim at the shooter in the selected segment’s first frame,
+   adjust with the nudge buttons, then press **Place point**. Aiming only moves
+   the crosshair; it does not add a correction or start processing. Placement
+   adds exactly one point and one undo step. Re-aim to add another point;
+   changing frame, track, or Include/Exclude mode discards the unplaced aim.
+   Escape cancels the unplaced aim without changing existing corrections.
+   That person becomes
    black. Other people are detected automatically throughout the segment,
    including later entrants. No player name or manual roster is required.
    Keyboard users focus the frame, move with arrows (Shift for larger steps),
-   and press Enter/Space. The magnified view follows your cursor; touch users can
+   and press Enter/Space. The magnified view follows your aim; touch users can
    aim with the directional buttons and use **Place point**. Use **Select shooter
    again** to restart selection.
    After selection, a short starting sample is checked automatically, showing the
@@ -271,3 +277,10 @@ checks all warning kinds with controlled worker evidence, exact frame and track
 selection, overlapping-track choices, keyboard navigation, stale hints, roster
 reset and both themes/mobile layouts. `JUMPER_EXPECT_WARNING=1` on the real browser
 workflow additionally checks the timeline against actual inference warnings.
+
+`JUMPER_TEST_URL=http://127.0.0.1:5175/Arc-Shot-Evaluator/
+node scripts/test-jumper-aim-ui.mjs` checks desktop mouse and mobile touch aiming,
+nudging, exactly-once placement, undo/redo, keyboard controls and pending-aim
+reset when context changes. It uses the existing technical video fixture;
+`JUMPER_TEST_VIDEO` can select another decodable source. Inference workers are
+held idle in this interaction regression; it does not verify segmentation.

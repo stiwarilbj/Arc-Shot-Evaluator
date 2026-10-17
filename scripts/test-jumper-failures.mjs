@@ -116,10 +116,11 @@ try {
           );
         await p.getByPlaceholder("e.g. Stephen Curry").fill("Test");
         const frame = p.getByAltText(
-          "Selected video frame; click to add a mask point",
+          "Selected video frame; click to aim a mask point",
         );
         await frame.waitFor();
         await frame.focus();
+        await frame.press("ArrowRight");
         await frame.press("Enter");
         await p
           .getByRole("button", { name: "Process clip", exact: true })

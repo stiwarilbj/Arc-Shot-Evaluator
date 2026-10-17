@@ -49,8 +49,13 @@ try {
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await page.locator(".jumper-upload input").setInputFiles(fixture.pathname);
   await page
-    .getByAltText("Selected video frame; click to add a mask point")
+    .getByAltText("Selected video frame; click to aim a mask point")
     .click();
+  await page.getByRole("button", { name: "Place point", exact: true }).click();
+  // This fixture supplies worker evidence, not detector output.
+  await page.locator(".jumper-corrections summary").click();
+  await page.getByLabel("Find other people automatically", { exact: false }).uncheck();
+  await page.locator(".jumper-corrections summary").click();
   await page.getByRole("button", { name: "Process clip", exact: true }).click();
   const hint = page.locator(".jumper-progress-hint");
   await expect(hint).toContainText("First-time");

@@ -187,8 +187,12 @@ Personal videos stay on your device; they are never automatically published.
 
 1. **Upload:** choose a decodable video up to **100 MB** and trim a segment to
    **15 seconds or less**.
-2. **Click shooter:** select the target in the segment's first frame. A magnifier
-   and keyboard/touch controls help with small players. A short silhouette preview
+2. **Select shooter:** click or tap to aim at the target in the segment's first
+   frame, adjust with the nudge buttons, then press **Place point**. Aiming never
+   adds a correction; placement commits exactly one point and one undo step.
+   Arrow keys aim and Enter/Space place; re-aim before adding another point.
+   Changing the frame, track, or Include/Exclude mode discards any unplaced aim.
+   A magnifier and keyboard/touch controls help with small players. A short silhouette preview
    confirms the selected person before full processing; it can load the models.
    The preview and full run reuse the same starting-frame shooter selection,
    including the detected body box when automatic discovery is enabled. The

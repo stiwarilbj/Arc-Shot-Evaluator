@@ -33,7 +33,7 @@ try {
           .pathname,
     );
   const frame = page.getByAltText(
-    "Selected video frame; click to add a mask point",
+    "Selected video frame; click to aim a mask point",
   );
   await frame.waitFor();
   await expect(
@@ -51,6 +51,7 @@ try {
   await frame.click({
     position: { x: box.width * point[0], y: box.height * point[1] },
   });
+  await page.getByRole("button", { name: "Place point", exact: true }).click();
   await expect(page.getByLabel("Magnified selection cursor")).toBeVisible();
   await expect(
     page.getByRole("button", {
@@ -89,6 +90,7 @@ try {
   await expect(
     page.getByRole("button", { name: "Process clip", exact: true }),
   ).toBeDisabled();
+  await page.getByRole("button", { name: "Aim right", exact: true }).click();
   await page.getByRole("button", { name: "Place point", exact: true }).click();
   await expect(
     page.getByRole("button", {

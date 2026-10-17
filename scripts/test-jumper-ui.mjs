@@ -49,7 +49,7 @@ try {
         .pathname,
     );
   const frame = page.getByAltText(
-    "Selected video frame; click to add a mask point",
+    "Selected video frame; click to aim a mask point",
   );
   await frame.waitFor();
   if (requests.length)
@@ -67,6 +67,7 @@ try {
   await expect(
     page.getByText("Add an Include point for track 1 before processing."),
   ).toBeVisible();
+  await frame.press("ArrowRight");
   await frame.press("Enter");
   await expect(
     page.getByRole("button", { name: "Process clip", exact: true }),
@@ -77,6 +78,7 @@ try {
     page.getByRole("button", { name: "Process clip", exact: true }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "Exclude", exact: true }).click();
+  await frame.press("ArrowRight");
   await frame.press("Enter");
   await expect(page.locator(".jumper-editor [role=alert]")).toContainText(
     "Start this player with an Include point",
@@ -85,6 +87,7 @@ try {
     page.getByRole("button", { name: "Process clip", exact: true }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "Include", exact: true }).click();
+  await frame.press("ArrowRight");
   await frame.press("Enter");
   await expect(
     page.getByRole("button", { name: "Process clip", exact: true }),

@@ -40,10 +40,15 @@ try {
         .pathname,
     );
   const image = page.getByAltText(
-    "Selected video frame; click to add a mask point",
+    "Selected video frame; click to aim a mask point",
   );
   await image.waitFor();
   await image.click();
+  await page.getByRole("button", { name: "Place point", exact: true }).click();
+  // This fixture supplies worker evidence, not detector output.
+  await page.locator(".jumper-corrections summary").click();
+  await page.getByLabel("Find other people automatically", { exact: false }).uncheck();
+  await page.locator(".jumper-corrections summary").click();
   await page.getByRole("button", { name: "Process clip", exact: true }).click();
   const timeline = page.getByRole("region", { name: "Mask-quality timeline" });
   await expect(timeline).toBeVisible();
@@ -113,6 +118,7 @@ try {
   // Adding a correction retains the report as explicitly stale review evidence.
   await overlap.press("ArrowRight");
   await image.focus();
+  await image.press("ArrowRight");
   await image.press("Enter");
   await expect(
     timeline.getByText("Frames to review · Previous run", { exact: true }),
