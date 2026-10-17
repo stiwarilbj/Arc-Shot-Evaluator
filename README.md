@@ -215,7 +215,14 @@ Personal videos stay on your device; they are never automatically published.
    removing original court colors, jersey text, graphics, and audio.
 4. **Review and correct:** original reference and masked playback share one clock.
    Desktop shows them together; mobile offers a comparison toggle. The review
-   timeline flags missing targets, unstable masks, overlaps, or possible cuts.
+   timeline checks every included player, black or gray, for missing masks,
+   sudden jumps, and persistent outline shrinkage. Warnings identify the affected
+   track and block saving until corrected. Recorded outward movement and clipping
+   at the image boundary can establish a legitimate exit; an unexplained interior
+   disappearance or a stationary player vanishing at the edge still needs review.
+   These are temporal mask checks, not anatomical guarantees: inspect limbs and
+   overlaps in the full video, including frames without warnings. The timeline
+   also flags uncertain matches and possible camera cuts.
    Expand corrections to remove spectators, manage tracks, or add Include/Exclude
    points on problem frames. **Find people in first frame** preserves the chosen
    shooter, track IDs, removed tracks, and every correction. It adds distinct

@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .mask_quality import MaskQuality
 from .video_validation import (
     validate_composite,
     silhouette_proof,
@@ -266,9 +267,9 @@ def check_device_mask_area(device, previous, current, pixels):
 
 
 def check_device_tracking(device, kind):
-    # MPS numerical drift can erase a target as well as expand its mask. Retry
+    # MPS numerical drift can erase any player or expand their mask. Retry
     # once on CPU; genuine occlusion/cut warnings must survive that retry.
-    if device == "mps" and kind in {"target_lost", "tracking_unstable"}:
+    if device == "mps" and kind in {"target_lost", "player_lost", "tracking_unstable"}:
         raise RuntimeError(f"MPS {kind}; retry on CPU")
 
 
@@ -430,7 +431,7 @@ def track(
                     state, frame_idx=index, obj_id=obj_id, **kwargs
                 )
             previous = None
-            previous_extent = None
+            quality = MaskQuality()
             previous_areas = {}
 
             def propagation():
@@ -524,42 +525,12 @@ def track(
                     if obj.get("ignored"):
                         labels[labels == obj["id"]] = 0
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
-                if not np.any(labels == job["target_id"]):
-                    check_device_tracking(device, "target_lost")
-                    warnings.append(
-                        {
-                            "frame": index,
-                            "kind": "target_lost",
-                            "track_ids": [job["target_id"]],
-                        }
-                    )
-                ys, xs = np.nonzero(labels == job["target_id"])
-                if len(xs):
-                    extent = (
-                        len(xs),
-                        float(xs.mean() / width),
-                        float(ys.mean() / height),
-                    )
-                    if previous_extent and (
-                        extent[0] / previous_extent[0] < 0.35
-                        or extent[0] / previous_extent[0] > 2.8
-                        or math.hypot(
-                            extent[1] - previous_extent[1],
-                            extent[2] - previous_extent[2],
-                        )
-                        > 0.2
-                    ):
-                        check_device_tracking(device, "tracking_unstable")
-                        warnings.append(
-                            {
-                                "frame": index,
-                                "kind": "tracking_unstable",
-                                "track_ids": [job["target_id"]],
-                            }
-                        )
-                    previous_extent = extent
-                else:
-                    previous_extent = None
+                frame_warnings = quality.inspect(
+                    index, labels, job["objects"], job["target_id"]
+                )
+                for warning in frame_warnings:
+                    check_device_tracking(device, warning["kind"])
+                warnings.extend(frame_warnings)
                 current = cv2.resize(cv2.imread(str(frames[index])), (64, 36))
                 if (
                     previous is not None

@@ -6,8 +6,6 @@ import { ALL_FORMATS, BlobSource, CanvasSink, Input } from "mediabunny";
 import {
   validateMaskRequest,
   maskingErrorMessage,
-  unstableMask,
-  type MaskExtent,
   MAX_BYTES,
   type MaskResult,
   type PointPrompt,
@@ -29,6 +27,7 @@ import {
   type CachedFeatures,
 } from "./frameCache";
 import { requireShooterBox, PeopleDiscovery } from "./discovery";
+import { MaskQuality } from "./maskQuality";
 import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
 import { validateComposite, silhouetteProof } from "./videoValidation";
@@ -535,7 +534,7 @@ async function process(
     const warnings: MaskResult["warnings"] = [];
     const discovery = new PeopleDiscovery();
     let previous: Uint8ClampedArray | undefined;
-    let previousMask: MaskExtent | null = null;
+    const quality = new MaskQuality();
     const small = new OffscreenCanvas(64, 36),
       smallContext = small.getContext("2d", { willReadFrequently: true })!;
     for (let frame = 0; frame < count; frame++) {
@@ -679,25 +678,7 @@ async function process(
         if (object.ignored)
           for (let i = 0; i < owners.length; i++)
             if (owners[i] === object.id) owners[i] = 0;
-      let area = 0,
-        x = 0,
-        y = 0;
-      for (let index = 0; index < owners.length; index++)
-        if (owners[index] === target_id) {
-          area++;
-          x += (index % width) / width;
-          y += Math.floor(index / width) / height;
-        }
-      const extent = { area, x: area ? x / area : 0, y: area ? y / area : 0 };
-      if (unstableMask(previousMask, extent))
-        warnings.push({
-          frame,
-          kind: "tracking_unstable",
-          track_ids: [target_id],
-        });
-      previousMask = extent;
-      if (!owners.includes(target_id))
-        warnings.push({ frame, kind: "target_lost", track_ids: [target_id] });
+      warnings.push(...quality.inspect(frame, owners, width, height, objects, target_id));
       smallContext.drawImage(sample.canvas, 0, 0, 64, 36);
       const pixels = smallContext.getImageData(0, 0, 64, 36).data;
       if (previous) {

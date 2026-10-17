@@ -78,6 +78,7 @@ export interface MaskWarning {
   frame: number;
   kind:
     | "target_lost"
+    | "player_lost"
     | "tracking_unstable"
     | "ambiguous_players"
     | "possible_camera_cut";
@@ -349,6 +350,7 @@ export function maskResult(value: unknown): value is MaskResult {
         w.frame < Math.ceil(v.duration * 30) &&
         [
           "target_lost",
+          "player_lost",
           "possible_camera_cut",
           "tracking_unstable",
           "ambiguous_players",

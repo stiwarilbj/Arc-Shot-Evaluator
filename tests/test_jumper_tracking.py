@@ -142,7 +142,7 @@ def test_mps_loss_and_instability_request_cpu_verification():
     import pytest
     from backend.jumper.pipeline import check_device_tracking
 
-    for kind in ("target_lost", "tracking_unstable"):
+    for kind in ("target_lost", "player_lost", "tracking_unstable"):
         with pytest.raises(RuntimeError, match="retry on CPU"):
             check_device_tracking("mps", kind)
         check_device_tracking("cpu", kind)
@@ -150,7 +150,7 @@ def test_mps_loss_and_instability_request_cpu_verification():
     check_device_tracking("mps", "possible_camera_cut")
 
 
-@pytest.mark.parametrize("failure", ["memory", "target_lost", "tracking_unstable"])
+@pytest.mark.parametrize("failure", ["memory", "target_lost", "player_lost", "tracking_unstable"])
 def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
     tmp_path, monkeypatch, failure
 ):
@@ -232,3 +232,25 @@ def test_automatic_shooter_selection_requires_consistent_include_points():
     result = require_shooter_box(boxes, [[0.1, 0.1]], [1])
     result[0] = 0
     assert boxes[0][0] == 0.1
+
+
+def test_per_player_mask_quality_matches_browser_fixtures():
+    import json
+    from pathlib import Path
+    from backend.jumper.mask_quality import MaskQuality, mask_extents
+
+    fixtures = json.loads((Path(__file__).parent / "fixtures/jumper/mask-quality.json").read_text())
+    for fixture in fixtures:
+        quality = MaskQuality()
+        original_tracks = json.loads(json.dumps(fixture["tracks"]))
+        for frame, step in enumerate(fixture["frames"]):
+            owners = np.zeros((fixture["height"], fixture["width"]), dtype=np.uint8)
+            for identity, x1, y1, x2, y2 in step["masks"]:
+                owners[y1:y2, x1:x2] = identity
+            original = owners.copy()
+            assert quality.inspect(frame, owners, fixture["tracks"], fixture["target"]) == step["warnings"], (fixture["name"], frame)
+            np.testing.assert_array_equal(owners, original)
+            assert fixture["tracks"] == original_tracks
+            for identity, extent in mask_extents(owners).items():
+                assert extent["area"] == np.count_nonzero(owners == identity)
+    assert MaskQuality().states == {}

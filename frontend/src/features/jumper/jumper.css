@@ -628,7 +628,8 @@
 .jumper-warning-rail {
   fill: var(--surface);
 }
-.jumper-warning-target_lost {
+.jumper-warning-target_lost,
+.jumper-warning-player_lost {
   color: #ed754f;
 }
 .jumper-warning-tracking_unstable {
