@@ -253,6 +253,9 @@ Personal videos stay on your device; they are never automatically published.
    Overlapping new detections require manual selection. Undo/redo supports up
    to 50 correction edits.
 5. **Edit video:** after masking, split, trim, delete, or reorder pieces in **Cut**.
+   Select pieces from thumbnail strips showing their masked footage, duration,
+   and an orange selected outline. Freeze pieces show the held frame. The strips
+   scroll horizontally on smaller screens and support keyboard selection.
    Add timed captions in **Text**. **Effects** offers 0.5×/1×/2× speed,
    0.5–3-second freezes, 1–2× zoom/pan, and optional 0.25-second fades.
    The preview and export use the same 30 fps timeline; finished edits can reach

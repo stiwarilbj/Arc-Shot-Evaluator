@@ -849,13 +849,51 @@
   display: flex;
   gap: 0.3rem;
   overflow-x: auto;
-  padding: 0.5rem 0;
+  padding: 0.5rem 3px;
 }
-.jumper-edit-pieces button {
-  flex-shrink: 0;
-  min-width: 85px;
-  min-height: 42px;
-  border: 1px solid var(--border-color, #555);
+.jumper-edit-panel button.jumper-edit-piece {
+  flex: 1 0 156px;
+  min-width: 156px;
+  padding: 3px;
+  overflow: hidden;
+  text-align: left;
+  border: 2px solid var(--line-strong);
+}
+.jumper-edit-panel button.jumper-edit-piece[aria-pressed="true"] {
+  border-color: #ff753c;
+  box-shadow: inset 0 0 0 1px #ff753c;
+}
+.jumper-edit-panel button.jumper-edit-piece:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.jumper-piece-thumbnails {
+  display: flex;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #e0e0e0;
+}
+.jumper-piece-thumbnails img,
+.jumper-piece-placeholder {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  height: 100%;
+  object-fit: contain;
+  border-right: 1px solid #8885;
+}
+.jumper-piece-placeholder {
+  background: linear-gradient(110deg, #c7c7c7, #e0e0e0);
+}
+.jumper-piece-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 6px 5px 3px;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 .jumper-edit-panel button[aria-pressed="true"] {
   border-color: #ff753c;

@@ -8,7 +8,12 @@ state when switching workspaces. Dark mode remains the default.
 Open **Edit video** after a successful masking run. No editing action invokes
 person detection or SAM. The private masked base is the only source for edits.
 
-- **Cut:** choose a piece in the timeline. Set source start/end with sliders or
+- **Cut:** choose a thumbnail strip in the timeline. Moving pieces show beginning,
+  middle and ending frame samples; freezes show their held frame. Each strip
+  displays its duration and an orange outline when selected. Select with click,
+  tap or keyboard to pause and seek to that piece. Thumbnails use only the private
+  masked base, are cached within this editor, and never start inference.
+  Set source start/end with sliders or
   seconds, split at the playhead, delete, and move left/right. The last piece
   cannot be deleted. All times snap to 30 fps; the timeline cannot exceed 60s.
 - **Text:** enter up to 200 characters, then **Add at current time**. A caption

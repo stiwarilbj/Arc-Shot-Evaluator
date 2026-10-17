@@ -1,5 +1,6 @@
 import { loadEditFont } from "./editFont";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import TimelinePieces from "./TimelinePieces";
 import { CanvasSink } from "mediabunny";
 import { openVideo } from "./media";
 import { drawEdit } from "./editDrawing";
@@ -88,6 +89,11 @@ export default function VideoEditPanel({
     drawing = useRef(false),
     queued = useRef(false);
   latest.current = { project, frame, clean };
+  const selectPiece = useCallback((id: string, start: number) => {
+    setSelected(id);
+    setFrame(start);
+    setPlaying(false);
+  }, []);
   const count = projectFrames(project),
     stale = exported !== JSON.stringify(project),
     piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0];
@@ -479,26 +485,13 @@ export default function VideoEditPanel({
               setFrame(Number(e.target.value));
             }}
           />
-          <div className="jumper-edit-pieces" aria-label="Timeline pieces">
-            {project.pieces.map((p, i) => (
-              <button
-                key={p.id}
-                aria-pressed={p.id === piece.id}
-                onClick={() => {
-                  setSelected(p.id);
-                  setFrame(
-                    project.pieces
-                      .slice(0, i)
-                      .reduce((n, v) => n + pieceFrames(v), 0),
-                  );
-                }}
-                style={{ flexGrow: pieceFrames(p) }}
-              >
-                {p.freeze ? "Freeze" : `Piece ${i + 1}`} ·{" "}
-                {time(pieceFrames(p))}s
-              </button>
-            ))}
-          </div>
+          <TimelinePieces
+            base={base}
+            pieces={project.pieces}
+            selected={piece.id}
+            active={active}
+            onSelect={selectPiece}
+          />
           <p className="jumper-caption">
             One 30 fps timeline · {time(count)}s / 60s. Quiz copies keep cuts,
             speed, and freezes; captions, framing, and fades stay in your
