@@ -72,6 +72,9 @@ export default function ReviewComparison({
       setPlaying(true);
     } catch {
       if (token !== attempt.current) return;
+      // Pausing to wait for the other decoder can reject a pending play().
+      // Keep the shared intent so canplay can resume both videos.
+      if (buffering.current && wanted.current) return;
       stop();
       // A source decoding failure must not prevent reviewing the masked result.
       if (a?.error) setSourceFailed(true);
