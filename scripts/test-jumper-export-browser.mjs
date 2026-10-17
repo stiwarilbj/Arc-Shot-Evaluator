@@ -34,6 +34,10 @@ try {
             'async function finishOutputs() { postMessage({kind:"test",event:"finish"}); if(__mode==="persistent" || (["finalize","manual","cancel"].includes(__mode) && !__failed)){__failed=true;throw Error("injected finalization failure");}',
           )
           .replace(
+            "await validateFinishedVideo(",
+            'if (__mode === "invalidPersistent" || (__mode === "invalid" && !__failed)) { __failed = true; blobs[i] = new Blob(["corrupt encoded output"]); } await validateFinishedVideo(',
+          )
+          .replace(
             "const owners = new Uint8Array(width * height),",
             'postMessage({kind:"test",event:"tracking"}); const owners = new Uint8Array(width * height),',
           )
@@ -55,6 +59,8 @@ try {
     "normal",
     "finalize",
     "midstream",
+    "invalid",
+    "invalidPersistent",
     "persistent",
     "manual",
     "cancel",
@@ -153,8 +159,13 @@ try {
       9,
       "segmentation repeated or dropped frames",
     );
-    if (mode === "persistent") {
-      assert.match(value.error, /injected finalization/);
+    if (mode === "persistent" || mode === "invalidPersistent") {
+      assert.match(
+        value.error,
+        mode === "persistent"
+          ? /injected finalization/
+          : /codec|decode|format/i,
+      );
       assert.equal(
         value.events.filter((x) => x === "finish").length,
         2,
@@ -191,7 +202,7 @@ try {
   assert.deepEqual(results[0].warnings, results[1].warnings);
   assert.deepEqual(results[0].warnings, results[2].warnings);
   console.log(
-    "PASS real WebGPU normal/finalize/midstream exports, identical tracking counts, bounded repeated failure and worker cancellation",
+    "PASS real WebGPU normal/finalize/midstream/invalid-file exports, identical tracking counts, bounded repeated failure and worker cancellation",
   );
 } finally {
   await browser.close();

@@ -30,6 +30,19 @@ is too large. Checkpoints are job-local, cleared on completion/failure/cancellat
 and do not survive reloads. Local temporary files follow the existing job cleanup.
 No personal footage or masks are uploaded to a service.
 
+Finished exports are decoded and checked before becoming ready for review on both
+build targets. Checks require the expected frame count and 30 fps timeline,
+normalized dimensions/orientation, one video track, and no audio. Before encoding,
+every silhouette pixel must match its assigned black, gray, or background color
+exactly. After compression, channel differences up to 8 levels and flat-region
+brightness differences up to 16 levels are allowed; a two-pixel guard around
+silhouette edges permits codec ringing. Color references retain at most 6.2 MiB
+per job and contain no original image pixels. Invalid exports use the bounded
+export-only retry and never become ready after a second failure. These checks
+verify file integrity and compositing, **not tracking accuracy**; full-motion
+review and correction are still required. Older foreground-color export variants
+keep their existing behavior.
+
 Corrections reuse device-local person detections and, on verified execution paths,
 unchanged SAM frame features. Tracking memory, identities, masks, warnings, and
 finished outputs are rebuilt. Browser features/detections use a private IndexedDB

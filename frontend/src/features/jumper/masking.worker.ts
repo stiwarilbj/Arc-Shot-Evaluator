@@ -14,7 +14,12 @@ import {
   type WorkerRequest,
   type WorkerResponse,
 } from "./domain";
-import { compositePixels, openVideo, writers } from "./media";
+import {
+  compositePixels,
+  openVideo,
+  writers,
+  validateFinishedVideo,
+} from "./media";
 import { createPersonDetector, PERSON_DETECTOR_SHA } from "./personDetector";
 import {
   FrameCache,
@@ -25,6 +30,7 @@ import {
 import { clickedPersonBox, resolvePeople } from "./discovery";
 import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
+import { validateComposite, silhouetteProof } from "./videoValidation";
 import { samPixels } from "./preprocessing";
 import {
   bilinear,
@@ -467,7 +473,9 @@ async function process(
         } catch {}
       }
     }
+    const colorProofs: Uint8Array[] = [];
     async function createOutputs() {
+      colorProofs.length = 0;
       for (let i = 0; i < (silhouette ? 1 : 3); i++)
         outputs.push(await format.create());
     }
@@ -477,25 +485,29 @@ async function process(
       );
       const failure = completed.find((value) => value.status === "rejected");
       if (failure?.status === "rejected") throw failure.reason;
-      return completed.map(
+      const blobs = completed.map(
         (value) => (value as PromiseFulfilledResult<Blob>).value,
       );
+      for (let i = 0; i < blobs.length; i++) {
+        await validateFinishedVideo(
+          blobs[i],
+          { width, height, count },
+          silhouette || i === 1 ? colorProofs : undefined,
+        );
+      }
+      return blobs;
     }
     function renderPixels(rgb: Uint8ClampedArray, owners: Uint8Array) {
       for (let i = 0; i < outputs.length; i++) {
+        const kind = silhouette
+          ? "quiz"
+          : (["highlight", "quiz", "reveal"] as const)[i];
+        const pixels = compositePixels(rgb, owners, target_id, kind);
+        validateComposite(pixels, owners, target_id, kind);
+        if (kind === "quiz")
+          colorProofs.push(silhouetteProof(pixels, width, height));
         outputs[i].context.putImageData(
-          new ImageData(
-            compositePixels(
-              rgb,
-              owners,
-              target_id,
-              silhouette
-                ? "quiz"
-                : (["highlight", "quiz", "reveal"] as const)[i],
-            ),
-            width,
-            height,
-          ),
+          new ImageData(pixels, width, height),
           0,
           0,
         );

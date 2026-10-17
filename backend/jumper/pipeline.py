@@ -12,6 +12,12 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .video_validation import (
+    validate_composite,
+    silhouette_proof,
+    validate_finished_video,
+)
+
 SAM_CONFIG = "configs/sam2.1/sam2.1_hiera_t.yaml"
 BACKGROUND = 224
 OTHER_PLAYER = 128
@@ -633,6 +639,7 @@ def render(
         / f"{hashlib.sha256(f'{token}:{kind}'.encode()).hexdigest()[:32]}.mp4"
         for kind in kinds
     }
+    proofs = []
     with ExitStack() as stack:
         streams = [
             stack.enter_context(encoder(path, width, height)) for path in paths.values()
@@ -641,6 +648,9 @@ def render(
             labels = np.load(masks / f"{index:06d}.npy", allow_pickle=False)
             rgb = cv2.cvtColor(cv2.imread(str(frame)), cv2.COLOR_BGR2RGB)
             composites = composite(rgb, labels, target)
+            for kind, image in zip(("quiz", "reveal", "highlight"), composites):
+                validate_composite(image, labels, target, kind)
+            proofs.append(silhouette_proof(composites[0]))
             if index == 0:
                 thumbnail = (
                     output
@@ -654,6 +664,10 @@ def render(
                 stream.write(image.tobytes())
             if progress:
                 progress(index + 1, len(frames))
+    for kind, path in paths.items():
+        validate_finished_video(
+            path, width, height, len(frames), proofs if kind == "quiz" else None
+        )
     if silhouette:
         paths["highlight"] = paths["quiz"]
         paths["reveal"] = paths["quiz"]

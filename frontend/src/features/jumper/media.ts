@@ -1,4 +1,10 @@
 import {
+  validateGeometry,
+  validateFrameTime,
+  validateDecodedPixels,
+  type ExportGeometry,
+} from "./videoValidation.ts";
+import {
   ALL_FORMATS,
   BlobSource,
   CanvasSink,
@@ -120,4 +126,63 @@ export function compositePixels(
     result[at + 3] = 255;
   }
   return result;
+}
+
+/** Decode every exported sample before the worker may announce readiness. */
+export async function validateFinishedVideo(
+  blob: Blob,
+  geometry: ExportGeometry,
+  proofs?: readonly Uint8Array[],
+) {
+  validateGeometry(geometry);
+  if (proofs && proofs.length !== geometry.count)
+    throw Error("Missing output color checks");
+  const { input, track, duration } = await openVideo(blob);
+  try {
+    if (
+      (await input.getVideoTracks()).length !== 1 ||
+      (await input.getAudioTracks()).length !== 0
+    )
+      throw Error("Export must contain one video track and no audio");
+    if (
+      (await track.getRotation()) !== 0 ||
+      (await track.getFlip()) ||
+      (await track.getDisplayWidth()) !== geometry.width ||
+      (await track.getDisplayHeight()) !== geometry.height ||
+      (await track.getCodedWidth()) !== geometry.width ||
+      (await track.getCodedHeight()) !== geometry.height
+    )
+      throw Error("Export dimensions or orientation changed");
+    if (Math.abs(duration - geometry.count / 30) > 0.002)
+      throw Error("Export duration changed");
+    let index = 0;
+    for await (const sample of new CanvasSink(track, {
+      poolSize: 2,
+    }).canvases()) {
+      if (index >= geometry.count) throw Error("Export contains extra frames");
+      validateFrameTime(index, sample.timestamp, sample.duration);
+      if (
+        sample.canvas.width !== geometry.width ||
+        sample.canvas.height !== geometry.height
+      )
+        throw Error("Decoded frame dimensions changed");
+      if (proofs) {
+        const context = sample.canvas.getContext("2d", {
+          willReadFrequently: true,
+        });
+        if (!context) throw Error("Cannot inspect finished video");
+        validateDecodedPixels(
+          context.getImageData(0, 0, geometry.width, geometry.height).data,
+          geometry.width,
+          geometry.height,
+          proofs[index],
+        );
+      }
+      index++;
+    }
+    if (index !== geometry.count)
+      throw Error("Export contains missing or undecodable frames");
+  } finally {
+    input.dispose();
+  }
 }
