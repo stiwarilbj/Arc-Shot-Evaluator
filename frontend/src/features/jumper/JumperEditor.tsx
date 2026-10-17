@@ -23,6 +23,7 @@ import {
 import { listClips, saveClip } from "./storage";
 import { openVideo, preview } from "./media";
 import { clearFramePoints, needsSelection } from "./editorSelections";
+import { mergeDetectedPeople } from "./mergeDetections";
 import { ShooterSelectionError } from "./discovery";
 import MaskTimeline from "./MaskTimeline";
 import ShooterPreview from "./ShooterPreview";
@@ -290,6 +291,11 @@ export default function JumperEditor({
   }
   async function detect() {
     if (!file || busy || saveLock.current || uploadLock.current) return;
+    const shooter = tracks.find((track) => track.id === target);
+    if (needsSelection(shooter) || shooter?.prompts[0]?.frame !== 0) {
+      setError("Click the shooter in the first frame before finding other people.");
+      return;
+    }
     const id = ++generation.current;
     const abort = new AbortController();
     controller.current = abort;
@@ -300,22 +306,13 @@ export default function JumperEditor({
       const { detectPeople } = await import("./detection");
       const boxes = await detectPeople(file, start, abort.signal);
       if (abort.signal.aborted || generation.current !== id) return;
-      remember("Find people");
-      setResult(null);
-      setTracks(
-        boxes.map((box, index) => ({
-          id: index + 1,
-          prompts: [{ frame: 0, box }],
-        })),
-      );
-      setEditing(1);
-      setTarget(1);
-      setFrame(0);
-      invalidate();
-      setProgress({
-        stage: `Found ${boxes.length} possible people. Remove spectators, artwork, and false detections; confirm the named player.`,
-        progress: 1,
-      });
+      const merged = mergeDetectedPeople(tracks, target, boxes);
+      if (merged.added) {
+        remember("Find people");
+        setTracks(merged.tracks);
+        invalidate();
+      }
+      setProgress({ stage: merged.message, progress: 1 });
     } catch (error) {
       if (generation.current !== id) return;
       if (!abort.signal.aborted) setError(String(error));

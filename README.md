@@ -208,7 +208,12 @@ Personal videos stay on your device; they are never automatically published.
    Desktop shows them together; mobile offers a comparison toggle. The review
    timeline flags missing targets, unstable masks, overlaps, or possible cuts.
    Expand corrections to remove spectators, manage tracks, or add Include/Exclude
-   points on problem frames. Undo/redo supports up to 50 correction edits.
+   points on problem frames. **Find people in first frame** preserves the chosen
+   shooter, track IDs, removed tracks, and every correction. It adds distinct
+   detections only after matching existing first-frame selections one-to-one;
+   ambiguous or unmatched tracks leave the selections unchanged with guidance.
+   Overlapping new detections require manual selection. Undo/redo supports up
+   to 50 correction edits.
 5. **Save/download:** reprocess corrections and review the complete motion before
    approving the result. Save privately or download MP4 when supported, otherwise
    WebM. A name is required only when enabling **Use in my guessing game**.
