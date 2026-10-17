@@ -28,6 +28,7 @@ import ShooterPreview from "./ShooterPreview";
 import SelectionMagnifier from "./SelectionMagnifier";
 import { ClipVideo, useBlobUrl } from "./JumperLab";
 import ReviewComparison from "./ReviewComparison";
+import ProcessingProgress from "./ProcessingProgress";
 import { CorrectionHistory, type CorrectionState } from "./correctionHistory";
 
 export default function JumperEditor({
@@ -804,13 +805,7 @@ export default function JumperEditor({
           </p>
         ) : null}
         {progress ? (
-          <div className="jumper-progress" role="status">
-            <span>{progress.stage}</span>
-            <progress
-              max="1"
-              value={Math.max(0, Math.min(1, progress.progress))}
-            />
-          </div>
+          <ProcessingProgress progress={progress} busy={busy} />
         ) : null}
         {error ? (
           <div className="jumper-notice" role="alert">

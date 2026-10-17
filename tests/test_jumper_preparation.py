@@ -112,7 +112,16 @@ def test_real_encoding_and_identical_pair_timing(tmp_path):
         labels[10:50, 10 + i : 30 + i] = 1
         labels[15:45, 50:70] = 2
         np.save(masks / f"{i:06d}.npy", labels)
-    result = prep.render(sorted(frames.iterdir()), masks, outputs, 1, "test")
+    updates = []
+    result = prep.render(
+        sorted(frames.iterdir()),
+        masks,
+        outputs,
+        1,
+        "test",
+        progress=lambda done, total: updates.append((done, total)),
+    )
+    assert updates == [(i, 6) for i in range(1, 7)]
     assert set(result) == {"quiz", "reveal", "highlight", "thumbnail"}
     timelines = []
     for kind in ("quiz", "reveal", "highlight"):

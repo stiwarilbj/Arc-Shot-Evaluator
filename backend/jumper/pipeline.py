@@ -591,6 +591,7 @@ def render(
     target: int,
     token: str,
     silhouette: bool = False,
+    progress=None,
 ) -> dict:
     output.mkdir(exist_ok=True)
     height, width = cv2.imread(str(frames[0])).shape[:2]
@@ -619,6 +620,8 @@ def render(
                     raise RuntimeError("Could not write the neutral thumbnail")
             for stream, image in zip(streams, composites):
                 stream.write(image.tobytes())
+            if progress:
+                progress(index + 1, len(frames))
     if silhouette:
         paths["highlight"] = paths["quiz"]
         paths["reveal"] = paths["quiz"]

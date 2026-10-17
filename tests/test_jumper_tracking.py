@@ -155,7 +155,7 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
 
     monkeypatch.setattr(runner, "track", tracking)
 
-    def rendering(*args, silhouette=False):
+    def rendering(*args, silhouette=False, progress=None):
         assert silhouette
         return {}
 

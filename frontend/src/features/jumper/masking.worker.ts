@@ -166,7 +166,7 @@ async function process(
     const sessionsByName: Record<string, ort.InferenceSession> = {};
     for (const [key, asset] of Object.entries(ASSETS)) {
       if (key === "weights") continue;
-      report(`Downloading masking model · ${key}`, 0);
+      report(`Checking cached masking model · ${key}`, 0);
       const bytes = await checkedAsset(asset, (done, total) =>
         report(
           `Downloading masking model · ${key} · ${(done / 1024 / 1024).toFixed(1)} MB`,

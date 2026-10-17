@@ -29,7 +29,7 @@ def run(directory: Path):
     def progress(stage, done=0, total=1):
         write(
             directory / "progress.json",
-            {"stage": stage, "progress": done / max(total, 1)},
+            {"stage": stage, "progress": done / total if total > 0 else 0},
         )
 
     try:
@@ -53,7 +53,7 @@ def run(directory: Path):
                 urllib.request.urlopen(CHECKPOINT_URL, timeout=60) as response,
                 temporary.open("wb") as out,
             ):
-                total = int(response.headers.get("Content-Length", 1))
+                total = int(response.headers.get("Content-Length", 0))
                 done = 0
                 while data := response.read(1024 * 1024):
                     out.write(data)
@@ -130,6 +130,9 @@ def run(directory: Path):
             job["target_id"],
             directory.name,
             silhouette=job.get("presentation") == "silhouette",
+            progress=lambda done, total: progress(
+                "Rendering masked videos", done, total
+            ),
         )
         result = {
             "duration": len(frames) / 30,
