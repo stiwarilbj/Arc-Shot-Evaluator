@@ -601,3 +601,32 @@ With the hosted dev/preview server running, run
 preview or deployed build. This stubs only masking with a moving silhouette
 fixture; actual selection, edit history, rendering, and independent FFmpeg decode
 verify that export holds the chosen source frame. It does not test segmentation.
+
+
+## Optional shooting-motion markers
+
+In Create → Edit video → Cut, expand **Protect shooting motion (optional)**.
+Seek the masked source segment with its frame scrubber or numeric time, inspect
+that exact source frame, then mark **Gather**, **Release**, or **Finish**. Source
+frame numbers are one-based in the interface; stored offsets are zero-based
+30-fps integers. Source time begins at the masked segment, not the raw upload.
+**Use edited playhead for markers** copies the current edited frame's source
+position. A source preview can inspect trimmed-out footage; **Return to edited
+preview** restores the normal effects preview. Seeking alone does not edit.
+
+Markers belong to source frames, not piece IDs. They remain fixed across trimming,
+reordering, duplication, speed changes, and freezes. Advice checks actual rendered
+samples, so a 2× edit that skips the exact marked frame is reported honestly.
+A stage retained only by a freeze is distinguished from moving footage. With two
+or more correctly ordered stages, discontinuous piece seams within their source
+interval produce cut warnings. Contiguous splits, holds, and full-shot repeats
+remain unrestricted. Wrong stage order is advisory too. These manual references
+cannot prove pose quality or detect unmarked interruptions automatically.
+
+Marking, moving, and removing are ordinary editing-history operations. Marker
+metadata is optional in version-1 projects and validated identically in browser
+and native persistence; it survives saved copies and backups. It changes neither
+encoded pixels nor the clean quiz. Marker-only edits invalidate the saved-copy
+status but keep the current export and motion-review approval. Reset edits clears
+all markers. Run `npm --prefix frontend run test:jumper` and
+`.venv/bin/python -m pytest tests/test_jumper_editing.py -q` for focused checks.

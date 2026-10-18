@@ -324,6 +324,17 @@ Personal videos stay on your device; they are never automatically published.
    The orange playhead marker and frame/time label show the split position.
    **Split at playhead** explains when it is unavailable, including empty-piece
    boundaries, freeze frames, and repeated slow-motion source frames.
+   **Cut → Protect shooting motion (optional)** lets you mark Gather, Release,
+   and Finish on the masked source timeline, including footage removed from the
+   current edit. Inspect exact source frames with the scrubber or numeric time.
+   Markers stay attached to those frames after trimming, deletion, and reordering.
+   Advisory warnings identify missing marked frames, freeze-only stages, skipped
+   frames at faster speeds, and discontinuous cuts within the marked motion.
+   Contiguous splits and ordinary freeze holds remain valid. Warnings never block
+   editing, rendering, or saving and do not automatically identify shooting poses.
+   Markers support undo/redo and survive saved-copy editing and private backups on
+   both builds. They never appear in exports or clean quizzes, and marker-only
+   changes require no new render or motion review. Reset edits also clears markers.
    A **Selected piece** toolbar stays available in Cut, Text, and Effects:
    split at the playhead, delete, duplicate, move left/right, or set 0.5×/1×/2× speed without
    switching tools. Split requires the playhead inside that selected piece;

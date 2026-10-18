@@ -122,6 +122,16 @@ export function describeVideoEdit(
       pieceId: undefined,
     };
   }
+  if (!same(before.shotMarkers ?? {}, after.shotMarkers ?? {})) {
+    const kind = (["gather", "release", "finish"] as const).find(
+      (kind) => before.shotMarkers?.[kind] !== after.shotMarkers?.[kind],
+    )!;
+    const name = kind[0].toUpperCase() + kind.slice(1);
+    return {
+      ...base,
+      label: `${after.shotMarkers?.[kind] === undefined ? "remove" : before.shotMarkers?.[kind] === undefined ? "mark" : "move"} ${name} marker`,
+    };
+  }
   if (before.fadeIn !== after.fadeIn)
     return {
       ...base,

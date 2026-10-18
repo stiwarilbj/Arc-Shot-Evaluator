@@ -1289,3 +1289,8 @@
   object-fit: contain;
   background: #e0e0e0;
 }
+
+.jumper-shot-markers summary { cursor: pointer; padding-block: 10px; }
+.jumper-shot-marker-list { display: grid; gap: 8px; margin-block: 10px; }
+.jumper-shot-marker-list > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.jumper-shot-marker-list button { min-height: 44px; white-space: normal; }

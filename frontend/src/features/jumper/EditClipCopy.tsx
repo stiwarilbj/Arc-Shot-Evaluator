@@ -1,3 +1,4 @@
+import { renderProjectKey } from "./editProject";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeName, type Clip, type PersonalClip } from "./domain";
 import { videoBlob, saveClip } from "./storage";
@@ -28,7 +29,8 @@ export default function EditClipCopy({
     [saving, setSaving] = useState(false);
   const identity = useRef(crypto.randomUUID()),
     lock = useRef(false),
-    signature = useRef("");
+    signature = useRef(""),
+    renderSignature = useRef("");
   const url = useBlobUrl(output?.highlight ?? null);
   useEffect(() => {
     let cancelled = false;
@@ -61,8 +63,11 @@ export default function EditClipCopy({
   }, [clip, retry]);
   const accept = useCallback((value: EditOutput) => {
     const key = JSON.stringify(value.project);
-    if (signature.current !== key || value.stale || value.rendering) {
+    const renderKey = renderProjectKey(value.project);
+    if (renderSignature.current !== renderKey || value.stale || value.rendering)
       setReviewed(false);
+    renderSignature.current = renderKey;
+    if (signature.current !== key || value.stale || value.rendering) {
       setSaved(false);
       identity.current = crypto.randomUUID();
     }

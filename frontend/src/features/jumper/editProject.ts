@@ -21,6 +21,7 @@ export type Caption = {
   position: "top" | "center" | "bottom";
   outside?: boolean;
 };
+export type ShotMarker = "gather" | "release" | "finish";
 export type EditProject = {
   version: 1;
   baseFrames: number;
@@ -30,7 +31,13 @@ export type EditProject = {
   captions: Caption[];
   fadeIn: boolean;
   fadeOut: boolean;
+  shotMarkers?: Partial<Record<ShotMarker, number>>;
 };
+/** Guidance metadata never changes encoded pixels or requires another render. */
+export function renderProjectKey(project: EditProject) {
+  const { shotMarkers: _markers, ...render } = project;
+  return JSON.stringify(render);
+}
 export const neutralFraming = (): Framing => ({ zoom: 1, x: 0.5, y: 0.5 });
 export const pieceFrames = (p: Piece) =>
   p.freeze || Math.ceil((p.end - p.start) / p.speed);
@@ -100,6 +107,15 @@ export function isProject(value: unknown): value is EditProject {
     ["palette", "legacy"].includes(p.baseProfile) &&
     typeof p.fadeIn === "boolean" &&
     typeof p.fadeOut === "boolean" &&
+    (p.shotMarkers === undefined ||
+      (!!p.shotMarkers &&
+        typeof p.shotMarkers === "object" &&
+        !Array.isArray(p.shotMarkers) &&
+        Object.entries(p.shotMarkers).every(
+          ([kind, frame]) =>
+            ["gather", "release", "finish"].includes(kind) &&
+            integer(frame, 0, p.baseFrames - 1),
+        ))) &&
     Array.isArray(p.pieces) &&
     p.pieces.length > 0 &&
     p.pieces.length <= 100 &&

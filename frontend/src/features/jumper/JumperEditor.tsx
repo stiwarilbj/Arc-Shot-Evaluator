@@ -1,3 +1,4 @@
+import { renderProjectKey } from "./editProject";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Download,
@@ -70,10 +71,18 @@ export default function JumperEditor({
   const baseUrl = useBlobUrl(result?.highlight ?? null);
   const videoUrl = useBlobUrl(edits?.highlight ?? result?.highlight ?? null);
   const editSignature = useRef("");
+  const editRenderSignature = useRef("");
   const acceptEdits = useCallback((value: EditOutput) => {
     const signature = JSON.stringify(value.project);
-    if (editSignature.current !== signature || value.stale || value.rendering) {
+    const renderKey = renderProjectKey(value.project);
+    if (
+      editRenderSignature.current !== renderKey ||
+      value.stale ||
+      value.rendering
+    )
       setReviewed(false);
+    editRenderSignature.current = renderKey;
+    if (editSignature.current !== signature || value.stale || value.rendering) {
       setSaved(false);
       savedIdentity.current = crypto.randomUUID();
     }

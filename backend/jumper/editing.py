@@ -55,6 +55,15 @@ def validate_project(p):
         and len(p["captions"]) <= 100
     ):
         raise ValueError("Invalid edit project")
+    if "shotMarkers" in p and not (
+        isinstance(p["shotMarkers"], dict)
+        and all(
+            kind in ("gather", "release", "finish")
+            and integer(frame, 0, p["baseFrames"] - 1)
+            for kind, frame in p["shotMarkers"].items()
+        )
+    ):
+        raise ValueError("Invalid shooting-motion markers")
     ids = set()
     for piece in p["pieces"]:
         if not (

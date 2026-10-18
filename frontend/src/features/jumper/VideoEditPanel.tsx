@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import ShotMotionMarkers from "./ShotMotionMarkers";
 import FreezeFramePicker from "./FreezeFramePicker";
 import TimelinePieces from "./TimelinePieces";
 import CaptionPreview from "./CaptionPreview";
@@ -26,6 +27,7 @@ import {
 } from "./previewPlayback";
 import {
   EditHistory,
+  renderProjectKey,
   clampCaptions,
   editFrame,
   isProject,
@@ -107,7 +109,7 @@ export default function VideoEditPanel({
       initialVideos ?? { highlight: base, clean: base, duration: baseDuration },
   );
   const [exported, setExported] = useState(() =>
-    initialCleanAvailable ? JSON.stringify(project) : "",
+    initialCleanAvailable ? renderProjectKey(project) : "",
   );
   const [frame, setFrame] = useState(0),
     [playing, setPlaying] = useState(false),
@@ -124,7 +126,7 @@ export default function VideoEditPanel({
     [progress, setProgress] = useState(0),
     [framingEnd, setFramingEnd] = useState(false);
   const [trimPreview, setTrimPreview] = useState<{
-    edge: "start" | "end";
+    edge: "start" | "end" | "marker";
     source: number;
   } | null>(null);
   const framingGuide =
@@ -178,7 +180,7 @@ export default function VideoEditPanel({
     gesture.current.active = false;
   }, []);
   const count = projectFrames(project),
-    stale = exported !== JSON.stringify(project),
+    stale = exported !== renderProjectKey(project),
     piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0],
     trimLimits = pieceTrimLimits(piece, project.baseFrames, count);
   const split = splitPoint(project, frame);
@@ -546,7 +548,7 @@ export default function VideoEditPanel({
       );
       if (id !== generation.current || abort.signal.aborted) return;
       setVideos(value);
-      setExported(JSON.stringify(project));
+      setExported(renderProjectKey(project));
     } catch (e) {
       if (id === generation.current && !abort.signal.aborted)
         setError(
@@ -853,10 +855,16 @@ export default function VideoEditPanel({
           </div>
           {trimPreview ? (
             <p className="jumper-trim-preview" role="status">
-              Trim preview · {trimPreview.edge === "start" ? "First" : "Last"}{" "}
-              retained source frame {trimPreview.source + 1} ·{" "}
-              {time(trimPreview.source)}s (masked base, without presentation
-              effects)
+              {trimPreview.edge === "marker"
+                ? "Shot marker preview ·"
+                : `Trim preview · ${trimPreview.edge === "start" ? "First" : "Last"} retained`}{" "}
+              source frame {trimPreview.source + 1} · {time(trimPreview.source)}
+              s (masked base, without presentation effects){" "}
+              {trimPreview.edge === "marker" ? (
+                <button onClick={() => setTrimPreview(null)}>
+                  Return to edited preview
+                </button>
+              ) : null}
             </p>
           ) : null}
           <TimelinePieces
@@ -1051,6 +1059,23 @@ export default function VideoEditPanel({
             </div>
             {panel === "Cut" ? (
               <>
+                <ShotMotionMarkers
+                  project={project}
+                  frame={frame}
+                  onSet={(kind, source) => {
+                    const markers = { ...project.shotMarkers };
+                    if (source === undefined) delete markers[kind];
+                    else markers[kind] = source;
+                    change({ ...project, shotMarkers: markers });
+                  }}
+                  onPreview={(source) => {
+                    setPlaying(false);
+                    setTrimPreview({ edge: "marker", source });
+                  }}
+                  onInspect={(edited) => {
+                    selectPiece(editFrame(project, edited).piece.id, edited);
+                  }}
+                />
                 {!piece.freeze ? (
                   <>
                     <label>

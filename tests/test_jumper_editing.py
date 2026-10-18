@@ -90,6 +90,7 @@ def test_legacy_codec_chroma_is_neutralized_before_encoding():
 
 def test_native_render_and_clean_quiz_round_trip(tmp_path, monkeypatch):
     p = project()
+    p["shotMarkers"] = dict(gather=1, release=6, finish=11)
     validate_project(p)
     base = tmp_path / "base.mp4"
     base_video(base)
@@ -330,3 +331,22 @@ def test_native_rejects_caption_overflow_before_export(tmp_path):
     with pytest.raises(ValueError, match="cannot fit in the safe area"):
         render(base, p, out, threading.Event(), lambda _: None)
     assert not list(out.iterdir())
+
+
+@pytest.mark.parametrize("markers", [None, [], {"unknown": 1}, {"release": -1},
+    {"gather": 12}, {"finish": 1.5}, {"gather": True}])
+def test_invalid_shot_markers(markers):
+    p = project()
+    p["shotMarkers"] = markers
+    with pytest.raises(ValueError):
+        validate_project(p)
+
+
+def test_markers_are_guidance_not_render_changes():
+    p = project()
+    image = np.full((96, 128, 3), 224, dtype=np.uint8)
+    original = draw_frame(image, p, 5)
+    for markers in ({}, dict(gather=0, release=6, finish=11), dict(gather=9, release=2)):
+        p["shotMarkers"] = markers
+        validate_project(p)  # semantic order is advisory, never blocks persistence
+        assert np.array_equal(draw_frame(image, p, 5), original)
