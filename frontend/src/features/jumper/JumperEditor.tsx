@@ -1122,6 +1122,7 @@ export default function JumperEditor({
                   baseDuration={result.duration}
                   active={active && !busy}
                   disabled={saving || busy}
+                  reviewed={reviewed}
                   onChange={acceptEdits}
                 />
                 <span className="jumper-eyebrow">4 · REVIEW IN MOTION</span>

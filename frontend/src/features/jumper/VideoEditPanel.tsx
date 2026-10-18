@@ -40,6 +40,7 @@ export default function VideoEditPanel({
   initialCleanAvailable = true,
   active,
   disabled = false,
+  reviewed = false,
   onChange,
 }: {
   base: Blob;
@@ -50,6 +51,7 @@ export default function VideoEditPanel({
   initialCleanAvailable?: boolean;
   active: boolean;
   disabled?: boolean;
+  reviewed?: boolean;
   onChange: (value: EditOutput) => void;
 }) {
   const [project, setProject] = useState(() =>
@@ -68,13 +70,11 @@ export default function VideoEditPanel({
     const selector = historyReveal.captionId
       ? `.jumper-caption-lane[data-caption-id="${CSS.escape(historyReveal.captionId)}"]`
       : `.jumper-edit-piece[data-piece-id="${CSS.escape(historyReveal.pieceId)}"]`;
-    editor.current
-      ?.querySelector(selector)
-      ?.scrollIntoView({
-        block: "nearest",
-        inline: "nearest",
-        behavior: "auto",
-      });
+    editor.current?.querySelector(selector)?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: "auto",
+    });
   }, [historyReveal]);
   const [selectedCaption, setSelectedCaption] = useState<string | null>(null);
   const [previewDimensions, setPreviewDimensions] = useState({
@@ -82,6 +82,7 @@ export default function VideoEditPanel({
     height: 0,
   });
   const splitHelpId = useId();
+  const previewHelpId = useId();
   const [videos, setVideos] = useState<EditedVideos>(
     () =>
       initialVideos ?? { highlight: base, clean: base, duration: baseDuration },
@@ -572,6 +573,34 @@ export default function VideoEditPanel({
       </div>
       <div className="jumper-edit-layout">
         <div className="jumper-edit-preview">
+          <div
+            className="jumper-preview-switch"
+            role="group"
+            aria-label="Preview version"
+            aria-describedby={previewHelpId}
+          >
+            {(
+              [
+                [false, "Edited video"],
+                [true, "Clean quiz"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={String(value)}
+                aria-pressed={clean === value}
+                onClick={() => {
+                  setTrimPreview(null);
+                  setClean(value === true);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p id={previewHelpId} className="jumper-caption">
+            Clean quiz keeps cuts, speeds, and freezes, without text, zoom/pan,
+            or fades. Switching previews does not change your download.
+          </p>
           <div className="jumper-preview-stage">
             <canvas
               ref={canvas}
@@ -664,17 +693,6 @@ export default function VideoEditPanel({
             <span>
               {time(frame)} / {time(count)}s
             </span>
-            <label>
-              <input
-                type="checkbox"
-                checked={clean}
-                onChange={(e) => {
-                  setTrimPreview(null);
-                  setClean(e.target.checked);
-                }}
-              />{" "}
-              Clean quiz preview
-            </label>
           </div>
           <input
             aria-label="Edit playhead"
@@ -1231,7 +1249,7 @@ export default function VideoEditPanel({
                   the
                   {framingEnd ? " end" : " start"} rectangle or use arrow keys
                   to pan; zoom above 1× to move it. Play to see the finished
-                  crop. Clean quiz preview has no framing guide or zoom.
+                  crop. Clean quiz has no framing guide or zoom.
                 </p>
                 {(["x", "y"] as const).map((axis) => (
                   <label key={axis}>
@@ -1322,11 +1340,26 @@ export default function VideoEditPanel({
             Cancel rendering
           </button>
         ) : null}
-        <span role="status">
-          {stale
-            ? "Preview updated. Render before reviewing or saving."
-            : "Ready for final-motion review."}
-        </span>
+        <div
+          className="jumper-finished-status"
+          role="status"
+          aria-label="Finished-video status"
+        >
+          <span>
+            {stale
+              ? "Download: previous finished version; latest edits not yet included."
+              : "Download: includes the latest edits."}
+          </span>
+          <span>
+            {busy
+              ? "Final-motion review required after rendering finishes."
+              : stale
+                ? "Final-motion review required after updating the finished video."
+                : reviewed
+                  ? "Final-motion review complete."
+                  : "Final-motion review required: watch the finished video below and confirm."}
+          </span>
+        </div>
       </div>
     </section>
   );

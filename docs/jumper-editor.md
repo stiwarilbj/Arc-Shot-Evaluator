@@ -86,8 +86,15 @@ person detection or SAM. The private masked base is the only source for edits.
   or failure retains the previous successful download. Stale results cannot be
   approved or saved. Playback pauses in hidden workspaces and hidden browser tabs.
 
-The **Clean quiz preview** toggle uses identical cuts, speed, and freezes, with
-no captions, zoom/pan, or fades. The same clean file plays before and after a
+The **Edited video / Clean quiz** switch above the shared preview uses identical
+cuts, speeds, and freezes in both modes. Clean quiz excludes text, zoom/pan, and
+fades. Switching is display-only: it never changes the download, edit history, or
+review approval. Beside **Update finished video**, the download status distinguishes
+the previous finished version from the latest edits. The review status reflects
+the existing final-motion confirmation: required while edits are stale or rendering,
+required after rendering until confirmed, and complete after confirmation. Editing
+requires review again; render failures retain the last successful download.
+The same clean file plays before and after a
 personal quiz answer. My Clips playback/download uses the edited viewing version.
 
 **My Clips → Edit copy** reloads the base and version-1 recipe. Saving makes a

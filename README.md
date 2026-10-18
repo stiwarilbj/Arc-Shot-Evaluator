@@ -296,6 +296,11 @@ Personal videos stay on your device; they are never automatically published.
 6. **Review and save/download:** click **Update finished video** after edits,
    review the entire finished motion, and save privately or download MP4 when
    supported, otherwise WebM. A failed render keeps the last successful download.
+   Above the shared preview, choose **Edited video** or **Clean quiz**. Clean quiz
+   keeps cuts, speeds, and freezes, excluding text, zoom/pan, and fades; switching
+   previews does not change the downloadable version. Beside the update button,
+   status messages show whether the download includes the latest edits and whether
+   final-motion review is required or complete. Editing invalidates that review.
    A name is required only when enabling **Use in my guessing game**.
 
 Editing reads the finished masked base and never reruns detection or segmentation.

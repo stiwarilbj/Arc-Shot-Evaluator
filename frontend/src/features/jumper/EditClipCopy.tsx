@@ -148,6 +148,7 @@ export default function EditClipCopy({
             initialCleanAvailable={!clip.project || clip.quiz}
             active={active}
             disabled={saving}
+            reviewed={reviewed}
             onChange={accept}
           />
           <section className="jumper-panel">
