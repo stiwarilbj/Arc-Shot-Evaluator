@@ -115,9 +115,13 @@ enabled automatic actions affect the simulator's decisions.
 Play, pause, seek, or pause to edit before continuing. The shared fixed-step engine
 coordinates movement and collision avoidance, executes screens in phases, follows
 actual possession, requires catches for passes and close contact for handoffs,
-and explains obstructed or conflicting actions. Adaptive offense can continue
-with an available cut, roll, post action, drive, or pass; simulation decisions do
-not rewrite the saved drawing.
+and explains obstructed or conflicting actions. Defenders anticipate the recorded
+pass receiver without awarding possession, react to loose balls rather than roster
+order, and recover from screens using the actual screen-release timing. These
+shared behaviors apply in both Playbook and Counter Lab; they remain basketball
+simulation approximations. Adaptive offense can continue with an available cut,
+roll, post action, drive, or pass; simulation decisions do not rewrite the saved
+drawing.
 
 Save plays, reopen or duplicate them, delete saved copies, or export a
 high-resolution PNG. Hosted plays stay in browser storage; downloaded-app plays

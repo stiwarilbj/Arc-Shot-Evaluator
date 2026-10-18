@@ -1500,4 +1500,49 @@ const unbadgedPaintQuality = paintContestQuality(null);
 assert.ok(paintContestQuality('paint-protector') < unbadgedPaintQuality, 'Paint protector lowers finishing quality when goal-side and close enough to contest');
 assert.equal(paintContestQuality('paint-protector', { x: 95, y: 90 }), paintContestQuality(null, { x: 95, y: 90 }), 'Paint protector adds no contest when out of position');
 
+// Pressure follows a live receiver without manufacturing a catch. A loose
+// ball must not send the entire zone toward whichever marker is listed first.
+const passPressureDraft = makeDraft({
+  players: [[12, 70], [80, 75], [28, 70], [60, 55], [70, 50]], ball: [80, 75],
+  defenders: [[14, 63], [78, 68], [30, 63], [58, 49], [70, 44]],
+  arrows: [{ id: 'pressure-pass', kind: 'pass', actor_id: 2, recipient_id: 3,
+    start: { x: 80, y: 75 }, end: { x: 28, y: 70 }, sequence: 1, timing: 1.4 }],
+});
+const pressureSettings = { ...settings, offenseMode: 'scripted', offenseOffBall: 'off', defenseScheme: 'zone-2-3' };
+const pressureRun = createSimulationRun(passPressureDraft, pressureSettings);
+advance(pressureRun, 200);
+assert.equal(pressureRun.actions[0].execution.phase, 'transfer');
+assert.equal(pressureRun.zoneBallHandlerId, 3, 'zone pressure anticipates the actual pass recipient');
+assert.equal(pressureRun.ballHandlerId, 2, 'defensive anticipation never fabricates a completed catch');
+assert.equal(pressureRun.defensiveDriveThreatHandlerId, null, 'a pass is not treated as a controlled drive');
+const looseRuns = [passPressureDraft, { ...passPressureDraft, players: [...passPressureDraft.players].reverse() }]
+  .map((draft) => createSimulationRun({ ...draft, arrows: [] }, pressureSettings));
+for (const run of looseRuns) {
+  run.ballHandlerId = null; run.ball = { x: 80, y: 75 };
+  advance(run, SIMULATION_STEP_MS);
+  assert.equal(run.zoneBallHandlerId, 2, 'loose-ball defense follows ball evidence rather than roster position');
+}
+assert.deepEqual(looseRuns[0].defenders, looseRuns[1].defenders, 'equivalent roster orders do not change loose-ball defense');
+
+// Stretching a minimum action duration cannot rewind a screen coverage which
+// has already released. All four coverages use the recorded execution clock.
+for (const defenseStrategy of ['fight-over', 'go-under', 'drop', 'hedge']) {
+  const runs = [0, 1].map(() => createSimulationRun(coverageDraft,
+    { ...settings, offenseMode: 'scripted', offenseOffBall: 'off', defenseStrategy }));
+  for (const run of runs) {
+    advanceUntil(run, () => run.actions[0].execution?.phase === 'release', 12000);
+    advance(run, 200);
+    assert.ok(Number.isFinite(run.actions[0].execution.releasedAtMs), 'screen release has an actual timestamp');
+    assert.ok(run.actions[0].execution.releasedAtMs >= run.actions[0].execution.usedAtMs);
+  }
+  const delayed = runs[1];
+  delayed.actions[0].durationMs += 1000; delayed.actionDurationMs += 1000; delayed.durationMs += 1000;
+  runs.forEach((run) => advance(run, SIMULATION_STEP_MS));
+  for (const defender of runs[0].defenders) {
+    const key = `defender:${defender.id}`;
+    assert.deepEqual(runs[0].targetFilters.get(key), delayed.targetFilters.get(key),
+      `${defenseStrategy} recovery does not reverse because the minimum duration changed`);
+  }
+}
+
 console.log('Playbook simulation tests passed: fixed-rate motion, pause/resume, delayed-frame bounds, timeline order, live possession, adaptive reads, ratings and badges, spacing, bounded/stable defense, help and recovery, screen coverage, switching, paused edits, settings, draft isolation, and all 24 starters');

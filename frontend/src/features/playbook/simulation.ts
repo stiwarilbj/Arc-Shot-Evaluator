@@ -39,12 +39,12 @@ export type SimulationFrame = {
 
 export type ActionDiagnostic = {
   actionId: string; sequence: number; actorId: number | null; recipientId: number | null; partnerId: number | null;
-  setAtMs?: number; usedAtMs?: number;
+  setAtMs?: number; usedAtMs?: number; releasedAtMs?: number;
   phase: "pending" | "approach" | "set" | "use" | "release" | "transfer" | "completed" | "obstructed" | "conflict" | "interrupted";
   startedAtMs: number | null; completedAtMs: number | null; progress: number; notice: string | null;
 };
 type ExecutionPath = { points: CourtPoint[]; lengths: number[]; length: number; progress: number; closest: CourtPoint };
-type ActionRuntime = ActionDiagnostic & { paths: Map<number, ExecutionPath>; setAtMs?: number; usedAtMs?: number; waitMs: number };
+type ActionRuntime = ActionDiagnostic & { paths: Map<number, ExecutionPath>; waitMs: number };
 type BoundAction = {
   execution?: ActionRuntime;
   onBall?: boolean;
@@ -2158,8 +2158,21 @@ function defenderContainmentTarget(
   return pointToward(anticipated, hoop, goalSideGap);
 }
 
+// A live pass redirects pressure toward its receiver without granting possession.
+// Loose-ball reactions follow the ball, never the incidental roster order.
+function defensiveFocusPlayer(run: SimulationRun, timeMs: number) {
+  const transfer = currentTransferAt(run, timeMs);
+  const receiver = transfer?.arrow.kind === "pass" && transfer.execution?.phase === "transfer"
+    ? markerForId(run.players, transfer.recipientId) : null;
+  const ball = run.ball;
+  return receiver ?? markerForId(run.players, run.ballHandlerId)
+    ?? markerForId(run.players, run.shotShooterId)
+    ?? (ball ? run.players.slice().sort((a, b) => pointDistanceFeet(a, ball) - pointDistanceFeet(b, ball) || a.id - b.id)[0] : null)
+    ?? null;
+}
+
 function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
-  const handler = markerForId(run.players, run.ballHandlerId) ?? run.players[0] ?? null;
+  const handler = defensiveFocusPlayer(run, timeMs);
   const activeAction = currentActionAt(run, timeMs);
   const isMan = isManScheme(run.activeDefenseScheme);
   const formation = zoneFormation(run.activeDefenseScheme);
@@ -2170,7 +2183,8 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     coverageByDefender.set(run.defenders[coverage.screenedIndex].id, { coverage, role: "screened" });
   });
   const transfer = currentTransferAt(run, timeMs);
-  const drive = sustainedDefensiveDriveThreat(run, handler, timeMs, hoop);
+  const drive = sustainedDefensiveDriveThreat(run,
+    !transfer && !run.shotStart ? markerForId(run.players, run.ballHandlerId) : null, timeMs, hoop);
   const strategy = run.settings.defenseStrategy;
   const anchors = formation ? zoneAnchors(run.activeDefenseScheme, hoop) : [];
   const zoneShapeTargets = new Map<number, CourtPoint>();
@@ -2438,7 +2452,10 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
         return clampCourt(target);
       }
       const screenPoint = action.arrow.end;
-      const progress = clamp((timeMs - action.startTime) / action.durationMs, 0, 1);
+      // Coverage follows the executed interaction, not the authored duration:
+      // waiting for an approach or catch must not rewind a defender's recovery.
+      const releaseProgress = action.execution?.releasedAtMs == null ? 0
+        : clamp((timeMs - action.execution.releasedAtMs) / 400, 0, 1);
       const screenedPlayer = markerForId(run.players, screenedId) ?? handler;
       const coverageScreener = markerForId(run.players, screenerId);
       if (coverageRole.role === "screener" && coverageScreener && playerHasBadge(coverageScreener, "screen-setter")) {
@@ -2451,20 +2468,20 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       } else if (strategy === "fight-over" && coverageRole.role === "screened") {
         const outsideRoute = pointToward(screenPoint, hoop, -3.25);
         const coverageWeight = formation ? 0.72 : 1;
-        const routeTarget = progress < 0.48 ? outsideRoute : lerpPoint(outsideRoute, target, clamp((progress - 0.48) / 0.4, 0, 1));
+        const routeTarget = lerpPoint(outsideRoute, target, releaseProgress);
         target = lerpPoint(target, routeTarget, coverageWeight);
       } else if (strategy === "go-under" && coverageRole.role === "screened") {
         const insideRoute = pointToward(screenPoint, hoop, 3.25);
         const coverageWeight = formation ? 0.72 : 1;
-        const routeTarget = progress < 0.48 ? insideRoute : lerpPoint(insideRoute, target, clamp((progress - 0.48) / 0.4, 0, 1));
+        const routeTarget = lerpPoint(insideRoute, target, releaseProgress);
         target = lerpPoint(target, routeTarget, coverageWeight);
       } else if (strategy === "drop" && coverageRole.role === "screener") {
         const dropSpot = pointToward(screenPoint, hoop, 5.25);
-        target = lerpPoint(target, dropSpot, (progress < 0.68 ? 0.78 : 0.2) * (formation ? 0.68 : 1));
+        target = lerpPoint(target, dropSpot, (0.78 - releaseProgress * 0.58) * (formation ? 0.68 : 1));
       } else if ((strategy === "hedge" || strategy === "trap-rotate") && coverageRole.role === "screener") {
         const hedgeSpot = pointToward(screenPoint, screenedPlayer, 2.25);
         const hedgeAmount = strategy === "trap-rotate" ? 0.86 : 0.62;
-        const recovery = progress < 0.52 ? 1 : clamp(1 - (progress - 0.52) / 0.38, 0, 1);
+        const recovery = 1 - releaseProgress;
         target = lerpPoint(target, hedgeSpot, hedgeAmount * recovery * (formation ? 0.68 : 1));
       }
     }
@@ -2534,8 +2551,8 @@ function executionFor(action: BoundAction): ActionRuntime {
 }
 function actionDiagnostics(run: SimulationRun): ActionDiagnostic[] {
   return run.actions.filter((action) => action.execution).map((action) => {
-    const { actionId, sequence, actorId, recipientId, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs } = action.execution!;
-    return { actionId, sequence, actorId, recipientId, partnerId: action.partnerId ?? null, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs };
+    const { actionId, sequence, actorId, recipientId, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs } = action.execution!;
+    return { actionId, sequence, actorId, recipientId, partnerId: action.partnerId ?? null, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs };
   });
 }
 function actionIsMoving(action: BoundAction) {
@@ -2634,7 +2651,7 @@ function prepareScreen(run: SimulationRun, action: BoundAction, timeMs: number, 
     switchAtInteraction(run, action, screenUserId(action));
     const path = user ? state.paths.get(user.id) : null;
     if (!user || (state.usedAtMs != null && pointDistanceFeet(user, actor) > 3 && ((path && path.progress >= path.length * .6) || (!path && timeMs - state.usedAtMs >= 150)))) {
-      state.phase = "release";
+      state.phase = "release"; state.releasedAtMs = timeMs;
       if (action.arrow.kind === "pick-roll" || action.arrow.kind === "pick-pop") state.paths.delete(actor.id);
     }
   }
@@ -2774,7 +2791,7 @@ function updateBall(run: SimulationRun, timeMs: number, dt: number) {
 
 function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: CourtPoint) {
   const { targets } = defensiveTargets(run, timeMs, hoop);
-  const handler = markerForId(run.players, run.ballHandlerId);
+  const handler = defensiveFocusPlayer(run, timeMs);
   run.defenders = run.defenders.map((defender, index) => {
     const target = targets[index] ?? defender;
     if (run.settings.defenseStrategy === "off") {
@@ -2802,7 +2819,7 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
       ? run.velocities.get(velocityKey("player", focusPlayer.id)) ?? { x: 0, y: 0 }
       : { x: 0, y: 0 };
     const isTrackingMovement = Math.hypot(assignmentVelocity.x, assignmentVelocity.y) > 2.5;
-    const shootingThreat = focusPlayer ? defensiveThreatRating(focusPlayer, HOOP_POINT) : 3;
+    const shootingThreat = focusPlayer ? defensiveThreatRating(focusPlayer, hoop) : 3;
     const badgeResponse = (defenderHasBadge(defender, "lockdown") ? 1.4 : 0)
       + (run.helpDefenderId === defender.id && defenderHasBadge(defender, "helper") ? 1.2 : 0);
     const responseSpeed = clamp((isRecovering ? DEFENDER_MAX_SPEED_FT_PER_SECOND : isTrackingMovement ? 12 : 9)
@@ -2862,9 +2879,9 @@ function calculateOffBallQuality(
 }
 
 function calculateDefensiveQuality(run: SimulationRun, hoop = HOOP_POINT) {
-  const { players, defenders, ballHandlerId, assignments } = run;
-  if (!players.length || !defenders.length) return 0;
-  const handler = markerForId(players, ballHandlerId) ?? players[0];
+  const { players, defenders, assignments } = run;
+  const handler = defensiveFocusPlayer(run, run.elapsedMs);
+  if (!handler || !defenders.length) return 0;
   if (!isManScheme(run.activeDefenseScheme)) {
     const chaserForHandler = [...run.zoneChaserAssignments.entries()].find(([, playerId]) => playerId === handler.id)?.[0];
     const ballDefenderId = chaserForHandler ?? run.zoneBallDefenderId;

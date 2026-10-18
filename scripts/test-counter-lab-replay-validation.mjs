@@ -10,7 +10,7 @@ const frame = () => ({ elapsedMs: 0, sequence: 2, action: 'Pass', ballHandlerId:
   activeRoutes: [{ id: 'curve', actionId: 'pass', sequence: 2, playerId: 1, kind: 'pass', scope: 'on-ball', importance: 'main',
     start: { x: 50, y: 50 }, end: { x: 60, y: 50 }, control: { x: 55, y: 60 }, via: { x: 52, y: 51 }, points: [{ x: 50, y: 50 }, { x: 60, y: 50 }] }],
   execution: [{ actionId: 'pass', sequence: 2, actorId: 1, recipientId: 2, partnerId: null, phase: 'transfer', startedAtMs: 0,
-    completedAtMs: null, setAtMs: 0, usedAtMs: 0, progress: .12345678901234567, notice: null }],
+    completedAtMs: null, setAtMs: 0, usedAtMs: 0, releasedAtMs: 0, progress: .12345678901234567, notice: null }],
 });
 const frames = [frame(), { ...frame(), elapsedMs: 1000 / 30, ballHandlerId: 2 }, { ...frame(), elapsedMs: 2000 / 30, ball: null, ballHandlerId: null, shotPhase: 'air' }];
 const archive = packReplay(frames), decoded = decodeReplayForPlayback(archive);
@@ -64,7 +64,8 @@ for (const change of [
   v => { v.execution[0].progress = NaN; }, v => { v.execution[0].phase = 'unknown'; },
   v => { delete v.execution[0].recipientId; }, v => { v.execution[0].startedAtMs = Infinity; },
   v => { v.execution[0].completedAtMs = -1; }, v => { v.execution[0].setAtMs = NaN; },
-  v => { v.execution[0].usedAtMs = '0'; }, v => { v.execution[0].notice = {}; },
+  v => { v.execution[0].usedAtMs = '0'; }, v => { v.execution[0].releasedAtMs = NaN; },
+  v => { v.execution[0].releasedAtMs = -1; }, v => { v.execution[0].notice = {}; },
 ]) { const item = frame(); change(item); invalid([item]); }
 const missingPlayer = structuredClone(frames); missingPlayer[1] = { ...partial, elapsedMs: 100 };
 invalid(missingPlayer);

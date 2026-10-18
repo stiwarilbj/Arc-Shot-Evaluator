@@ -71,7 +71,8 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
         check(record(action) && text(action.actionId) && identity(action.sequence) && phases.has(action.phase as string));
         check(participant(action.actorId) && participant(action.recipientId) && participant(action.partnerId));
         check((action.startedAtMs === null || clock(action.startedAtMs)) && (action.completedAtMs === null || clock(action.completedAtMs)));
-        check((action.setAtMs === undefined || clock(action.setAtMs)) && (action.usedAtMs === undefined || clock(action.usedAtMs)));
+        check((action.setAtMs === undefined || clock(action.setAtMs)) && (action.usedAtMs === undefined || clock(action.usedAtMs))
+          && (action.releasedAtMs === undefined || clock(action.releasedAtMs)));
         check(finite(action.progress) && (action.notice === null || typeof action.notice === "string"));
       }
     }

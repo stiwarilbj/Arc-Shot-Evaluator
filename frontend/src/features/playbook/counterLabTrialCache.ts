@@ -7,7 +7,7 @@ export type PackedCounterLabTrial = { summary: Omit<CounterLabResult, "trace">; 
 
 // Bump when simulation, diagnostic, or replay semantics change. This cache is
 // memory-only, so a new worker/build also starts with an empty cache.
-const ENGINE_VERSION = 1;
+const ENGINE_VERSION = 2;
 
 /** Canonical typed values avoid collisions for undefined, null, NaN and -0. */
 export function counterLabTrialKey(...inputs: unknown[]): string | undefined {
