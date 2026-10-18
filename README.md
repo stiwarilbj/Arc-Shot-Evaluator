@@ -350,6 +350,15 @@ Personal videos stay on your device; they are never automatically published.
    using the same layout for preview and export. If the chosen size cannot fit,
    Text shows a warning: shorten the caption or choose a smaller size before
    updating the finished video. Your previous successful download stays available.
+   Caption overlap hints check the black shooter silhouette throughout each caption's
+   edited interval, including cuts, speed changes, freezes, and zoom/pan. Use
+   **Inspect caption** to visit a flagged moment or **Try top/center/bottom**
+   when another supported position has less overlap. Hints include the caption's
+   black backing and never block placement or saving. They approximate body and
+   upper-silhouette coverage, not hand or release recognition; review the motion
+   yourself. Checks run privately on the masked base in both builds, without
+   inference or model downloads. Legacy bases or unavailable decoding require
+   manual review. Clean quizzes still omit all captions.
    In **Effects**, use **Copy effects**, select another piece, and choose **Speed**,
    **Start framing**, or **End framing** before **Paste effects**. Each paste is
    one undo step. Cuts, source footage, captions, and freeze length stay unchanged;

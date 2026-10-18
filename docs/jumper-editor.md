@@ -77,6 +77,21 @@ person detection or SAM. The private masked base is the only source for edits.
   without dragging. Hit areas respect text wrapping and letterboxing. Guides and
   selection outlines never enter exported videos. Captions cannot be selected in
   clean-quiz or trim-boundary previews, where caption overlays are intentionally absent.
+- **Text → Shooting-motion overlap hints:** after adding captions, the editor
+  decodes the masked base once into a bounded (16 MiB), short-lived silhouette-core
+  cache at up to 192 pixels on the long edge. It checks every edited 30 fps frame
+  with the shared caption layout and export crop; cuts, freezes, speeds, and
+  framing use the export timeline. Coverage of at least 15% of the visible body
+  or its upper third produces an advisory hint and an inspection time. This is
+  approximate geometry, not anatomical hand/release detection; tiny or missing
+  silhouettes cannot establish safe placement. A supported position is suggested
+  only if its worst overlap is at least 30% lower across the whole caption
+  interval. Suggestions are optional, undoable placement edits; warnings neither
+  alter exports nor block saving. Fades never suppress warnings. Caption edits
+  reuse the base cache; stale checks are cancelled and hidden workspaces pause
+  analysis. Failed checks offer retry and manual review. Legacy bases are not
+  analyzed because their black pixels may not uniquely identify the shooter.
+  No inference, original footage, model downloads, or server calls are involved.
 - **Preview → Loop selected piece:** the toggle beside **Play edit preview**
   repeats the selected piece using edited time (including speed changes and
   freeze duration). Enable **Include 0.5s before and after** for neighboring
@@ -548,3 +563,10 @@ to adjust start/end. Boundaries snap to 30 fps and cannot cross or leave the vid
 Click a bar to select its Text controls. Numeric timing fields and bars update
 together. Keyboard: arrows move one frame, Shift+arrows ten, Home/End reach the
 allowed bounds. Each drag or held-key adjustment is one undo step.
+
+Caption overlap regressions run with `npm --prefix frontend run test:jumper`.
+For the real decoding/editor/export browser check, start the hosted dev build,
+then run `node scripts/test-jumper-caption-occlusion-ui.mjs` from the repository
+root (Chrome and the local Python/FFmpeg setup required). Set `JUMPER_URL` to
+check a preview or deployed build. The script stubs masking with a generated
+silhouette fixture; it verifies editing and does not claim segmentation accuracy.

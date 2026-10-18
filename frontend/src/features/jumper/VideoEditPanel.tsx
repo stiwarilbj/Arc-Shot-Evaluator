@@ -15,6 +15,7 @@ import PieceEffectsClipboard from "./PieceEffectsClipboard";
 import { CanvasSink } from "mediabunny";
 import { openVideo } from "./media";
 import { drawEdit } from "./editDrawing";
+import { useCaptionOcclusion } from "./useCaptionOcclusion";
 import { captionLayout } from "./captionLayout";
 import { describeVideoEdit, videoEditFocus } from "./editHistory";
 import {
@@ -199,6 +200,7 @@ export default function VideoEditPanel({
         )
       : null;
   }, [project.captions, previewDimensions]);
+  const captionCheck = useCaptionOcclusion(base, project, active);
   const captionOverflow = captionFits?.some((fits) => !fits) ?? false;
   const playbackRange = loop
     ? previewRange(project, piece.id, loopContext ? 15 : 0)
@@ -727,6 +729,60 @@ export default function VideoEditPanel({
               onDragEnd={endOverlayDrag}
             />
           </div>
+          {project.captions.length > 0 ? (
+            <div className="jumper-caption" aria-live="polite">
+              <p>
+                Edited video captions · {captionCheck.status}{" "}
+                {captionCheck.retry ? (
+                  <button onClick={captionCheck.retry}>
+                    Retry caption check
+                  </button>
+                ) : null}
+              </p>
+              {captionCheck.risks.map((risk) => {
+                const index = project.captions.findIndex(
+                  (c) => c.id === risk.id,
+                );
+                return (
+                  <div className="jumper-notice" key={risk.id}>
+                    <p>
+                      Caption {index + 1} covers{" "}
+                      {risk.upper >= 0.15
+                        ? "the upper silhouette (which may obscure shooting motion)"
+                        : "a substantial part of the shooter"}{" "}
+                      around {(risk.frame / 30).toFixed(2)}s. This is an
+                      approximate mask-overlap hint, not hand or release
+                      detection. Placement is your choice.
+                    </p>
+                    <div className="jumper-toolbar">
+                      <button
+                        onClick={() => {
+                          selectCaption(risk.id);
+                          setFrame(risk.frame);
+                          setClean(false);
+                        }}
+                      >
+                        Inspect caption {index + 1}
+                      </button>
+                      {risk.suggestion ? (
+                        <button
+                          disabled={disabled || busy}
+                          onClick={() => moveCaption(risk.id, risk.suggestion!)}
+                        >
+                          Try {risk.suggestion} · less silhouette overlap
+                        </button>
+                      ) : (
+                        <span>
+                          No clearly better supported position. Try shorter text
+                          or a different interval.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
           {previewError ? (
             <p role="alert">
               Preview unavailable: {previewError}{" "}
