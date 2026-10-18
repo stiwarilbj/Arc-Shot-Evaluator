@@ -46,7 +46,13 @@ person detection or SAM. The private masked base is the only source for edits.
   without dragging. Hit areas respect text wrapping and letterboxing. Guides and
   selection outlines never enter exported videos. Captions cannot be selected in
   clean-quiz or trim-boundary previews, where caption overlays are intentionally absent.
-- **Effects:** select 0.5×/1×/2× per piece; insert a one-second freeze and adjust
+- **Selected piece toolbar:** available above Cut/Text/Effects controls. Split,
+  delete, move left/right, and change 0.5×/1×/2× speed together. Frame stepping and
+  the split explanation stay beside these controls. Split only operates inside
+  the selected piece; select the piece containing the playhead if they differ.
+  The last piece cannot be deleted; end pieces cannot move past the timeline.
+  Freeze speed is disabled because Freeze length in Cut controls its duration.
+- **Effects:** insert a one-second freeze and adjust
   its duration in Cut (0.5–3s). Set start/end zoom from 1–2× and drag the preview
   or use horizontal/vertical framing sliders. Fades last approximately 0.25s.
   Slow motion repeats recorded frames; it does not invent body motion.

@@ -265,6 +265,10 @@ Personal videos stay on your device; they are never automatically published.
    The orange playhead marker and frame/time label show the split position.
    **Split at playhead** explains when it is unavailable, including empty-piece
    boundaries, freeze frames, and repeated slow-motion source frames.
+   A **Selected piece** toolbar stays available in Cut, Text, and Effects:
+   split at the playhead, delete, move left/right, or set 0.5×/1×/2× speed without
+   switching tools. Split requires the playhead inside that selected piece;
+   speed is disabled for freezes, whose duration is adjusted in Cut.
    Add timed captions in **Text**. Labeled bars beneath the timeline show each
    caption’s interval: drag the bar to move it without changing its duration, or
    drag either edge to change its start/end. The numeric fields stay synchronized.
@@ -273,7 +277,7 @@ Personal videos stay on your device; they are never automatically published.
    Click a caption in the masked preview to open **Text** and highlight its
    existing controls. Drag it between the top, center, and bottom snap guides;
    each drag is one undo step. Guides are editor-only and stay out of exports.
-   **Effects** offers 0.5×/1×/2× speed, 0.5–3-second freezes, 1–2× zoom/pan,
+   **Effects** offers 0.5–3-second freezes, 1–2× zoom/pan,
    and optional 0.25-second fades.
    The preview and export use the same 30 fps timeline; finished edits can reach
    **60 seconds**. Undo/redo retains 50 edit operations separately from corrections.

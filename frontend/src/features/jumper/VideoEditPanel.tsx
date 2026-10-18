@@ -139,6 +139,10 @@ export default function VideoEditPanel({
     piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0],
     trimLimits = pieceTrimLimits(piece, project.baseFrames, count);
   const split = splitPoint(project, frame);
+  const splitReason =
+    split.hit.piece.id !== piece.id
+      ? `Move the playhead inside selected Piece ${project.pieces.indexOf(piece) + 1} to split it.`
+      : split.reason;
   function stepFrame(direction: number) {
     setPlaying(false);
     setTrimPreview(null);
@@ -657,15 +661,13 @@ export default function VideoEditPanel({
               setFrame(Number(e.target.value));
             }}
           />
-          {panel === "Cut" ? (
-            <div className="jumper-split-position" aria-hidden="true">
-              <span
-                style={{
-                  left: `${count <= 1 ? 0 : (frame / (count - 1)) * 100}%`,
-                }}
-              />
-            </div>
-          ) : null}
+          <div className="jumper-split-position" aria-hidden="true">
+            <span
+              style={{
+                left: `${count <= 1 ? 0 : (frame / (count - 1)) * 100}%`,
+              }}
+            />
+          </div>
           {trimPreview ? (
             <p className="jumper-trim-preview" role="status">
               Trim preview · {trimPreview.edge === "start" ? "First" : "Last"}{" "}
@@ -704,6 +706,106 @@ export default function VideoEditPanel({
           </p>
         </div>
         <div className="jumper-edit-controls">
+          <fieldset
+            className="jumper-piece-toolbar"
+            aria-label="Selected piece toolbar"
+            disabled={disabled || busy}
+          >
+            <legend>
+              Selected piece · Piece {project.pieces.indexOf(piece) + 1}
+              {piece.freeze ? " · freeze" : ""}
+            </legend>
+            <div
+              className="jumper-split-controls"
+              role="group"
+              aria-label="Frame stepping and split"
+            >
+              <button disabled={frame <= 0} onClick={() => stepFrame(-1)}>
+                Previous frame
+              </button>
+              <button
+                disabled={!!splitReason}
+                aria-describedby={splitHelpId}
+                onClick={() => {
+                  try {
+                    const next = splitPiece(project, frame);
+                    if (change(next)) {
+                      setSelected(editFrame(next, frame).piece.id);
+                    }
+                  } catch (e) {
+                    setError(String(e));
+                  }
+                }}
+              >
+                Split at playhead
+              </button>
+              <button
+                disabled={frame >= count - 1}
+                onClick={() => stepFrame(1)}
+              >
+                Next frame
+              </button>
+            </div>
+            <p
+              id={splitHelpId}
+              className="jumper-caption jumper-split-help"
+              role="status"
+            >
+              {splitReason
+                ? `Playhead: frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1}. ${splitReason}`
+                : `Split before frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1} · source frame ${split.hit.source + 1}.`}
+            </p>
+            <div className="jumper-toolbar">
+              <button
+                disabled={project.pieces.indexOf(piece) === 0}
+                onClick={() => move(-1)}
+              >
+                Move left
+              </button>
+              <button
+                disabled={
+                  project.pieces.indexOf(piece) === project.pieces.length - 1
+                }
+                onClick={() => move(1)}
+              >
+                Move right
+              </button>
+              <button
+                disabled={project.pieces.length === 1}
+                onClick={() =>
+                  change({
+                    ...project,
+                    pieces: project.pieces.filter((p) => p.id !== piece.id),
+                  })
+                }
+              >
+                Delete piece
+              </button>
+            </div>
+            <label>
+              Piece speed
+              <select
+                aria-label="Piece speed"
+                disabled={!!piece.freeze}
+                value={piece.speed}
+                onChange={(e) =>
+                  updatePiece({
+                    speed: Number(e.target.value) as Piece["speed"],
+                  })
+                }
+              >
+                <option value={0.5}>0.5× · slow motion</option>
+                <option value={1}>1× · normal</option>
+                <option value={2}>2× · fast</option>
+              </select>
+            </label>
+            {piece.freeze ? (
+              <p className="jumper-caption">
+                Freeze frames keep their set duration; adjust Freeze length in
+                Cut.
+              </p>
+            ) : null}
+          </fieldset>
           <div
             className="jumper-toolbar"
             role="group"
@@ -722,10 +824,6 @@ export default function VideoEditPanel({
           <fieldset disabled={disabled || busy}>
             {panel === "Cut" ? (
               <>
-                <h3>
-                  Piece {project.pieces.indexOf(piece) + 1}
-                  {piece.freeze ? " · freeze" : ""}
-                </h3>
                 {!piece.freeze ? (
                   <>
                     <label>
@@ -797,74 +895,6 @@ export default function VideoEditPanel({
                     />
                   </label>
                 )}
-                <div
-                  className="jumper-split-controls"
-                  role="group"
-                  aria-label="Frame stepping and split"
-                >
-                  <button disabled={frame <= 0} onClick={() => stepFrame(-1)}>
-                    Previous frame
-                  </button>
-                  <button
-                    disabled={!!split.reason}
-                    aria-describedby={splitHelpId}
-                    onClick={() => {
-                      try {
-                        const next = splitPiece(project, frame);
-                        if (change(next)) {
-                          setSelected(editFrame(next, frame).piece.id);
-                        }
-                      } catch (e) {
-                        setError(String(e));
-                      }
-                    }}
-                  >
-                    Split at playhead
-                  </button>
-                  <button
-                    disabled={frame >= count - 1}
-                    onClick={() => stepFrame(1)}
-                  >
-                    Next frame
-                  </button>
-                </div>
-                <p
-                  id={splitHelpId}
-                  className="jumper-caption jumper-split-help"
-                  role="status"
-                >
-                  {split.reason
-                    ? `Playhead: frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1}. ${split.reason}`
-                    : `Split before frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1} · source frame ${split.hit.source + 1}.`}
-                </p>
-                <div className="jumper-toolbar">
-                  <button
-                    disabled={project.pieces.indexOf(piece) === 0}
-                    onClick={() => move(-1)}
-                  >
-                    Move left
-                  </button>
-                  <button
-                    disabled={
-                      project.pieces.indexOf(piece) ===
-                      project.pieces.length - 1
-                    }
-                    onClick={() => move(1)}
-                  >
-                    Move right
-                  </button>
-                  <button
-                    disabled={project.pieces.length === 1}
-                    onClick={() =>
-                      change({
-                        ...project,
-                        pieces: project.pieces.filter((p) => p.id !== piece.id),
-                      })
-                    }
-                  >
-                    Delete piece
-                  </button>
-                </div>
               </>
             ) : null}
             {panel === "Text" ? (
@@ -1050,23 +1080,6 @@ export default function VideoEditPanel({
             ) : null}
             {panel === "Effects" ? (
               <>
-                <label>
-                  Piece speed
-                  <select
-                    aria-label="Piece speed"
-                    disabled={!!piece.freeze}
-                    value={piece.speed}
-                    onChange={(e) =>
-                      updatePiece({
-                        speed: Number(e.target.value) as Piece["speed"],
-                      })
-                    }
-                  >
-                    <option value={0.5}>0.5× · slow motion</option>
-                    <option value={1}>1× · normal</option>
-                    <option value={2}>2× · fast</option>
-                  </select>
-                </label>
                 <button
                   disabled={
                     project.pieces.length +

@@ -1152,3 +1152,13 @@
   font-size: 0.8rem;
   margin-top: 0.4rem;
 }
+
+.jumper-edit-controls .jumper-piece-toolbar {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: .8rem;
+  margin: 0 0 1rem;
+}
+.jumper-piece-toolbar legend { padding: 0 .35rem; font-weight: 650; }
+.jumper-piece-toolbar .jumper-toolbar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35rem; }
+.jumper-piece-toolbar button { overflow-wrap: anywhere; }
