@@ -147,3 +147,29 @@ assert.deepEqual(
 console.log(
   "PASS bidirectional mask thresholds, independent history, confirmed anchors, complete coverage, runtime validation and reverse memory ordering",
 );
+
+// Explicit recovery anchors are optional, immutable and causal.
+const {setShooterAnchor, shooterAnchors, latestShooterAnchor} = await import('../frontend/src/features/jumper/trackingAnchors.ts');
+const anchorInput = structuredClone(tracks);
+let anchored = setShooterAnchor(anchorInput, 7, 4, true);
+anchored = setShooterAnchor(anchored, 7, 8, true);
+assert.equal(anchorInput[0].prompts[2].anchor, undefined);
+assert.deepEqual(shooterAnchors(anchored, 7).map(p => p.frame), [4,8]);
+assert.deepEqual([0,3,4,7,8,9].map(f => latestShooterAnchor(anchored,7,f)), [0,0,4,4,8,8]);
+const removed = setShooterAnchor(anchored, 7, 4, false);
+assert.deepEqual(removed[0].prompts[2].points, anchorInput[0].prompts[2].points);
+assert.equal(anchored[0].prompts[2].anchor, true);
+assert.deepEqual(shooterAnchors(removed,7).map(p=>p.frame),[8]);
+for (const f of [0,2,6]) assert.throws(()=>setShooterAnchor(anchorInput,7,f,true),/Include/);
+const anchorRequest = {version:1,start:0,end:1,target_id:7,objects:anchored};
+validateMaskRequest(anchorRequest);
+for (const mutate of [
+  j => j.objects[0].prompts[2].anchor='true',
+  j => j.objects[0].prompts[0].anchor=true,
+  j => j.objects[0].prompts[1].anchor=true,
+  j => {j.objects.push({id:9,prompts:[{frame:0,points:[[.5,.5]],labels:[1]},{frame:5,points:[[.5,.5]],labels:[1],anchor:true}]});},
+]) {
+  const bad=structuredClone(anchorRequest);mutate(bad);
+  assert.throws(()=>validateMaskRequest(bad),/anchor/);
+}
+console.log('PASS explicit tracking anchor confirmation, removal, validation and nearest causal lookup');

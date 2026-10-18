@@ -33,6 +33,7 @@ import ReviewComparison from "./ReviewComparison";
 import VideoEditPanel, { type EditOutput } from "./VideoEditPanel";
 import ProcessingProgress from "./ProcessingProgress";
 import { CorrectionHistory, type CorrectionState } from "./correctionHistory";
+import { hasBodySelection, setShooterAnchor, shooterAnchors } from "./trackingAnchors";
 import { confirmedShooterFrame } from "./trackingCheck";
 
 export default function JumperEditor({
@@ -323,6 +324,7 @@ export default function JumperEditor({
         const prompt = {
           ...existing,
           frame,
+          anchor: undefined,
           points: [...(existing?.points ?? []), xy],
           labels: [...(existing?.labels ?? []), negative ? 0 : 1],
         };
@@ -531,6 +533,23 @@ export default function JumperEditor({
   const track = tracks.find((value) => value.id === editing);
   const prompts = track?.prompts.find((value) => value.frame === frame);
   const confirmedFrame = confirmedShooterFrame(tracks, target);
+  const anchors = shooterAnchors(tracks, target);
+  const shooterPrompt = tracks.find(track => track.id === target)?.prompts.find(prompt => prompt.frame === frame);
+  function seekShooterFrame(at: number) {
+    if (busy || saving || loading || saveLock.current || uploadLock.current) return;
+    clearAim();
+    setFrame(at); setEditing(target); setNegative(false); setView("source");
+    if (correctionPanel.current) correctionPanel.current.open = true;
+    frameImage.current?.focus();
+  }
+  function changeAnchor(at: number, confirmed: boolean) {
+    if (busy || saving || loading || saveLock.current || uploadLock.current) return;
+    try {
+      const next = setShooterAnchor(tracks, target, at, confirmed);
+      remember(confirmed ? "Confirm tracking anchor" : "Remove tracking anchor");
+      clearAim(); setTracks(next); setError(""); invalidate();
+    } catch (error) { setError(String(error)); }
+  }
   const incompleteTrack = tracks.find((track) => needsSelection(track));
   const targetNeedsStart = !tracks
     .find((track) => track.id === target)
@@ -736,6 +755,9 @@ export default function JumperEditor({
                             checked={target === value.id}
                             onChange={() => {
                               remember("Change shooter");
+                              setTracks(current => current.map(track => ({
+                                ...track, prompts: track.prompts.map(prompt => ({ ...prompt, anchor: undefined })),
+                              })));
                               setTarget(value.id);
                               setEditing(value.id);
                               setFrame(0);
@@ -829,27 +851,46 @@ export default function JumperEditor({
                 disabled={
                   busy || saving || loading || targetNeedsStart || count < 2
                 }
-                onClick={() => {
-                  if (busy || saveLock.current || uploadLock.current) return;
-                  clearAim();
-                  setFrame(frame > 0 ? frame : count - 1);
-                  setEditing(target);
-                  setNegative(false);
-                  setView("source");
-                  if (correctionPanel.current)
-                    correctionPanel.current.open = true;
-                  frameImage.current?.focus();
-                }}
+                onClick={() => seekShooterFrame(frame > 0 ? frame : Math.floor(count / 2))}
               >
-                Confirm shooter later
+                Add tracking anchor
+              </button>
+              <button
+                type="button"
+                className="button button-outline"
+                disabled={busy || saving || loading || frame === 0 || editing !== target ||
+                  view !== "source" || pendingAim !== null || !hasBodySelection(shooterPrompt) || shooterPrompt?.anchor === true}
+                onClick={() => changeAnchor(frame, true)}
+              >
+                {shooterPrompt?.anchor ? "Frame confirmed" : `Confirm shooter at frame ${frame + 1}`}
               </button>
               <p className="jumper-caption">
-                Scrub to a clear later frame, aim at the same shooter, and Place
-                point with Include selected. Processing then checks backward
-                against forward tracking and marks mismatches for correction.
+                Choose a clear frame, aim at the same shooter and Place point with Include selected,
+                then confirm it. Tracking restarts from each confirmed frame.
+                Earlier frames still need review and are checked for backward mismatches.
+              </p>
+              {anchors.length ? (
+                <ul className="jumper-anchor-list" aria-label="Confirmed tracking anchors">
+                  {anchors.map(anchor => (
+                    <li key={anchor.frame}>
+                      <button type="button" className="button button-outline" disabled={busy || saving || loading}
+                        aria-pressed={frame === anchor.frame}
+                        onClick={() => seekShooterFrame(anchor.frame)}>
+                        Anchor · {(anchor.frame / 30).toFixed(2)}s · Frame {anchor.frame + 1}
+                      </button>
+                      <button type="button" className="button button-outline" disabled={busy || saving || loading}
+                        aria-label={`Remove anchor at frame ${anchor.frame + 1}, keep correction points`}
+                        onClick={() => changeAnchor(anchor.frame, false)}>
+                        Remove anchor
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="jumper-caption">No intermediate anchors yet. Your starting selection stays in frame 1.</p>}
+              <p className="jumper-caption">
                 {confirmedFrame !== undefined
-                  ? ` Confirmation: frame ${confirmedFrame + 1}.`
-                  : " No later confirmation yet; backward checking has not been enabled."}
+                  ? `Backward consistency check through frame ${confirmedFrame + 1}. Removing an anchor keeps its correction points.`
+                  : "Later Include selections also enable backward consistency checks."}
               </p>
             </div>
             <button
@@ -1112,7 +1153,7 @@ export default function JumperEditor({
                     {dirty ? "Previous run · " : ""}
                     {result.tracking_check
                       ? `Shooter checked in both directions through frame ${result.tracking_check.anchor_frame + 1}: ${result.tracking_check.disagreement_frames} mismatch frame${result.tracking_check.disagreement_frames === 1 ? "" : "s"}. ${result.tracking_check.checked_frames < count ? "Later frames have forward checks only. " : ""}Still review the full motion.`
-                      : "Backward check not run. Use Confirm shooter later and add an Include point, then process again."}
+                      : "Backward check not run. Add a tracking anchor on a clear later frame, then process again."}
                   </p>
                   <MaskTimeline
                     warnings={result.warnings}

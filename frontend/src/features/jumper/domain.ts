@@ -62,6 +62,8 @@ export interface Attempt {
 }
 export interface PointPrompt {
   frame: number;
+  /** Explicit later shooter confirmation; resets causal tracking memory. */
+  anchor?: boolean;
   points?: number[][];
   labels?: number[];
   box?: number[];
@@ -296,6 +298,10 @@ export function validateMaskRequest(
       )
         throw Error("A correction is outside the selected segment.");
       previous = p.frame;
+      if ((p.anchor !== undefined && typeof p.anchor !== "boolean") ||
+          (p.anchor === true && (track.id !== v.target_id || p.frame === 0 ||
+            (!p.box && !(Array.isArray(p.labels) && p.labels.includes(1))))))
+        throw Error("A tracking anchor needs a later Include selection on the shooter.");
       const valid = (n: unknown) =>
         typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
       if (

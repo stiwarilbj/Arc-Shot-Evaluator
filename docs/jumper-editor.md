@@ -206,17 +206,24 @@ bounded decoding, a bundled OFL caption font, and independent output validation.
    These are review hints, not accuracy guarantees: unmarked frames can still
    contain errors. Corrections retain the previous run’s hints, labeled as stale,
    until reprocessing. Resetting the shooter or replacing the roster clears them.
-   For an independent identity check, use **Confirm shooter later**, scrub to a
-   clear later original frame, and aim/place an Include point on the same shooter.
-   Process again. Each later Include point or explicit box anchors a reverse
-   section; Exclude-only prompts do not establish identity. The forward shooter
-   pass only sees confirmations when it reaches them, and each reverse section
+   Use **Add tracking anchor**, scrub to a clear later original frame, and
+   aim/place an Include point on the same shooter. Choose **Confirm shooter at
+   frame …**, then process again. Each explicit anchor restarts only the shooter’s
+   forward tracking memory from that frame onward; subsequent frames use the
+   nearest earlier anchor and newer corrections. Other players keep their history.
+   The anchor list seeks directly to confirmed frames. **Remove anchor** retains
+   its correction points. Editing those points requires reconfirmation, changing
+   shooter clears confirmations, and correction undo/redo restores them. Earlier
+   occluded frames are not automatically repaired.
+   For the independent identity check, each later Include point or explicit box
+   anchors a reverse section; Exclude-only prompts do not establish identity.
+   The forward shooter pass only sees confirmations when it reaches them, and each reverse section
    starts with independent memory. A **Forward/backward mismatch** marker opens
    the relevant shooter frame. Add corrections or shorten the segment and retry.
    The status reports the checked range and mismatch count; later frames are not
    claimed as checked in both directions. No later confirmation means no backward
-   check. This adds one bounded shooter pass through the confirmed range, reusing
-   cached encoder features. It never changes masks automatically or proves which
+   check. This audit adds one bounded shooter pass through the confirmed range,
+   reusing cached encoder features. The audit never changes masks or proves which
    pass is correct. Small/tiny outlines can escape the 128×128 diagnostic grid.
    Small-player refinement runs automatically in Create and its shooter preview.
    It re-encodes a padded crop from decoded source frames (up to 2560×1440), using

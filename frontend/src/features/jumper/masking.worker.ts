@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { latestShooterAnchor, shooterAnchors } from "./trackingAnchors";
 import { OverlapPalette } from "./overlapPalette";
 import { PaletteFrames } from "./paletteFrames";
 import { neutralEdges } from "./neutralEdges";
@@ -682,6 +683,7 @@ async function process(
     const cameraCuts = new CameraCuts();
     const quality = new MaskQuality();
     const ownership = new MaskOwnership(width, height);
+    const recoveryAnchors = shooterAnchors(objects, target_id);
     const small = new OffscreenCanvas(64, 36),
       smallContext = small.getContext("2d", { willReadFrequently: true })!;
     for (let frame = 0; frame < count; frame++) {
@@ -699,13 +701,16 @@ async function process(
       try {
         for (const object of trackedObjects) {
           if (frame < object.prompts[0].frame) continue;
+          if (object.id === target_id && recoveryAnchors.some(prompt => prompt.frame === frame))
+            recents.get(object.id)!.clear();
           let prediction = corrected.get(frame)?.get(object.id);
           if (!prediction) {
             const available = conditions.get(object.id)!;
             // Future shooter confirmations must not leak into the independent forward pass.
             const causal =
-              trackingCheck && object.id === target_id
-                ? new Map([...available].filter(([at]) => at <= frame))
+              (trackingCheck || recoveryAnchors.length) && object.id === target_id
+                ? new Map([...available].filter(([at]) =>
+                    at <= frame && at >= latestShooterAnchor(objects, target_id, frame)))
                 : available;
             prediction = await propagate(
               feats,

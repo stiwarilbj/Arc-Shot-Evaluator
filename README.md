@@ -267,8 +267,15 @@ Personal videos stay on your device; they are never automatically published.
    ambiguous or unmatched tracks leave the selections unchanged with guidance.
    Overlapping new detections require manual selection. Undo/redo supports up
    to 50 correction edits.
-   **Confirm shooter later** opens a later original frame with the shooter and
-   Include selected. Aim and **Place point** on that same person, then process.
+   **Add tracking anchor** opens a later original frame with the shooter and
+   Include selected. Aim and **Place point** on that same person, then choose
+   **Confirm shooter at frame …**. Confirmed frames appear in a seekable list;
+   removing an anchor keeps its correction points. Browser and native tracking
+   restart only the shooter’s memory at each explicit anchor, using the nearest
+   earlier confirmed view for subsequent recovery rather than older history.
+   Other players retain their tracking memory. Editing an anchor’s points requires
+   reconfirmation; undo/redo restores confirmations. Changing the shooter clears
+   confirmations. Reprocess to apply changes; earlier frames still need review.
    Browser and native processing independently track backward from each later
    Include/box confirmation and compare it with causal forward tracking. No
    future shooter confirmation is used by the forward pass before its frame,

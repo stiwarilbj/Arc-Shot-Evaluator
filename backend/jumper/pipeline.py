@@ -112,6 +112,13 @@ def validate_job(job: object) -> dict:
                 or not 0 <= prompt["frame"] < math.ceil((end - start) * FPS)
             ):
                 raise ValueError("Prompt frame is outside the selected segment")
+            if ("anchor" in prompt and type(prompt["anchor"]) is not bool) or (
+                prompt.get("anchor") is True and (
+                    obj["id"] != job["target_id"] or prompt["frame"] == 0 or
+                    not (prompt.get("box") or (isinstance(prompt.get("labels"), list) and 1 in prompt["labels"]))
+                )
+            ):
+                raise ValueError("A tracking anchor needs a later Include selection on the shooter")
             frames.append(prompt["frame"])
             box, points, labels = (
                 prompt.get("box"),
@@ -320,6 +327,9 @@ def track(
         confirmed_shooter_frame, tracking_check_segments, ShooterTrackingCheck,
     )
 
+    from backend.jumper.tracking_anchors import reset_shooter_memory
+    recovery_anchors = any(p.get("anchor") is True for obj in job["objects"]
+                           if obj["id"] == job["target_id"] for p in obj["prompts"])
     job.pop("_tracking_check", None)
     anchor = (
         confirmed_shooter_frame(job["objects"], job["target_id"])
@@ -470,7 +480,7 @@ def track(
 
             for index, obj_id, prompt in prompts:
                 # A future confirmation must not bias the independent forward pass.
-                if tracking_check and obj_id == job["target_id"] and index > 0:
+                if (tracking_check or recovery_anchors) and obj_id == job["target_id"] and index > 0:
                     continue
                 apply_prompt(state, index, obj_id, prompt)
             camera_cuts = CameraCuts()
@@ -479,7 +489,7 @@ def track(
             previous_areas = {}
 
             def propagation():
-                if detector is None and tracking_check is None:
+                if detector is None and tracking_check is None and not recovery_anchors:
                     yield from predictor.propagate_in_video(state, start_frame_idx=0)
                     return
                 from backend.jumper.discovery import PeopleDiscovery
@@ -487,9 +497,11 @@ def track(
                 discovery = PeopleDiscovery()
 
                 for index in range(len(frames)):
-                    if tracking_check:
+                    if tracking_check or recovery_anchors:
                         for at, identity, prompt in prompts:
                             if at == index and at > 0 and identity == job["target_id"]:
+                                if prompt.get("anchor") is True:
+                                    reset_shooter_memory(state, identity)
                                 apply_prompt(state, at, identity, prompt)
                     _, ids, logits = next(
                         predictor.propagate_in_video(
