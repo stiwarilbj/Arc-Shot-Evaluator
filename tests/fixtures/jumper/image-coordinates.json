@@ -1,0 +1,7 @@
+[
+  {"name":"fractional interior crop","width":320,"height":180,"sourceWidth":1918,"sourceHeight":1078,"crop":{"x":37,"y":19,"width":31,"height":37},"points":[[0,0],[1,1],[0.001,0.999],[0.5,0.5]]},
+  {"name":"top-left border","width":322,"height":182,"sourceWidth":1280,"sourceHeight":720,"crop":{"x":0,"y":0,"width":23,"height":29},"points":[[0,0],[1,0],[0,1],[0.04,0.07]]},
+  {"name":"bottom-right border","width":320,"height":180,"sourceWidth":1278,"sourceHeight":718,"crop":{"x":298,"y":146,"width":22,"height":34},"points":[[1,1],[0.99,0.98],[0,1],[1,0]]},
+  {"name":"upright portrait crop","width":180,"height":320,"sourceWidth":718,"sourceHeight":1278,"crop":{"x":61,"y":107,"width":19,"height":41},"points":[[0,0],[1,1],[0.2,0.8]]},
+  {"name":"exact integer scale","width":320,"height":180,"sourceWidth":1920,"sourceHeight":1080,"crop":{"x":37,"y":19,"width":31,"height":37},"points":[[0,0],[1,1],[0.5,0.5]]}
+]

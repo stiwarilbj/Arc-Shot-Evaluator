@@ -77,7 +77,7 @@ export function smallPlayerCrop(
     const p = prompt!.points![i],
       px = p[0] * width - x,
       py = p[1] * height - y;
-    if (px >= 0 && py >= 0 && px < w && py < h) {
+    if (px >= 0 && py >= 0 && px <= w && py <= h) {
       points.push([px / w, py / h]);
       labels.push(prompt!.labels![i]);
     } else if (prompt!.labels![i] === 1) unusable = true;
@@ -114,6 +114,35 @@ export function sourceCrop(
     width: Math.ceil(((crop.x + crop.width) * sourceWidth) / width) - x,
     height: Math.ceil(((crop.y + crop.height) * sourceHeight) / height) - y,
   };
+}
+
+/** Map prompts through the actual integer source crop, including its rounded edges. */
+export function sourceCropPrompt(crop: PlayerCrop, width: number, height: number, sourceWidth: number, sourceHeight: number) {
+  const region = sourceCrop(crop, width, height, sourceWidth, sourceHeight);
+  const point = (x: number, y: number) => [
+    ((crop.x + x * crop.width) * sourceWidth / width - region.x) / region.width,
+    ((crop.y + y * crop.height) * sourceHeight / height - region.y) / region.height,
+  ];
+  return { points: crop.points.map(([x, y]) => point(x, y)), labels: crop.labels,
+    box: [...point(crop.box[0], crop.box[1]), ...point(crop.box[2], crop.box[3])] };
+}
+
+/** Sample crop logits at coarse pixel centers; do not stretch rounded margins. */
+export function projectRefinement(values: Float32Array, crop: PlayerCrop, width: number, height: number, sourceWidth: number, sourceHeight: number) {
+  const region = sourceCrop(crop, width, height, sourceWidth, sourceHeight);
+  const result = new Float32Array(crop.width * crop.height);
+  for (let y = 0; y < crop.height; y++) {
+    const fy = Math.max(0, Math.min(255, (((crop.y + y + .5) * sourceHeight / height - region.y) / region.height) * 256 - .5));
+    const y0 = Math.floor(fy), y1 = Math.min(255, y0 + 1), dy = fy - y0;
+    for (let x = 0; x < crop.width; x++) {
+      const fx = Math.max(0, Math.min(255, (((crop.x + x + .5) * sourceWidth / width - region.x) / region.width) * 256 - .5));
+      const x0 = Math.floor(fx), x1 = Math.min(255, x0 + 1), dx = fx - x0;
+      result[y * crop.width + x] =
+        (values[y0 * 256 + x0] * (1 - dx) + values[y0 * 256 + x1] * dx) * (1 - dy) +
+        (values[y1 * 256 + x0] * (1 - dx) + values[y1 * 256 + x1] * dx) * dy;
+    }
+  }
+  return result;
 }
 
 /** Refuse identity/occlusion changes and crop-edge leaks; keep coarse scores on refusal. */

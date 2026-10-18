@@ -1,3 +1,4 @@
+import { imagePoint, previewImageRect } from "./imageCoordinates";
 import { renderProjectKey } from "./editProject";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -288,12 +289,9 @@ export default function JumperEditor({
   }
   function aimPoint(event: React.MouseEvent<HTMLImageElement>) {
     if (busy || saveLock.current || uploadLock.current || !image) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const xy = [
-      (event.clientX - bounds.left) / bounds.width,
-      (event.clientY - bounds.top) / bounds.height,
-    ];
-    aim(xy);
+    const rect = previewImageRect(event.currentTarget);
+    const xy = rect && imagePoint(rect, event.clientX, event.clientY);
+    if (xy) aim(xy);
   }
   function addPoint(xy: number[]) {
     if (busy || saveLock.current || uploadLock.current || !image) return;

@@ -3,6 +3,27 @@
 Open **Others → Guess the Jumper**. Guess, Create and My Clips preserve their
 state when switching workspaces. Dark mode remains the default.
 
+## Selection coordinates
+
+Mask points and boxes use normalized coordinates in the decoded, upright image.
+The browser preview click handler subtracts border/padding, accounts for CSS
+scaling and centered `object-fit: contain`, and ignores clicks in letterbox bars.
+Mediabunny and native FFmpeg apply the video's orientation before resizing;
+point prompts are not rotated again. Full-frame SAM input stretches the upright
+image to its model dimensions without padding. Person-detection letterboxing
+uses matching forward/inverse padding offsets.
+
+Small-player crops round outward to source pixels. Both implementations remap
+points and boxes into that actual crop, then sample refined logits at the
+original coarse pixel centers. Neither prompts nor masks stretch across the
+extra rounded margin. Valid right/bottom edge prompts remain available to the
+refiner. These checks protect geometry, not segmentation identity or accuracy.
+
+`npm --prefix frontend run test:jumper` includes shared crop round-trip fixtures,
+portrait/landscape letterboxing, fractional display sizes, and edge clicks.
+`tests/test_jumper_image_coordinates.py` exercises the same crop fixtures and
+real FFmpeg decoding of all four quarter-turn orientations with known landmarks.
+
 ## Edit a finished masked video
 
 Open **Edit video** after a successful masking run. No editing action invokes

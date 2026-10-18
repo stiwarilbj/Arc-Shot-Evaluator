@@ -366,6 +366,7 @@
   overflow: hidden;
 }
 .jumper-point-surface img {
+  object-position: center;
   width: 100%;
   height: auto;
   object-fit: contain;

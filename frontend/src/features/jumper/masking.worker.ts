@@ -40,6 +40,8 @@ import { requireShooterBox, PeopleDiscovery } from "./discovery";
 import {
   smallPlayerCrop,
   sourceCrop,
+  sourceCropPrompt,
+  projectRefinement,
   acceptRefinement,
   type PlayerCrop,
 } from "./smallPlayer";
@@ -857,18 +859,13 @@ async function process(
                   raw[c * 4096 + i] += weights.no_mem_embed[c];
               const prediction = await predict(detail, raw, {
                 frame,
-                box: crop.box,
-                points: crop.points,
-                labels: crop.labels,
+                ...sourceCropPrompt(crop, width, height, fineWidth, fineHeight),
               });
               refined = acceptRefinement(
                 values,
-                bilinear(
+                projectRefinement(
                   prediction.low.map((v) => Math.max(-32, Math.min(32, v))),
-                  256,
-                  256,
-                  crop.width,
-                  crop.height,
+                  crop, width, height, fineWidth, fineHeight,
                 ),
                 crop,
                 width,

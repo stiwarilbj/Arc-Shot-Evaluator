@@ -302,6 +302,13 @@ Personal videos stay on your device; they are never automatically published.
    Solid interiors and tracking labels remain unchanged. This smooths visible
    outlines without reconstructing obscured detail. Existing clips are unchanged.
 
+   Clicks are measured against the visible, upright image, excluding preview
+   padding and letterbox bars. Rotation is applied once by the decoder. Both
+   processing targets preserve point/box locations through resizing and rounded
+   detail crops; the refined mask maps back to the same source locations,
+   including near image edges. This prevents coordinate drift, but does not
+   guarantee that segmentation identifies the intended player.
+
    Small silhouettes also get a tighter, higher-resolution crop pass in both
    browser and downloaded processing, including the shooter preview. Crops use
    decoded source detail up to 1440p, while exports stay at up to 720p/30 fps.

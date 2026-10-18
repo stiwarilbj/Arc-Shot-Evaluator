@@ -35,7 +35,7 @@ def small_player_crop(values, prompt=None):
         (prompt or {}).get("points", []), (prompt or {}).get("labels", [])
     ):
         px, py = p[0] * width - x, p[1] * height - y
-        if 0 <= px < w and 0 <= py < h:
+        if 0 <= px <= w and 0 <= py <= h:
             points.append([px / w, py / h])
             labels.append(label)
         elif label == 1:
@@ -51,6 +51,31 @@ def source_crop(crop, width, height, source_width, source_height):
     return dict(x=x, y=y,
                 width=math.ceil((crop["x"] + crop["width"]) * source_width / width) - x,
                 height=math.ceil((crop["y"] + crop["height"]) * source_height / height) - y)
+
+
+def source_crop_prompt(crop, width, height, source_width, source_height):
+    """Prompts refer to the rounded source crop actually supplied to SAM."""
+    region = source_crop(crop, width, height, source_width, source_height)
+    def point(x, y):
+        return [((crop["x"] + x * crop["width"]) * source_width / width - region["x"]) / region["width"],
+                ((crop["y"] + y * crop["height"]) * source_height / height - region["y"]) / region["height"]]
+    return dict(points=[point(*p) for p in crop["points"]], labels=crop["labels"],
+                box=point(*crop["box"][:2]) + point(*crop["box"][2:]))
+
+
+def project_refinement(values, crop, width, height, source_width, source_height):
+    """Bilinear sampling at coarse pixel centers, excluding rounded crop margins."""
+    region = source_crop(crop, width, height, source_width, source_height)
+    xs = np.clip((((crop["x"] + np.arange(crop["width"]) + .5) * source_width / width
+                   - region["x"]) / region["width"]) * 256 - .5, 0, 255)
+    ys = np.clip((((crop["y"] + np.arange(crop["height"]) + .5) * source_height / height
+                   - region["y"]) / region["height"]) * 256 - .5, 0, 255)
+    x0, y0 = np.floor(xs).astype(int), np.floor(ys).astype(int)
+    x1, y1 = np.minimum(255, x0 + 1), np.minimum(255, y0 + 1)
+    dx, dy = xs - x0, (ys - y0)[:, None]
+    a = values[y0[:, None], x0] * (1 - dx) + values[y0[:, None], x1] * dx
+    b = values[y1[:, None], x0] * (1 - dx) + values[y1[:, None], x1] * dx
+    return (a * (1 - dy) + b * dy).astype(np.float32)
 
 
 def accept_refinement(coarse, candidate, crop, owners, identity):
@@ -97,19 +122,17 @@ class SmallPlayerRefiner:
         x, y, w, h = (region[k] for k in ("x", "y", "width", "height"))
         try:
             self.predictor.set_image(image[y:y+h, x:x+w])
+            prompt = source_crop_prompt(crop, width, height, image.shape[1], image.shape[0])
             masks, quality, low = self.predictor.predict(
-                point_coords=np.array(crop["points"], dtype=np.float32) * [w, h],
-                point_labels=np.array(crop["labels"], dtype=np.int32),
-                box=np.array(crop["box"], dtype=np.float32) * [w, h, w, h],
+                point_coords=np.array(prompt["points"], dtype=np.float32) * [w, h],
+                point_labels=np.array(prompt["labels"], dtype=np.int32),
+                box=np.array(prompt["box"], dtype=np.float32) * [w, h, w, h],
                 multimask_output=False, return_logits=True)
             validate_array(masks, (1, h, w), "refined mask")
             validate_array(quality, (1,), "refinement quality")
             validate_array(low, (1, 256, 256), "low-resolution mask")
-            import torch
-            candidate = torch.nn.functional.interpolate(
-                torch.from_numpy(low[0])[None, None],
-                size=(crop["height"], crop["width"]),
-                mode="bilinear", align_corners=False)[0, 0].numpy()
+            candidate = project_refinement(
+                low[0], crop, width, height, image.shape[1], image.shape[0])
             return accept_refinement(coarse, candidate, crop, owners, identity)
         finally:
             self.predictor.reset_predictor()
