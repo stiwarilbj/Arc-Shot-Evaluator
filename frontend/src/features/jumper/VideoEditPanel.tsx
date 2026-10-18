@@ -1,5 +1,5 @@
 import { loadEditFont } from "./editFont";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import TimelinePieces from "./TimelinePieces";
 import { CanvasSink } from "mediabunny";
 import { openVideo } from "./media";
@@ -15,6 +15,7 @@ import {
   pieceTrimLimits,
   projectFrames,
   splitPiece,
+  splitPoint,
   type EditProject,
   type Piece,
 } from "./editProject";
@@ -52,6 +53,7 @@ export default function VideoEditPanel({
       : newProject(baseDuration, base.type, palette),
   );
   const [history] = useState(() => new EditHistory());
+  const splitHelpId = useId();
   const [videos, setVideos] = useState<EditedVideos>(
     () =>
       initialVideos ?? { highlight: base, clean: base, duration: baseDuration },
@@ -114,6 +116,14 @@ export default function VideoEditPanel({
     stale = exported !== JSON.stringify(project),
     piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0],
     trimLimits = pieceTrimLimits(piece, project.baseFrames, count);
+  const split = splitPoint(project, frame);
+  function stepFrame(direction: number) {
+    setPlaying(false);
+    setTrimPreview(null);
+    setFrame((current) =>
+      Math.max(0, Math.min(count - 1, current + direction)),
+    );
+  }
   useEffect(() => {
     onChange({ ...videos, project, stale, rendering: busy });
   }, [videos, project, stale, busy, onChange]);
@@ -567,6 +577,15 @@ export default function VideoEditPanel({
               setFrame(Number(e.target.value));
             }}
           />
+          {panel === "Cut" ? (
+            <div className="jumper-split-position" aria-hidden="true">
+              <span
+                style={{
+                  left: `${count <= 1 ? 0 : (frame / (count - 1)) * 100}%`,
+                }}
+              />
+            </div>
+          ) : null}
           {trimPreview ? (
             <p className="jumper-trim-preview" role="status">
               Trim preview · {trimPreview.edge === "start" ? "First" : "Last"}{" "}
@@ -670,17 +689,6 @@ export default function VideoEditPanel({
                         trimBoundary(piece.id, "end", Number(e.target.value))
                       }
                     />
-                    <button
-                      onClick={() => {
-                        try {
-                          change(splitPiece(project, frame));
-                        } catch (e) {
-                          setError(String(e));
-                        }
-                      }}
-                    >
-                      Split at playhead
-                    </button>
                   </>
                 ) : (
                   <label>
@@ -698,6 +706,46 @@ export default function VideoEditPanel({
                     />
                   </label>
                 )}
+                <div
+                  className="jumper-split-controls"
+                  role="group"
+                  aria-label="Frame stepping and split"
+                >
+                  <button disabled={frame <= 0} onClick={() => stepFrame(-1)}>
+                    Previous frame
+                  </button>
+                  <button
+                    disabled={!!split.reason}
+                    aria-describedby={splitHelpId}
+                    onClick={() => {
+                      try {
+                        const next = splitPiece(project, frame);
+                        if (change(next)) {
+                          setSelected(editFrame(next, frame).piece.id);
+                        }
+                      } catch (e) {
+                        setError(String(e));
+                      }
+                    }}
+                  >
+                    Split at playhead
+                  </button>
+                  <button
+                    disabled={frame >= count - 1}
+                    onClick={() => stepFrame(1)}
+                  >
+                    Next frame
+                  </button>
+                </div>
+                <p
+                  id={splitHelpId}
+                  className="jumper-caption jumper-split-help"
+                  role="status"
+                >
+                  {split.reason
+                    ? `Playhead: frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1}. ${split.reason}`
+                    : `Split before frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1} · source frame ${split.hit.source + 1}.`}
+                </p>
                 <div className="jumper-toolbar">
                   <button
                     disabled={project.pieces.indexOf(piece) === 0}
@@ -912,6 +960,14 @@ export default function VideoEditPanel({
                   </select>
                 </label>
                 <button
+                  disabled={
+                    project.pieces.length +
+                      (!split.hit.piece.freeze &&
+                      split.hit.source > split.hit.piece.start
+                        ? 2
+                        : 1) >
+                    100
+                  }
                   onClick={() => {
                     const at = editFrame(project, frame),
                       i = project.pieces.findIndex((p) => p.id === at.piece.id);
@@ -926,7 +982,11 @@ export default function VideoEditPanel({
                     };
                     let pieces = [...project.pieces];
                     if (!at.piece.freeze && at.source > at.piece.start) {
-                      const split = splitPiece(project, frame);
+                      // A freeze may start on a repeated slow-motion sample.
+                      const split = splitPiece(
+                        project,
+                        splitPoint(project, frame).boundary,
+                      );
                       pieces = [...split.pieces];
                       pieces.splice(i + 1, 0, freeze);
                     } else pieces.splice(i, 0, freeze);

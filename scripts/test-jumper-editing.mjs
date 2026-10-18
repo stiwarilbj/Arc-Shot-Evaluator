@@ -6,6 +6,7 @@ import {
   projectFrames,
   editFrame,
   splitPiece,
+  splitPoint,
   clampCaptions,
   EditHistory,
   pieceTrimLimits,
@@ -56,6 +57,50 @@ assert.deepEqual(
   Array.from({ length: 90 }, (_, f) => f),
 );
 assert.throws(() => splitPiece(p, 0));
+// Splits must preserve every sampled frame, at all speeds and piece boundaries.
+for (const speed of [0.5, 1, 2]) {
+  const trial = newProject(3, "video/mp4");
+  trial.pieces[0] = { ...trial.pieces[0], start: 3, end: 32, speed };
+  trial.pieces.push({
+    ...trial.pieces[0],
+    id: "following",
+    start: 40,
+    end: 51,
+  });
+  const samples = Array.from(
+    { length: projectFrames(trial) },
+    (_, f) => editFrame(trial, f).source,
+  );
+  for (let frame = 0; frame < samples.length; frame++) {
+    const point = splitPoint(trial, frame);
+    if (point.reason) {
+      assert.throws(() => splitPiece(trial, frame));
+      continue;
+    }
+    const result = splitPiece(trial, frame);
+    assert(isProject(result));
+    assert.equal(projectFrames(result), samples.length);
+    assert.deepEqual(
+      Array.from(
+        { length: projectFrames(result) },
+        (_, f) => editFrame(result, f).source,
+      ),
+      samples,
+    );
+    const right = result.pieces[point.index + 1];
+    assert.equal(editFrame(result, frame).piece.id, right.id);
+    assert.notEqual(right.id, trial.pieces[point.index].id);
+  }
+}
+const capped = newProject(3, "video/mp4");
+capped.pieces = Array.from({ length: 100 }, (_, i) => ({
+  ...capped.pieces[0],
+  id: `p-${i}`,
+  start: 0,
+  end: 3,
+}));
+assert.match(splitPoint(capped, 1).reason, /100 pieces/);
+assert.throws(() => splitPiece(capped, 1));
 let slow = structuredClone(split);
 slow.pieces[0].speed = 0.5;
 assert.equal(projectFrames(slow), 120);
@@ -66,6 +111,8 @@ let freeze = structuredClone(p);
 freeze.pieces[0] = { ...freeze.pieces[0], start: 12, end: 13, freeze: 90 };
 assert.equal(projectFrames(freeze), 90);
 assert.equal(editFrame(freeze, 89).source, 12);
+assert.match(splitPoint(freeze, 45).reason, /Freeze/);
+assert.throws(() => splitPiece(freeze, 45));
 assert(isProject(freeze));
 freeze.pieces[0].freeze = 91;
 assert(!isProject(freeze));

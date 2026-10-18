@@ -193,14 +193,29 @@ export function editFrame(project: EditProject, frame: number, clean = false) {
   }
   throw Error("No timeline piece");
 }
-export function splitPiece(project: EditProject, frame: number): EditProject {
+/** The split is before the displayed frame; source-frame boundaries stay exact. */
+export function splitPoint(project: EditProject, frame: number) {
   const hit = editFrame(project, frame);
-  if (
-    hit.piece.freeze ||
-    hit.source <= hit.piece.start ||
-    hit.source >= hit.piece.end
-  )
-    throw Error("Move the playhead inside a moving piece to split it.");
+  const index = project.pieces.findIndex((p) => p.id === hit.piece.id);
+  const offset = project.pieces
+    .slice(0, index)
+    .reduce((sum, p) => sum + pieceFrames(p), 0);
+  const boundary =
+    offset + Math.ceil((hit.source - hit.piece.start) / hit.piece.speed);
+  const reason = hit.piece.freeze
+    ? "Freeze frames cannot be split. Adjust their duration instead."
+    : hit.source <= hit.piece.start || hit.source >= hit.piece.end
+      ? "Move inside this piece; splitting here would create an empty piece."
+      : boundary !== frame
+        ? "This slow-motion frame repeats a source frame. Step back one frame for an exact split."
+        : project.pieces.length >= 100
+          ? "The timeline has 100 pieces. Delete a piece before splitting."
+          : "";
+  return { hit, index, boundary, reason };
+}
+export function splitPiece(project: EditProject, frame: number): EditProject {
+  const { hit, reason } = splitPoint(project, frame);
+  if (reason) throw Error(reason);
   const p = hit.piece;
   return {
     ...project,

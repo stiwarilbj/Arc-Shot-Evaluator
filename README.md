@@ -261,6 +261,10 @@ Personal videos stay on your device; they are never automatically published.
    masked source frame, without fades or other presentation effects. Handles
    snap to 30 fps and support arrow keys; numeric source times remain available.
    Each drag is one undo step. Freeze pieces retain their duration control.
+   **Previous frame** and **Next frame** move the playhead by exactly 1/30 second.
+   The orange playhead marker and frame/time label show the split position.
+   **Split at playhead** explains when it is unavailable, including empty-piece
+   boundaries, freeze frames, and repeated slow-motion source frames.
    Add timed captions in **Text**. **Effects** offers 0.5×/1×/2× speed,
    0.5–3-second freezes, 1–2× zoom/pan, and optional 0.25-second fades.
    The preview and export use the same 30 fps timeline; finished edits can reach

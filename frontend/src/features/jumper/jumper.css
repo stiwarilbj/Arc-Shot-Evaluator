@@ -806,6 +806,28 @@
 .jumper-edit-preview {
   min-width: 0;
 }
+.jumper-split-position {
+  position: relative;
+  height: 8px;
+  margin: 0 8px;
+  border-top: 1px solid var(--line-strong);
+}
+.jumper-split-position span {
+  position: absolute;
+  top: -3px;
+  height: 9px;
+  width: 3px;
+  background: #ff753c;
+  transform: translateX(-50%);
+}
+.jumper-split-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+.jumper-split-help {
+  margin: 0;
+}
 .jumper-edit-canvas {
   width: 100%;
   background: #e0e0e0;

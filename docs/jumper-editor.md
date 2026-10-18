@@ -27,6 +27,12 @@ person detection or SAM. The private masked base is the only source for edits.
   A pointer drag or held arrow key is one undo operation. Pointer interruption
   or Escape ends the gesture at the last accepted boundary. Freeze pieces use
   their existing duration control. Trimming never reruns masking.
+  Beside **Split at playhead**, **Previous frame** and **Next frame** pause and
+  step exactly one edited 30 fps frame. An orange marker and frame/time label
+  locate the cut before the displayed frame, naming the affected piece and
+  source frame. Split is disabled with an explanation at empty-piece boundaries,
+  on freezes, at the 100-piece limit, and between repeated source samples at
+  0.5× speed (step back one frame). Stepping does not change edits or undo history.
 - **Text:** enter up to 200 characters, then **Add at current time**. A caption
   starts there and lasts two seconds or until the end. Edit its interval,
   size, and top/center/bottom placement. White text has a black backing. Moving
