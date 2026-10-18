@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import {
+  previewRange,
+  previewOrigin,
+  previewPlaybackFrame,
+} from "../frontend/src/features/jumper/previewPlayback.ts";
+import {
   describeVideoEdit,
   videoEditFocus,
 } from "../frontend/src/features/jumper/editHistory.ts";
@@ -143,6 +148,82 @@ assert.equal(
   "center",
 );
 const p = newProject(3, "video/mp4");
+const previewProject = {
+  ...p,
+  pieces: [
+    { ...p.pieces[0], id: "slow-preview", start: 0, end: 12, speed: 0.5 },
+    { ...p.pieces[0], id: "freeze-preview", start: 12, end: 13, freeze: 30 },
+    { ...p.pieces[0], id: "fast-preview", start: 13, end: 90, speed: 2 },
+  ],
+};
+const previewSnapshot = structuredClone(previewProject);
+const freezeRange = previewRange(previewProject, "freeze-preview");
+assert.deepEqual(freezeRange, { start: 24, end: 54 });
+assert.deepEqual(previewRange(previewProject, "freeze-preview", 15), {
+  start: 9,
+  end: 69,
+});
+assert.deepEqual(previewRange(previewProject, "slow-preview", 15), {
+  start: 0,
+  end: 39,
+});
+assert.deepEqual(previewRange(previewProject, "fast-preview", 15), {
+  start: 39,
+  end: 93,
+});
+assert.deepEqual(previewRange(p, p.pieces[0].id, 15), { start: 0, end: 90 });
+assert.equal(previewOrigin(23, freezeRange), 24);
+assert.equal(previewOrigin(54, freezeRange), 24);
+assert.equal(previewOrigin(53, freezeRange), 53);
+assert.deepEqual(previewPlaybackFrame(24, 999, freezeRange, true), {
+  frame: 53,
+  finished: false,
+});
+assert.deepEqual(previewPlaybackFrame(24, 1000, freezeRange, true), {
+  frame: 24,
+  finished: false,
+});
+assert.deepEqual(previewPlaybackFrame(24, 1034, freezeRange, true), {
+  frame: 25,
+  finished: false,
+});
+assert.deepEqual(previewPlaybackFrame(54, 0, freezeRange, true), {
+  frame: 24,
+  finished: false,
+});
+assert.deepEqual(previewPlaybackFrame(53, 34, freezeRange, true), {
+  frame: 24,
+  finished: false,
+});
+assert.deepEqual(previewPlaybackFrame(24, 301034, freezeRange, true), {
+  frame: 25,
+  finished: false,
+});
+assert.deepEqual(previewPlaybackFrame(80, 334, { start: 0, end: 90 }, false), {
+  frame: 89,
+  finished: true,
+});
+assert.deepEqual(previewPlaybackFrame(80, 300, { start: 0, end: 90 }, false), {
+  frame: 89,
+  finished: false,
+});
+assert.deepEqual(previewPlaybackFrame(0, -1, { start: 0, end: 90 }, false), {
+  frame: 0,
+  finished: false,
+});
+for (const hz of [30, 60, 120]) {
+  for (let tick = 0; tick < hz * 5; tick++) {
+    const value = previewPlaybackFrame(
+      24,
+      (tick * 1000) / hz,
+      freezeRange,
+      true,
+    );
+    assert(value.frame >= 24 && value.frame < 54 && !value.finished);
+  }
+  assert.equal(previewPlaybackFrame(24, 5000, freezeRange, true).frame, 24);
+}
+assert.deepEqual(previewProject, previewSnapshot);
 // Every exposed endpoint must remain a valid timeline across speeds and limits.
 for (const speed of [0.5, 1, 2]) {
   for (const others of [0, 1, 1500]) {

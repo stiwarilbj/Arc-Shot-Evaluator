@@ -54,6 +54,17 @@ person detection or SAM. The private masked base is the only source for edits.
   without dragging. Hit areas respect text wrapping and letterboxing. Guides and
   selection outlines never enter exported videos. Captions cannot be selected in
   clean-quiz or trim-boundary previews, where caption overlays are intentionally absent.
+- **Preview → Loop selected piece:** the toggle beside **Play edit preview**
+  repeats the selected piece using edited time (including speed changes and
+  freeze duration). Enable **Include 0.5s before and after** for neighboring
+  footage, clipped to the timeline's ends. Playback starts within the loop or
+  returns to its beginning if the playhead is outside it. Selecting another
+  piece pauses and retargets the loop; seeking pauses for inspection. Disable
+  looping to play through the remaining video normally. The monotonic 30 fps
+  clock preserves elapsed time across wraps. Both preview versions support
+  looping; hiding the workspace or browser tab pauses it. Loop controls are
+  display preferences: they do not alter captions, edits, review approval,
+  downloads, quizzes, or undo history.
 - **Selected piece toolbar:** available above Cut/Text/Effects controls. Split,
   delete, move left/right, and change 0.5×/1×/2× speed together. Frame stepping and
   the split explanation stay beside these controls. Split only operates inside

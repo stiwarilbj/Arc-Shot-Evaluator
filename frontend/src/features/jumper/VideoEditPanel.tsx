@@ -9,6 +9,11 @@ import { openVideo } from "./media";
 import { drawEdit } from "./editDrawing";
 import { describeVideoEdit, videoEditFocus } from "./editHistory";
 import {
+  previewRange,
+  previewOrigin,
+  previewPlaybackFrame,
+} from "./previewPlayback";
+import {
   EditHistory,
   clampCaptions,
   editFrame,
@@ -95,6 +100,8 @@ export default function VideoEditPanel({
   );
   const [frame, setFrame] = useState(0),
     [playing, setPlaying] = useState(false),
+    [loop, setLoop] = useState(false),
+    [loopContext, setLoopContext] = useState(false),
     [panel, setPanel] = useState("Cut"),
     [selected, setSelected] = useState(project.pieces[0].id);
   const [caption, setCaption] = useState(""),
@@ -164,6 +171,22 @@ export default function VideoEditPanel({
     piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0],
     trimLimits = pieceTrimLimits(piece, project.baseFrames, count);
   const split = splitPoint(project, frame);
+  const playbackRange = loop
+    ? previewRange(project, piece.id, loopContext ? 15 : 0)
+    : { start: 0, end: count };
+  function togglePlayback() {
+    if (!active || disabled || busy || previewError) return;
+    setTrimPreview(null);
+    if (!playing)
+      setFrame((current) =>
+        loop
+          ? previewOrigin(current, playbackRange)
+          : current >= count - 1
+            ? 0
+            : current,
+      );
+    setPlaying((value) => !value);
+  }
   const duplicateReason = duplicatePieceReason(project, piece.id);
   const splitReason =
     split.hit.piece.id !== piece.id
@@ -314,21 +337,21 @@ export default function VideoEditPanel({
   useEffect(() => {
     if (!playing || !active) return;
     const start = performance.now(),
-      from = frame;
+      from = loop ? previewOrigin(frame, playbackRange) : frame;
+    setFrame(from);
     let handle = 0;
     const tick = (now: number) => {
-      const next = from + Math.floor((now - start) * 0.03);
-      if (next >= count) {
-        setFrame(count - 1);
+      const next = previewPlaybackFrame(from, now - start, playbackRange, loop);
+      setFrame(next.frame);
+      if (next.finished) {
         setPlaying(false);
       } else {
-        setFrame(next);
         handle = requestAnimationFrame(tick);
       }
     };
     handle = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(handle);
-  }, [playing, active, count]);
+  }, [playing, active, loop, playbackRange.start, playbackRange.end]);
   useEffect(
     () => () => {
       generation.current++;
@@ -629,8 +652,7 @@ export default function VideoEditPanel({
                 }
                 if (e.key === " ") {
                   e.preventDefault();
-                  setTrimPreview(null);
-                  setPlaying((v) => !v);
+                  togglePlayback();
                 }
               }}
             />
@@ -685,19 +707,39 @@ export default function VideoEditPanel({
           ) : null}
           <div className="jumper-toolbar">
             <button
-              disabled={!active || !!previewError}
-              onClick={() => {
-                setTrimPreview(null);
-                if (frame >= count - 1) setFrame(0);
-                setPlaying((v) => !v);
-              }}
+              disabled={!active || disabled || busy || !!previewError}
+              onClick={togglePlayback}
             >
               {playing ? "Pause edit preview" : "Play edit preview"}
+            </button>
+            <button
+              aria-pressed={loop}
+              disabled={!active || disabled || busy || !!previewError}
+              onClick={() => setLoop((value) => !value)}
+            >
+              Loop selected piece
             </button>
             <span>
               {time(frame)} / {time(count)}s
             </span>
           </div>
+          {loop ? (
+            <div className="jumper-loop-options">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={loopContext}
+                  onChange={(e) => setLoopContext(e.target.checked)}
+                />{" "}
+                Include 0.5s before and after
+              </label>
+              <p className="jumper-caption" role="status">
+                Looping Piece {project.pieces.indexOf(piece) + 1} ·{" "}
+                {time(playbackRange.start)}–{time(playbackRange.end)}s. Preview
+                only; downloads are unchanged.
+              </p>
+            </div>
+          ) : null}
           <input
             aria-label="Edit playhead"
             type="range"

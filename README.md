@@ -292,6 +292,10 @@ Personal videos stay on your device; they are never automatically published.
    crop. Play to preview the finished zoom; outlines never enter exports.
    The preview and export use the same 30 fps timeline; finished edits can reach
    **60 seconds**. Undo/redo retains 50 edit operations separately from corrections.
+   Beside **Play edit preview**, enable **Loop selected piece** to repeat just
+   the selected piece at its edited speed, including freezes. Optionally include
+   **0.5s before and after** to inspect transitions; context stops at the video's
+   ends. Looping is preview-only and does not change exports or undo history.
    Buttons describe the next action, such as **Undo: delete piece** or
    **Redo: insert freeze**. Applying history selects the affected piece/caption,
    opens its editing tool, and brings its timeline position into view. Deleted
