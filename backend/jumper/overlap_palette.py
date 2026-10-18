@@ -37,7 +37,8 @@ class OverlapPalette:
         for identity in ids:
             def score(shade):
                 return sum(int(self.weights[identity, other]) *
-                           (4 * min(abs(shade-int(shades[other])), 96) + abs(shade-int(shades[other])))
+                           (4 * min(abs(shade-int(shades[other])), 96) + abs(shade-int(shades[other]))
+                            - (256 if abs(shade-int(shades[other])) < 32 else 0))
                            for other in assigned)
             best = max(GRAY_SHADES, key=lambda shade: (score(shade), -usage.get(shade, 0), -shade))
             shades[identity] = best

@@ -51,7 +51,7 @@ export class OverlapPalette {
       for (const shade of GRAY_SHADES) {
         const value = assigned.reduce((sum, other) => {
           const distance = Math.abs(shade - shades[other]);
-          return sum + this.weights[id * 256 + other] * (4 * Math.min(distance, 96) + distance);
+          return sum + this.weights[id * 256 + other] * (4 * Math.min(distance, 96) + distance - (distance < 32 ? 256 : 0));
         }, 0);
         const count = usage.get(shade) ?? 0;
         if (value > score || (value === score && count < used)) {

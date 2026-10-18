@@ -79,3 +79,16 @@ def test_invalid_inputs():
         OverlapPalette(0)
     with pytest.raises(ValueError):
         OverlapPalette(1).observe(np.zeros((0, 2), np.uint8))
+
+
+def test_dense_contacts_avoid_reusing_extreme_shades():
+    graph = OverlapPalette(1)
+    for a in (2, 3, 4, 5):
+        for b in (2, 3, 4, 5):
+            if a < b:
+                graph.observe(np.array([[a, b]], np.uint8))
+    shades = graph.finish()
+    for a in (2, 3, 4, 5):
+        for b in (2, 3, 4, 5):
+            if a < b:
+                assert abs(int(shades[a])-int(shades[b])) >= 32

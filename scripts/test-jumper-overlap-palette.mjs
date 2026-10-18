@@ -31,6 +31,13 @@ for(let i=0;i<frames.length;i++) {
  validateComposite(pixels,frames[i],1,'quiz',true,shades);
  for(let j=0;j<frames[i].length;j++)assert.equal(pixels[j*4],shades[frames[i][j]]);
 }
+// Equal-frequency dense contacts must not collapse to two extreme shades.
+const crowd=new OverlapPalette(1);
+for(const a of [2,3,4,5]) for(const b of [2,3,4,5])
+ if(a<b) crowd.observe(new Uint8Array([a,b]),2,1);
+const crowded=crowd.finish();
+for(const a of [2,3,4,5]) for(const b of [2,3,4,5])
+ if(a<b) assert(Math.abs(crowded[a]-crowded[b])>=32);
 const native=JSON.parse(execFileSync(new URL('../.venv/bin/python',import.meta.url).pathname,
  ['-c',`import json,sys,numpy as np
 from backend.jumper.overlap_palette import OverlapPalette
