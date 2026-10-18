@@ -281,7 +281,11 @@ Personal videos stay on your device; they are never automatically published.
    edited time and masked source-frame number. The new one-second freeze is selected
    automatically with **Freeze length (0.5–3 seconds)** beside the button; no switch
    to Cut is needed. **Effects** also offers 1–2× zoom/pan,
-   and optional 0.25-second fades.
+   and optional 0.25-second fades. Choose **Start framing** or **End framing**;
+   the paused full-frame preview shows the selected endpoint’s crop rectangle.
+   Drag it (or use arrow keys) to pan; the zoom/position sliders stay synchronized.
+   **Match start framing** copies start zoom and position to the end for a stationary
+   crop. Play to preview the finished zoom; outlines never enter exports.
    The preview and export use the same 30 fps timeline; finished edits can reach
    **60 seconds**. Undo/redo retains 50 edit operations separately from corrections.
 6. **Review and save/download:** click **Update finished video** after edits,

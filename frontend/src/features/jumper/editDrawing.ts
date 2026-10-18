@@ -1,4 +1,5 @@
 import { editFrame, type EditProject } from "./editProject";
+import { framingRect } from "./framingGeometry";
 import { captionLayout } from "./captionLayout";
 /** Used by preview and export; only receives a decoded masked-base frame. */
 export function drawEdit(
@@ -11,18 +12,18 @@ export function drawEdit(
   clean = false,
 ) {
   const state = editFrame(project, frame, clean),
-    { zoom, x, y } = state.framing;
+    crop = framingRect(state.framing);
   context.save();
   context.globalAlpha = 1;
   context.fillStyle = "rgb(224,224,224)";
   context.fillRect(0, 0, width, height);
-  const sw = width / zoom,
-    sh = height / zoom;
+  const sw = width * crop.width,
+    sh = height * crop.height;
   context.globalAlpha = state.opacity;
   context.drawImage(
     image,
-    x * (width - sw),
-    y * (height - sh),
+    width * crop.left,
+    height * crop.top,
     sw,
     sh,
     0,

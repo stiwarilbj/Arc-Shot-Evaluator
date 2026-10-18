@@ -60,9 +60,17 @@ person detection or SAM. The private masked base is the only source for edits.
   existing freeze also reveals the duration field in Effects. Undo/redo and
   save/reload retain the duration. Insertion is unavailable when the extra second
   or required pieces would exceed the 60-second/100-piece limits.
-  **Effects** also offers framing and fades. Set start/end zoom from 1–2× and
-  drag the preview
-  or use horizontal/vertical framing sliders. Fades last approximately 0.25s.
+  **Effects** also offers framing and fades. **Start framing** and **End framing**
+  select the endpoint and seek to its boundary. While paused in Effects, the full
+  masked frame shows an orange crop rectangle with that endpoint’s zoom/position.
+  Drag the rectangle to pan within the image; letterboxing is excluded. Arrow
+  keys move 1% of the available pan range, Shift+arrows 10%; one gesture is one
+  undo step. At 1× the full image is retained, so pan has no visible effect.
+  The 1–2× zoom and horizontal/vertical sliders use the same geometry. **Match
+  start framing** copies the start values to the end in one undoable edit, creating
+  a stationary crop. Play to see the finished crop; clean-quiz preview omits zoom
+  and the guide. Guides and outside-crop shading never enter exports. Fades last
+  approximately 0.25s.
   Slow motion repeats recorded frames; it does not invent body motion.
 - **Undo edit / Redo edit** keep up to 50 operations separately from mask history.
   **Reset edits** restores the complete base timeline. Editing requires another

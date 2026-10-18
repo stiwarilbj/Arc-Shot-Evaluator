@@ -1,5 +1,51 @@
 import assert from "node:assert/strict";
 import { shiftCaption } from "../frontend/src/features/jumper/captionTiming.ts";
+import {
+  framingRect,
+  panFraming,
+} from "../frontend/src/features/jumper/framingGeometry.ts";
+assert.deepEqual(framingRect({ zoom: 2, x: 0.5, y: 0.5 }), {
+  left: 0.25,
+  top: 0.25,
+  width: 0.5,
+  height: 0.5,
+});
+assert.deepEqual(framingRect({ zoom: 1, x: 1, y: 0 }), {
+  left: 0,
+  top: 0,
+  width: 1,
+  height: 1,
+});
+assert.deepEqual(panFraming({ zoom: 2, x: 0.5, y: 0.5 }, 0.1, -0.1), {
+  zoom: 2,
+  x: 0.7,
+  y: 0.3,
+});
+assert.deepEqual(panFraming({ zoom: 2, x: 0.5, y: 0.5 }, 99, -99), {
+  zoom: 2,
+  x: 1,
+  y: 0,
+});
+assert.deepEqual(panFraming({ zoom: 1, x: 0.5, y: 0.5 }, 99, -99), {
+  zoom: 1,
+  x: 0.5,
+  y: 0.5,
+});
+for (const zoom of [1, 1.05, 1.5, 2])
+  for (const x of [0, 0.3, 1])
+    for (const y of [0, 0.7, 1]) {
+      const crop = framingRect({ zoom, x, y });
+      assert(crop.left >= 0 && crop.left + crop.width <= 1 + Number.EPSILON);
+      assert(crop.top >= 0 && crop.top + crop.height <= 1 + Number.EPSILON);
+      for (const [w, h] of [
+        [640, 250],
+        [250, 640],
+        [1280, 720],
+      ]) {
+        assert(Math.abs(crop.left * w - x * (w - w / zoom)) < 1e-10);
+        assert(Math.abs(crop.top * h - y * (h - h / zoom)) < 1e-10);
+      }
+    }
 for (const [part, delta, expected] of [
   ["move", 20, { start: 50, end: 80 }],
   ["move", -100, { start: 0, end: 30 }],

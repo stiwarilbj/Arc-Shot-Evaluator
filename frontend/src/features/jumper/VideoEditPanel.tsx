@@ -2,6 +2,7 @@ import { loadEditFont } from "./editFont";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import TimelinePieces from "./TimelinePieces";
 import CaptionPreview from "./CaptionPreview";
+import FramingPreview from "./FramingPreview";
 import CaptionTimeline from "./CaptionTimeline";
 import { CanvasSink } from "mediabunny";
 import { openVideo } from "./media";
@@ -85,13 +86,14 @@ export default function VideoEditPanel({
     edge: "start" | "end";
     source: number;
   } | null>(null);
+  const framingGuide =
+    panel === "Effects" && !playing && !clean && !trimPreview;
   const gesture = useRef<{ active: boolean; recorded: boolean }>({
     active: false,
     recorded: false,
   });
-  const panPointer = useRef<number | null>(null);
   const trimming = useRef(false);
-  const captionDragging = useRef(false);
+  const overlayDragging = useRef(false);
   const canvas = useRef<HTMLCanvasElement>(null),
     decoder = useRef<{
       input: Awaited<ReturnType<typeof openVideo>>["input"];
@@ -102,10 +104,10 @@ export default function VideoEditPanel({
     request = useRef(0),
     generation = useRef(0),
     controller = useRef<AbortController | null>(null),
-    latest = useRef({ project, frame, clean, trimPreview }),
+    latest = useRef({ project, frame, clean, trimPreview, framingGuide }),
     drawing = useRef(false),
     queued = useRef(false);
-  latest.current = { project, frame, clean, trimPreview };
+  latest.current = { project, frame, clean, trimPreview, framingGuide };
   const selectPiece = useCallback((id: string, start: number) => {
     setSelected(id);
     setFrame(start);
@@ -126,12 +128,12 @@ export default function VideoEditPanel({
     setPanel("Text");
     setPlaying(false);
   }, []);
-  const beginCaptionDrag = useCallback(() => {
-    captionDragging.current = true;
+  const beginOverlayDrag = useCallback(() => {
+    overlayDragging.current = true;
     gesture.current = { active: true, recorded: false };
   }, []);
-  const endCaptionDrag = useCallback(() => {
-    captionDragging.current = false;
+  const endOverlayDrag = useCallback(() => {
+    overlayDragging.current = false;
     gesture.current.active = false;
   }, []);
   const count = projectFrames(project),
@@ -155,9 +157,8 @@ export default function VideoEditPanel({
   }, [videos, project, stale, busy, onChange]);
   useEffect(() => {
     const finishGesture = () => {
-      if (trimming.current || captionDragging.current) return;
+      if (trimming.current || overlayDragging.current) return;
       gesture.current.active = false;
-      panPointer.current = null;
     };
     window.addEventListener("pointerup", finishGesture);
     window.addEventListener("pointercancel", finishGesture);
@@ -236,7 +237,7 @@ export default function VideoEditPanel({
         if (image && target && context) {
           target.width = current.width;
           target.height = current.height;
-          if (state.trimPreview) {
+          if (state.trimPreview || state.framingGuide) {
             // Boundary inspection must remain visible even with fades/zoom/captions.
             context.drawImage(
               image.canvas,
@@ -270,7 +271,7 @@ export default function VideoEditPanel({
   useEffect(() => {
     queued.current = true;
     void paint();
-  }, [project, frame, clean, trimPreview]);
+  }, [project, frame, clean, trimPreview, framingGuide]);
   useEffect(() => {
     if (disabled) {
       generation.current++;
@@ -367,6 +368,15 @@ export default function VideoEditPanel({
       edge,
       source: edge === "start" ? updated.start : updated.end - 1,
     });
+  }
+  function seekFraming(end: boolean) {
+    setFramingEnd(end);
+    setPlaying(false);
+    setTrimPreview(null);
+    const offset = project.pieces
+      .slice(0, project.pieces.indexOf(piece))
+      .reduce((sum, p) => sum + pieceFrames(p), 0);
+    setFrame(offset + (end ? pieceFrames(piece) - 1 : 0));
   }
   function updatePiece(update: Partial<Piece>) {
     change({
@@ -466,7 +476,7 @@ export default function VideoEditPanel({
       className="jumper-panel jumper-edit-panel"
       aria-label="Edit video"
       onPointerDownCapture={(e) => {
-        if (trimming.current || captionDragging.current) return;
+        if (trimming.current || overlayDragging.current) return;
         const node = e.target as HTMLElement;
         if (
           node instanceof HTMLCanvasElement ||
@@ -477,7 +487,7 @@ export default function VideoEditPanel({
       onPointerUpCapture={(event) => {
         if (
           !trimming.current &&
-          !captionDragging.current &&
+          !overlayDragging.current &&
           !(event.target as HTMLElement).closest(".jumper-trim-handle")
         )
           gesture.current.active = false;
@@ -485,7 +495,7 @@ export default function VideoEditPanel({
       onPointerCancelCapture={(event) => {
         if (
           !trimming.current &&
-          !captionDragging.current &&
+          !overlayDragging.current &&
           !(event.target as HTMLElement).closest(".jumper-trim-handle")
         )
           gesture.current.active = false;
@@ -545,64 +555,22 @@ export default function VideoEditPanel({
                   setPlaying((v) => !v);
                 }
               }}
-              onPointerDown={(e) => {
-                if (
-                  panel !== "Effects" ||
-                  clean ||
-                  disabled ||
-                  busy ||
-                  panPointer.current !== null
-                )
-                  return;
-                panPointer.current = e.pointerId;
-                e.currentTarget.setPointerCapture(e.pointerId);
+            />
+            <FramingPreview
+              canvas={canvas}
+              dimensions={previewDimensions}
+              framing={piece[framingEnd ? "to" : "from"]}
+              endpoint={framingEnd ? "End" : "Start"}
+              identity={`${piece.id}-${framingEnd}`}
+              visible={
+                active && framingGuide && !disabled && !busy && !previewError
+              }
+              onMove={(framing) => {
+                seekFraming(framingEnd);
+                updatePiece({ [framingEnd ? "to" : "from"]: framing });
               }}
-              onPointerMove={(e) => {
-                if (
-                  panPointer.current !== e.pointerId ||
-                  !e.currentTarget.hasPointerCapture(e.pointerId)
-                )
-                  return;
-                const r = e.currentTarget.getBoundingClientRect();
-                const scale = Math.min(
-                  r.width / e.currentTarget.width,
-                  r.height / e.currentTarget.height,
-                );
-                const imageWidth = e.currentTarget.width * scale,
-                  imageHeight = e.currentTarget.height * scale;
-                const key = framingEnd ? "to" : "from";
-                const f = piece[key];
-                updatePiece({
-                  [key]: {
-                    ...f,
-                    x: Math.max(
-                      0,
-                      Math.min(
-                        1,
-                        (e.clientX - r.left - (r.width - imageWidth) / 2) /
-                          imageWidth,
-                      ),
-                    ),
-                    y: Math.max(
-                      0,
-                      Math.min(
-                        1,
-                        (e.clientY - r.top - (r.height - imageHeight) / 2) /
-                          imageHeight,
-                      ),
-                    ),
-                  },
-                });
-              }}
-              onPointerUp={(e) => {
-                if (e.currentTarget.hasPointerCapture(e.pointerId))
-                  e.currentTarget.releasePointerCapture(e.pointerId);
-                panPointer.current = null;
-              }}
-              onLostPointerCapture={() => {
-                panPointer.current = null;
-                gesture.current.active = false;
-              }}
+              onStart={beginOverlayDrag}
+              onEnd={endOverlayDrag}
             />
             <CaptionPreview
               canvas={canvas}
@@ -613,6 +581,7 @@ export default function VideoEditPanel({
                 active &&
                 !clean &&
                 !trimPreview &&
+                !framingGuide &&
                 !disabled &&
                 !busy &&
                 !previewError
@@ -620,8 +589,8 @@ export default function VideoEditPanel({
               selected={selectedCaption}
               onSelect={selectCaption}
               onMove={moveCaption}
-              onDragStart={beginCaptionDrag}
-              onDragEnd={endCaptionDrag}
+              onDragStart={beginOverlayDrag}
+              onDragEnd={endOverlayDrag}
             />
           </div>
           {previewError ? (
@@ -710,8 +679,8 @@ export default function VideoEditPanel({
             enabled={active && !disabled && !busy}
             onSelect={selectCaption}
             onChange={timeCaption}
-            onStart={beginCaptionDrag}
-            onEnd={endCaptionDrag}
+            onStart={beginOverlayDrag}
+            onEnd={endOverlayDrag}
           />
           <p className="jumper-caption">
             One 30 fps timeline · {time(count)}s / 60s. Quiz copies keep cuts,
@@ -1156,25 +1125,41 @@ export default function VideoEditPanel({
                   </p>
                 ) : null}
                 {freezeDurationControl}
-                <label>
-                  Frame position
-                  <select
-                    aria-label="Framing endpoint"
-                    value={framingEnd ? "end" : "start"}
-                    onChange={(e) => {
-                      const end = e.target.value === "end";
-                      setFramingEnd(end);
-                      setPlaying(false);
-                      const offset = project.pieces
-                        .slice(0, project.pieces.indexOf(piece))
-                        .reduce((sum, p) => sum + pieceFrames(p), 0);
-                      setFrame(offset + (end ? pieceFrames(piece) - 1 : 0));
-                    }}
+                <div
+                  className="jumper-framing-endpoints"
+                  role="group"
+                  aria-label="Framing endpoint"
+                >
+                  <button
+                    aria-pressed={!framingEnd}
+                    onClick={() => seekFraming(false)}
                   >
-                    <option value="start">Start framing</option>
-                    <option value="end">End framing</option>
-                  </select>
-                </label>
+                    Start framing
+                  </button>
+                  <button
+                    aria-pressed={framingEnd}
+                    onClick={() => seekFraming(true)}
+                  >
+                    End framing
+                  </button>
+                </div>
+                <button
+                  disabled={
+                    piece.to.zoom === piece.from.zoom &&
+                    piece.to.x === piece.from.x &&
+                    piece.to.y === piece.from.y
+                  }
+                  onClick={() => {
+                    seekFraming(true);
+                    updatePiece({ to: { ...piece.from } });
+                  }}
+                >
+                  Match start framing
+                </button>
+                <p className="jumper-caption">
+                  Match copies the start zoom and position to the end for a
+                  stationary crop.
+                </p>
                 <label>
                   Zoom · {piece[framingEnd ? "to" : "from"].zoom.toFixed(2)}×
                   <input
@@ -1185,6 +1170,7 @@ export default function VideoEditPanel({
                     step={0.05}
                     value={piece[framingEnd ? "to" : "from"].zoom}
                     onChange={(e) => {
+                      seekFraming(framingEnd);
                       const key = framingEnd ? "to" : "from";
                       updatePiece({
                         [key]: { ...piece[key], zoom: Number(e.target.value) },
@@ -1193,8 +1179,11 @@ export default function VideoEditPanel({
                   />
                 </label>
                 <p className="jumper-caption">
-                  Drag the preview to frame the selected endpoint, or adjust its
-                  center below.
+                  While paused, the preview shows the full masked frame. Drag
+                  the
+                  {framingEnd ? " end" : " start"} rectangle or use arrow keys
+                  to pan; zoom above 1× to move it. Play to see the finished
+                  crop. Clean quiz preview has no framing guide or zoom.
                 </p>
                 {(["x", "y"] as const).map((axis) => (
                   <label key={axis}>
@@ -1207,6 +1196,7 @@ export default function VideoEditPanel({
                       step={0.01}
                       value={piece[framingEnd ? "to" : "from"][axis]}
                       onChange={(e) => {
+                        seekFraming(framingEnd);
                         const key = framingEnd ? "to" : "from";
                         updatePiece({
                           [key]: {
