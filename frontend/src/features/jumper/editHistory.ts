@@ -29,6 +29,20 @@ export function describeVideoEdit(
     pieceId: selected,
     frame,
   };
+  const original = oldPieces.get(selected);
+  if (
+    added.length === 1 &&
+    !removed.length &&
+    !changed &&
+    original &&
+    same({ ...added[0], id: original.id }, original)
+  )
+    return {
+      ...base,
+      label: "duplicate piece",
+      pieceId: added[0].id,
+      fallbackPieceId: original.id,
+    };
   if (added.length)
     return {
       ...base,

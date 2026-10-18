@@ -84,6 +84,9 @@ import {
   editFrame,
   splitPiece,
   splitPoint,
+  duplicatePiece,
+  duplicatePieceReason,
+  pieceFrames,
   clampCaptions,
   EditHistory,
   pieceTrimLimits,
@@ -370,6 +373,78 @@ const freezePiece = {
   freeze: 30,
 };
 const frozen = { ...p, pieces: [freezePiece, ...p.pieces] };
+const duplicatedProjects = [];
+for (const before of [withCaption, slow, frozen]) {
+  for (const [index, original] of before.pieces.entries()) {
+    const snapshot = structuredClone(before);
+    const after = duplicatePiece(before, original.id);
+    duplicatedProjects.push(after);
+    assert(isProject(after));
+    assert.deepEqual(before, snapshot);
+    assert.equal(after.pieces.length, before.pieces.length + 1);
+    const copy = after.pieces[index + 1];
+    assert.notEqual(copy.id, original.id);
+    assert(!before.pieces.some((v) => v.id === copy.id));
+    assert.deepEqual({ ...copy, id: original.id }, original);
+    assert.notEqual(copy.from, original.from);
+    assert.notEqual(copy.to, original.to);
+    assert.deepEqual(after.captions, before.captions);
+    assert.equal(
+      projectFrames(after),
+      projectFrames(before) + pieceFrames(original),
+    );
+    const offset = before.pieces
+      .slice(0, index + 1)
+      .reduce((n, v) => n + pieceFrames(v), 0);
+    const sourceOffset = offset - pieceFrames(original);
+    for (let frame = 0; frame < pieceFrames(copy); frame++) {
+      const copiedFrame = editFrame(after, offset + frame);
+      const originalFrame = editFrame(before, sourceOffset + frame);
+      assert.equal(copiedFrame.source, originalFrame.source);
+      assert.deepEqual(copiedFrame.framing, originalFrame.framing);
+    }
+    const edit = describeVideoEdit(before, after, original.id, 0);
+    assert.equal(edit.label, "duplicate piece");
+    assert.equal(videoEditFocus(after, edit).pieceId, copy.id);
+    assert.equal(videoEditFocus(after, edit).frame, offset);
+    assert.equal(videoEditFocus(before, edit).pieceId, original.id);
+    const undo = new EditHistory();
+    undo.record(before, edit);
+    assert.deepEqual(undo.undo(after), before);
+    assert.equal(undo.nextRedo.label, "duplicate piece");
+    assert.deepEqual(undo.redo(before), after);
+    copy.from.x = copy.from.x === 0 ? 1 : 0;
+    assert.deepEqual(before, snapshot);
+    // Keep the original copied framing for the cross-target renderer comparison.
+    copy.from = structuredClone(original.from);
+  }
+}
+const boundary = newProject(15, "video/mp4");
+boundary.pieces[0].speed = 0.5;
+assert.equal(
+  projectFrames(duplicatePiece(boundary, boundary.pieces[0].id)),
+  1800,
+);
+const tooLong = {
+  ...boundary,
+  pieces: [
+    ...boundary.pieces,
+    { ...boundary.pieces[0], id: "extra", start: 0, end: 1, speed: 1 },
+  ],
+};
+assert.match(
+  duplicatePieceReason(tooLong, boundary.pieces[0].id),
+  /60 seconds/,
+);
+assert.throws(
+  () => duplicatePiece(tooLong, boundary.pieces[0].id),
+  /60 seconds/,
+);
+assert.match(duplicatePieceReason(capped, capped.pieces[0].id), /100 pieces/);
+assert.throws(() => duplicatePiece(capped, capped.pieces[0].id), /100 pieces/);
+const nearCap = { ...capped, pieces: capped.pieces.slice(0, 99) };
+assert.equal(duplicatePiece(nearCap, nearCap.pieces[0].id).pieces.length, 100);
+assert.throws(() => duplicatePiece(p, "missing"), /Select a piece/);
 const freezeEdit = describe(p, frozen);
 assert.equal(freezeEdit.label, "insert freeze");
 assert.equal(videoEditFocus(frozen, freezeEdit).pieceId, freezePiece.id);
@@ -415,7 +490,16 @@ assert.equal(undos, 50);
 assert(history.canRedo);
 history.record(current);
 assert(!history.canRedo);
-const cases = [p, split, slow, effects, shorter, removed, limit];
+const cases = [
+  p,
+  split,
+  slow,
+  effects,
+  shorter,
+  removed,
+  limit,
+  ...duplicatedProjects,
+];
 const python = JSON.parse(
   execFileSync(
     new URL("../.venv/bin/python", import.meta.url).pathname,

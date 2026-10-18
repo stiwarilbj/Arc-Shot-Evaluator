@@ -19,6 +19,8 @@ import {
   pieceTrimLimits,
   projectFrames,
   splitPiece,
+  duplicatePiece,
+  duplicatePieceReason,
   splitPoint,
   type EditProject,
   type Caption,
@@ -82,6 +84,7 @@ export default function VideoEditPanel({
     height: 0,
   });
   const splitHelpId = useId();
+  const duplicateHelpId = useId();
   const previewHelpId = useId();
   const [videos, setVideos] = useState<EditedVideos>(
     () =>
@@ -161,6 +164,7 @@ export default function VideoEditPanel({
     piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0],
     trimLimits = pieceTrimLimits(piece, project.baseFrames, count);
   const split = splitPoint(project, frame);
+  const duplicateReason = duplicatePieceReason(project, piece.id);
   const splitReason =
     split.hit.piece.id !== piece.id
       ? `Move the playhead inside selected Piece ${project.pieces.indexOf(piece) + 1} to split it.`
@@ -827,7 +831,37 @@ export default function VideoEditPanel({
               >
                 Delete piece
               </button>
+              <button
+                disabled={!!duplicateReason}
+                aria-describedby={duplicateReason ? duplicateHelpId : undefined}
+                onClick={() => {
+                  try {
+                    const next = duplicatePiece(project, piece.id);
+                    const index = project.pieces.indexOf(piece) + 1;
+                    const copy = next.pieces[index];
+                    if (change(next)) {
+                      setSelected(copy.id);
+                      setSelectedCaption(null);
+                      setFrame(
+                        next.pieces
+                          .slice(0, index)
+                          .reduce((sum, p) => sum + pieceFrames(p), 0),
+                      );
+                      setHistoryReveal({ pieceId: copy.id, captionId: null });
+                    }
+                  } catch (e) {
+                    setError(String(e));
+                  }
+                }}
+              >
+                Duplicate
+              </button>
             </div>
+            {duplicateReason ? (
+              <p id={duplicateHelpId} className="jumper-caption" role="status">
+                {duplicateReason}
+              </p>
+            ) : null}
             <label>
               Piece speed
               <select

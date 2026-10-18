@@ -266,9 +266,13 @@ Personal videos stay on your device; they are never automatically published.
    **Split at playhead** explains when it is unavailable, including empty-piece
    boundaries, freeze frames, and repeated slow-motion source frames.
    A **Selected piece** toolbar stays available in Cut, Text, and Effects:
-   split at the playhead, delete, move left/right, or set 0.5×/1×/2× speed without
+   split at the playhead, delete, duplicate, move left/right, or set 0.5×/1×/2× speed without
    switching tools. Split requires the playhead inside that selected piece;
    speed is disabled for freezes, whose duration is adjusted in Cut or Effects.
+   **Duplicate** inserts and selects an independent copy immediately after the
+   selected piece, preserving its source range, speed, freeze duration, and
+   start/end framing. Captions keep their existing times. Duplication is one
+   undo step and stops at the 60-second or 100-piece limit.
    Add timed captions in **Text**. Labeled bars beneath the timeline show each
    caption’s interval: drag the bar to move it without changing its duration, or
    drag either edge to change its start/end. The numeric fields stay synchronized.

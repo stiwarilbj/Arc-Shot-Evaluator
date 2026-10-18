@@ -234,6 +234,32 @@ export function splitPiece(project: EditProject, frame: number): EditProject {
     ),
   };
 }
+export function duplicatePieceReason(project: EditProject, id: string): string {
+  const piece = project.pieces.find((p) => p.id === id);
+  if (!piece) return "Select a piece to duplicate.";
+  if (project.pieces.length >= 100)
+    return "The timeline has 100 pieces. Delete a piece before duplicating.";
+  if (projectFrames(project) + pieceFrames(piece) > 1800)
+    return "Duplicating this piece would exceed 60 seconds. Shorten the timeline first.";
+  return "";
+}
+export function duplicatePiece(project: EditProject, id: string): EditProject {
+  const reason = duplicatePieceReason(project, id);
+  if (reason) throw Error(reason);
+  const index = project.pieces.findIndex((p) => p.id === id);
+  const copy = {
+    ...structuredClone(project.pieces[index]),
+    id: crypto.randomUUID(),
+  };
+  return {
+    ...project,
+    pieces: [
+      ...project.pieces.slice(0, index + 1),
+      copy,
+      ...project.pieces.slice(index + 1),
+    ],
+  };
+}
 export type VideoEdit = {
   label: string;
   panel: "Cut" | "Text" | "Effects";

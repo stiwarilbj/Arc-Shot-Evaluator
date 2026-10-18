@@ -16,6 +16,14 @@ person detection or SAM. The private masked base is the only source for edits.
   Set source start/end with sliders or
   seconds, split at the playhead, delete, and move left/right. The last piece
   cannot be deleted. All times snap to 30 fps; the timeline cannot exceed 60s.
+  **Duplicate**, beside Move left/right and Delete in the shared selected-piece
+  toolbar, inserts a copy immediately after the selected piece. Its source
+  range, speed, freeze duration, and both framing endpoints remain identical;
+  the copy gets a fresh identity and independently editable framing. The editor
+  selects, seeks to, and reveals the copy. Captions stay at their existing edited
+  times. Undo/Redo names the duplication and restores the appropriate selection.
+  Duplication is disabled with an explanation if it would exceed 60 seconds or
+  100 pieces. It never repeats masking.
   In Cut, the selected moving piece has orange trim handles on its left/right
   edges. Drag to adjust the source boundaries; the shared preview shows the
   exact first or last retained source frame, labeled with its frame/time.
