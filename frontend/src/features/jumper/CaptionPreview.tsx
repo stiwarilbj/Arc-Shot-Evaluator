@@ -117,6 +117,7 @@ export default function CaptionPreview({
   const width = dimensions.width * scale,
     height = dimensions.height * scale;
   const moving = layouts.find(({ caption }) => caption.id === dragging);
+  const chosen = layouts.find(({ caption }) => caption.id === selected);
   function move(clientY: number) {
     const current = drag.current;
     if (!current) return;
@@ -140,6 +141,19 @@ export default function CaptionPreview({
         height,
       }}
     >
+      {chosen ? (
+        <div
+          className={`jumper-caption-safe${chosen.layout.fits ? "" : " is-overflow"}`}
+          role="img"
+          aria-label="Caption-safe area"
+          style={{
+            left: chosen.layout.safe.x * scale,
+            top: chosen.layout.safe.y * scale,
+            width: chosen.layout.safe.width * scale,
+            height: chosen.layout.safe.height * scale,
+          }}
+        ></div>
+      ) : null}
       {moving ? (
         <div className="jumper-caption-guides" aria-hidden="true">
           {captionPositions.map((position) => (
@@ -167,9 +181,9 @@ export default function CaptionPreview({
             title="Select caption; drag to top, center, or bottom"
             style={{
               left: layout.x * scale,
-              top: layout.y * scale,
+              top: Math.max(layout.safe.y, layout.y) * scale,
               width: layout.width * scale,
-              height: layout.boxHeight * scale,
+              height: Math.min(layout.boxHeight, layout.safe.height) * scale,
             }}
             onClick={() => {
               if (!drag.current) onSelect(caption.id);

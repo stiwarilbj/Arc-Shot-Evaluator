@@ -11,9 +11,11 @@ import TimelinePieces from "./TimelinePieces";
 import CaptionPreview from "./CaptionPreview";
 import FramingPreview from "./FramingPreview";
 import CaptionTimeline from "./CaptionTimeline";
+import PieceEffectsClipboard from "./PieceEffectsClipboard";
 import { CanvasSink } from "mediabunny";
 import { openVideo } from "./media";
 import { drawEdit } from "./editDrawing";
+import { captionLayout } from "./captionLayout";
 import { describeVideoEdit, videoEditFocus } from "./editHistory";
 import {
   previewRange,
@@ -182,6 +184,22 @@ export default function VideoEditPanel({
     let offset = 0;
     return project.pieces.slice(0, -1).map((p) => (offset += pieceFrames(p)));
   }, [project.pieces]);
+  const captionFits = useMemo(() => {
+    if (!previewDimensions.width || !previewDimensions.height) return null;
+    const context = document.createElement("canvas").getContext("2d");
+    return context
+      ? project.captions.map(
+          (c) =>
+            captionLayout(
+              context,
+              previewDimensions.width,
+              previewDimensions.height,
+              c,
+            ).fits,
+        )
+      : null;
+  }, [project.captions, previewDimensions]);
+  const captionOverflow = captionFits?.some((fits) => !fits) ?? false;
   const playbackRange = loop
     ? previewRange(project, piece.id, loopContext ? 15 : 0)
     : { start: 0, end: count };
@@ -211,8 +229,13 @@ export default function VideoEditPanel({
     );
   }
   useEffect(() => {
-    onChange({ ...videos, project, stale, rendering: busy });
-  }, [videos, project, stale, busy, onChange]);
+    onChange({
+      ...videos,
+      project,
+      stale: stale || captionOverflow || !captionFits,
+      rendering: busy,
+    });
+  }, [videos, project, stale, captionOverflow, captionFits, busy, onChange]);
   useEffect(() => {
     const finishGesture = () => {
       if (trimming.current || overlayDragging.current) return;
@@ -452,7 +475,7 @@ export default function VideoEditPanel({
     setFrame(offset + (end ? pieceFrames(piece) - 1 : 0));
   }
   function updatePiece(update: Partial<Piece>, label?: string) {
-    change(
+    return change(
       {
         ...project,
         pieces: project.pieces.map((p) =>
@@ -500,7 +523,7 @@ export default function VideoEditPanel({
     change({ ...project, pieces });
   }
   async function render() {
-    if (busy || disabled) return;
+    if (busy || disabled || captionOverflow) return;
     setPlaying(false);
     setError("");
     const id = ++generation.current,
@@ -962,6 +985,13 @@ export default function VideoEditPanel({
             ))}
           </div>
           <fieldset disabled={disabled || busy}>
+            <div hidden={panel !== "Effects"}>
+              <PieceEffectsClipboard
+                piece={piece}
+                name={`${piece.freeze ? "Freeze" : "Piece"} ${project.pieces.indexOf(piece) + 1}`}
+                onPaste={(patch) => updatePiece(patch, "paste effects")}
+              />
+            </div>
             {panel === "Cut" ? (
               <>
                 {!piece.freeze ? (
@@ -1061,7 +1091,9 @@ export default function VideoEditPanel({
                 </button>
                 <p className="jumper-caption">
                   Click a visible caption in the preview to select it. Drag it
-                  to the top, center, or bottom guides, or use Placement below.
+                  to the top, center, or bottom guides, or use Placement below.{" "}
+                  Long captions wrap within the outlined safe area. Use a
+                  smaller size or shorter text if a caption cannot fit.
                 </p>
                 {project.captions.map((c, index) => (
                   <div
@@ -1092,6 +1124,13 @@ export default function VideoEditPanel({
                     {c.outside ? (
                       <p role="status">
                         This caption was clamped after a cut. Check its timing.
+                      </p>
+                    ) : null}
+                    {captionFits?.[index] === false ? (
+                      <p role="alert" className="jumper-notice">
+                        Caption {index + 1} cannot fit in the safe area at this
+                        size. Choose a smaller size or shorten the text before
+                        updating the finished video.
                       </p>
                     ) : null}
                     {(["start", "end"] as const).map((key) => (
@@ -1405,10 +1444,18 @@ export default function VideoEditPanel({
           {error}
         </p>
       ) : null}
+      {captionOverflow ? (
+        <p role="alert" className="jumper-notice">
+          Caption text exceeds the safe area. Open Text to shorten it or choose
+          a smaller size. Your previous finished download is preserved.
+        </p>
+      ) : null}
       <div className="jumper-toolbar">
         <button
           className="button button-primary"
-          disabled={busy || disabled || !stale}
+          disabled={
+            busy || disabled || !stale || captionOverflow || !captionFits
+          }
           onClick={render}
         >
           {busy

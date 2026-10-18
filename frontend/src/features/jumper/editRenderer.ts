@@ -8,6 +8,7 @@ import {
   type EditProject,
 } from "./editProject";
 import { drawEdit } from "./editDrawing";
+import { captionLayout } from "./captionLayout";
 import { silhouetteProof } from "./videoValidation";
 import { MAX_BYTES } from "./domain";
 export type EditedVideos = { highlight: Blob; clean: Blob; duration: number };
@@ -40,6 +41,13 @@ export async function renderEdits(
       count = projectFrames(project);
     if (width > 1280 || height > 720 || width % 2 || height % 2)
       throw Error("Invalid masked-base dimensions");
+    const metrics = new OffscreenCanvas(width, height).getContext("2d");
+    if (!metrics) throw Error("Caption layout is unavailable");
+    for (const [index, caption] of project.captions.entries())
+      if (!captionLayout(metrics, width, height, caption).fits)
+        throw Error(
+          `Caption ${index + 1} cannot fit in the safe area. Use smaller text or shorten the caption.`,
+        );
     const sink = new CanvasSink(track, { poolSize: 2 }),
       writer = await writers(width, height);
     const variants: Blob[] = [];

@@ -36,14 +36,20 @@ export function drawEdit(
       font,
       lines,
       lineHeight,
+      baselineOffset,
       boxHeight,
       cy,
+      safe,
       x: left,
       width: boxWidth,
     } = captionLayout(context, width, height, caption);
+    context.save();
+    context.beginPath();
+    context.rect(safe.x, safe.y, safe.width, safe.height);
+    context.clip();
     context.font = font;
     context.textAlign = "center";
-    context.textBaseline = "middle";
+    context.textBaseline = "alphabetic";
     context.fillStyle = "black";
     context.fillRect(left, cy - boxHeight / 2, boxWidth, boxHeight);
     context.fillStyle = "white";
@@ -51,9 +57,10 @@ export function drawEdit(
       context.fillText(
         text,
         width / 2,
-        cy + (i - (lines.length - 1) / 2) * lineHeight,
+        cy + (i - (lines.length - 1) / 2) * lineHeight + baselineOffset,
       ),
     );
+    context.restore();
   }
   context.restore();
 }

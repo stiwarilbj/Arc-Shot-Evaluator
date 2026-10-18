@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   previewRange,
   previewOrigin,
@@ -215,8 +216,36 @@ import {
 import { clip } from "../frontend/src/features/jumper/domain.ts";
 import {
   captionLayout,
+  wrapCaption,
   snapCaptionPosition,
 } from "../frontend/src/features/jumper/captionLayout.ts";
+const wrappingCases = JSON.parse(
+  readFileSync(
+    new URL("../tests/fixtures/jumper-caption-wrapping.json", import.meta.url),
+    "utf8",
+  ),
+);
+for (const example of wrappingCases)
+  assert.deepEqual(
+    wrapCaption(example.text, (text) => [...text].length, example.width),
+    example.lines,
+  );
+// Exact vertical boundary: a single 10px line needs 17.5px including padding.
+for (const [height, fits] of [
+  [19, false],
+  [17.5 / 0.92, true],
+  [20, true],
+]) {
+  assert.equal(
+    captionLayout(
+      { font: "", measureText: (text) => ({ width: text.length }) },
+      100,
+      height,
+      { text: "A", size: "small", position: "center" },
+    ).fits,
+    fits,
+  );
+}
 // Hit areas and guides share the export layout, including wrapping and all sizes.
 const metrics = {
   font: "",
@@ -247,6 +276,21 @@ for (const [width, height] of [
       assert.equal(layout.y + layout.boxHeight / 2, layout.centers[position]);
       assert.equal(layout.width, width * 0.92);
       assert.equal(metrics.font, layout.font);
+      assert.deepEqual(layout.safe, {
+        x: width * 0.04,
+        y: height * 0.04,
+        width: width * 0.92,
+        height: height * 0.92,
+      });
+      assert(
+        layout.lines.every(
+          (line) => metrics.measureText(line).width <= width * 0.88,
+        ),
+      );
+      if (layout.fits) {
+        assert(layout.y >= layout.safe.y - 1e-8);
+        assert(layout.y + layout.boxHeight <= height * 0.96 + 1e-8);
+      }
       assert.equal(snapCaptionPosition(layout.cy, layout.centers), position);
     }
   }
@@ -745,4 +789,104 @@ assert(
 );
 console.log(
   "Edit timeline: exact source mapping, cuts/splits/speed/freezes, caption bounds, effects/clean separation, 50-step history, 60s cap, legacy validation, and native parity passed",
+);
+
+// Effect clipboard isolates copies and only changes selected executable settings.
+const { copyPieceEffects, pastePieceEffects } =
+  await import("../frontend/src/features/jumper/pieceEffects.ts");
+const effectSource = {
+  id: "source",
+  start: 3,
+  end: 20,
+  freeze: 0,
+  speed: 0.5,
+  from: { zoom: 1.5, x: 0.2, y: 0.3 },
+  to: { zoom: 2, x: 0.7, y: 0.8 },
+};
+const effectTarget = {
+  id: "target",
+  start: 25,
+  end: 45,
+  freeze: 0,
+  speed: 2,
+  from: { zoom: 1, x: 0.5, y: 0.5 },
+  to: { zoom: 1, x: 0.5, y: 0.5 },
+};
+const copiedEffects = copyPieceEffects(effectSource);
+const sourceSnapshot = structuredClone(effectSource),
+  targetSnapshot = structuredClone(effectTarget);
+for (const speed of [false, true])
+  for (const from of [false, true])
+    for (const to of [false, true]) {
+      const patch = pastePieceEffects(copiedEffects, effectTarget, {
+        speed,
+        from,
+        to,
+      });
+      const actual = { ...effectTarget, ...patch };
+      assert.deepEqual(
+        Object.keys(patch).sort(),
+        Object.entries({ speed, from, to })
+          .filter(([, on]) => on)
+          .map(([key]) => key)
+          .sort(),
+      );
+      for (const key of ["speed", "from", "to"])
+        assert.deepEqual(
+          actual[key],
+          { speed, from, to }[key] ? effectSource[key] : effectTarget[key],
+        );
+      for (const key of ["id", "start", "end", "freeze"])
+        assert.equal(actual[key], effectTarget[key]);
+      if (patch.from) patch.from.x = 1;
+      if (patch.to) patch.to.y = 0;
+      assert.deepEqual(effectSource, sourceSnapshot);
+      assert.deepEqual(effectTarget, targetSnapshot);
+      assert.deepEqual(copiedEffects, copyPieceEffects(sourceSnapshot));
+    }
+const copiedFreeze = copyPieceEffects({ ...effectSource, freeze: 30 });
+assert.equal(copiedFreeze.speed, null);
+assert(
+  !(
+    "speed" in
+    pastePieceEffects(copiedFreeze, effectTarget, {
+      speed: true,
+      from: true,
+      to: true,
+    })
+  ),
+);
+assert(
+  !(
+    "speed" in
+    pastePieceEffects(
+      copiedEffects,
+      { ...effectTarget, freeze: 30 },
+      { speed: true, from: false, to: false },
+    )
+  ),
+);
+effectSource.from.x = 1;
+assert.equal(copiedEffects.from.x, 0.2);
+console.log(
+  "Effect clipboard: selective speed/framing, independent snapshots, unchanged source ranges, and freeze protection passed",
+);
+const atLimit = newProject(15, "video/mp4");
+atLimit.pieces = Array.from({ length: 4 }, (_, i) => ({
+  ...atLimit.pieces[0],
+  id: `limit-${i}`,
+}));
+assert(isProject(atLimit));
+const slowPatch = pastePieceEffects(copiedEffects, atLimit.pieces[0], {
+  speed: true,
+  from: false,
+  to: false,
+});
+assert(
+  !isProject({
+    ...atLimit,
+    pieces: atLimit.pieces.map((p, i) =>
+      i === 0 ? { ...p, ...slowPatch } : p,
+    ),
+  }),
 );

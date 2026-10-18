@@ -18,6 +18,8 @@ from backend.jumper.editing import (
     draw_frame,
     length,
     PROFILE,
+    caption_layout,
+    wrap_caption,
 )
 from backend.jumper.pipeline import encoder, silhouette_pixels
 from backend.jumper.backup import metadata, export_archive, import_archive
@@ -297,3 +299,34 @@ def test_unavailable_edit_queue_cleans_uploaded_base(tmp_path, monkeypatch):
         assert response.status_code == 503
     assert set(jumper.JOBS) == before
     assert not list((root / "jobs").iterdir())
+
+
+def test_caption_word_wrapping_matches_browser_fixtures():
+    cases = json.loads((Path(__file__).parent / "fixtures/jumper-caption-wrapping.json").read_text())
+    for example in cases:
+        assert wrap_caption(example["text"], len, example["width"]) == example["lines"]
+
+
+def test_caption_safe_area_and_size_warning():
+    text = "Read the release and follow through. " * 3
+    for position in ("top", "center", "bottom"):
+        c = dict(text=text, size="large", position=position)
+        assert not caption_layout(250, 640, c)["fits"]
+        c["size"] = "small"
+        layout = caption_layout(250, 640, c)
+        assert layout["fits"]
+        assert layout["cy"] - layout["boxHeight"] / 2 >= 640 * .04 - 1e-8
+        assert layout["cy"] + layout["boxHeight"] / 2 <= 640 * .96 + 1e-8
+
+
+def test_native_rejects_caption_overflow_before_export(tmp_path):
+    p = project()
+    p["captions"][0]["text"] = "Oversized caption " * 11
+    p["captions"][0]["size"] = "large"
+    base = tmp_path / "base.mp4"
+    base_video(base)
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(ValueError, match="cannot fit in the safe area"):
+        render(base, p, out, threading.Event(), lambda _: None)
+    assert not list(out.iterdir())

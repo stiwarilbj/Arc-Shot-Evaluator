@@ -141,6 +141,60 @@ def frame_state(p, index, clean=False):
     raise ValueError("Missing timeline piece")
 
 
+def wrap_caption(text, measure, max_width):
+    """Same word wrapping and long-word fallback as browser captionLayout.ts."""
+    lines, line = [], ""
+    for word in text.split():
+        joined = f"{line} {word}" if line else word
+        if measure(joined) <= max_width:
+            line = joined
+            continue
+        if line:
+            lines.append(line)
+            line = ""
+        for char in word:
+            if line and measure(line + char) > max_width:
+                lines.append(line)
+                line = char
+            else:
+                line += char
+    if line:
+        lines.append(line)
+    return lines
+
+
+def caption_layout(width, height, caption):
+    size = max(
+        10,
+        math.floor(
+            height * {"small": 0.045, "medium": 0.065, "large": 0.09}[caption["size"]]
+            + 0.5
+        ),
+    )
+    font_path = (
+        Path(__file__).resolve().parents[2]
+        / "frontend/public/jumper/fonts/RobotoMono.ttf"
+    )
+    font = ImageFont.truetype(str(font_path), size)
+    font.set_variation_by_axes([600])
+    measure = font.getlength
+    lines = wrap_caption(caption["text"], measure, width * 0.88)
+    lh = size * 1.25
+    bh = lh * len(lines) + size * 0.5
+    centers = {
+        "top": height * 0.04 + bh / 2,
+        "center": height / 2,
+        "bottom": height * 0.96 - bh / 2,
+    }
+    return dict(
+        font=font, lines=lines, lineHeight=lh, boxHeight=bh,
+        baselineOffset=size * 0.3,
+        cy=centers[caption["position"]],
+        fits=bh <= height * 0.92
+        and all(measure(line) <= width * 0.88 for line in lines),
+    )
+
+
 def draw_frame(image, p, index, clean=False):
     state = frame_state(p, index, clean)
     height, width = image.shape[:2]
@@ -166,41 +220,14 @@ def draw_frame(image, p, index, clean=False):
     ).astype(np.uint8)
     if state["captions"]:
         im = Image.fromarray(out)
-        draw = ImageDraw.Draw(im)
-        font_path = (
-            Path(__file__).resolve().parents[2]
-            / "frontend/public/jumper/fonts/RobotoMono.ttf"
-        )
         for c in state["captions"]:
-            size = max(
-                10,
-                math.floor(
-                    height * {"small": 0.045, "medium": 0.065, "large": 0.09}[c["size"]]
-                    + 0.5
-                ),
-            )
-            font = ImageFont.truetype(str(font_path), size)
-            font.set_variation_by_axes([600])
-            lines = []
-            line = ""
-            for char in " ".join(c["text"].splitlines()):
-                if line and draw.textlength(line + char, font=font) > width * 0.88:
-                    lines.append(line)
-                    line = char
-                else:
-                    line += char
-            if line:
-                lines.append(line)
-            lh = size * 1.25
-            bh = lh * len(lines) + size * 0.5
-            cy = (
-                bh / 2 + height * 0.04
-                if c["position"] == "top"
-                else (
-                    height - bh / 2 - height * 0.04
-                    if c["position"] == "bottom"
-                    else height / 2
+            layout = caption_layout(width, height, c)
+            if not layout["fits"]:
+                raise ValueError(
+                    "Caption cannot fit in the safe area. Use smaller text or shorten the caption."
                 )
+            font, lines, lh, bh, cy = (
+                layout[k] for k in ("font", "lines", "lineHeight", "boxHeight", "cy")
             )
             # Caption also shares the fade against the neutral background.
             overlay = Image.new("RGB", (width, height), (224, 224, 224))
@@ -210,10 +237,10 @@ def draw_frame(image, p, index, clean=False):
             )
             for i, text in enumerate(lines):
                 od.text(
-                    (width / 2, cy + (i - (len(lines) - 1) / 2) * lh),
+                    (width / 2, cy + (i - (len(lines) - 1) / 2) * lh + layout["baselineOffset"]),
                     text,
                     font=font,
-                    anchor="mm",
+                    anchor="ms",
                     fill="white",
                 )
             mask = Image.new("L", (width, height), 0)
@@ -222,7 +249,6 @@ def draw_frame(image, p, index, clean=False):
                 fill=round(255 * state["opacity"]),
             )
             im = Image.composite(overlay, im, mask)
-            draw = ImageDraw.Draw(im)
         out = np.array(im)
     # Legacy codecs may introduce the small chroma error accepted by base
     # validation. Match the browser renderer's exact neutral output pixels.
@@ -245,6 +271,9 @@ def render(base: Path, project: dict, directory: Path, cancel, progress):
             neutral=True,
             profile="edited" if project["baseFrames"] > 450 else project["baseProfile"],
         )
+        for index, caption in enumerate(project["captions"]):
+            if not caption_layout(width, height, caption)["fits"]:
+                raise ValueError(f"Caption {index + 1} cannot fit in the safe area. Use smaller text or shorten the caption.")
         count = length(project)
         for clean, kind in ((False, "highlight"), (True, "clean")):
             destination = directory / (kind + ".mp4")

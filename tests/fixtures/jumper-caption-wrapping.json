@@ -1,0 +1,8 @@
+[
+  {"text":"One two three four","width":9,"lines":["One two","three","four"]},
+  {"text":"  One\n two\tthree  ","width":7,"lines":["One two","three"]},
+  {"text":"abcdefghijk next","width":4,"lines":["abcd","efgh","ijk","next"]},
+  {"text":"short extraordinarily long","width":8,"lines":["short","extraord","inarily","long"]},
+  {"text":"éclair 🏀🏀 shots","width":6,"lines":["éclair","🏀🏀","shots"]},
+  {"text":"","width":8,"lines":[]}
+]

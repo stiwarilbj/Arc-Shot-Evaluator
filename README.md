@@ -286,6 +286,15 @@ Personal videos stay on your device; they are never automatically published.
    Click a caption in the masked preview to open **Text** and highlight its
    existing controls. Drag it between the top, center, and bottom snap guides;
    each drag is one undo step. Guides are editor-only and stay out of exports.
+   A selected caption also shows a **caption-safe outline**, inset 4%
+   from the video edges. Text wraps at words (splitting unusually long words)
+   using the same layout for preview and export. If the chosen size cannot fit,
+   Text shows a warning: shorten the caption or choose a smaller size before
+   updating the finished video. Your previous successful download stays available.
+   In **Effects**, use **Copy effects**, select another piece, and choose **Speed**,
+   **Start framing**, or **End framing** before **Paste effects**. Each paste is
+   one undo step. Cuts, source footage, captions, and freeze length stay unchanged;
+   speed is skipped for freeze pieces. The clipboard stays private to the editor.
    **Effects → Freeze at playhead** holds the displayed frame, identified by its
    edited time and masked source-frame number. The new one-second freeze is selected
    automatically with **Freeze length (0.5–3 seconds)** beside the button; no switch

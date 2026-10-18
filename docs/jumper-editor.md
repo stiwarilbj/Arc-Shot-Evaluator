@@ -46,6 +46,17 @@ person detection or SAM. The private masked base is the only source for edits.
   size, and top/center/bottom placement. White text has a black backing. Moving
   pieces leaves captions at their edited times; shortening the video clamps
   their intervals and flags them for inspection.
+  Selecting a caption outlines the safe area, inset 4% on every side.
+  Preview and browser export share one font-measured layout; the native fallback
+  follows the same word-wrapping and padding rules with the bundled font. Normal
+  whitespace is collapsed; overlong words split without dropping characters.
+  Text uses 88% of the video width, leaving padding inside the 92%-wide backing.
+  Captions that exceed the safe height or cannot fit a character at the chosen
+  size show a warning in Text and block updating the finished video. Shorten the
+  text or reduce its size to continue. Preview clips overflow inside the safe
+  area; neither export renderer accepts it. Existing downloads are preserved.
+  Safe outlines are editor-only, follow video coordinates on every aspect ratio,
+  and never appear in edited exports or clean quizzes.
   **Caption timing → Magnet on/off** defaults on for pointer dragging. The start
   or end of a moving caption, or the edge being trimmed, can align to an edited
   cut, the playhead captured when the drag began, or another caption's start/end.
@@ -92,6 +103,15 @@ person detection or SAM. The private masked base is the only source for edits.
   save/reload retain the duration. Insertion is unavailable when the extra second
   or required pieces would exceed the 60-second/100-piece limits.
   **Effects** also offers framing and fades. **Start framing** and **End framing**
+  are independently transferable with **Copy effects** / **Paste effects**.
+  Copy snapshots the selected piece's speed and framing into an editor-private
+  clipboard that survives switching editing tools. Select a destination and use
+  the Speed / Start framing / End framing checklist, then paste as one undo step.
+  Source ranges, identities, captions, and freeze lengths are not copied. Freeze
+  pieces neither supply nor accept speed; their framing remains transferable.
+  An identical or empty selection disables Paste. Existing project limits still
+  reject changes that would exceed 60 seconds, preserving the current timeline.
+  **Start framing** and **End framing**
   select the endpoint and seek to its boundary. While paused in Effects, the full
   masked frame shows an orange crop rectangle with that endpoint’s zoom/position.
   Drag the rectangle to pan within the image; letterboxing is excluded. Arrow

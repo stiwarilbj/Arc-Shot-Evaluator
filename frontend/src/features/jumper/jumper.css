@@ -1004,6 +1004,21 @@
   pointer-events: none;
   overflow: hidden;
 }
+.jumper-caption-safe {
+  position: absolute;
+  border: 2px dashed #ff753c;
+  box-shadow: 0 0 0 1px #111, inset 0 0 0 1px #111;
+  pointer-events: none;
+  z-index: 2;
+}
+.jumper-caption-safe.is-overflow { border-color: #ff6666; }
+.jumper-effects-clipboard {
+  display: grid;
+  gap: .5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .75rem;
+  margin-bottom: .5rem;
+}
 .jumper-edit-panel button.jumper-caption-hit {
   position: absolute;
   min-height: 0;
