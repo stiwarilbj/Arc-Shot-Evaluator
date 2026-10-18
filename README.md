@@ -438,7 +438,10 @@ transfer length equals the decoded model size.
 Corrections can reuse unchanged detections/frame features, and an export failure can retry
 from a bounded temporary mask checkpoint without rerunning segmentation. Finished
 videos are decoded and checked for timeline, dimensions, neutral colors, and no
-audio before becoming ready for review.
+audio before becoming ready for review. Both browser and local masking reject
+malformed mask dimensions, missing values, and non-finite predictions before
+resizing or compositing. Processing stops with a retry message rather than
+exporting damaged silhouettes; this check does not establish tracking accuracy.
 
 Personal silhouette rendering uses label masks alone, without rereading original
 pixels or creating color reveals. Edited clips store a viewing version and a

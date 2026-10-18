@@ -1,6 +1,7 @@
 """Conservative crop refinement; kept equivalent to smallPlayer.ts."""
 import math
 import numpy as np
+from .model_outputs import validate_array
 
 
 def small_player_crop(values, prompt=None):
@@ -96,11 +97,14 @@ class SmallPlayerRefiner:
         x, y, w, h = (region[k] for k in ("x", "y", "width", "height"))
         try:
             self.predictor.set_image(image[y:y+h, x:x+w])
-            _, _, low = self.predictor.predict(
+            masks, quality, low = self.predictor.predict(
                 point_coords=np.array(crop["points"], dtype=np.float32) * [w, h],
                 point_labels=np.array(crop["labels"], dtype=np.int32),
                 box=np.array(crop["box"], dtype=np.float32) * [w, h, w, h],
                 multimask_output=False, return_logits=True)
+            validate_array(masks, (1, h, w), "refined mask")
+            validate_array(quality, (1,), "refinement quality")
+            validate_array(low, (1, 256, 256), "low-resolution mask")
             import torch
             candidate = torch.nn.functional.interpolate(
                 torch.from_numpy(low[0])[None, None],

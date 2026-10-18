@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .model_outputs import tracking_masks
 from .overlap_palette import OverlapPalette
 from .neutral_edges import neutral_edges
 from .camera_cuts import CameraCuts
@@ -516,7 +517,7 @@ def track(
                     if detector is None:
                         yield index, ids, logits
                         continue
-                    values = logits[:, 0].float().cpu().numpy()
+                    values = tracking_masks(logits, ids, height, width)
                     for row, identity in enumerate(ids):
                         if index < next(
                             o["prompts"][0]["frame"]
@@ -572,7 +573,7 @@ def track(
             for index, ids, logits in propagation():
                 if progress:
                     progress(index, len(frames))
-                values = logits[:, 0].float().cpu().numpy()
+                values = tracking_masks(logits, ids, height, width)
                 if tracking_check:
                     tracking_check.record(
                         index, values[list(ids).index(job["target_id"])]
@@ -701,7 +702,8 @@ def track(
                             progress(
                                 checked_frames, anchor + 1, "Checking shooter backward"
                             )
-                        tracking_check.compare(index, logits[0, 0].float().cpu().numpy())
+                        values = tracking_masks(logits, ids, height, width)
+                        tracking_check.compare(index, values[list(ids).index(job["target_id"])])
                         prune_tracking(state, index, reverse=True)
                         checked_frames += 1
                         if device == "mps":

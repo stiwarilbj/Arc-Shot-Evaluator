@@ -666,3 +666,16 @@ includes independent native encoding, damage detection, mask-only retry,
 cancellation, and persistent failure. Browser testing also injects damaged
 first-attempt encoder frames, then independently decodes the higher-quality
 result; this export test does not require or establish segmentation accuracy.
+
+## Invalid model predictions
+
+Browser SAM decoder outputs are checked against the pinned graph shapes, including
+all candidate masks, quality scores, object scores, and tracking pointers. Tracking
+memory and attention outputs must also have their expected shapes and finite
+float values. Native forward/reverse tracking and cropped image refinement check
+mask shapes and numeric contents before resizing, ownership assignment, or export.
+Missing/truncated arrays, unexpected dimensions, NaN, and infinities stop the job
+with a recoverable processing error. Valid negative logits (including an absent
+person) remain valid; empty visibility is handled by the existing review checks.
+Retry processing after correcting the input, or reload/restart if the error repeats.
+Invalid predictions are never replaced with fabricated masks.

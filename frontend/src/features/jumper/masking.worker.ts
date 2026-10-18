@@ -1,3 +1,4 @@
+import { validateDecoderOutputs, validateModelTensor } from "./modelOutputs";
 import { detailProof, type DetailProof } from "./compressionQuality";
 /// <reference lib="webworker" />
 import { latestShooterAnchor, shooterAnchors } from "./trackingAnchors";
@@ -459,6 +460,7 @@ async function process(
       let result: Record<string, ort.Tensor> | undefined;
       try {
         result = await decoder.run(args);
+        validateDecoderOutputs(result);
         const quality = result.quality.data as Float32Array;
         const useMulti = points.length <= 1 && labels[0] !== 2;
         let selected = 0;
@@ -498,6 +500,8 @@ async function process(
           pred_masks_high_res: high,
           object_score_logits: score,
         });
+        validateModelTensor(result.memory_tokens, [4096, 1, 64], "tracking memory");
+        validateModelTensor(result.memory_pos_enc, [4096, 1, 64], "tracking position");
         return {
           frame,
           tokens: floats(result.memory_tokens),
@@ -554,6 +558,7 @@ async function process(
       let result: Record<string, ort.Tensor> | undefined;
       try {
         result = await attention.run(args);
+        validateModelTensor(result.conditioned_features, [4096, 1, 256], "conditioned features");
         return await predict(
           feats,
           channelsFirst(floats(result.conditioned_features)),
