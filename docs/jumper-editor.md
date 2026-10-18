@@ -51,9 +51,17 @@ person detection or SAM. The private masked base is the only source for edits.
   the split explanation stay beside these controls. Split only operates inside
   the selected piece; select the piece containing the playhead if they differ.
   The last piece cannot be deleted; end pieces cannot move past the timeline.
-  Freeze speed is disabled because Freeze length in Cut controls its duration.
-- **Effects:** insert a one-second freeze and adjust
-  its duration in Cut (0.5–3s). Set start/end zoom from 1–2× and drag the preview
+  Freeze speed is disabled because Freeze length in Cut or Effects controls
+  its duration.
+- **Effects → Freeze at playhead:** pauses on entering Effects and identifies the
+  displayed frame by edited time and masked source frame. Inserts a one-second
+  hold, selects it, and seeks to its beginning. **Freeze length (0.5–3s)** appears
+  beside the insertion button; it remains available in Cut too. Selecting an
+  existing freeze also reveals the duration field in Effects. Undo/redo and
+  save/reload retain the duration. Insertion is unavailable when the extra second
+  or required pieces would exceed the 60-second/100-piece limits.
+  **Effects** also offers framing and fades. Set start/end zoom from 1–2× and
+  drag the preview
   or use horizontal/vertical framing sliders. Fades last approximately 0.25s.
   Slow motion repeats recorded frames; it does not invent body motion.
 - **Undo edit / Redo edit** keep up to 50 operations separately from mask history.

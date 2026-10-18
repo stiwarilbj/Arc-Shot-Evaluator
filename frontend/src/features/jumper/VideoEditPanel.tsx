@@ -447,6 +447,20 @@ export default function VideoEditPanel({
   function seconds(value: string) {
     return Math.round(Number(value) * 30);
   }
+  const freezeDurationControl = piece.freeze ? (
+    <label>
+      Freeze length (s) · 0.5–3 seconds
+      <input
+        type="number"
+        aria-label="Freeze duration"
+        min={0.5}
+        max={3}
+        step={1 / 30}
+        value={time(piece.freeze)}
+        onChange={(e) => updatePiece({ freeze: seconds(e.target.value) })}
+      />
+    </label>
+  ) : null;
   return (
     <section
       className="jumper-panel jumper-edit-panel"
@@ -802,7 +816,7 @@ export default function VideoEditPanel({
             {piece.freeze ? (
               <p className="jumper-caption">
                 Freeze frames keep their set duration; adjust Freeze length in
-                Cut.
+                Cut or Effects.
               </p>
             ) : null}
           </fieldset>
@@ -815,7 +829,13 @@ export default function VideoEditPanel({
               <button
                 key={v}
                 aria-pressed={panel === v}
-                onClick={() => setPanel(v)}
+                onClick={() => {
+                  setPanel(v);
+                  if (v === "Effects") {
+                    setPlaying(false);
+                    setTrimPreview(null);
+                  }
+                }}
               >
                 {v}
               </button>
@@ -880,20 +900,7 @@ export default function VideoEditPanel({
                     />
                   </>
                 ) : (
-                  <label>
-                    Freeze length (s)
-                    <input
-                      type="number"
-                      aria-label="Freeze duration"
-                      min={0.5}
-                      max={3}
-                      step={1 / 30}
-                      value={time(piece.freeze)}
-                      onChange={(e) =>
-                        updatePiece({ freeze: seconds(e.target.value) })
-                      }
-                    />
-                  </label>
+                  freezeDurationControl
                 )}
               </>
             ) : null}
@@ -1080,6 +1087,11 @@ export default function VideoEditPanel({
             ) : null}
             {panel === "Effects" ? (
               <>
+                <p className="jumper-caption jumper-freeze-preview">
+                  Hold the frame shown in the video preview: frame {frame + 1} ·{" "}
+                  {time(frame)}s (masked source frame {split.hit.source + 1} ·{" "}
+                  {time(split.hit.source)}s). A new freeze starts at 1 second.
+                </p>
                 <button
                   disabled={
                     project.pieces.length +
@@ -1087,7 +1099,7 @@ export default function VideoEditPanel({
                       split.hit.source > split.hit.piece.start
                         ? 2
                         : 1) >
-                    100
+                      100 || count + 30 > 1800
                   }
                   onClick={() => {
                     const at = editFrame(project, frame),
@@ -1111,12 +1123,39 @@ export default function VideoEditPanel({
                       pieces = [...split.pieces];
                       pieces.splice(i + 1, 0, freeze);
                     } else pieces.splice(i, 0, freeze);
-                    change({ ...project, pieces });
-                    setSelected(freeze.id);
+                    if (change({ ...project, pieces })) {
+                      setSelected(freeze.id);
+                      setFramingEnd(false);
+                      setFrame(
+                        pieces
+                          .slice(
+                            0,
+                            pieces.findIndex((p) => p.id === freeze.id),
+                          )
+                          .reduce((sum, p) => sum + pieceFrames(p), 0),
+                      );
+                    }
                   }}
                 >
-                  Insert 1-second freeze
+                  Freeze at playhead
                 </button>
+                {count + 30 > 1800 ? (
+                  <p className="jumper-caption">
+                    Make room for one second within the 60-second limit before
+                    adding a freeze.
+                  </p>
+                ) : null}
+                {project.pieces.length +
+                  (!split.hit.piece.freeze &&
+                  split.hit.source > split.hit.piece.start
+                    ? 2
+                    : 1) >
+                100 ? (
+                  <p className="jumper-caption">
+                    Delete a piece to make room within the 100-piece limit.
+                  </p>
+                ) : null}
+                {freezeDurationControl}
                 <label>
                   Frame position
                   <select
