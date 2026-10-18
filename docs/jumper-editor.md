@@ -393,3 +393,12 @@ counts, 30 fps, zero color-channel differences and no audio.
 The complete frontend regressions, 249 backend tests and both builds passed.
 These are tested fixture results, not a guarantee for every codec, device or
 mask. Tracking warnings still require correction and final-motion review.
+
+### Caption timing bars
+
+Each caption has a labeled interval beneath the video timeline, on its own row.
+Drag the middle to move the interval while keeping its duration; drag either edge
+to adjust start/end. Boundaries snap to 30 fps and cannot cross or leave the video.
+Click a bar to select its Text controls. Numeric timing fields and bars update
+together. Keyboard: arrows move one frame, Shift+arrows ten, Home/End reach the
+allowed bounds. Each drag or held-key adjustment is one undo step.

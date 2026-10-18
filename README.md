@@ -265,7 +265,11 @@ Personal videos stay on your device; they are never automatically published.
    The orange playhead marker and frame/time label show the split position.
    **Split at playhead** explains when it is unavailable, including empty-piece
    boundaries, freeze frames, and repeated slow-motion source frames.
-   Add timed captions in **Text**.
+   Add timed captions in **Text**. Labeled bars beneath the timeline show each
+   caption’s interval: drag the bar to move it without changing its duration, or
+   drag either edge to change its start/end. The numeric fields stay synchronized.
+   Focus a bar or edge and use arrow keys (Shift for ten frames), Home, or End;
+   each gesture is one undo step.
    Click a caption in the masked preview to open **Text** and highlight its
    existing controls. Drag it between the top, center, and bottom snap guides;
    each drag is one undo step. Guides are editor-only and stay out of exports.

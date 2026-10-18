@@ -1,4 +1,31 @@
 import assert from "node:assert/strict";
+import { shiftCaption } from "../frontend/src/features/jumper/captionTiming.ts";
+for (const [part, delta, expected] of [
+  ["move", 20, { start: 50, end: 80 }],
+  ["move", -100, { start: 0, end: 30 }],
+  ["move", 100, { start: 90, end: 120 }],
+  ["start", 100, { start: 59, end: 60 }],
+  ["start", -100, { start: 0, end: 60 }],
+  ["end", -100, { start: 30, end: 31 }],
+  ["end", 100, { start: 30, end: 120 }],
+  ["move", 0.6, { start: 31, end: 61 }],
+])
+  assert.deepEqual(
+    shiftCaption({ start: 30, end: 60 }, part, delta, 120),
+    expected,
+  );
+for (let length = 1; length <= 120; length++) {
+  for (const delta of [-999, -1, 0, 1, 999]) {
+    const interval = shiftCaption(
+      { start: 0, end: length },
+      "move",
+      delta,
+      120,
+    );
+    assert.equal(interval.end - interval.start, length);
+    assert(interval.start >= 0 && interval.end <= 120);
+  }
+}
 import { execFileSync } from "node:child_process";
 import {
   newProject,

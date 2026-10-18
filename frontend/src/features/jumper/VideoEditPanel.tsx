@@ -2,6 +2,7 @@ import { loadEditFont } from "./editFont";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import TimelinePieces from "./TimelinePieces";
 import CaptionPreview from "./CaptionPreview";
+import CaptionTimeline from "./CaptionTimeline";
 import { CanvasSink } from "mediabunny";
 import { openVideo } from "./media";
 import { drawEdit } from "./editDrawing";
@@ -383,6 +384,22 @@ export default function VideoEditPanel({
       ),
     });
   }
+  function timeCaption(id: string, interval: { start: number; end: number }) {
+    if (disabled || busy) return;
+    const current = latest.current.project;
+    const target = current.captions.find((c) => c.id === id);
+    if (
+      !target ||
+      (target.start === interval.start && target.end === interval.end)
+    )
+      return;
+    change({
+      ...current,
+      captions: current.captions.map((c) =>
+        c.id === id ? { ...c, ...interval, outside: false } : c,
+      ),
+    });
+  }
   function move(direction: number) {
     const i = project.pieces.findIndex((p) => p.id === piece.id),
       j = i + direction;
@@ -668,6 +685,17 @@ export default function VideoEditPanel({
             onTrim={trimBoundary}
             onTrimEnd={endTrim}
             onSelect={selectPiece}
+          />
+          <CaptionTimeline
+            captions={project.captions}
+            frames={count}
+            frame={frame}
+            selected={selectedCaption}
+            enabled={active && !disabled && !busy}
+            onSelect={selectCaption}
+            onChange={timeCaption}
+            onStart={beginCaptionDrag}
+            onEnd={endCaptionDrag}
           />
           <p className="jumper-caption">
             One 30 fps timeline · {time(count)}s / 60s. Quiz copies keep cuts,

@@ -1040,3 +1040,115 @@
   outline: 2px solid #ff753c;
   outline-offset: 3px;
 }
+
+/* Caption intervals use edited time, independently of source-piece thumbnails. */
+.jumper-caption-timeline {
+  margin-top: 0.7rem;
+  padding: 0.8rem 20px 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+.jumper-caption-lane {
+  margin-top: 0.75rem;
+  border-radius: 4px;
+}
+.jumper-caption-lane.is-selected {
+  outline: 2px solid #ff753c;
+  outline-offset: 5px;
+}
+.jumper-caption-lane-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+.jumper-caption-lane-label > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.jumper-caption-lane-label > span:last-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.jumper-caption-track {
+  position: relative;
+  height: 44px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+.jumper-caption-interval {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: #b14c25;
+  color: #fff;
+  border-radius: 3px;
+}
+.jumper-caption-grip {
+  position: absolute;
+  height: 44px;
+  top: 0;
+  touch-action: none;
+  user-select: none;
+  cursor: ew-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.jumper-caption-grip:focus-visible {
+  outline: 3px solid #ff753c;
+  outline-offset: 2px;
+  z-index: 4;
+}
+.jumper-caption-grip-move {
+  width: 100%;
+  padding: 0 3px;
+  display: block;
+  line-height: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+  font-size: 0.85rem;
+}
+.jumper-caption-grip-move:active {
+  cursor: grabbing;
+}
+.jumper-caption-grip-start,
+.jumper-caption-grip-end {
+  width: 18px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid #ff753c;
+  border-radius: 3px;
+  z-index: 2;
+}
+.jumper-caption-grip-start {
+  right: 100%;
+}
+.jumper-caption-grip-end {
+  left: 100%;
+}
+.jumper-caption-grip[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.6;
+}
+.jumper-caption-playhead {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-left: 2px solid #ff753c;
+  pointer-events: none;
+  z-index: 3;
+}
+.jumper-caption-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+}
