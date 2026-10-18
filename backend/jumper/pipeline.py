@@ -18,6 +18,7 @@ from .camera_cuts import CameraCuts
 from .mask_quality import MaskQuality
 from .mask_joins import MaskJoins
 from .mask_ownership import MaskOwnership
+from .compression_quality import detail_proof, SilhouetteCompressionError
 from .video_validation import (
     validate_composite,
     silhouette_proof,
@@ -723,7 +724,7 @@ def track(
 
 
 @contextmanager
-def encoder(path: Path, width: int, height: int):
+def encoder(path: Path, width: int, height: int, high_quality=False):
     with tempfile.TemporaryFile() as errors:
         process = subprocess.Popen(
             [
@@ -748,7 +749,7 @@ def encoder(path: Path, width: int, height: int):
                 "-c:v",
                 "libx264",
                 "-crf",
-                "18",
+                "8" if high_quality else "18",
                 "-preset",
                 "fast",
                 "-pix_fmt",
@@ -773,7 +774,7 @@ def encoder(path: Path, width: int, height: int):
             process.stdin.close()
 
 
-def render(
+def _render(
     frames: list[Path],
     masks: Path,
     output: Path,
@@ -782,6 +783,7 @@ def render(
     silhouette: bool = False,
     palette: bool = False,
     progress=None,
+    high_quality=False,
 ) -> dict:
     output.mkdir(exist_ok=True)
     if silhouette:
@@ -804,9 +806,10 @@ def render(
             graph.observe(labels)
         shades = graph.finish()
     proofs = []
+    details = []
     with ExitStack() as stack:
         streams = [
-            stack.enter_context(encoder(path, width, height)) for path in paths.values()
+            stack.enter_context(encoder(path, width, height, high_quality)) for path in paths.values()
         ]
         for index, frame in enumerate(frames):
             labels = np.load(masks / f"{index:06d}.npy", allow_pickle=False)
@@ -822,6 +825,7 @@ def render(
             if silhouette:
                 composites = tuple(neutral_edges(image) for image in composites)
             proofs.append(silhouette_proof(composites[0]))
+            details.append(detail_proof(composites[0]))
             if index == 0:
                 thumbnail = (
                     output
@@ -837,7 +841,8 @@ def render(
                 progress(index + 1, len(frames))
     for kind, path in paths.items():
         validate_finished_video(
-            path, width, height, len(frames), proofs if kind == "quiz" else None
+            path, width, height, len(frames), proofs if kind == "quiz" else None,
+            details=details if kind == "quiz" else None,
         )
     if silhouette:
         paths["highlight"] = paths["quiz"]
@@ -847,3 +852,11 @@ def render(
         kind: {"file": path.name, "sha256": digest(path), "bytes": path.stat().st_size}
         for kind, path in paths.items()
     }
+
+
+def render(frames, masks, output, target, token, silhouette=False, palette=False, progress=None):
+    # Retry only compositing/encoding from completed masks, never segmentation.
+    try:
+        return _render(frames, masks, output, target, token, silhouette, palette, progress)
+    except SilhouetteCompressionError:
+        return _render(frames, masks, output, target, token, silhouette, palette, progress, True)

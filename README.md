@@ -324,6 +324,13 @@ Personal videos stay on your device; they are never automatically published.
    The orange playhead marker and frame/time label show the split position.
    **Split at playhead** explains when it is unavailable, including empty-piece
    boundaries, freeze frames, and repeated slow-motion source frames.
+   Finished exports are decoded and checked against the intended rendered
+   silhouettes, including high-contrast outlines and narrow arms, hands, and gaps.
+   Noticeable sampled detail loss triggers one higher-quality encoding attempt
+   from completed masks or the masked edit base, without running segmentation
+   again. Outputs still must pass integrity/color checks and stay under 100 MB;
+   a failed retry remains an error rather than a ready result. This is a bounded
+   compression check, not a guarantee that every detail or tracking mask is correct.
    **Cut → Protect shooting motion (optional)** lets you mark Gather, Release,
    and Finish on the masked source timeline, including footage removed from the
    current edit. Inspect exact source frames with the scrubber or numeric time.

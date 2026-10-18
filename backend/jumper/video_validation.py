@@ -9,6 +9,8 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .compression_quality import validate_detail_pixels
+
 BLOCK = 8
 CHROMA_TOLERANCE = 8
 LUMA_TOLERANCE = 16
@@ -95,6 +97,7 @@ def validate_finished_video(
     *,
     neutral=False,
     profile="legacy",
+    details=None,
 ):
     if not (
         2 <= width <= 1280
@@ -105,6 +108,10 @@ def validate_finished_video(
         raise ValueError("Invalid finished-video geometry or frame count")
     if proofs is not None and len(proofs) != count:
         raise ValueError("Missing output color checks")
+    if details is not None and len(details) != count:
+        raise ValueError("Missing output detail checks")
+    if path.stat().st_size > 100 * 1024 * 1024:
+        raise ValueError("Finished video exceeds 100 MB")
     # Bundled FFmpeg independently decodes all streams. -xerror prevents corrupt
     # packets being silently concealed. No dependency on a system ffprobe.
     with tempfile.TemporaryFile() as errors:
@@ -173,6 +180,8 @@ def validate_finished_video(
             timestamp = capture.get(cv2.CAP_PROP_POS_MSEC) / 1000
             if not np.isfinite(timestamp) or abs(timestamp - index / 30) > 0.002:
                 raise ValueError("Encoded video has an incorrect frame timeline")
+            if details is not None:
+                validate_detail_pixels(image, details[index])
             if proofs is not None:
                 validate_decoded_pixels(image, proofs[index])
             elif neutral:

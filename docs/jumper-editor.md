@@ -630,3 +630,39 @@ encoded pixels nor the clean quiz. Marker-only edits invalidate the saved-copy
 status but keep the current export and motion-review approval. Reset edits clears
 all markers. Run `npm --prefix frontend run test:jumper` and
 `.venv/bin/python -m pytest tests/test_jumper_editing.py -q` for focused checks.
+
+
+## Compression-detail checks
+
+New masking and edited exports compare every decoded frame to bounded evidence
+from its intended neutral rendered frame, after antialiasing, cuts, captions,
+framing, and fades. This complements the existing guarded interior/color checks.
+Two groups separately sample narrow extrema (including thin limbs and player
+gaps) and ordinary high-contrast boundaries, using contrast of at least 24 luma
+levels. Each group keeps at most 1,024 source-position/luma samples per frame
+(8 KiB total; at most 14.1 MiB for a 60-second edit). No original-color pixels or
+raw uploaded footage are stored in this evidence.
+
+A frame fails when at least three samples and more than 2% of either group differ
+by over 40 luma levels. These thresholds tolerate ordinary edge ringing while
+checking small features separately from large outlines. Sampling is not an
+anatomical hand detector, an exhaustive pixel comparison, or segmentation QA.
+The source mask still requires full-motion human review. Previously saved/imported
+videos lack intended-frame evidence and retain their existing integrity checks.
+
+A compression failure gets one higher-quality encoding retry: browser export
+uses 8 Mbps instead of 2.5 Mbps; native FFmpeg uses CRF 8 instead of CRF 18.
+Both attempts decode and validate their finished result; each variant remains
+limited to 100 MB. Masking retries use the existing bounded completed-mask
+checkpoint (or temporary palette masks); if unavailable, export fails without
+rerunning inference. Editing retries read the existing masked base and recipe.
+A second quality failure remains an error; the native generic checkpoint retry
+must not restart an already exhausted quality retry. Cancellation and existing
+resource cleanup remain active; previous successful edited outputs are retained.
+
+Tests: `npm --prefix frontend run test:jumper` includes native/browser evidence
+parity and retry bounds. `.venv/bin/python -m pytest tests/test_jumper*.py -q`
+includes independent native encoding, damage detection, mask-only retry,
+cancellation, and persistent failure. Browser testing also injects damaged
+first-attempt encoder frames, then independently decodes the higher-quality
+result; this export test does not require or establish segmentation accuracy.

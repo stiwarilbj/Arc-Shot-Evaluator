@@ -1,3 +1,4 @@
+import { detailProof, type DetailProof } from "./compressionQuality";
 /// <reference lib="webworker" />
 import { latestShooterAnchor, shooterAnchors } from "./trackingAnchors";
 import { MaskJoins } from "./maskJoins";
@@ -613,15 +614,18 @@ async function process(
     async function cancelOutputs() {
       for (const output of outputs.splice(0)) {
         try {
-          await output.output.cancel();
+          if (!output.finalized) await output.output.cancel();
         } catch {}
       }
     }
     const colorProofs: Uint8Array[] = [];
+    const detailProofs: DetailProof[] = [];
+    let highQuality = false;
     async function createOutputs() {
       colorProofs.length = 0;
+      detailProofs.length = 0;
       for (let i = 0; i < (silhouette ? 1 : 3); i++)
-        outputs.push(await format.create());
+        outputs.push(await format.create(highQuality));
     }
     async function finishOutputs() {
       const completed = await Promise.allSettled(
@@ -637,6 +641,8 @@ async function process(
           blobs[i],
           { width, height, count },
           silhouette || i === 1 ? colorProofs : undefined,
+          false, "legacy",
+          silhouette || i === 1 ? detailProofs : undefined,
         );
       }
       return blobs;
@@ -664,8 +670,10 @@ async function process(
           grayShades,
         );
         if (silhouette) neutralEdges(pixels, width, height);
-        if (kind === "quiz")
+        if (kind === "quiz") {
           colorProofs.push(silhouetteProof(pixels, width, height));
+          detailProofs.push(detailProof(pixels, width, height));
+        }
         outputs[i].context.putImageData(
           new ImageData(pixels, width, height),
           0,
@@ -1035,7 +1043,8 @@ async function process(
         return finishOutputs();
       },
       async () => {
-        await renderRecorded("Retrying export from completed masks");
+        highQuality = true;
+        await renderRecorded("Retrying higher-quality export from completed masks");
         report("Finalizing retried export", 1);
         return finishOutputs();
       },

@@ -121,7 +121,9 @@ def test_real_encoding_and_identical_pair_timing(tmp_path):
         "test",
         progress=lambda done, total: updates.append((done, total)),
     )
-    assert updates == [(i, 6) for i in range(1, 7)]
+    # Some encoders blur the moving edge enough to trigger the new quality retry.
+    cycle = [(i, 6) for i in range(1, 7)]
+    assert updates in (cycle, cycle * 2)
     assert set(result) == {"quiz", "reveal", "highlight", "thumbnail"}
     timelines = []
     for kind in ("quiz", "reveal", "highlight"):

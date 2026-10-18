@@ -8,6 +8,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from .compression_quality import detail_proof, SilhouetteCompressionError
 from .video_validation import validate_finished_video, silhouette_proof
 
 PROFILE = "silhouette-edited-v1"
@@ -265,7 +266,7 @@ def draw_frame(image, p, index, clean=False):
     return np.repeat(gray[:, :, None], 3, axis=2)
 
 
-def render(base: Path, project: dict, directory: Path, cancel, progress):
+def _render(base: Path, project: dict, directory: Path, cancel, progress, high_quality=False):
     validate_project(project)
     capture = cv2.VideoCapture(str(base))
     width, height = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
@@ -311,7 +312,7 @@ def render(base: Path, project: dict, directory: Path, cancel, progress):
                     "-preset",
                     "fast",
                     "-crf",
-                    "18",
+                    "8" if high_quality else "18",
                     "-pix_fmt",
                     "yuv420p",
                     "-movflags",
@@ -324,6 +325,7 @@ def render(base: Path, project: dict, directory: Path, cancel, progress):
             )
             capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
             proofs = []
+            details = []
             last = -1
             image = None
             try:
@@ -343,6 +345,7 @@ def render(base: Path, project: dict, directory: Path, cancel, progress):
                     if np.any(out.max(axis=2) != out.min(axis=2)):
                         raise ValueError("Edited frame is not neutral")
                     proofs.append(silhouette_proof(out))
+                    details.append(detail_proof(out))
                     process.stdin.write(out.tobytes())
                     progress((int(clean) * count + index + 1) / (2 * count + 2))
                 process.stdin.close()
@@ -358,6 +361,7 @@ def render(base: Path, project: dict, directory: Path, cancel, progress):
                     proofs,
                     neutral=True,
                     profile="edited",
+                    details=details,
                 )
             finally:
                 if process.poll() is None:
@@ -366,3 +370,12 @@ def render(base: Path, project: dict, directory: Path, cancel, progress):
         progress(1)
     finally:
         capture.release()
+
+
+def render(base: Path, project: dict, directory: Path, cancel, progress):
+    try:
+        return _render(base, project, directory, cancel, progress)
+    except SilhouetteCompressionError:
+        if cancel.is_set():
+            raise InterruptedError("Rendering cancelled")
+        return _render(base, project, directory, cancel, progress, high_quality=True)

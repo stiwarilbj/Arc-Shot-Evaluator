@@ -1,3 +1,8 @@
+import {
+  detailProof,
+  withCompressionRetry,
+  type DetailProof,
+} from "./compressionQuality";
 import { loadEditFont } from "./editFont";
 import { CanvasSink } from "mediabunny";
 import { openVideo, writers, validateFinishedVideo } from "./media";
@@ -52,66 +57,80 @@ export async function renderEdits(
       writer = await writers(width, height);
     const variants: Blob[] = [];
     for (const clean of [false, true]) {
-      const output = await writer.create(),
-        proofs: Uint8Array[] = [];
-      let last = -1,
-        sample: Awaited<ReturnType<typeof sink.getCanvas>> = null;
-      try {
-        for (let i = 0; i < count; i++) {
+      await withCompressionRetry(
+        async (highQuality) => {
           signal?.throwIfAborted();
-          const source = editFrame(project, i, clean).source;
-          if (source !== last) {
-            sample = await sink.getCanvas(source / 30 + 0.00001);
-            last = source;
-          }
-          if (!sample) throw Error("The masked base has a missing frame");
-          drawEdit(
-            output.context,
-            sample.canvas,
-            width,
-            height,
-            project,
-            i,
-            clean,
-          );
-          const pixels = output.context.getImageData(0, 0, width, height).data;
-          for (let n = 0; n < pixels.length; n += 4) {
-            const gray = Math.round(
-              (pixels[n] + pixels[n + 1] + pixels[n + 2]) / 3,
+          const output = await writer.create(highQuality),
+            proofs: Uint8Array[] = [],
+            details: DetailProof[] = [];
+          let last = -1,
+            sample: Awaited<ReturnType<typeof sink.getCanvas>> = null;
+          try {
+            for (let i = 0; i < count; i++) {
+              signal?.throwIfAborted();
+              const source = editFrame(project, i, clean).source;
+              if (source !== last) {
+                sample = await sink.getCanvas(source / 30 + 0.00001);
+                last = source;
+              }
+              if (!sample) throw Error("The masked base has a missing frame");
+              drawEdit(
+                output.context,
+                sample.canvas,
+                width,
+                height,
+                project,
+                i,
+                clean,
+              );
+              const pixels = output.context.getImageData(
+                0,
+                0,
+                width,
+                height,
+              ).data;
+              for (let n = 0; n < pixels.length; n += 4) {
+                const gray = Math.round(
+                  (pixels[n] + pixels[n + 1] + pixels[n + 2]) / 3,
+                );
+                pixels[n] = pixels[n + 1] = pixels[n + 2] = gray;
+              }
+              output.context.putImageData(
+                new ImageData(pixels, width, height),
+                0,
+                0,
+              );
+              for (let n = 0; n < pixels.length; n += 4)
+                if (
+                  pixels[n] !== pixels[n + 1] ||
+                  pixels[n] !== pixels[n + 2] ||
+                  pixels[n + 3] !== 255
+                )
+                  throw Error("Editor produced non-neutral pixels");
+              proofs.push(silhouetteProof(pixels, width, height));
+              details.push(detailProof(pixels, width, height));
+              await output.source.add(i / 30, 1 / 30);
+              progress((Number(clean) * count + i + 1) / (count * 2 + 2));
+            }
+            const blob = await output.finish();
+            if (blob.size > MAX_BYTES)
+              throw Error("Finished video exceeds the 100 MB limit");
+            await validateFinishedVideo(
+              blob,
+              { width, height, count },
+              proofs,
+              true,
+              "edited",
+              details,
             );
-            pixels[n] = pixels[n + 1] = pixels[n + 2] = gray;
+            variants.push(blob);
+          } catch (error) {
+            if (!output.finalized) await output.output.cancel().catch(() => {});
+            throw error;
           }
-          output.context.putImageData(
-            new ImageData(pixels, width, height),
-            0,
-            0,
-          );
-          for (let n = 0; n < pixels.length; n += 4)
-            if (
-              pixels[n] !== pixels[n + 1] ||
-              pixels[n] !== pixels[n + 2] ||
-              pixels[n + 3] !== 255
-            )
-              throw Error("Editor produced non-neutral pixels");
-          proofs.push(silhouetteProof(pixels, width, height));
-          await output.source.add(i / 30, 1 / 30);
-          progress((Number(clean) * count + i + 1) / (count * 2 + 2));
-        }
-        const blob = await output.finish();
-        if (blob.size > MAX_BYTES)
-          throw Error("Finished video exceeds the 100 MB limit");
-        await validateFinishedVideo(
-          blob,
-          { width, height, count },
-          proofs,
-          true,
-          "edited",
-        );
-        variants.push(blob);
-      } catch (error) {
-        await output.output.cancel().catch(() => {});
-        throw error;
-      }
+        },
+        () => progress((Number(clean) * count) / (count * 2 + 2)),
+      );
     }
     signal?.throwIfAborted();
     progress(1);

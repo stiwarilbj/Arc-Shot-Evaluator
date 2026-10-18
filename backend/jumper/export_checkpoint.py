@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .compression_quality import SilhouetteCompressionError
+
 import hashlib
 import time
 
@@ -110,6 +112,9 @@ def render_with_retry(
                     "Rendering masked videos", done, total
                 ),
             )
+        except SilhouetteCompressionError:
+            # render() already exhausted its single higher-quality attempt.
+            raise
         except (OSError, RuntimeError, ValueError):
             if not valid(checkpoint, frames, masks, target, start):
                 raise

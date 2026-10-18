@@ -1,4 +1,8 @@
 import {
+  validateDetailPixels,
+  type DetailProof,
+} from "./compressionQuality.ts";
+import {
   validateGeometry,
   validateFrameTime,
   validateDecodedPixels,
@@ -78,7 +82,7 @@ export async function writers(width: number, height: number) {
   if (!codec)
     throw Error("Video export is unsupported here. Use the downloaded app.");
   const mime = codec === "avc" ? "video/mp4" : "video/webm";
-  const create = async () => {
+  const create = async (highQuality = false) => {
     const canvas = new OffscreenCanvas(width, height);
     const context = canvas.getContext("2d", { willReadFrequently: true });
     if (!context) throw Error("Could not create output canvas");
@@ -90,10 +94,17 @@ export async function writers(width: number, height: number) {
           ? new Mp4OutputFormat({ fastStart: "in-memory" })
           : new WebMOutputFormat(),
     });
-    const source = new CanvasSource(canvas, { codec, bitrate: 2_500_000 });
+    const source = new CanvasSource(canvas, {
+      codec,
+      bitrate: highQuality ? 8_000_000 : 2_500_000,
+    });
     output.addVideoTrack(source, { frameRate: 30 });
     await output.start();
+    let finalized = false;
     return {
+      get finalized() {
+        return finalized;
+      },
       canvas,
       context,
       source,
@@ -101,6 +112,7 @@ export async function writers(width: number, height: number) {
       async finish() {
         source.close();
         await output.finalize();
+        finalized = true;
         if (!target.buffer) throw Error("Export produced no video");
         return new Blob([target.buffer], { type: mime });
       },
@@ -149,7 +161,7 @@ export function silhouettePixels(
         : owners[i] === target
           ? 0
           : palette
-            ? shades?.[owners[i]] ?? 64 + (((owners[i] - 1) * 47) % 137)
+            ? (shades?.[owners[i]] ?? 64 + (((owners[i] - 1) * 47) % 137))
             : 128;
     result[at] = result[at + 1] = result[at + 2] = value;
     result[at + 3] = 255;
@@ -164,10 +176,15 @@ export async function validateFinishedVideo(
   proofs?: readonly Uint8Array[],
   neutral = false,
   profile: "legacy" | "palette" | "edited" = "legacy",
+  details?: readonly DetailProof[],
 ) {
   validateGeometry(geometry, profile === "edited");
   if (proofs && proofs.length !== geometry.count)
     throw Error("Missing output color checks");
+  if (blob.size > 100 * 1024 * 1024)
+    throw Error("Finished video exceeds the 100 MB limit");
+  if (details && details.length !== geometry.count)
+    throw Error("Missing output detail checks");
   const { input, track, duration } = await openVideo(blob);
   try {
     if (
@@ -197,7 +214,7 @@ export async function validateFinishedVideo(
         sample.canvas.height !== geometry.height
       )
         throw Error("Decoded frame dimensions changed");
-      if (proofs || neutral) {
+      if (proofs || neutral || details) {
         const context = sample.canvas.getContext("2d", {
           willReadFrequently: true,
         });
@@ -208,6 +225,7 @@ export async function validateFinishedVideo(
           geometry.width,
           geometry.height,
         ).data;
+        if (details) validateDetailPixels(pixels, details[index]);
         if (proofs)
           validateDecodedPixels(
             pixels,
