@@ -288,6 +288,14 @@ Personal videos stay on your device; they are never automatically published.
    grid, flag overlap below 60% with at least 16 foreground grid pixels, and do
    not change output masks or guarantee identity. Both-empty masks still use
    the existing missing-player checks. Full-motion review remains required.
+   **Possible joined players** flags persistent evidence that one mask is taking
+   over another player’s body pixels, including modest changes missed by area
+   limits. Both browser and native processing compare occupied masks and visible
+   ownership over time, using existing person detections when available. Inspect
+   both recorded tracks, add Include/Exclude points and reprocess before saving.
+   This does not alter masks automatically. Real occlusion can look similar, and
+   tiny or already-merged tracks can escape detection; full-motion review remains
+   required.
    Personal silhouette previews and exports use a narrow, one-pixel neutral edge
    filter to soften jagged outlines. Only assigned silhouette shades and the
    flat background contribute to edge colors; original jersey pixels never do.

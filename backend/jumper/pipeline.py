@@ -16,6 +16,7 @@ from .overlap_palette import OverlapPalette
 from .neutral_edges import neutral_edges
 from .camera_cuts import CameraCuts
 from .mask_quality import MaskQuality
+from .mask_joins import MaskJoins
 from .mask_ownership import MaskOwnership
 from .video_validation import (
     validate_composite,
@@ -485,10 +486,13 @@ def track(
                 apply_prompt(state, index, obj_id, prompt)
             camera_cuts = CameraCuts()
             quality = MaskQuality()
+            joins = MaskJoins(width, height)
             ownership = MaskOwnership(width, height)
             previous_areas = {}
+            frame_boxes = []
 
             def propagation():
+                nonlocal frame_boxes
                 if detector is None and tracking_check is None and not recovery_anchors:
                     yield from predictor.propagate_in_video(state, start_frame_idx=0)
                     return
@@ -525,6 +529,7 @@ def track(
                         values.argmax(axis=0)[valid]
                     ]
                     boxes = detect(index)
+                    frame_boxes = boxes
                     resolution = discovery.resolve(index, boxes, owners, job["objects"])
                     if resolution["ambiguous"]:
                         warning = {"frame": index, "kind": "ambiguous_players"}
@@ -649,6 +654,10 @@ def track(
                         for p in o["prompts"]
                     ),
                 )
+                joins.begin()
+                for row, identity in enumerate(ids):
+                    joins.add(identity, values[row])
+                warnings.extend(joins.inspect(index, labels, job["objects"], frame_boxes, reset=cut))
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
                 frame_warnings = quality.inspect(
                     index, labels, job["objects"], job["target_id"], reset=cut

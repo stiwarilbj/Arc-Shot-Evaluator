@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { latestShooterAnchor, shooterAnchors } from "./trackingAnchors";
+import { MaskJoins } from "./maskJoins";
 import { OverlapPalette } from "./overlapPalette";
 import { PaletteFrames } from "./paletteFrames";
 import { neutralEdges } from "./neutralEdges";
@@ -682,6 +683,7 @@ async function process(
     const discovery = new PeopleDiscovery();
     const cameraCuts = new CameraCuts();
     const quality = new MaskQuality();
+    const joins = new MaskJoins(width, height);
     const ownership = new MaskOwnership(width, height);
     const recoveryAnchors = shooterAnchors(objects, target_id);
     const small = new OffscreenCanvas(64, 36),
@@ -695,6 +697,8 @@ async function process(
       if (!sample)
         throw Error("The selected segment could not be fully decoded");
       const feats = await features(frame, sample.canvas);
+      joins.begin();
+      let frameBoxes: number[][] = [];
       const frameMasks = fineSink ? new Map<number, Float32Array>() : undefined;
       ownership.begin();
       const owners = ownership.owners;
@@ -726,6 +730,7 @@ async function process(
           // source frame. The 1024px masks are used only by the memory encoder.
           const values = bilinear(prediction.low, 256, 256, width, height);
           frameMasks?.set(object.id, values);
+          joins.add(object.id, values, width, height);
           ownership.add(object.id, values);
           if (object.id === target_id)
             trackingCheck?.record(frame, values, width, height);
@@ -738,6 +743,7 @@ async function process(
             frame / count,
           );
           const boxes = await detect(frame, sample.canvas);
+          frameBoxes = boxes;
           const resolution = discovery.resolve(
             frame,
             boxes,
@@ -783,6 +789,7 @@ async function process(
                 .set(frame, await remember(sampleFeatures, prediction, frame));
               const values = bilinear(prediction.low, 256, 256, width, height);
               frameMasks?.set(id, values);
+              joins.add(id, values, width, height);
               ownership.add(id, values);
             }
           }
@@ -842,8 +849,10 @@ async function process(
               dispose(detail);
             }
           }
-          if (refined) frameMasks.set(object.id, refined);
-          else
+          if (refined) {
+            frameMasks.set(object.id, refined);
+            joins.add(object.id, refined, width, height);
+          } else
             warnings.push({
               frame,
               kind: "refinement_uncertain",
@@ -863,6 +872,17 @@ async function process(
       const labels = ownership.finish(
         new Set(objects.filter((o) => o.ignored).map((o) => o.id)),
         cut || objects.some((o) => o.prompts.some((p) => p.frame === frame)),
+      );
+      warnings.push(
+        ...joins.inspect(
+          frame,
+          labels,
+          width,
+          height,
+          objects,
+          frameBoxes,
+          cut,
+        ),
       );
       warnings.push(
         ...quality.inspect(

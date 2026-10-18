@@ -225,6 +225,19 @@ bounded decoding, a bundled OFL caption font, and independent output validation.
    check. This audit adds one bounded shooter pass through the confirmed range,
    reusing cached encoder features. The audit never changes masks or proves which
    pass is correct. Small/tiny outlines can escape the 128×128 diagnostic grid.
+   **Possible joined players** uses a bounded grid (at most 128 pixels along the
+   longest edge) to compare raw occupied masks with final visible ownership.
+   A substantial new claim on a neighboring body interior, while retaining the
+   claimant’s body, or support from two distinct occupied detection cores must
+   persist for two consecutive frames. The marker includes both stable track IDs
+   and the first affected frame. Existing detections are reused; manual mode
+   still uses mask and ownership history without downloading a detector.
+   Cuts/gaps reset temporal evidence; ignored/unstarted tracks are excluded.
+   Corrections do not automatically exempt a still-joined mask. These are review
+   hints: real occlusion can resemble a join, tiny silhouettes may be missed, and
+   manual clips already merged at the start may have no clean baseline. Inspect
+   both tracks, add Include/Exclude points, and reprocess. Warnings block saving
+   through the existing review gate; no diagnostic changes the rendered pixels.
    Small-player refinement runs automatically in Create and its shooter preview.
    It re-encodes a padded crop from decoded source frames (up to 2560×1440), using
    the same SAM weights and current-frame body evidence, then maps the outline

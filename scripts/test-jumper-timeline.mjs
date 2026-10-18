@@ -23,7 +23,7 @@ try {
   await page.route(/\/masking[^/]*\.js(?:\?.*)?$/, (route) =>
     route.fulfill({
       contentType: "application/javascript",
-      body: `self.onmessage=({data})=>{const bytes=Uint8Array.from(atob(${JSON.stringify(media)}),c=>c.charCodeAt(0));const blob=new Blob([bytes],{type:'video/mp4'});self.postMessage({kind:'done',id:data.id,result:{highlight:blob,quiz:blob,reveal:blob,duration:.3,objects:[{id:1,prompts:[{frame:0,points:[[.5,.5]],labels:[1]}]},{id:7,prompts:[{frame:0,box:[.1,.1,.3,.9]}]},{id:9,prompts:[{frame:0,box:[.6,.1,.9,.9]}]}],warnings:[{frame:0,kind:'target_lost',track_ids:[1]},{frame:1,kind:'tracking_unstable',track_ids:[1]},{frame:2,kind:'ambiguous_players',track_ids:[7,9]},{frame:3,kind:'ambiguous_players',track_ids:[7,9]},{frame:7,kind:'ambiguous_players',track_ids:[7,9]},{frame:8,kind:'possible_camera_cut'}]}})};`,
+      body: `self.onmessage=({data})=>{const bytes=Uint8Array.from(atob(${JSON.stringify(media)}),c=>c.charCodeAt(0));const blob=new Blob([bytes],{type:'video/mp4'});self.postMessage({kind:'done',id:data.id,result:{highlight:blob,quiz:blob,reveal:blob,duration:.3,objects:[{id:1,prompts:[{frame:0,points:[[.5,.5]],labels:[1]}]},{id:7,prompts:[{frame:0,box:[.1,.1,.3,.9]}]},{id:9,prompts:[{frame:0,box:[.6,.1,.9,.9]}]}],warnings:[{frame:0,kind:'target_lost',track_ids:[1]},{frame:1,kind:'tracking_unstable',track_ids:[1]},{frame:2,kind:'ambiguous_players',track_ids:[7,9]},{frame:3,kind:'ambiguous_players',track_ids:[7,9]},{frame:7,kind:'ambiguous_players',track_ids:[7,9]},{frame:8,kind:'possible_camera_cut'},{frame:4,kind:'mask_joined',track_ids:[7,9]},{frame:5,kind:'mask_joined',track_ids:[7,9]}]}})};`,
     }),
   );
   await page.goto(
@@ -47,14 +47,16 @@ try {
   await page.getByRole("button", { name: "Place point", exact: true }).click();
   // This fixture supplies worker evidence, not detector output.
   await page.locator(".jumper-corrections summary").click();
-  await page.getByLabel("Find other people automatically", { exact: false }).uncheck();
+  await page
+    .getByLabel("Find other people automatically", { exact: false })
+    .uncheck();
   await page.locator(".jumper-corrections summary").click();
   await page.getByRole("button", { name: "Process clip", exact: true }).click();
   const timeline = page.getByRole("region", { name: "Mask-quality timeline" });
   await expect(timeline).toBeVisible();
   await expect(
     timeline.getByRole("button", { name: /flagged frames?/ }),
-  ).toHaveCount(4);
+  ).toHaveCount(5);
   const overlap = timeline.getByRole("button", {
     name: "Uncertain player match: 3 flagged frames",
     exact: true,
@@ -115,6 +117,30 @@ try {
   await expect(
     page.getByRole("button", { name: "Save to My Clips", exact: true }),
   ).toBeDisabled();
+  const joined = timeline.getByRole("button", {
+    name: "Possible joined players: 2 flagged frames",
+    exact: true,
+  });
+  await joined.press("Enter");
+  await expect(
+    page.getByLabel("Correction frame", { exact: true }),
+  ).toHaveValue("4");
+  await expect(
+    timeline.getByRole("button", { name: "Inspect track 7", exact: true }),
+  ).toBeVisible();
+  await timeline
+    .getByRole("button", { name: "Inspect track 9", exact: true })
+    .click();
+  await expect(
+    page.getByText("Editing track 9 ·", { exact: false }),
+  ).toBeVisible();
+  await joined.press("ArrowRight");
+  await expect(
+    page.getByLabel("Correction frame", { exact: true }),
+  ).toHaveValue("5");
+  await expect(
+    timeline.getByText(/Real occlusion can produce similar evidence/),
+  ).toBeVisible();
   // Adding a correction retains the report as explicitly stale review evidence.
   await overlap.press("ArrowRight");
   await image.focus();

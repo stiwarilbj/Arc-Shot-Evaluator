@@ -92,6 +92,7 @@ export interface MaskWarning {
     | "tracking_unstable"
     | "outline_changed"
     | "mask_fragmented"
+    | "mask_joined"
     | "ambiguous_players"
     | "tracking_disagreement"
     | "refinement_uncertain"
@@ -392,6 +393,7 @@ export function maskResult(value: unknown): value is MaskResult {
           "tracking_unstable",
           "outline_changed",
           "mask_fragmented",
+          "mask_joined",
           "ambiguous_players",
           "tracking_disagreement",
           "refinement_uncertain",

@@ -57,6 +57,9 @@ export default function MaskTimeline({
         {warnings.some((w) => w.kind === "refinement_uncertain")
           ? " Small-player detail uncertain means a close crop could not safely refine the visible outline. Inspect hands, feet and overlaps; add Include/Exclude points or choose a closer segment. Hidden details cannot be recovered."
           : ""}
+        {warnings.some((w) => w.kind === "mask_joined")
+          ? " Possible joined players means a mask may include a neighboring person. Inspect both tracks, add Include/Exclude points on the problem frame, and reprocess. Real occlusion can produce similar evidence; this is a review hint, not a confirmed identity error."
+          : ""}
         {stale ? " Selections changed; reprocess to refresh these hints." : ""}
       </p>
       {lanes.length ? (
