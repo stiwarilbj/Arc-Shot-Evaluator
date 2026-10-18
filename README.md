@@ -270,6 +270,12 @@ Personal videos stay on your device; they are never automatically published.
    grid, flag overlap below 60% with at least 16 foreground grid pixels, and do
    not change output masks or guarantee identity. Both-empty masks still use
    the existing missing-player checks. Full-motion review remains required.
+   Personal silhouette previews and exports use a narrow, one-pixel neutral edge
+   filter to soften jagged outlines. Only assigned silhouette shades and the
+   flat background contribute to edge colors; original jersey pixels never do.
+   Solid interiors and tracking labels remain unchanged. This smooths visible
+   outlines without reconstructing obscured detail. Existing clips are unchanged.
+
    Small silhouettes also get a tighter, higher-resolution crop pass in both
    browser and downloaded processing, including the shooter preview. Crops use
    decoded source detail up to 1440p, while exports stay at up to 720p/30 fps.

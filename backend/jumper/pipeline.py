@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .neutral_edges import neutral_edges
 from .camera_cuts import CameraCuts
 from .mask_quality import MaskQuality
 from .mask_ownership import MaskOwnership
@@ -787,6 +788,8 @@ def render(
                 composites = composite(rgb, labels, target)
             for kind, image in zip(kinds, composites):
                 validate_composite(image, labels, target, kind, palette=palette)
+            if silhouette:
+                composites = tuple(neutral_edges(image) for image in composites)
             proofs.append(silhouette_proof(composites[0]))
             if index == 0:
                 thumbnail = (

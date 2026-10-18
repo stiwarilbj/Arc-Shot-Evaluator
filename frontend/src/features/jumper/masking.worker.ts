@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { neutralEdges } from "./neutralEdges";
 import { CameraCuts } from "./cameraCuts";
 import * as ort from "onnxruntime-web/webgpu";
 import ortModule from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
@@ -652,6 +653,7 @@ async function process(
           kind,
           request.request.presentation === "silhouette-palette-v1",
         );
+        if (silhouette) neutralEdges(pixels, width, height);
         if (kind === "quiz")
           colorProofs.push(silhouetteProof(pixels, width, height));
         outputs[i].context.putImageData(
