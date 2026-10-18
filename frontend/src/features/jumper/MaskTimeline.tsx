@@ -51,6 +51,9 @@ export default function MaskTimeline({
       <p className="jumper-caption">
         Review hints, not accuracy guarantees. Unmarked frames may still need
         correction.
+        {warnings.some((w) => w.kind === "tracking_disagreement")
+          ? " Forward/backward mismatch means two independent shooter tracks disagree. Inspect the shooter and add Include/Exclude points, or shorten the segment; these flags do not prove which pass is correct."
+          : ""}
         {stale ? " Selections changed; reprocess to refresh these hints." : ""}
       </p>
       {lanes.length ? (

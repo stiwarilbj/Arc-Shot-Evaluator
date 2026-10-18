@@ -297,6 +297,11 @@ def completed_result(directory):
             or not isinstance(result.get("outputs"), dict)
         ):
             raise ValueError()
+        if "tracking_check" in result:
+            from backend.jumper.tracking_check import valid_tracking_check
+
+            if not valid_tracking_check(result):
+                raise ValueError()
         for kind in ("quiz", "reveal", "highlight"):
             value = result["outputs"][kind]
             name = value["file"]

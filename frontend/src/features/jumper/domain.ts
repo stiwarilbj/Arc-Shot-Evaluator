@@ -73,6 +73,7 @@ export interface Track {
 }
 export interface MaskRequest {
   auto_detect_others?: boolean;
+  verify_shooter?: boolean;
   shooter_selection_resolved?: boolean;
   presentation?: "silhouette" | "silhouette-palette-v1";
   start: number;
@@ -89,10 +90,18 @@ export interface MaskWarning {
     | "outline_changed"
     | "mask_fragmented"
     | "ambiguous_players"
+    | "tracking_disagreement"
     | "possible_camera_cut";
   track_ids?: number[];
 }
+export interface TrackingCheck {
+  anchor_frame: number;
+  checked_frames: number;
+  disagreement_frames: number;
+  target_id: number;
+}
 export interface MaskResult {
+  tracking_check?: TrackingCheck;
   objects?: Track[];
   highlight: Blob;
   quiz: Blob;
@@ -231,6 +240,7 @@ export function validateMaskRequest(
     !v ||
     (v.auto_detect_others !== undefined &&
       typeof v.auto_detect_others !== "boolean") ||
+    (v.verify_shooter !== undefined && typeof v.verify_shooter !== "boolean") ||
     (v.shooter_selection_resolved !== undefined &&
       typeof v.shooter_selection_resolved !== "boolean") ||
     (v.presentation !== undefined &&
@@ -357,6 +367,7 @@ export function maskResult(value: unknown): value is MaskResult {
         ["video/mp4", "video/webm"].includes(blob.type),
     ) &&
     (v.objects === undefined || validResultTracks(v.objects, v.duration)) &&
+    (v.tracking_check === undefined || validTrackingCheck(v)) &&
     Array.isArray(v.warnings) &&
     v.warnings.every(
       (w) =>
@@ -372,6 +383,7 @@ export function maskResult(value: unknown): value is MaskResult {
           "outline_changed",
           "mask_fragmented",
           "ambiguous_players",
+          "tracking_disagreement",
         ].includes(w.kind) &&
         (w.track_ids === undefined ||
           (Array.isArray(w.track_ids) &&
@@ -386,6 +398,30 @@ export function maskResult(value: unknown): value is MaskResult {
                 (!v.objects || v.objects.some((o) => o.id === id)),
             ))),
     )
+  );
+}
+
+function validTrackingCheck(result: MaskResult) {
+  const check = result.tracking_check;
+  if (!check || typeof check !== "object" || !Array.isArray(result.warnings))
+    return false;
+  const flagged = result.warnings.filter(
+    (w) => w?.kind === "tracking_disagreement",
+  );
+  return (
+    Number.isInteger(check.anchor_frame) &&
+    check.anchor_frame > 0 &&
+    check.anchor_frame < Math.ceil(result.duration * FPS) &&
+    check.checked_frames === check.anchor_frame + 1 &&
+    check.disagreement_frames === new Set(flagged.map((w) => w.frame)).size &&
+    flagged.every(
+      (w) =>
+        w.frame <= check.anchor_frame &&
+        w.track_ids?.length === 1 &&
+        w.track_ids[0] === check.target_id,
+    ) &&
+    Number.isInteger(check.target_id) &&
+    !!result.objects?.some((o) => o.id === check.target_id && !o.ignored)
   );
 }
 

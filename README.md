@@ -256,6 +256,20 @@ Personal videos stay on your device; they are never automatically published.
    ambiguous or unmatched tracks leave the selections unchanged with guidance.
    Overlapping new detections require manual selection. Undo/redo supports up
    to 50 correction edits.
+   **Confirm shooter later** opens a later original frame with the shooter and
+   Include selected. Aim and **Place point** on that same person, then process.
+   Browser and native processing independently track backward from each later
+   Include/box confirmation and compare it with causal forward tracking. No
+   future shooter confirmation is used by the forward pass before its frame,
+   and reverse tracking has separate memory. The timeline flags substantial
+   **Forward/backward mismatch** sections; inspect them, add corrective points,
+   or shorten the trim. Additional confirmations divide difficult sections.
+   The result states how far this check ran; frames after the last confirmation
+   retain forward checks only. With no later confirmation, backward checking is
+   explicitly marked as not run. Comparisons use a bounded 128×128 diagnostic
+   grid, flag overlap below 60% with at least 16 foreground grid pixels, and do
+   not change output masks or guarantee identity. Both-empty masks still use
+   the existing missing-player checks. Full-motion review remains required.
 5. **Edit video:** after masking, split, trim, delete, or reorder pieces in **Cut**.
    Select pieces from thumbnail strips showing their masked footage, duration,
    and an orange selected outline. Freeze pieces show the held frame. The strips

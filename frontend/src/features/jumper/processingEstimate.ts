@@ -19,6 +19,7 @@ export function downloadProgress(
 }
 
 export function processingPhase(stage: string): string {
+  if (stage.startsWith("Checking shooter backward")) return "Checking shooter backward";
   if (/frame \d/i.test(stage) && !stage.startsWith("Applying selections"))
     return "browser-tracking";
   if (/Downloading.*model/i.test(stage))

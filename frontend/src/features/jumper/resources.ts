@@ -37,7 +37,8 @@ export function estimateResources(
       (maxConditions + 6) * 8 * MIB +
       width * height * 96 +
       sourceWidth * sourceHeight * 16 +
-      frames * width * height * 0.25,
+      frames * width * height * 0.25 +
+      (request.verify_shooter ? frames * 128 * 128 : 0),
   );
   return { bytes, players, correctionFrames: corrections, largestBufferBytes };
 }

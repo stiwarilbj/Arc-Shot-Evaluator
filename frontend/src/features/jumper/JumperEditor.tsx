@@ -33,6 +33,7 @@ import ReviewComparison from "./ReviewComparison";
 import VideoEditPanel, { type EditOutput } from "./VideoEditPanel";
 import ProcessingProgress from "./ProcessingProgress";
 import { CorrectionHistory, type CorrectionState } from "./correctionHistory";
+import { confirmedShooterFrame } from "./trackingCheck";
 
 export default function JumperEditor({
   active,
@@ -378,6 +379,7 @@ export default function JumperEditor({
       target_id: target,
       objects: tracks,
       auto_detect_others: automatic,
+      verify_shooter: true,
       presentation: "silhouette-palette-v1" as const,
     };
     try {
@@ -527,6 +529,7 @@ export default function JumperEditor({
   const count = Math.max(1, Math.ceil((end - start) * 30));
   const track = tracks.find((value) => value.id === editing);
   const prompts = track?.prompts.find((value) => value.frame === frame);
+  const confirmedFrame = confirmedShooterFrame(tracks, target);
   const incompleteTrack = tracks.find((track) => needsSelection(track));
   const targetNeedsStart = !tracks
     .find((track) => track.id === target)
@@ -818,6 +821,36 @@ export default function JumperEditor({
                 </p>
               </details>
             </fieldset>
+            <div className="jumper-tracking-check">
+              <button
+                type="button"
+                className="button button-outline"
+                disabled={
+                  busy || saving || loading || targetNeedsStart || count < 2
+                }
+                onClick={() => {
+                  if (busy || saveLock.current || uploadLock.current) return;
+                  clearAim();
+                  setFrame(frame > 0 ? frame : count - 1);
+                  setEditing(target);
+                  setNegative(false);
+                  setView("source");
+                  if (correctionPanel.current)
+                    correctionPanel.current.open = true;
+                  frameImage.current?.focus();
+                }}
+              >
+                Confirm shooter later
+              </button>
+              <p className="jumper-caption">
+                Scrub to a clear later frame, aim at the same shooter, and Place
+                point with Include selected. Processing then checks backward
+                against forward tracking and marks mismatches for correction.
+                {confirmedFrame !== undefined
+                  ? ` Confirmation: frame ${confirmedFrame + 1}.`
+                  : " No later confirmation yet; backward checking has not been enabled."}
+              </p>
+            </div>
             <button
               type="button"
               className="button button-primary"
@@ -1073,15 +1106,23 @@ export default function JumperEditor({
                 />
               </label>
               {result ? (
-                <MaskTimeline
-                  warnings={result.warnings}
-                  count={count}
-                  frame={frame}
-                  tracks={tracks}
-                  stale={dirty}
-                  disabled={busy || saving || loading}
-                  onInspect={inspectWarning}
-                />
+                <>
+                  <p className="jumper-caption" role="status">
+                    {dirty ? "Previous run · " : ""}
+                    {result.tracking_check
+                      ? `Shooter checked in both directions through frame ${result.tracking_check.anchor_frame + 1}: ${result.tracking_check.disagreement_frames} mismatch frame${result.tracking_check.disagreement_frames === 1 ? "" : "s"}. ${result.tracking_check.checked_frames < count ? "Later frames have forward checks only. " : ""}Still review the full motion.`
+                      : "Backward check not run. Use Confirm shooter later and add an Include point, then process again."}
+                  </p>
+                  <MaskTimeline
+                    warnings={result.warnings}
+                    count={count}
+                    frame={frame}
+                    tracks={tracks}
+                    stale={dirty}
+                    disabled={busy || saving || loading}
+                    onInspect={inspectWarning}
+                  />
+                </>
               ) : null}
               <div className="jumper-toolbar">
                 <span>

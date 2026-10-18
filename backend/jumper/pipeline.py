@@ -45,6 +45,8 @@ def validate_job(job: object) -> dict:
             raise ValueError(f"Missing {key}")
     if "auto_detect_others" in job and type(job["auto_detect_others"]) is not bool:
         raise ValueError("Invalid automatic discovery flag")
+    if "verify_shooter" in job and type(job["verify_shooter"]) is not bool:
+        raise ValueError("Invalid shooter verification flag")
     if (
         "shooter_selection_resolved" in job
         and type(job["shooter_selection_resolved"]) is not bool
@@ -306,6 +308,19 @@ def track(
     import torch
     from sam2.build_sam import build_sam2_video_predictor
     from backend.jumper.frames import bounded_state, prune_tracking
+    from backend.jumper.tracking_check import (
+        confirmed_shooter_frame, tracking_check_segments, ShooterTrackingCheck,
+    )
+
+    job.pop("_tracking_check", None)
+    anchor = (
+        confirmed_shooter_frame(job["objects"], job["target_id"])
+        if job.get("verify_shooter") else None
+    )
+    tracking_check = (
+        ShooterTrackingCheck(anchor, job["target_id"])
+        if anchor is not None else None
+    )
 
     if destination.exists():
         shutil.rmtree(destination)
@@ -417,7 +432,8 @@ def track(
                 if not obj.get("ignored") or job.get("auto_detect_others")
                 for p in obj["prompts"]
             )
-            for index, obj_id, prompt in prompts:
+
+            def apply_prompt(state, index, obj_id, prompt):
                 if index >= len(frames):
                     raise ValueError("Correction frame is beyond decoded input")
                 kwargs = {}
@@ -437,13 +453,19 @@ def track(
                 predictor.add_new_points_or_box(
                     state, frame_idx=index, obj_id=obj_id, **kwargs
                 )
+
+            for index, obj_id, prompt in prompts:
+                # A future confirmation must not bias the independent forward pass.
+                if tracking_check and obj_id == job["target_id"] and index > 0:
+                    continue
+                apply_prompt(state, index, obj_id, prompt)
             camera_cuts = CameraCuts()
             quality = MaskQuality()
             ownership = MaskOwnership(width, height)
             previous_areas = {}
 
             def propagation():
-                if detector is None:
+                if detector is None and tracking_check is None:
                     yield from predictor.propagate_in_video(state, start_frame_idx=0)
                     return
                 from backend.jumper.discovery import PeopleDiscovery
@@ -451,11 +473,18 @@ def track(
                 discovery = PeopleDiscovery()
 
                 for index in range(len(frames)):
+                    if tracking_check:
+                        for at, identity, prompt in prompts:
+                            if at == index and at > 0 and identity == job["target_id"]:
+                                apply_prompt(state, at, identity, prompt)
                     _, ids, logits = next(
                         predictor.propagate_in_video(
                             state, start_frame_idx=index, max_frame_num_to_track=0
                         )
                     )
+                    if detector is None:
+                        yield index, ids, logits
+                        continue
                     values = logits[:, 0].float().cpu().numpy()
                     for row, identity in enumerate(ids):
                         if index < next(
@@ -512,6 +541,10 @@ def track(
                 if progress:
                     progress(index, len(frames))
                 values = logits[:, 0].float().cpu().numpy()
+                if tracking_check:
+                    tracking_check.record(
+                        index, values[list(ids).index(job["target_id"])]
+                    )
                 starts = {
                     obj["id"]: obj["prompts"][0]["frame"] for obj in job["objects"]
                 }
@@ -566,6 +599,39 @@ def track(
                         )
         finally:
             predictor.reset_state(state)
+        if tracking_check:
+            # Each confirmed section starts with independent reverse memory.
+            # Additional Include points shorten a difficult section on retry.
+            checked_frames = 0
+            for segment in tracking_check_segments(job["objects"], job["target_id"]):
+                state = bounded_state(predictor, frames)
+                try:
+                    prompt = next(
+                        p for at, identity, p in prompts
+                        if at == segment["anchor"] and identity == job["target_id"]
+                    )
+                    apply_prompt(state, segment["anchor"], job["target_id"], prompt)
+                    for index, ids, logits in predictor.propagate_in_video(
+                        state,
+                        start_frame_idx=segment["anchor"],
+                        max_frame_num_to_track=segment["anchor"] - segment["first"],
+                        reverse=True,
+                    ):
+                        if progress:
+                            progress(
+                                checked_frames, anchor + 1, "Checking shooter backward"
+                            )
+                        tracking_check.compare(index, logits[0, 0].float().cpu().numpy())
+                        prune_tracking(state, index, reverse=True)
+                        checked_frames += 1
+                        if device == "mps":
+                            torch.mps.synchronize()
+                            torch.mps.empty_cache()
+                finally:
+                    predictor.reset_state(state)
+            checked = tracking_check.finish()
+            warnings.extend(checked["warnings"])
+            job["_tracking_check"] = checked["tracking_check"]
     del state, predictor
     if device == "mps":
         torch.mps.empty_cache()

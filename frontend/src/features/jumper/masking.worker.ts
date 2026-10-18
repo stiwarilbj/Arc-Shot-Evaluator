@@ -29,6 +29,11 @@ import {
 } from "./frameCache";
 import { requireShooterBox, PeopleDiscovery } from "./discovery";
 import { MaskQuality } from "./maskQuality";
+import {
+  confirmedShooterFrame,
+  trackingCheckSegments,
+  ShooterTrackingCheck,
+} from "./trackingCheck";
 import { MaskOwnership } from "./maskOwnership";
 import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
@@ -145,7 +150,8 @@ async function process(
     video = opened.track;
   const { start, end, target_id } = request.request;
   const objects = structuredClone(request.request.objects);
-  const silhouette = request.request.presentation?.startsWith("silhouette") === true;
+  const silhouette =
+    request.request.presentation?.startsWith("silhouette") === true;
   const trackedObjects = objects.filter(
     (object) => !object.ignored || request.request.auto_detect_others,
   );
@@ -171,6 +177,14 @@ async function process(
     ) * 2,
   );
   const count = Math.ceil((end - start) * 30);
+  const anchor = request.request.verify_shooter
+    ? confirmedShooterFrame(objects, target_id)
+    : undefined;
+  const trackingCheck =
+    anchor === undefined
+      ? undefined
+      : new ShooterTrackingCheck(anchor, target_id);
+  let trackingSummary: MaskResult["tracking_check"];
   const sessions: ort.InferenceSession[] = [];
   const outputs: Awaited<
     ReturnType<Awaited<ReturnType<typeof writers>>["create"]>
@@ -425,15 +439,64 @@ async function process(
         if (result) dispose(result);
       }
     }
+    async function propagate(
+      feats: Record<string, ort.Tensor>,
+      frame: number,
+      conditionFrames: Map<number, Memory>,
+      recentFrames: Map<number, Memory>,
+      reverse = false,
+    ): Promise<Prediction> {
+      const bank = buildBank(
+        frame,
+        count,
+        conditionFrames,
+        recentFrames,
+        weights,
+        reverse,
+      );
+      const args = {
+        current_vision_features: tensor(
+          sequenceFirst(floats(feats.feats2)),
+          [4096, 1, 256],
+        ),
+        current_vision_position_embeddings: tensor(
+          sequenceFirst(floats(feats.pos2)),
+          [4096, 1, 256],
+        ),
+        spatial_memory: tensor(bank.spatial, [bank.spatial.length / 64, 1, 64]),
+        spatial_memory_position_embeddings: tensor(bank.positions, [
+          bank.positions.length / 64,
+          1,
+          64,
+        ]),
+        pointer_memory: tensor(bank.pointerData, [
+          bank.pointerData.length / 64,
+          1,
+          64,
+        ]),
+        pointer_memory_position_embeddings: tensor(bank.pointerPosition, [
+          bank.pointerPosition.length / 64,
+          1,
+          64,
+        ]),
+      };
+      let result: Record<string, ort.Tensor> | undefined;
+      try {
+        result = await attention.run(args);
+        return await predict(
+          feats,
+          channelsFirst(floats(result.conditioned_features)),
+        );
+      } finally {
+        dispose(args);
+        if (result) dispose(result);
+      }
+    }
     if (detector) {
       const initial = objects.find((object) => object.id === target_id)!
         .prompts[0];
       const point = initial.points?.find((_, i) => initial.labels?.[i] === 1);
-      if (
-        initial.frame === 0 &&
-        !initial.box &&
-        point
-      ) {
+      if (initial.frame === 0 && !initial.box && point) {
         report("Detecting the selected shooter", 0);
         const sample = await sink.getCanvas(start);
         if (!sample) throw Error("Could not decode the starting frame");
@@ -515,9 +578,19 @@ async function process(
           : (["highlight", "quiz", "reveal"] as const)[i];
         if (!silhouette && !rgb) throw Error("Missing source frame");
         const pixels = silhouette
-          ? silhouettePixels(owners, target_id, request.request.presentation === "silhouette-palette-v1")
+          ? silhouettePixels(
+              owners,
+              target_id,
+              request.request.presentation === "silhouette-palette-v1",
+            )
           : compositePixels(rgb!, owners, target_id, kind);
-        validateComposite(pixels, owners, target_id, kind, request.request.presentation === "silhouette-palette-v1");
+        validateComposite(
+          pixels,
+          owners,
+          target_id,
+          kind,
+          request.request.presentation === "silhouette-palette-v1",
+        );
         if (kind === "quiz")
           colorProofs.push(silhouetteProof(pixels, width, height));
         outputs[i].context.putImageData(
@@ -556,54 +629,18 @@ async function process(
           if (frame < object.prompts[0].frame) continue;
           let prediction = corrected.get(frame)?.get(object.id);
           if (!prediction) {
-            const bank = buildBank(
+            const available = conditions.get(object.id)!;
+            // Future shooter confirmations must not leak into the independent forward pass.
+            const causal =
+              trackingCheck && object.id === target_id
+                ? new Map([...available].filter(([at]) => at <= frame))
+                : available;
+            prediction = await propagate(
+              feats,
               frame,
-              count,
-              conditions.get(object.id)!,
+              causal,
               recents.get(object.id)!,
-              weights,
             );
-            const args = {
-              current_vision_features: tensor(
-                sequenceFirst(floats(feats.feats2)),
-                [4096, 1, 256],
-              ),
-              current_vision_position_embeddings: tensor(
-                sequenceFirst(floats(feats.pos2)),
-                [4096, 1, 256],
-              ),
-              spatial_memory: tensor(bank.spatial, [
-                bank.spatial.length / 64,
-                1,
-                64,
-              ]),
-              spatial_memory_position_embeddings: tensor(bank.positions, [
-                bank.positions.length / 64,
-                1,
-                64,
-              ]),
-              pointer_memory: tensor(bank.pointerData, [
-                bank.pointerData.length / 64,
-                1,
-                64,
-              ]),
-              pointer_memory_position_embeddings: tensor(bank.pointerPosition, [
-                bank.pointerPosition.length / 64,
-                1,
-                64,
-              ]),
-            };
-            let result: Record<string, ort.Tensor> | undefined;
-            try {
-              result = await attention.run(args);
-              prediction = await predict(
-                feats,
-                channelsFirst(floats(result.conditioned_features)),
-              );
-            } finally {
-              dispose(args);
-              if (result) dispose(result);
-            }
             recents
               .get(object.id)!
               .set(frame, await remember(feats, prediction, frame));
@@ -612,6 +649,8 @@ async function process(
           // source frame. The 1024px masks are used only by the memory encoder.
           const values = bilinear(prediction.low, 256, 256, width, height);
           ownership.add(object.id, values);
+          if (object.id === target_id)
+            trackingCheck?.record(frame, values, width, height);
           for (const old of recents.get(object.id)!.keys())
             if (old < frame - 15) recents.get(object.id)!.delete(old);
         }
@@ -622,7 +661,12 @@ async function process(
           );
           const boxes = await detect(frame, sample.canvas);
           const resolution = discovery.resolve(
-            frame, boxes, owners, width, height, objects,
+            frame,
+            boxes,
+            owners,
+            width,
+            height,
+            objects,
           );
           if (resolution.ambiguous)
             warnings.push({
@@ -671,13 +715,24 @@ async function process(
       const pixels = smallContext.getImageData(0, 0, 64, 36).data;
       const transition = cameraCuts.inspect(frame, pixels);
       const cut = transition.reset;
-      for (const at of transition.cuts) warnings.push({ frame: at, kind: "possible_camera_cut" });
+      for (const at of transition.cuts)
+        warnings.push({ frame: at, kind: "possible_camera_cut" });
       // Discovery and tracking above retain raw scores; only output ownership is stabilized.
       const labels = ownership.finish(
-        new Set(objects.filter(o => o.ignored).map(o => o.id)),
-        cut || objects.some(o => o.prompts.some(p => p.frame === frame)),
+        new Set(objects.filter((o) => o.ignored).map((o) => o.id)),
+        cut || objects.some((o) => o.prompts.some((p) => p.frame === frame)),
       );
-      warnings.push(...quality.inspect(frame, labels, width, height, objects, target_id, cut));
+      warnings.push(
+        ...quality.inspect(
+          frame,
+          labels,
+          width,
+          height,
+          objects,
+          target_id,
+          cut,
+        ),
+      );
       exportCheckpoint.add(frame, labels);
       if (!encodingError) {
         report(
@@ -701,6 +756,70 @@ async function process(
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     exportCheckpoint.seal();
+    // Independent reverse memory: only the human-confirmed anchor is seeded.
+    // Reuse encoder features, never forward tracking memories or final owner maps.
+    if (trackingCheck) {
+      const segments = trackingCheckSegments(objects, target_id).map(
+        (segment) => ({
+          ...segment,
+          prediction: corrected.get(segment.anchor)?.get(target_id),
+          memory: conditions.get(target_id)?.get(segment.anchor),
+        }),
+      );
+      conditions.clear();
+      recents.clear();
+      corrected.clear();
+      let checkedFrames = 0;
+      for (const segment of segments) {
+        if (!segment.prediction || !segment.memory)
+          throw Error("The confirmed shooter frame is missing");
+        const reverseConditions = new Map([[segment.anchor, segment.memory]]);
+        const reverseRecent = new Map<number, Memory>();
+        for (let frame = segment.anchor; frame >= segment.first; frame--) {
+          report(
+            `Checking shooter backward · frame ${frame + 1} / ${trackingCheck.anchor + 1}`,
+            checkedFrames / (trackingCheck.anchor + 1),
+          );
+          const sample = await sink.getCanvas(start + frame / 30);
+          if (!sample) throw Error("Could not decode a backward-check frame");
+          const feats = await features(frame, sample.canvas);
+          try {
+            const prediction =
+              frame === segment.anchor
+                ? segment.prediction
+                : await propagate(
+                    feats,
+                    frame,
+                    reverseConditions,
+                    reverseRecent,
+                    true,
+                  );
+            trackingCheck.compare(
+              frame,
+              bilinear(prediction.low, 256, 256, width, height),
+              width,
+              height,
+            );
+            if (frame !== segment.anchor)
+              reverseRecent.set(
+                frame,
+                await remember(feats, prediction, frame),
+              );
+            for (const old of reverseRecent.keys())
+              if (old > frame + 15) reverseRecent.delete(old);
+          } finally {
+            dispose(feats);
+          }
+          checkedFrames++;
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        reverseConditions.clear();
+        reverseRecent.clear();
+      }
+      const checked = trackingCheck.finish();
+      trackingSummary = checked.tracking_check;
+      warnings.push(...checked.warnings);
+    }
     // Tracking is complete. Free inference resources before allocating encoders again.
     conditions.clear();
     recents.clear();
@@ -714,7 +833,8 @@ async function process(
       await detector?.release();
     } catch {}
     detector = undefined;
-    for (const at of cameraCuts.finish()) warnings.push({ frame: at, kind: "possible_camera_cut" });
+    for (const at of cameraCuts.finish())
+      warnings.push({ frame: at, kind: "possible_camera_cut" });
     const [highlight, quiz, reveal] = await retryExport(
       async () => {
         if (encodingError) throw encodingError;
@@ -753,6 +873,7 @@ async function process(
       quiz: silhouette ? highlight : quiz,
       reveal: silhouette ? highlight : reveal,
       duration: count / 30,
+      ...(trackingSummary ? { tracking_check: trackingSummary } : {}),
       warnings,
       objects,
     };

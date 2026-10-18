@@ -9,6 +9,7 @@ import {
   type WorkerResponse,
 } from "./domain";
 import { ShooterSelectionCache } from "./shooterSelection";
+import { confirmedShooterFrame } from "./trackingCheck";
 
 const shooterSelections = new ShooterSelectionCache();
 
@@ -51,6 +52,14 @@ export async function processVideo(
   signal: AbortSignal,
 ): Promise<MaskResult> {
   request = await prepareShooterSelection(file, request, progress, signal);
+  const anchor = request.verify_shooter
+    ? confirmedShooterFrame(request.objects, request.target_id)
+    : undefined;
+  const matchesCheck = (result: MaskResult) =>
+    anchor === undefined
+      ? result.tracking_check === undefined
+      : result.tracking_check?.anchor_frame === anchor &&
+        result.tracking_check.target_id === request.target_id;
   if (IS_GITHUB_PAGES) {
     return new Promise((resolve, reject) => {
       const worker = new Worker(
@@ -103,6 +112,7 @@ export async function processVideo(
           cleanup();
           if (
             maskResult(data.result) &&
+            matchesCheck(data.result) &&
             (!request.presentation?.startsWith("silhouette") ||
               (data.result.highlight === data.result.quiz &&
                 data.result.quiz === data.result.reveal)) &&
@@ -175,7 +185,10 @@ export async function processVideo(
         stage: string;
         progress: number;
         error?: string;
-        result?: Pick<MaskResult, "objects" | "duration" | "warnings">;
+        result?: Pick<
+          MaskResult,
+          "objects" | "duration" | "warnings" | "tracking_check"
+        >;
       } = await (await api(`/jobs/${id}`)).json();
       if (
         !state ||
@@ -206,10 +219,9 @@ export async function processVideo(
           throw Error(
             "Local editor returned an incomplete result. Retry processing.",
           );
-        const kinds =
-          request.presentation?.startsWith("silhouette")
-            ? ["quiz"]
-            : ["highlight", "quiz", "reveal"];
+        const kinds = request.presentation?.startsWith("silhouette")
+          ? ["quiz"]
+          : ["highlight", "quiz", "reveal"];
         const values = await Promise.all(
           kinds.map(async (kind) =>
             (await api(`/jobs/${id}/output/${kind}`)).blob(),
@@ -222,9 +234,11 @@ export async function processVideo(
           objects: state.result.objects,
           duration: state.result.duration,
           warnings: state.result.warnings,
+          tracking_check: state.result.tracking_check,
         };
         if (
           !maskResult(result) ||
+          !matchesCheck(result) ||
           (request.auto_detect_others &&
             !result.objects?.some(
               (o: { id: number; ignored?: boolean }) =>

@@ -45,12 +45,13 @@ def bounded_state(predictor, frames):
     return state
 
 
-def prune_tracking(state, frame):
-    # Forward tracking uses six spatial memories and at most sixteen pointers.
+def prune_tracking(state, frame, reverse=False):
+    # Both directions use six spatial memories and at most sixteen pointers.
     # Keep all corrective conditioning frames, and the last sixteen ordinary
     # frames. Finished owner maps already live on disk, not in this state.
     for output in state["output_dict_per_obj"].values():
         recent = output["non_cond_frame_outputs"]
         for old in list(recent):
-            if old < frame - 15:
+            expired = old > frame + 15 if reverse else old < frame - 15
+            if expired:
                 del recent[old]

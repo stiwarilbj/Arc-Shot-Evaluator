@@ -206,7 +206,19 @@ bounded decoding, a bundled OFL caption font, and independent output validation.
    These are review hints, not accuracy guarantees: unmarked frames can still
    contain errors. Corrections retain the previous run’s hints, labeled as stale,
    until reprocessing. Resetting the shooter or replacing the roster clears them.
-4. Resolve lost-target, ambiguous-player, instability or cut warnings before
+   For an independent identity check, use **Confirm shooter later**, scrub to a
+   clear later original frame, and aim/place an Include point on the same shooter.
+   Process again. Each later Include point or explicit box anchors a reverse
+   section; Exclude-only prompts do not establish identity. The forward shooter
+   pass only sees confirmations when it reaches them, and each reverse section
+   starts with independent memory. A **Forward/backward mismatch** marker opens
+   the relevant shooter frame. Add corrections or shorten the segment and retry.
+   The status reports the checked range and mismatch count; later frames are not
+   claimed as checked in both directions. No later confirmation means no backward
+   check. This adds one bounded shooter pass through the confirmed range, reusing
+   cached encoder features. It never changes masks automatically or proves which
+   pass is correct. Small/tiny outlines can escape the 128×128 diagnostic grid.
+4. Resolve lost-target, ambiguous-player, instability, forward/backward mismatch or cut warnings before
    saving. Detection cannot establish identity through every overlap. The editor
    stops rather than silently dropping people when more than twenty tracks are
    needed. Shorten the clip or use manual selection in a closer view.

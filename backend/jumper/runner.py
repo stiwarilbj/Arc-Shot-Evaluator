@@ -118,13 +118,16 @@ def run(directory: Path):
                 job,
                 checkpoint,
                 device,
-                lambda done, total: progress(
-                    (
-                        "Detecting and tracking players · "
-                        if job.get("auto_detect_others")
-                        else "Tracking players · "
-                    )
-                    + device.upper(),
+                lambda done, total, stage=None: progress(
+                    stage
+                    or (
+                        (
+                            "Detecting and tracking players · "
+                            if job.get("auto_detect_others")
+                            else "Tracking players · "
+                        )
+                        + device.upper()
+                    ),
                     done,
                     total,
                 ),
@@ -149,7 +152,7 @@ def run(directory: Path):
                 job,
                 checkpoint,
                 "cpu",
-                lambda done, total: progress("Tracking players · CPU", done, total),
+                lambda done, total, stage=None: progress(stage or "Tracking players · CPU", done, total),
                 cache_source=directory / "source",
             )
         progress("Rendering masked videos")
@@ -172,6 +175,8 @@ def run(directory: Path):
             "objects": job["objects"],
             "outputs": outputs,
         }
+        if "_tracking_check" in job:
+            result["tracking_check"] = job["_tracking_check"]
         write(directory / "result.json", result)
         progress("Ready for review", 1)
     except Exception as error:

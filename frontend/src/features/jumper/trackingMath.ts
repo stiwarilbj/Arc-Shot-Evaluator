@@ -64,12 +64,14 @@ export function buildBank(
   conditions: Map<number, Memory>,
   recent: Map<number, Memory>,
   weights: TrackerWeights,
+  reverse = false,
 ) {
+  const direction = reverse ? -1 : 1;
   const memories: { value: Memory; temporal: number }[] = [
     ...conditions.values(),
   ].map((value) => ({ value, temporal: 6 }));
   for (let temporal = 1; temporal < 7; temporal++) {
-    const value = recent.get(frame - (7 - temporal));
+    const value = recent.get(frame - direction * (7 - temporal));
     if (value) memories.push({ value, temporal: 6 - temporal });
   }
   if (!memories.length) throw Error("Tracking memory is empty");
@@ -86,10 +88,10 @@ export function buildBank(
   const pointers: { difference: number; value: Memory }[] = [
     ...conditions.values(),
   ]
-    .filter((value) => value.frame <= frame)
-    .map((value) => ({ difference: frame - value.frame, value }));
+    .filter((value) => (frame - value.frame) * direction >= 0)
+    .map((value) => ({ difference: (frame - value.frame) * direction, value }));
   for (let difference = 1; difference < maxPointers; difference++) {
-    const value = recent.get(frame - difference);
+    const value = recent.get(frame - direction * difference);
     if (value) pointers.push({ difference, value });
   }
   const pointerData = new Float32Array(pointers.length * 256),
