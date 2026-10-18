@@ -453,6 +453,10 @@ def track(
             initial["box"] = require_shooter_box(
                 boxes, initial["points"], initial["labels"]
             )
+    from .selection_stability import check_opening_selection
+    initial = next(o for o in job["objects"] if o["id"] == job["target_id"])["prompts"][0]
+    if initial.get("box") and 1 in initial.get("labels", []):
+        check_opening_selection(predictor, frames, initial, job["target_id"], width, height)
     with MemoryQualityGate(
         predictor, memory_warning, (obj["id"] for obj in job["objects"] if obj.get("ignored"))
     ) as memory_gate, torch.inference_mode():

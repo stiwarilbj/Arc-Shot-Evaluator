@@ -1,3 +1,4 @@
+import { CONFIRM_SELECTION, selectionProbes, stableSelection } from "./selectionStability";
 import { sourceFrameMap } from "./sourceFrameMedia";
 import { sourceFrameTime, verifySourceFrame } from "./sourceFrames";
 import { reliableMask, pruneReliable } from "./memoryQuality";
@@ -38,7 +39,7 @@ import {
   validDetections,
   type CachedFeatures,
 } from "./frameCache";
-import { requireShooterBox, PeopleDiscovery } from "./discovery";
+import { requireShooterBox, PeopleDiscovery, ShooterSelectionError } from "./discovery";
 import {
   smallPlayerCrop,
   sourceCrop,
@@ -621,6 +622,17 @@ async function process(
           const prediction = await predict(feats, raw, prompt);
           if (!object.ignored && !reliableMask(prediction.low, undefined, prediction.score[0]))
             throw Error(`The player selection at frame ${frame + 1} is too uncertain to seed tracking. Adjust the selection on a clear frame and retry.`);
+          if (frame === 0 && object.id === target_id && prompt.box && prompt.labels?.includes(1)) {
+            report("Checking starting shooter selection", 0);
+            const compared = [prediction.low];
+            for (const probe of selectionProbes(prompt, prediction.low)) {
+              const candidate = await predict(feats, raw, probe);
+              if (!reliableMask(candidate.low, undefined, candidate.score[0]) ||
+                  !compared.every(previous => stableSelection(previous, candidate.low)))
+                throw new ShooterSelectionError(CONFIRM_SELECTION);
+              compared.push(candidate.low);
+            }
+          }
           conditions
             .get(object.id)!
             .set(frame, await remember(feats, prediction, frame));

@@ -201,6 +201,10 @@ Personal videos stay on your device; they are never automatically published.
    The preview and full run reuse the same starting-frame shooter selection,
    including the detected body box when automatic discovery is enabled. The
    preview only tracks the shooter; full processing also discovers other people.
+   When a person box and Include point are available, nearby first-frame prompts
+   must produce consistent silhouettes before full tracking starts. If they disagree,
+   add another Include point on a different visible part of the same shooter and retry.
+   The check keeps your original mask; it never chooses the largest alternative.
    If the points overlap several detected players, add an Include point on a
    visible part of the shooter away from the overlap in the first frame. If no
    player matches, clear the first-frame points and select again. Automatic

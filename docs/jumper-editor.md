@@ -764,3 +764,26 @@ recoverable error instead of silently shifting a correction. Frame-feature cache
 include the map; review uses the masked video's displayed frame to seek the
 corresponding source frame. This prevents timing drift, but does not establish
 tracking accuracy or replace full-motion review.
+
+
+## Starting-selection stability
+
+Before full tracking, the shooter preview and processing compare the opening mask
+with up to three independent nearby-point predictions. This applies when the
+first-frame selection has a detected/manual person box and an Include point;
+manual point-only or box-only selections retain their existing review workflow.
+Probe points lie inside both the selected foreground and the same person box,
+within 22% of its width and 18% of its height from the first Include point. They
+replace that one point while preserving all other Include/Exclude points and the
+box. At least two distinct, strong foreground probe locations must be available.
+
+Every mask pair must have foreground IoU of at least 0.75 and area ratio between
+0.75 and 4/3, with at least four foreground pixels. Invalid model outputs still
+use the existing fail-closed validation. Disagreement or insufficient evidence
+requests another first-frame Include point on a different visible body part, or
+a closer/clearer segment. Probe predictions never replace the original mask,
+enter tracking memory, change corrections, or select the largest alternative.
+Browser probes reuse opening-frame features; native probes use an independent
+one-frame state reset between predictions and disposed before normal tracking.
+This is a conservative prompt-sensitivity check, not an identity guarantee: stable
+but incorrect selections and hidden limbs still require full-motion review.

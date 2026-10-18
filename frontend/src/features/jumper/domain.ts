@@ -4,6 +4,7 @@ export const MAX_BYTES = 100 * 1024 * 1024;
 export const FPS = 30;
 export function maskingErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof Error && error.name === "ShooterSelectionError") return message;
   if (
     /mapAsync|valid external Instance|device.*lost|GPU.*out.of.memory/i.test(
       message,
