@@ -1,3 +1,4 @@
+import { validFrameMap, frameCount, type SourceFrameMap } from "./sourceFrames.ts";
 import { isProject, projectFrames, type EditProject } from "./editProject.ts";
 export const MAX_BYTES = 100 * 1024 * 1024;
 export const FPS = 30;
@@ -74,6 +75,7 @@ export interface Track {
   prompts: PointPrompt[];
 }
 export interface MaskRequest {
+  frame_map?: SourceFrameMap;
   auto_detect_others?: boolean;
   verify_shooter?: boolean;
   refine_small_players?: boolean;
@@ -109,6 +111,7 @@ export interface TrackingCheck {
   target_id: number;
 }
 export interface MaskResult {
+  frame_map?: SourceFrameMap;
   tracking_check?: TrackingCheck;
   objects?: Track[];
   highlight: Blob;
@@ -260,6 +263,7 @@ export function validateMaskRequest(
     v.start < 0 ||
     v.end - v.start < 2 / FPS ||
     v.end - v.start > 15 ||
+    (v.frame_map !== undefined && !validFrameMap(v.frame_map, v.start, v.end)) ||
     !Array.isArray(v.objects) ||
     !v.objects.length ||
     v.objects.length > 20
@@ -298,7 +302,7 @@ export function validateMaskRequest(
         !Number.isInteger(p.frame) ||
         p.frame <= previous ||
         p.frame < 0 ||
-        p.frame >= Math.ceil((v.end - v.start) * FPS)
+        p.frame >= frameCount(v.start, v.end)
       )
         throw Error("A correction is outside the selected segment.");
       previous = p.frame;
@@ -380,6 +384,7 @@ export function maskResult(value: unknown): value is MaskResult {
         blob.size <= MAX_BYTES &&
         ["video/mp4", "video/webm"].includes(blob.type),
     ) &&
+    (v.frame_map === undefined || (validFrameMap(v.frame_map) && v.frame_map.frames.length === Math.round(v.duration * 30))) &&
     (v.objects === undefined || validResultTracks(v.objects, v.duration)) &&
     (v.tracking_check === undefined || validTrackingCheck(v)) &&
     Array.isArray(v.warnings) &&

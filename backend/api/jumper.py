@@ -150,25 +150,14 @@ def frame(identity: str, time: float = 0):
     job = job_for(identity)
     if not math.isfinite(time) or time < 0:
         raise HTTPException(400, "Invalid preview timestamp")
-    destination = job["directory"] / f"preview-{time:.3f}.jpg"
+    destination = job["directory"] / f"preview-{time:.6f}.jpg"
     try:
         if not destination.exists():
-            run_ffmpeg(
-                [
-                    "-ss",
-                    str(time),
-                    "-i",
-                    str(job["directory"] / "source"),
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
-                    str(destination),
-                ]
-            )
+            from backend.jumper.source_frames import extract_single
+            extract_single(job["directory"] / "source", destination, time)
         if not destination.is_file():
             raise ValueError("No frame at this timestamp")
-        return FileResponse(destination, media_type="image/jpeg")
+        return FileResponse(destination, media_type="image/png")
     except Exception as error:
         raise HTTPException(400, str(error))
 
@@ -179,7 +168,7 @@ def people(identity: str, time: float = 0):
     frame(identity, time)
     return {
         "boxes": propose_people(
-            job["directory"] / f"preview-{time:.3f}.jpg",
+            job["directory"] / f"preview-{time:.6f}.jpg",
             MODEL_WEIGHTS_DIR / "yolo11n-pose.pt",
         )
     }
@@ -297,6 +286,10 @@ def completed_result(directory):
             or not isinstance(result.get("outputs"), dict)
         ):
             raise ValueError()
+        if "frame_map" in result:
+            from backend.jumper.source_frames import valid_frame_map
+            if not valid_frame_map(result["frame_map"]) or len(result["frame_map"]["frames"]) != round(result["duration"]*30):
+                raise ValueError()
         if "tracking_check" in result:
             from backend.jumper.tracking_check import valid_tracking_check
 

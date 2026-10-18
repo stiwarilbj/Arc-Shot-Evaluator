@@ -743,3 +743,24 @@ reference exists, processing stops with a selection/retry error.
 
 Excluded tracks retain their existing discovery behavior without admission warnings;
 their independent memories are never used to track an included player.
+
+## Explicit source-frame timing
+
+Selection, correction frames, forward/reverse tracking, detail refinement, and
+original-reference review share a versioned output-to-source frame map. Every
+30-fps output entry records its decoded source ordinal, presentation timestamp,
+and display interval in integer microseconds. A variable-rate source frame can
+appear in several output entries; correction frame numbers still refer to the
+output scrubber. Timing uses presentation order rather than encoded decode order
+or average frame rate. The trim timeline starts at the first presentable frame,
+including when the source's first timestamp is nonzero.
+
+Browser packet timing is checked against the actual decoded image before use.
+The downloaded app reads decoded timestamps with pinned PyAV and verifies the
+browser-supplied map before extracting those exact frame ordinals with FFmpeg.
+Unknown terminal durations are accepted only when the selected segment does not
+need them. Invalid, duplicate, or disagreeing timing stops processing with a
+recoverable error instead of silently shifting a correction. Frame-feature caches
+include the map; review uses the masked video's displayed frame to seek the
+corresponding source frame. This prevents timing drift, but does not establish
+tracking accuracy or replace full-motion review.

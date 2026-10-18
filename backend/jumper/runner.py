@@ -61,8 +61,11 @@ def run(directory: Path):
         )
         progress("Decoding selected segment")
         frames = extract(
-            directory / "source", directory / "frames", job["start"], job["end"]
+            directory / "source", directory / "frames", job["start"], job["end"],
+            **({"frame_map": job["frame_map"]} if "frame_map" in job else {}),
         )
+        if hasattr(frames, "frame_map"):
+            job["frame_map"] = frames.frame_map
         refinement_frames = None
         if job.get("refine_small_players"):
             progress("Decoding detail frames")
@@ -78,7 +81,7 @@ def run(directory: Path):
                 )
             refinement_frames = extract(
                 directory / "source", directory / "detail-frames",
-                job["start"], job["end"], maximum=(2560, 1440)
+                job["start"], job["end"], maximum=(2560, 1440), frame_map=job.get("frame_map")
             )
         import torch
         from backend.config import MODEL_WEIGHTS_DIR
@@ -198,6 +201,7 @@ def run(directory: Path):
             "warnings": warnings,
             "objects": job["objects"],
             "outputs": outputs,
+            **({"frame_map": job["frame_map"]} if "frame_map" in job else {}),
         }
         if "_tracking_check" in job:
             result["tracking_check"] = job["_tracking_check"]

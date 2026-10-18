@@ -1,3 +1,5 @@
+import { sourceFrameMap, sourcePreview } from "./sourceFrameMedia";
+import { frameCount, sourceFrameTime } from "./sourceFrames";
 import { imagePoint, previewImageRect } from "./imageCoordinates";
 import { renderProjectKey } from "./editProject";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -154,9 +156,14 @@ export default function JumperEditor({
     const abort = new AbortController();
     const blob =
       view === "masked" && result && !dirty ? result.highlight : file;
-    const time = blob === file ? start + frame / 30 : frame / 30;
     const timer = setTimeout(() => {
-      void preview(blob, time, abort.signal)
+      void (async () => {
+        if (blob === file) {
+          const map = await sourceFrameMap(file, start, end, abort.signal);
+          return sourcePreview(file, map, frame, abort.signal);
+        }
+        return preview(blob, frame / 30, abort.signal);
+      })()
         .then((value) => {
           if (!cancelled) setImage(value);
         })
@@ -169,7 +176,7 @@ export default function JumperEditor({
       clearTimeout(timer);
       abort.abort();
     };
-  }, [file, start, frame, view, result, dirty]);
+  }, [file, start, end, frame, view, result, dirty]);
   function correctionState(): CorrectionState {
     return { tracks, target, editing, frame, negative, automatic };
   }
@@ -363,7 +370,8 @@ export default function JumperEditor({
     setProgress({ stage: "Finding people in the starting frame", progress: 0 });
     try {
       const { detectPeople } = await import("./detection");
-      const boxes = await detectPeople(file, start, abort.signal);
+      const map = await sourceFrameMap(file, start, end, abort.signal);
+      const boxes = await detectPeople(file, sourceFrameTime(map, 0) - map.origin_us / 1e6, abort.signal, map);
       if (abort.signal.aborted || generation.current !== id) return;
       const merged = mergeDetectedPeople(tracks, target, boxes);
       if (merged.added) {
@@ -536,7 +544,7 @@ export default function JumperEditor({
       ?.querySelectorAll("video")
       .forEach((video) => video.pause());
   }
-  const count = Math.max(1, Math.ceil((end - start) * 30));
+  const count = Math.max(1, frameCount(start, end));
   const track = tracks.find((value) => value.id === editing);
   const prompts = track?.prompts.find((value) => value.frame === frame);
   const confirmedFrame = confirmedShooterFrame(tracks, target);
@@ -1233,6 +1241,7 @@ export default function JumperEditor({
                     masked={baseUrl}
                     start={start}
                     duration={result.duration}
+                    frameMap={result.frame_map}
                     active={active && referenceOpen}
                   />
                 </details>

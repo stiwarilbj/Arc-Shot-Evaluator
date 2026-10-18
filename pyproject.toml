@@ -4,6 +4,7 @@ version = "3.0.0"
 description = "ARCade Hoops: private shot analysis, play design, defensive simulations, and silhouette quizzes"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "av==16.0.1",
   "fastapi>=0.141,<1",
   "imageio-ffmpeg>=0.6,<1",
   "numpy>=2.2,<3",

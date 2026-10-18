@@ -67,6 +67,7 @@ def validate_job(job: object) -> dict:
         "silhouette-palette-v1",
     ):
         raise ValueError("Invalid presentation")
+    from .source_frames import frame_count
     start, end = job.get("start"), job.get("end")
     if (
         not number(start)
@@ -75,6 +76,10 @@ def validate_job(job: object) -> dict:
         or not 2 / FPS <= end - start <= MAX_SECONDS
     ):
         raise ValueError("Select a finite segment of at most 15 seconds")
+    if "frame_map" in job:
+        from .source_frames import valid_frame_map
+        if not valid_frame_map(job["frame_map"], start, end):
+            raise ValueError("Invalid source-frame map")
     objects = job.get("objects")
     if not isinstance(objects, list) or not 1 <= len(objects) <= 20:
         raise ValueError("Select between one and twenty foreground people")
@@ -114,7 +119,7 @@ def validate_job(job: object) -> dict:
             if (
                 not isinstance(prompt, dict)
                 or type(prompt.get("frame")) is not int
-                or not 0 <= prompt["frame"] < math.ceil((end - start) * FPS)
+                or not 0 <= prompt["frame"] < frame_count(start, end)
             ):
                 raise ValueError("Prompt frame is outside the selected segment")
             if ("anchor" in prompt and type(prompt["anchor"]) is not bool) or (
@@ -227,41 +232,32 @@ def run_ffmpeg(arguments: list[str]) -> None:
         raise RuntimeError(result.stderr.decode(errors="replace")[-2000:])
 
 
+class MappedFrames(list):
+    """Image paths plus the exact timing used by every tracking/correction pass."""
+    frame_map: dict
+
+
 def extract(
-    source: Path, directory: Path, start: float, end: float, maximum=(1280, 720)
+    source: Path, directory: Path, start: float, end: float, maximum=(1280, 720),
+    frame_map=None,
 ) -> list[Path]:
-    directory.mkdir()
-    # FFmpeg applies rotation before scaling, timestamps VFR input to one common
-    # timeline, and decodes only the selected segment. No source audio is read.
-    # Decode a bounded extra second for delayed/B frames; trim in the filter
-    # instead of stopping the output encoder before its last frame is flushed.
-    run_ffmpeg(
-        [
-            "-ss",
-            str(start),
-            "-t",
-            str(end - start + 1),
-            "-i",
-            str(source),
-            "-map",
-            "0:v:0",
-            "-an",
-            "-vf",
-            f"trim=duration={end - start},setpts=PTS-STARTPTS,fps=30:start_time=0,scale='min({maximum[0]},iw)':'min({maximum[1]},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-            "-c:v",
-            "png",
-            "-start_number",
-            "0",
-            str(directory / "%06d.jpg"),
-        ]
-    )
-    # Lossless PNG payloads retain SAM's required numeric .jpg cache names.
-    # PIL/OpenCV detect the payload format; avoiding JPEG loss matches browser RGB.
-    frames = sorted(directory.glob("*.jpg"))
-    if not 2 <= len(frames) <= MAX_SECONDS * FPS:
+    from .source_frames import resolve_source, decode_selected
+    mapping, timeline = resolve_source(source, start, end, frame_map)
+    if not 2 <= len(mapping["frames"]) <= MAX_SECONDS * FPS:
         raise ValueError("Video is too short or the selected segment cannot be decoded")
-    if abs(len(frames) / FPS - (end - start)) > 2 / FPS:
-        raise ValueError("Selected segment extends beyond the available video")
+    directory.mkdir()
+    decoded = decode_selected(source, directory, mapping, timeline, maximum)
+    frames = MappedFrames()
+    for index, entry in enumerate(mapping["frames"]):
+        destination = directory / f"{index:06d}.jpg"
+        try:
+            destination.hardlink_to(decoded[entry["source_index"]])
+        except OSError:
+            shutil.copyfile(decoded[entry["source_index"]], destination)
+        frames.append(destination)
+    for path in decoded.values():
+        path.unlink()
+    frames.frame_map = mapping
     return frames
 
 

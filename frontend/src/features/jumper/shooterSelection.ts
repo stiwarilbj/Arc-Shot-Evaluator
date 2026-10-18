@@ -1,3 +1,4 @@
+import { sourceFrameTime } from "./sourceFrames.ts";
 import {
   validateMaskRequest,
   type MaskRequest,
@@ -33,12 +34,14 @@ export class ShooterSelectionCache {
       if (!seed.box && point) {
         // The preview's short end time and later corrections do not change the
         // starting image. Both jobs must reuse exactly this same resolved seed.
-        const key = JSON.stringify([resolved.start, target.id, seed]);
+        const key = JSON.stringify([resolved.start, resolved.frame_map?.frames[0], target.id, seed]);
         const cached = this.seeds.get(file);
         if (cached?.key === key)
           target.prompts[0] = structuredClone(cached.prompt);
         else {
-          const boxes = await detect(file, resolved.start, signal);
+          const mapped = resolved.frame_map;
+          const time = mapped ? sourceFrameTime(mapped, 0) - mapped.origin_us / 1e6 : resolved.start;
+          const boxes = await detect(file, time, signal);
           signal.throwIfAborted();
           seed.box = requireShooterBox(boxes, seed.points!, seed.labels!);
           validateMaskRequest(resolved);

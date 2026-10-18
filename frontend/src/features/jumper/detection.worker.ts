@@ -1,3 +1,4 @@
+import { sourceFrameTime, validFrameMap, verifySourceFrame } from "./sourceFrames";
 /// <reference lib="webworker" />
 import * as ort from "onnxruntime-web/webgpu";
 import ortModule from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
@@ -17,14 +18,16 @@ self.onmessage = async ({ data }) => {
       !data.file.size ||
       data.file.size > MAX_BYTES ||
       !Number.isFinite(data.time) ||
-      data.time < 0
+      data.time < 0 ||
+      (data.frame_map !== undefined && !validFrameMap(data.frame_map))
     )
       throw Error("Invalid detection request");
     input = await openVideo(data.file);
     const sample = await new CanvasSink(input.track, { poolSize: 1 }).getCanvas(
-      data.time,
+      data.frame_map ? sourceFrameTime(data.frame_map, 0) : input.origin + data.time,
     );
     if (!sample) throw Error("No decodable starting frame");
+    if (data.frame_map) verifySourceFrame(data.frame_map, 0, sample);
     detector = await createPersonDetector();
     self.postMessage({ boxes: await detector.detect(sample.canvas) });
   } catch (error) {

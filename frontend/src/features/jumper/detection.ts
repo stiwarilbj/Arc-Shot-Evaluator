@@ -1,8 +1,10 @@
+import type { SourceFrameMap } from "./sourceFrames";
 import { IS_GITHUB_PAGES } from "../../runtime";
 export async function detectPeople(
   file: File,
   time: number,
   signal: AbortSignal,
+  frameMap?: SourceFrameMap,
 ): Promise<number[][]> {
   signal.throwIfAborted();
   if (IS_GITHUB_PAGES)
@@ -46,7 +48,7 @@ export async function detectPeople(
           resolve(data.boxes);
         else reject(Error("Invalid detection result"));
       };
-      worker.postMessage({ file, time });
+      worker.postMessage({ file, time, frame_map: frameMap });
     });
   let id: string | undefined;
   try {

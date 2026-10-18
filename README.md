@@ -302,6 +302,10 @@ Personal videos stay on your device; they are never automatically published.
    Solid interiors and tracking labels remain unchanged. This smooths visible
    outlines without reconstructing obscured detail. Existing clips are unchanged.
 
+   Selection, corrections, tracking, and reference review share an explicit
+   source-frame map, preserving variable-rate phone-video timing and nonzero
+   starting timestamps. Decoder disagreements stop processing rather than shifting
+   corrections onto another frame.
    Clicks are measured against the visible, upright image, excluding preview
    padding and letterbox bars. Rotation is applied once by the decoder. Both
    processing targets preserve point/box locations through resizing and rounded

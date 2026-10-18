@@ -1,3 +1,5 @@
+import { sameFrameMap } from "./sourceFrames";
+import { sourceFrameMap } from "./sourceFrameMedia";
 import { IS_GITHUB_PAGES } from "../../runtime";
 import {
   MAX_BYTES,
@@ -21,6 +23,8 @@ export async function prepareShooterSelection(
 ): Promise<MaskRequest> {
   validateMaskRequest(request);
   if (file.size > MAX_BYTES) throw Error("Files must be at most 100 MB");
+
+  request = { ...request, frame_map: request.frame_map ?? await sourceFrameMap(file, request.start, request.end, signal) };
   signal.throwIfAborted();
   if (IS_GITHUB_PAGES) {
     if (!("gpu" in navigator) || !("VideoEncoder" in globalThis))
@@ -39,7 +43,7 @@ export async function prepareShooterSelection(
     async (source, time, abort) => {
       progress({ stage: "Finding your selected shooter's body", progress: 0 });
       const { detectPeople } = await import("./detection");
-      return detectPeople(source, time, abort);
+      return detectPeople(source, time, abort, request.frame_map);
     },
     signal,
   );
@@ -56,10 +60,11 @@ export async function processVideo(
     ? confirmedShooterFrame(request.objects, request.target_id)
     : undefined;
   const matchesCheck = (result: MaskResult) =>
-    anchor === undefined
+    sameFrameMap(result.frame_map, request.frame_map) &&
+    (anchor === undefined
       ? result.tracking_check === undefined
       : result.tracking_check?.anchor_frame === anchor &&
-        result.tracking_check.target_id === request.target_id;
+        result.tracking_check.target_id === request.target_id);
   if (IS_GITHUB_PAGES) {
     return new Promise((resolve, reject) => {
       const worker = new Worker(
@@ -187,7 +192,7 @@ export async function processVideo(
         error?: string;
         result?: Pick<
           MaskResult,
-          "objects" | "duration" | "warnings" | "tracking_check"
+          "objects" | "duration" | "warnings" | "tracking_check" | "frame_map"
         >;
       } = await (await api(`/jobs/${id}`)).json();
       if (
@@ -235,6 +240,7 @@ export async function processVideo(
           duration: state.result.duration,
           warnings: state.result.warnings,
           tracking_check: state.result.tracking_check,
+          frame_map: state.result.frame_map,
         };
         if (
           !maskResult(result) ||

@@ -13,6 +13,7 @@ import {
   ALL_FORMATS,
   BlobSource,
   CanvasSink,
+  VideoSampleSink,
   Input,
   canEncodeVideo,
   CanvasSource,
@@ -32,10 +33,20 @@ export async function openVideo(file: Blob) {
       throw Error(
         "This video codec cannot be decoded on this device. Try an MP4 or the downloaded app.",
       );
-    const duration = await track.computeDuration();
+    let origin = await track.getFirstTimestamp();
+    if (origin < 0) {
+      const frames = new VideoSampleSink(track).samples(0);
+      try {
+        const first = await frames.next();
+        if (first.done) throw Error("Video has no presentable frames.");
+        origin = first.value.timestamp;
+        first.value.close();
+      } finally { await frames.return(); }
+    }
+    const duration = (await track.computeDuration()) - origin;
     if (!Number.isFinite(duration) || duration <= 0)
       throw Error("The video has no usable timeline.");
-    return { input, track, duration };
+    return { input, track, duration, origin };
   } catch (error) {
     input.dispose();
     throw error;
@@ -46,7 +57,7 @@ export async function preview(
   time: number,
   signal?: AbortSignal,
 ): Promise<Blob> {
-  const { input, track } = await openVideo(file);
+  const { input, track, origin } = await openVideo(file);
   const abort = () => input.dispose();
   signal?.addEventListener("abort", abort, { once: true });
   try {
@@ -54,7 +65,7 @@ export async function preview(
     const sample = await new CanvasSink(track, {
       width: 960,
       fit: "contain",
-    }).getCanvas(time);
+    }).getCanvas(origin + time);
     if (!sample) throw Error("No frame at this timestamp");
     const canvas = sample.canvas;
     return "convertToBlob" in canvas

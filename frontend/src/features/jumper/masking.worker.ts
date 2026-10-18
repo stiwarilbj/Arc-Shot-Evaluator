@@ -1,3 +1,5 @@
+import { sourceFrameMap } from "./sourceFrameMedia";
+import { sourceFrameTime, verifySourceFrame } from "./sourceFrames";
 import { reliableMask, pruneReliable } from "./memoryQuality";
 import { checkCorrections } from "./correctionCheck";
 import { validateAttentionOutput, validateDecoderOutputs, validateModelTensor } from "./modelOutputs";
@@ -162,6 +164,7 @@ async function process(
   )
     throw Error("Invalid masking request");
   validateMaskRequest(request.request);
+  const frameMap = request.request.frame_map ?? await sourceFrameMap(request.file, request.request.start, request.request.end);
   const opened = await openVideo(request.file);
   const input = opened.input,
     video = opened.track;
@@ -193,7 +196,7 @@ async function process(
         2,
     ) * 2,
   );
-  const count = Math.ceil((end - start) * 30);
+  const count = frameMap.frames.length;
   const anchor = request.request.verify_shooter
     ? confirmedShooterFrame(objects, target_id)
     : undefined;
@@ -236,7 +239,8 @@ async function process(
     report("Checking device resources", 0);
     checkWorkload();
     cache = await FrameCache.open(request.file, {
-      schema: "sam-pixels-v1-canvas-v1",
+      schema: "sam-pixels-v1-source-map-v1",
+      frameMap,
       start,
       end,
       width,
@@ -286,6 +290,11 @@ async function process(
       fit: "fill",
       poolSize: 2,
     });
+    async function mappedCanvas(sink: CanvasSink, frame: number) {
+      const sample = await sink.getCanvas(sourceFrameTime(frameMap, frame));
+      verifySourceFrame(frameMap, frame, sample);
+      return sample!;
+    }
     const fineScale = Math.min(
       1,
       2560 / video.displayWidth,
@@ -578,7 +587,7 @@ async function process(
       const point = initial.points?.find((_, i) => initial.labels?.[i] === 1);
       if (initial.frame === 0 && !initial.box && point) {
         report("Detecting the selected shooter", 0);
-        const sample = await sink.getCanvas(start);
+        const sample = await mappedCanvas(sink, 0);
         if (!sample) throw Error("Could not decode the starting frame");
         initial.box = requireShooterBox(
           await detect(0, sample.canvas),
@@ -596,7 +605,7 @@ async function process(
     ].sort((a, b) => a - b);
     for (const frame of promptFrames) {
       report(`Applying selections · frame ${frame + 1}`, frame / count);
-      const sample = await sink.getCanvas(start + frame / 30);
+      const sample = await mappedCanvas(sink, frame);
       if (!sample) throw Error("Could not decode a correction frame");
       const feats = await features(frame, sample.canvas);
       try {
@@ -721,7 +730,7 @@ async function process(
         `Tracking and rendering · frame ${frame + 1} / ${count}`,
         frame / count,
       );
-      const sample = await sink.getCanvas(start + frame / 30);
+      const sample = await mappedCanvas(sink, frame);
       if (!sample)
         throw Error("The selected segment could not be fully decoded");
       const feats = await features(frame, sample.canvas);
@@ -849,7 +858,7 @@ async function process(
           );
           let refined: Float32Array | undefined;
           if (!crop.unusable) {
-            fineSample ??= await fineSink.getCanvas(start + frame / 30);
+            fineSample ??= await mappedCanvas(fineSink, frame);
             if (!fineSample) throw Error("Could not decode the detail frame");
             const detail = await features(frame, fineSample.canvas, crop);
             try {
@@ -975,7 +984,7 @@ async function process(
             `Checking shooter backward · frame ${frame + 1} / ${trackingCheck.anchor + 1}`,
             checkedFrames / (trackingCheck.anchor + 1),
           );
-          const sample = await sink.getCanvas(start + frame / 30);
+          const sample = await mappedCanvas(sink, frame);
           if (!sample) throw Error("Could not decode a backward-check frame");
           const feats = await features(frame, sample.canvas);
           try {
@@ -1038,7 +1047,7 @@ async function process(
         const owners = paletteFrames ? await paletteFrames.frame(frame) : exportCheckpoint.frame(frame);
         let rgb: Uint8ClampedArray | undefined;
         if (!silhouette) {
-          const sample = await sink.getCanvas(start + frame / 30);
+          const sample = await mappedCanvas(sink, frame);
           if (!sample) throw Error("Could not decode the export retry frame");
           sourceContext!.drawImage(sample.canvas, 0, 0, width, height);
           rgb = sourceContext!.getImageData(0, 0, width, height).data;
@@ -1077,6 +1086,7 @@ async function process(
       quiz: silhouette ? highlight : quiz,
       reveal: silhouette ? highlight : reveal,
       duration: count / 30,
+      frame_map: frameMap,
       ...(trackingSummary ? { tracking_check: trackingSummary } : {}),
       warnings,
       objects,

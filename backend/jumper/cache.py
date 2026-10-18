@@ -45,6 +45,7 @@ def identity(source, job, checkpoint, device, frames):
                 else [digest(p) for p in frames],
                 "trim": [job["start"], job["end"]],
                 "frames": len(frames),
+                "frame_map": job.get("frame_map"),
                 "geometry": [1280, 720, 30, 1024],
                 "checkpoint": digest(checkpoint),
                 "device": device,

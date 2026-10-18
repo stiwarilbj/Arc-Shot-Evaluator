@@ -1,3 +1,4 @@
+import { outputFrameAtTime, sourceFrameTime, type SourceFrameMap } from "./sourceFrames";
 import { useEffect, useRef, useState } from "react";
 
 /** Only the masked element owns playback time. The source is an editing reference. */
@@ -7,12 +8,14 @@ export default function ReviewComparison({
   start,
   duration,
   active,
+  frameMap,
 }: {
   original: string;
   masked: string;
   start: number;
   duration: number;
   active: boolean;
+  frameMap?: SourceFrameMap;
 }) {
   const source = useRef<HTMLVideoElement>(null);
   const output = useRef<HTMLVideoElement>(null);
@@ -37,15 +40,15 @@ export default function ReviewComparison({
     setPlaying(false);
     setWaiting(false);
   }
-  function align() {
+  function align(displayTime?: number) {
     const a = source.current,
       b = output.current;
     if (a && b && !sourceFailed && a.readyState >= 1) {
       const target = Math.min(
-        start + b.currentTime,
+        frameMap ? sourceFrameTime(frameMap, outputFrameAtTime(frameMap, displayTime ?? b.currentTime)) : start + b.currentTime,
         Math.max(0, a.duration - 0.001),
       );
-      if (Math.abs(a.currentTime - target) > 1 / 30) a.currentTime = target;
+      if (Math.abs(a.currentTime - target) > (frameMap ? 0.000002 : 1 / 30)) a.currentTime = target;
     }
   }
   async function play() {
@@ -62,7 +65,7 @@ export default function ReviewComparison({
     try {
       await Promise.all([
         b.play(),
-        !sourceFailed && a ? a.play() : Promise.resolve(),
+        !frameMap && !sourceFailed && a ? a.play() : Promise.resolve(),
       ]);
       if (token !== attempt.current) return;
       if (!wanted.current || !active || document.hidden) {
@@ -109,9 +112,15 @@ export default function ReviewComparison({
     align();
   }
   useEffect(() => {
-    let raf = 0;
+    let raf = 0, videoCallback = 0;
     const originalElement = source.current;
     const maskedElement = output.current;
+    const hasVideoClock = !!maskedElement && "requestVideoFrameCallback" in maskedElement;
+    const displayedFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      align(metadata.mediaTime);
+      if (maskedElement) videoCallback = maskedElement.requestVideoFrameCallback(displayedFrame);
+    };
+    if (frameMap && hasVideoClock) videoCallback = maskedElement!.requestVideoFrameCallback(displayedFrame);
     const tick = () => {
       const a = source.current,
         b = output.current;
@@ -126,7 +135,8 @@ export default function ReviewComparison({
           !b.seeking
         ) {
           const drift = a.currentTime - start - b.currentTime;
-          if (Math.abs(drift) > 0.04) align();
+          if (frameMap) { if (!hasVideoClock) align(); }
+          else if (Math.abs(drift) > 0.04) align();
           else
             a.playbackRate =
               Math.abs(drift) > 0.015 ? (drift > 0 ? 0.97 : 1.03) : 1;
@@ -137,12 +147,13 @@ export default function ReviewComparison({
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
+      if (videoCallback) maskedElement?.cancelVideoFrameCallback(videoCallback);
       attempt.current++;
       wanted.current = false;
       originalElement?.pause();
       maskedElement?.pause();
     };
-  }, [original, masked, start, sourceFailed]);
+  }, [original, masked, start, sourceFailed, frameMap]);
   useEffect(() => {
     const hidden = () => {
       if (!active || document.hidden) stop();
@@ -217,8 +228,8 @@ export default function ReviewComparison({
             onLoadedData={() => setReady(true)}
             onCanPlay={resume}
             onWaiting={stalled}
-            onSeeking={align}
-            onSeeked={align}
+            onSeeking={() => align()}
+            onSeeked={() => align()}
             onEnded={stop}
             onPause={() => {
               if (!buffering.current) stop();
