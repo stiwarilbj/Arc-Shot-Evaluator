@@ -366,7 +366,13 @@ Personal videos stay on your device; they are never automatically published.
    **Effects → Freeze at playhead** holds the displayed frame, identified by its
    edited time and masked source-frame number. The new one-second freeze is selected
    automatically with **Freeze length (0.5–3 seconds)** beside the button; no switch
-   to Cut is needed. **Effects** also offers 1–2× zoom/pan,
+   to Cut is needed. Before inserting, **Choose a nearby freeze frame** offers up
+   to five recorded masked frames within ±0.20 seconds, staying inside the current
+   piece. Click a thumbnail to move the playhead without editing the video, then
+   use **Freeze at playhead**. Relative edge-clarity hints help compare silhouettes;
+   they do not measure pose quality or original camera blur. No sharper frame is
+   manufactured. Existing freezes offer their single held frame. If previews fail,
+   retry or use the existing playhead freeze control. **Effects** also offers 1–2× zoom/pan,
    and optional 0.25-second fades. Choose **Start framing** or **End framing**;
    the paused full-frame preview shows the selected endpoint’s crop rectangle.
    Drag it (or use arrow keys) to pan; the zoom/position sliders stay synchronized.

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import FreezeFramePicker from "./FreezeFramePicker";
 import TimelinePieces from "./TimelinePieces";
 import CaptionPreview from "./CaptionPreview";
 import FramingPreview from "./FramingPreview";
@@ -1302,6 +1303,19 @@ export default function VideoEditPanel({
             ) : null}
             {panel === "Effects" ? (
               <>
+                <FreezeFramePicker
+                  base={base}
+                  project={project}
+                  frame={frame}
+                  active={active && !playing && !disabled && !busy}
+                  onSelect={(chosen) => {
+                    setPlaying(false);
+                    setTrimPreview(null);
+                    setSelected(editFrame(project, chosen).piece.id);
+                    setFrame(chosen);
+                    setFramingEnd(false);
+                  }}
+                />
                 <p className="jumper-caption jumper-freeze-preview">
                   Hold the frame shown in the video preview: frame {frame + 1} ·{" "}
                   {time(frame)}s (masked source frame {split.hit.source + 1} ·{" "}

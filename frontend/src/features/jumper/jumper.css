@@ -1262,3 +1262,30 @@
 .jumper-anchor-list { list-style: none; margin: .6rem 0; padding: 0; display: grid; gap: .4rem; }
 .jumper-anchor-list li { display: flex; flex-wrap: wrap; gap: .4rem; }
 .jumper-anchor-list button { min-height: 44px; white-space: normal; }
+
+/* Recorded freeze choices stay compact and wrap on narrow editor sidebars. */
+.jumper-freeze-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+  gap: 8px;
+  margin-block: 10px;
+}
+.jumper-freeze-options button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  text-align: left;
+  font-size: 0.75rem;
+}
+.jumper-freeze-options button[aria-pressed="true"] {
+  border-color: var(--orange);
+  box-shadow: inset 0 0 0 1px var(--orange);
+}
+.jumper-freeze-options img {
+  width: 100%;
+  height: 84px;
+  object-fit: contain;
+  background: #e0e0e0;
+}

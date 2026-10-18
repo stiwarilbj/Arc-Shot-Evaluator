@@ -570,3 +570,34 @@ then run `node scripts/test-jumper-caption-occlusion-ui.mjs` from the repository
 root (Chrome and the local Python/FFmpeg setup required). Set `JUMPER_URL` to
 check a preview or deployed build. The script stubs masking with a generated
 silhouette fixture; it verifies editing and does not claim segmentation accuracy.
+
+### Nearby recorded frames for freezes
+
+In Effects, open **Choose a nearby freeze frame** to compare up to five frames
+at the playhead and ±3/±6 edited frames (up to ±0.20 seconds). Choices clamp to
+the current piece, exclude removed footage across cuts, and deduplicate repeated
+source frames at slow speed or inside freezes. **Refresh around current playhead**
+recenters the choices after seeking. Edited and source frame numbers are shown.
+Selecting a thumbnail only pauses/seeks the preview; it does not create an undo
+entry, alter the project, or invalidate a finished export. **Freeze at playhead**
+then inserts the actual selected source frame using the existing one-second
+freeze and duration controls. The freeze remains one undoable edit and survives
+save/reload like existing freezes.
+
+Relative sharpness hints use contrast-weighted edge acutance on masked previews
+limited to 256 pixels on the long edge, with a similar-clarity label for scores
+within 8%. They describe
+silhouette edge clarity, not source-video blur, anatomical release detection, or
+pose quality. No original upload, inference, enhancement, or generated frames
+are involved. Both builds share this browser decoder and picker. At most five
+thumbnails are retained; closing the picker, leaving Effects, hiding the workspace,
+or starting playback/export cancels outstanding decoding and disposes the input.
+Preview failure offers retry while the ordinary freeze control remains usable.
+
+Run freeze-frame logic regressions with `npm --prefix frontend run test:jumper`.
+With the hosted dev/preview server running, run
+`node scripts/test-jumper-freeze-frames-ui.mjs` from the repository root
+(Chrome and the local Python/FFmpeg setup required). `JUMPER_URL` selects another
+preview or deployed build. This stubs only masking with a moving silhouette
+fixture; actual selection, edit history, rendering, and independent FFmpeg decode
+verify that export holds the chosen source frame. It does not test segmentation.
