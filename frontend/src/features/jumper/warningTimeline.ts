@@ -6,6 +6,7 @@ export const warningLabels = {
   outline_changed: "Abrupt outline change",
   mask_fragmented: "Detached mask fragment",
   tracking_unstable: "Unstable outline",
+  refinement_uncertain: "Small-player detail uncertain",
   tracking_disagreement: "Forward/backward mismatch",
   ambiguous_players: "Uncertain player match",
   possible_camera_cut: "Possible camera cut",

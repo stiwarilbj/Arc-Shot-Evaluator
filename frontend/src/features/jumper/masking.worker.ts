@@ -28,6 +28,12 @@ import {
   type CachedFeatures,
 } from "./frameCache";
 import { requireShooterBox, PeopleDiscovery } from "./discovery";
+import {
+  smallPlayerCrop,
+  sourceCrop,
+  acceptRefinement,
+  type PlayerCrop,
+} from "./smallPlayer";
 import { MaskQuality } from "./maskQuality";
 import {
   confirmedShooterFrame,
@@ -265,6 +271,32 @@ async function process(
       fit: "fill",
       poolSize: 2,
     });
+    const fineScale = Math.min(
+      1,
+      2560 / video.displayWidth,
+      1440 / video.displayHeight,
+    );
+    const fineWidth = Math.max(
+      2,
+      Math.floor((video.displayWidth * fineScale) / 2) * 2,
+    );
+    const fineHeight = Math.max(
+      2,
+      Math.floor((video.displayHeight * fineScale) / 2) * 2,
+    );
+    const fineSink = request.request.refine_small_players
+      ? new CanvasSink(video, {
+          width: fineWidth,
+          height: fineHeight,
+          fit: "fill",
+          poolSize: 1,
+        })
+      : undefined;
+    const cropCanvas = new OffscreenCanvas(1, 1);
+    const cropContext = cropCanvas.getContext("2d", {
+      willReadFrequently: true,
+    });
+    if (!cropContext) throw Error("Could not initialize detail canvas");
     const sourceCanvas = new OffscreenCanvas(width, height),
       sourceContext = sourceCanvas.getContext("2d", {
         willReadFrequently: true,
@@ -290,8 +322,15 @@ async function process(
     async function features(
       frame: number,
       canvas: HTMLCanvasElement | OffscreenCanvas,
+      crop?: PlayerCrop,
     ) {
-      const cached = await cache?.get<unknown>(`features:${frame}`);
+      const region = crop
+        ? sourceCrop(crop, width, height, fineWidth, fineHeight)
+        : undefined;
+      const key = region
+        ? `detail-v1:${frame}:${Object.values(region).join(":")}`
+        : `features:${frame}`;
+      const cached = await cache?.get<unknown>(key);
       if (validFeatures(cached))
         return Object.fromEntries(
           Object.entries(cached).map(([key, item]) => [
@@ -299,12 +338,34 @@ async function process(
             tensor(item.data, item.dims),
           ]),
         );
-      sourceContext!.drawImage(canvas, 0, 0, width, height);
-      const pixels = samPixels(
-        sourceContext!.getImageData(0, 0, width, height).data,
-        width,
-        height,
-      );
+      let pixels: Float32Array;
+      if (region) {
+        cropCanvas.width = region.width;
+        cropCanvas.height = region.height;
+        cropContext!.drawImage(
+          canvas,
+          region.x,
+          region.y,
+          region.width,
+          region.height,
+          0,
+          0,
+          region.width,
+          region.height,
+        );
+        pixels = samPixels(
+          cropContext!.getImageData(0, 0, region.width, region.height).data,
+          region.width,
+          region.height,
+        );
+      } else {
+        sourceContext!.drawImage(canvas, 0, 0, width, height);
+        pixels = samPixels(
+          sourceContext!.getImageData(0, 0, width, height).data,
+          width,
+          height,
+        );
+      }
       const value = tensor(pixels, [1, 3, 1024, 1024]);
       try {
         const result = await vision.run({ pixel_values: value }, [
@@ -316,7 +377,7 @@ async function process(
         if (
           cache &&
           (await cache.canPut(
-            `features:${frame}`,
+            key,
             512 +
               Object.values(result).reduce(
                 (sum, item) => sum + item.size * 4,
@@ -332,7 +393,7 @@ async function process(
                 data: Float32Array.from((await item.getData()) as Float32Array),
               };
             await cache.put(
-              `features:${frame}`,
+              key,
               stored,
               512 +
                 Object.values(stored).reduce(
@@ -622,6 +683,7 @@ async function process(
       if (!sample)
         throw Error("The selected segment could not be fully decoded");
       const feats = await features(frame, sample.canvas);
+      const frameMasks = fineSink ? new Map<number, Float32Array>() : undefined;
       ownership.begin();
       const owners = ownership.owners;
       try {
@@ -648,6 +710,7 @@ async function process(
           // propagate_in_video resizes its stored 256px logits directly to the
           // source frame. The 1024px masks are used only by the memory encoder.
           const values = bilinear(prediction.low, 256, 256, width, height);
+          frameMasks?.set(object.id, values);
           ownership.add(object.id, values);
           if (object.id === target_id)
             trackingCheck?.record(frame, values, width, height);
@@ -704,12 +767,76 @@ async function process(
                 .get(id)!
                 .set(frame, await remember(sampleFeatures, prediction, frame));
               const values = bilinear(prediction.low, 256, 256, width, height);
+              frameMasks?.set(id, values);
               ownership.add(id, values);
             }
           }
         }
       } finally {
         dispose(feats);
+      }
+      if (fineSink && frameMasks) {
+        const rawOwners = owners.slice();
+        let fineSample: Awaited<ReturnType<typeof fineSink.getCanvas>>;
+        for (const object of trackedObjects) {
+          const values = frameMasks.get(object.id);
+          if (!values || object.ignored) continue;
+          const crop = smallPlayerCrop(
+            values,
+            width,
+            height,
+            object.prompts.find((p) => p.frame === frame),
+          );
+          if (!crop) continue;
+          report(
+            `Refining small player ${object.id} · frame ${frame + 1} / ${count}`,
+            frame / count,
+          );
+          let refined: Float32Array | undefined;
+          if (!crop.unusable) {
+            fineSample ??= await fineSink.getCanvas(start + frame / 30);
+            if (!fineSample) throw Error("Could not decode the detail frame");
+            const detail = await features(frame, fineSample.canvas, crop);
+            try {
+              const raw = floats(detail.feats2);
+              for (let c = 0; c < 256; c++)
+                for (let i = 0; i < 4096; i++)
+                  raw[c * 4096 + i] += weights.no_mem_embed[c];
+              const prediction = await predict(detail, raw, {
+                frame,
+                box: crop.box,
+                points: crop.points,
+                labels: crop.labels,
+              });
+              refined = acceptRefinement(
+                values,
+                bilinear(
+                  prediction.low.map((v) => Math.max(-32, Math.min(32, v))),
+                  256,
+                  256,
+                  crop.width,
+                  crop.height,
+                ),
+                crop,
+                width,
+                height,
+                rawOwners,
+                object.id,
+              );
+            } finally {
+              dispose(detail);
+            }
+          }
+          if (refined) frameMasks.set(object.id, refined);
+          else
+            warnings.push({
+              frame,
+              kind: "refinement_uncertain",
+              track_ids: [object.id],
+            });
+        }
+        ownership.begin();
+        for (const [id, values] of frameMasks) ownership.add(id, values);
       }
       smallContext.drawImage(sample.canvas, 0, 0, 64, 36);
       const pixels = smallContext.getImageData(0, 0, 64, 36).data;

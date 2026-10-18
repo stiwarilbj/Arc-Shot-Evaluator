@@ -64,6 +64,7 @@ const fixtures = [
     ],
   },
 ];
+fixtures.push({ ...request, refine_small_players: true });
 const native = spawnSync(
   new URL("../.venv/bin/python", import.meta.url).pathname,
   [

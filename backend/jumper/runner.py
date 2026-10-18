@@ -63,6 +63,23 @@ def run(directory: Path):
         frames = extract(
             directory / "source", directory / "frames", job["start"], job["end"]
         )
+        refinement_frames = None
+        if job.get("refine_small_players"):
+            progress("Decoding detail frames")
+            import shutil
+            required = (
+                math.ceil((job["end"] - job["start"]) * 30)
+                * math.ceil(min(sw * sh, 2560 * 1440)) * 3
+            )
+            if shutil.disk_usage(directory).free < required + 256 * 1024 ** 2:
+                raise ValueError(
+                    "Not enough temporary disk space for detail frames. "
+                    "Shorten the segment or free disk space and retry."
+                )
+            refinement_frames = extract(
+                directory / "source", directory / "detail-frames",
+                job["start"], job["end"], maximum=(2560, 1440)
+            )
         import torch
         from backend.config import MODEL_WEIGHTS_DIR
 
@@ -119,8 +136,7 @@ def run(directory: Path):
                 checkpoint,
                 device,
                 lambda done, total, stage=None: progress(
-                    stage
-                    or (
+                    (stage + " · " + device.upper()) if stage else (
                         (
                             "Detecting and tracking players · "
                             if job.get("auto_detect_others")
@@ -132,6 +148,10 @@ def run(directory: Path):
                     total,
                 ),
                 cache_source=directory / "source",
+                **(
+                    {"refinement_frames": refinement_frames}
+                    if refinement_frames is not None else {}
+                ),
             )
         except (RuntimeError, NotImplementedError) as error:
             if device == "cpu":
@@ -154,6 +174,10 @@ def run(directory: Path):
                 "cpu",
                 lambda done, total, stage=None: progress(stage or "Tracking players · CPU", done, total),
                 cache_source=directory / "source",
+                **(
+                    {"refinement_frames": refinement_frames}
+                    if refinement_frames is not None else {}
+                ),
             )
         progress("Rendering masked videos")
         outputs = render_with_retry(

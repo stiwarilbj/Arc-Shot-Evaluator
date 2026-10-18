@@ -218,7 +218,19 @@ bounded decoding, a bundled OFL caption font, and independent output validation.
    check. This adds one bounded shooter pass through the confirmed range, reusing
    cached encoder features. It never changes masks automatically or proves which
    pass is correct. Small/tiny outlines can escape the 128×128 diagnostic grid.
-4. Resolve lost-target, ambiguous-player, instability, forward/backward mismatch or cut warnings before
+   Small-player refinement runs automatically in Create and its shooter preview.
+   It re-encodes a padded crop from decoded source frames (up to 2560×1440), using
+   the same SAM weights and current-frame body evidence, then maps the outline
+   back to the 720p export. One crop is processed at a time. The temporal tracker,
+   detection, and forward/backward identity audit keep their original scores.
+   A crop must retain at least 60% mask overlap, stay within conservative area
+   bounds, and avoid leaking at its edges or adding another player's surface.
+   Rejected or extremely tiny crops keep the tracked mask and add **Small-player
+   detail uncertain** review markers. Obscured detail is never reconstructed;
+   inspect the affected frame and add Include/Exclude points or use a closer view.
+   This costs additional processing time. Native detail frames are temporary,
+   share the exact trim/30 fps timeline, and are checked against free disk space.
+4. Resolve lost-target, ambiguous-player, instability, forward/backward mismatch, small-player detail or cut warnings before
    saving. Detection cannot establish identity through every overlap. The editor
    stops rather than silently dropping people when more than twenty tracks are
    needed. Shorten the clip or use manual selection in a closer view.

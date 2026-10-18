@@ -250,7 +250,7 @@ def execute(identity, generation):
                     break
                 if not any(device in stage for device in ("MPS", "CUDA")):
                     break
-                for name in ("frames", "masks", "output"):
+                for name in ("frames", "detail-frames", "masks", "output"):
                     shutil.rmtree(directory / name, ignore_errors=True)
                 for name in ("error.json", "result.json"):
                     (directory / name).unlink(missing_ok=True)
@@ -349,7 +349,7 @@ async def process(identity: str, request: Request):
             raise HTTPException(409, "Cancel the current processing job first")
         if EXECUTOR is None:
             raise HTTPException(503, "Local processing queue is unavailable")
-        for name in ("frames", "masks", "output"):
+        for name in ("frames", "detail-frames", "masks", "output"):
             shutil.rmtree(job["directory"] / name, ignore_errors=True)
         for name in ("progress.json", "result.json", "error.json"):
             (job["directory"] / name).unlink(missing_ok=True)

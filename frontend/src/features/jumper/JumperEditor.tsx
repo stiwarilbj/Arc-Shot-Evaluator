@@ -380,6 +380,7 @@ export default function JumperEditor({
       objects: tracks,
       auto_detect_others: automatic,
       verify_shooter: true,
+      refine_small_players: true,
       presentation: "silhouette-palette-v1" as const,
     };
     try {

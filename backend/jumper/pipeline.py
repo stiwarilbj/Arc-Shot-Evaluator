@@ -45,6 +45,9 @@ def validate_job(job: object) -> dict:
             raise ValueError(f"Missing {key}")
     if "auto_detect_others" in job and type(job["auto_detect_others"]) is not bool:
         raise ValueError("Invalid automatic discovery flag")
+    if ("refine_small_players" in job
+            and type(job["refine_small_players"]) is not bool):
+        raise ValueError("Invalid small-player refinement flag")
     if "verify_shooter" in job and type(job["verify_shooter"]) is not bool:
         raise ValueError("Invalid shooter verification flag")
     if (
@@ -210,7 +213,9 @@ def run_ffmpeg(arguments: list[str]) -> None:
         raise RuntimeError(result.stderr.decode(errors="replace")[-2000:])
 
 
-def extract(source: Path, directory: Path, start: float, end: float) -> list[Path]:
+def extract(
+    source: Path, directory: Path, start: float, end: float, maximum=(1280, 720)
+) -> list[Path]:
     directory.mkdir()
     # FFmpeg applies rotation before scaling, timestamps VFR input to one common
     # timeline, and decodes only the selected segment. No source audio is read.
@@ -228,7 +233,7 @@ def extract(source: Path, directory: Path, start: float, end: float) -> list[Pat
             "0:v:0",
             "-an",
             "-vf",
-            f"trim=duration={end - start},setpts=PTS-STARTPTS,fps=30:start_time=0,scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+            f"trim=duration={end - start},setpts=PTS-STARTPTS,fps=30:start_time=0,scale='min({maximum[0]},iw)':'min({maximum[1]},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
             "-c:v",
             "png",
             "-start_number",
@@ -294,6 +299,7 @@ def track(
     device: str,
     progress=None,
     cache_source=None,
+    refinement_frames=None,
 ) -> list[dict]:
     """Use native SAM 2.1 video tracking memory and per-frame corrections."""
     from backend.jumper.resources import (
@@ -349,6 +355,12 @@ def track(
     except Exception:
         pass
     warnings = []
+    refiner = None
+    if job.get("refine_small_players"):
+        from backend.jumper.small_player import SmallPlayerRefiner, small_player_crop
+        if refinement_frames is not None and len(refinement_frames) != len(frames):
+            raise ValueError("Refinement frames do not match the tracking timeline")
+        refiner = SmallPlayerRefiner(predictor)
     detector = None
     if job.get("auto_detect_others"):
         from ultralytics import YOLO
@@ -556,6 +568,50 @@ def track(
                         device, previous_areas.get(identity), area, height * width
                     )
                     previous_areas[identity] = area
+                if refiner is not None:
+                    # Temporal tracking/discovery and backward checks retain their
+                    # original scores. Crop refinement affects visible output only.
+                    raw_owners = np.zeros((height, width), dtype=np.uint8)
+                    valid = values.max(axis=0) > 0
+                    raw_owners[valid] = np.asarray(ids, dtype=np.uint8)[
+                        values.argmax(axis=0)[valid]
+                    ]
+                    refined_values = values.copy()
+                    fine_image = None
+                    for row, identity in enumerate(ids):
+                        obj = next(
+                            o for o in job["objects"] if o["id"] == identity
+                        )
+                        if obj.get("ignored") or index < starts[identity]:
+                            continue
+                        prompt = next(
+                            (p for p in obj["prompts"] if p["frame"] == index), None
+                        )
+                        crop = small_player_crop(values[row], prompt)
+                        if crop is None:
+                            continue
+                        if progress:
+                            progress(
+                                index, len(frames),
+                                f"Refining small player {identity} · frame {index + 1} / {len(frames)}"
+                            )
+                        refined = None
+                        if not crop["unusable"]:
+                            if fine_image is None:
+                                fine_image = cv2.cvtColor(
+                                    cv2.imread(str((refinement_frames or frames)[index])),
+                                    cv2.COLOR_BGR2RGB,
+                                )
+                            refined = refiner.refine(
+                                fine_image, values[row], crop, raw_owners, identity
+                            )
+                        if refined is None:
+                            warnings.append(dict(
+                                frame=index, kind="refinement_uncertain", track_ids=[identity]
+                            ))
+                        else:
+                            refined_values[row] = refined
+                    values = refined_values
                 current = cv2.cvtColor(
                     cv2.resize(cv2.imread(str(frames[index])), (64, 36)),
                     cv2.COLOR_BGR2RGB,

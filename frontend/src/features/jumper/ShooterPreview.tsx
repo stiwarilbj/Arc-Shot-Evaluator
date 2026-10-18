@@ -51,8 +51,9 @@ export default function ShooterPreview({
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const { prepareShooterSelection, processVideo } =
-            await import("./processing");
+          const { prepareShooterSelection, processVideo } = await import(
+            "./processing"
+          );
           const report = (update: JobProgress) => {
             if (!abort.signal.aborted) setStatus(update.stage);
           };
@@ -65,6 +66,7 @@ export default function ShooterPreview({
               objects: [{ id: track.id, prompts: [seed] }],
               auto_detect_others: automatic,
               presentation: "silhouette",
+              refine_small_players: true,
             },
             report,
             abort.signal,
@@ -75,6 +77,14 @@ export default function ShooterPreview({
             report,
             abort.signal,
           );
+          if (
+            result.warnings.some(
+              (w) => w.frame === 0 && w.kind === "refinement_uncertain",
+            )
+          )
+            throw Error(
+              "Small-player detail needs review. Add Include/Exclude points or choose a closer view; obscured details cannot be recovered",
+            );
           if (result.warnings.some((w) => w.frame === 0))
             throw Error(
               "The shooter could not be isolated in the starting frame; move the point inside the player",

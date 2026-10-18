@@ -74,6 +74,7 @@ export interface Track {
 export interface MaskRequest {
   auto_detect_others?: boolean;
   verify_shooter?: boolean;
+  refine_small_players?: boolean;
   shooter_selection_resolved?: boolean;
   presentation?: "silhouette" | "silhouette-palette-v1";
   start: number;
@@ -91,6 +92,7 @@ export interface MaskWarning {
     | "mask_fragmented"
     | "ambiguous_players"
     | "tracking_disagreement"
+    | "refinement_uncertain"
     | "possible_camera_cut";
   track_ids?: number[];
 }
@@ -241,6 +243,8 @@ export function validateMaskRequest(
     (v.auto_detect_others !== undefined &&
       typeof v.auto_detect_others !== "boolean") ||
     (v.verify_shooter !== undefined && typeof v.verify_shooter !== "boolean") ||
+    (v.refine_small_players !== undefined &&
+      typeof v.refine_small_players !== "boolean") ||
     (v.shooter_selection_resolved !== undefined &&
       typeof v.shooter_selection_resolved !== "boolean") ||
     (v.presentation !== undefined &&
@@ -384,6 +388,7 @@ export function maskResult(value: unknown): value is MaskResult {
           "mask_fragmented",
           "ambiguous_players",
           "tracking_disagreement",
+          "refinement_uncertain",
         ].includes(w.kind) &&
         (w.track_ids === undefined ||
           (Array.isArray(w.track_ids) &&

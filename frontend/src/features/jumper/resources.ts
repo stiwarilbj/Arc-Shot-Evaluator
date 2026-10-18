@@ -38,7 +38,10 @@ export function estimateResources(
       width * height * 96 +
       sourceWidth * sourceHeight * 16 +
       frames * width * height * 0.25 +
-      (request.verify_shooter ? frames * 128 * 128 : 0),
+      (request.verify_shooter ? frames * 128 * 128 : 0) +
+      (request.refine_small_players
+        ? 192 * MIB + width * height * 80 + 2560 * 1440 * 4
+        : 0),
   );
   return { bytes, players, correctionFrames: corrections, largestBufferBytes };
 }

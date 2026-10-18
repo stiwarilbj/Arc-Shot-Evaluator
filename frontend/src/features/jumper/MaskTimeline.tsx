@@ -54,6 +54,9 @@ export default function MaskTimeline({
         {warnings.some((w) => w.kind === "tracking_disagreement")
           ? " Forward/backward mismatch means two independent shooter tracks disagree. Inspect the shooter and add Include/Exclude points, or shorten the segment; these flags do not prove which pass is correct."
           : ""}
+        {warnings.some((w) => w.kind === "refinement_uncertain")
+          ? " Small-player detail uncertain means a close crop could not safely refine the visible outline. Inspect hands, feet and overlaps; add Include/Exclude points or choose a closer segment. Hidden details cannot be recovered."
+          : ""}
         {stale ? " Selections changed; reprocess to refresh these hints." : ""}
       </p>
       {lanes.length ? (

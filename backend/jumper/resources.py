@@ -30,6 +30,7 @@ def estimate_resources(
         + (source_width or width) * (source_height or height) * 16
         + frames * width * height * 0.25
         + (frames * 128 * 128 if job.get("verify_shooter") else 0)
+        + (192 * MIB + width * height * 80 + 2560 * 1440 * 4 if job.get("refine_small_players") else 0)
     )
     return {
         "bytes": amount,

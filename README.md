@@ -270,6 +270,15 @@ Personal videos stay on your device; they are never automatically published.
    grid, flag overlap below 60% with at least 16 foreground grid pixels, and do
    not change output masks or guarantee identity. Both-empty masks still use
    the existing missing-player checks. Full-motion review remains required.
+   Small silhouettes also get a tighter, higher-resolution crop pass in both
+   browser and downloaded processing, including the shooter preview. Crops use
+   decoded source detail up to 1440p, while exports stay at up to 720p/30 fps.
+   Each crop runs separately with the existing model; it does not change tracking
+   identity or invent hidden hands/feet. Large disagreements, crop-edge leakage,
+   or additions belonging to another player retain the original mask and produce
+   **Small-player detail uncertain** markers requiring correction/review.
+   Tiny or obscured bodies can still be unusable. Processing takes longer when
+   many players need refinement; local processing also needs temporary disk space.
 5. **Edit video:** after masking, split, trim, delete, or reorder pieces in **Cut**.
    Select pieces from thumbnail strips showing their masked footage, duration,
    and an orange selected outline. Freeze pieces show the held frame. The strips

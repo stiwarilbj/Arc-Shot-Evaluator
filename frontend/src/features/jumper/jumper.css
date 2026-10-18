@@ -638,7 +638,8 @@
   color: #d99d31;
 }
 .jumper-warning-ambiguous_players,
-.jumper-warning-tracking_disagreement {
+.jumper-warning-tracking_disagreement,
+.jumper-warning-refinement_uncertain {
   color: #a58ce0;
 }
 .jumper-warning-possible_camera_cut {
