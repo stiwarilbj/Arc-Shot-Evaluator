@@ -67,6 +67,9 @@ export default function MaskTimeline({
         )
           ? " A correction did not take effect in the final silhouettes. Inspect the flagged frame and track, adjust Include/Exclude points, and reprocess. Points check visible mask membership, not player identity or hidden limbs."
           : ""}
+        {warnings.some((w) => w.kind === "memory_rejected")
+          ? " An uncertain prediction was kept out of tracking memory. The actual frame remains visible for review; add a clear Include/Exclude correction or shorten the segment. Keeping earlier evidence does not guarantee the track stayed on the right person."
+          : ""}
         {stale ? " Selections changed; reprocess to refresh these hints." : ""}
       </p>
       {lanes.length ? (

@@ -75,6 +75,15 @@ export function buildBank(
     if (value) memories.push({ value, temporal: 6 - temporal });
   }
   if (!memories.length) throw Error("Tracking memory is empty");
+  // After a rejected stretch, retain a real, timestamped reliable reference.
+  // Treat it as an additional anchor, never as a fabricated recent frame.
+  const fallback = [...conditions.values(), ...recent.values()]
+    .filter(value => (frame - value.frame) * direction > 0)
+    .sort((a, b) => (b.frame - a.frame) * direction)[0];
+  if (fallback && (frame - fallback.frame) * direction > 6 && !conditions.has(fallback.frame)) {
+    conditions = new Map([...conditions, [fallback.frame, fallback]]);
+    memories.push({ value: fallback, temporal: 6 });
+  }
   const spatial = new Float32Array(memories.length * 4096 * 64),
     positions = new Float32Array(spatial.length);
   memories.forEach(({ value, temporal }, index) => {
@@ -92,7 +101,7 @@ export function buildBank(
     .map((value) => ({ difference: (frame - value.frame) * direction, value }));
   for (let difference = 1; difference < maxPointers; difference++) {
     const value = recent.get(frame - direction * difference);
-    if (value) pointers.push({ difference, value });
+    if (value && !conditions.has(value.frame)) pointers.push({ difference, value });
   }
   const pointerData = new Float32Array(pointers.length * 256),
     pointerPosition = new Float32Array(pointerData.length);

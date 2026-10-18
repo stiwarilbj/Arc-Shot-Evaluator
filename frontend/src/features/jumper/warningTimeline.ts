@@ -3,6 +3,7 @@ import type { MaskWarning } from "./domain";
 export const warningLabels = {
   correction_include_missed: "Include point missed",
   correction_exclude_failed: "Exclude point still inside",
+  memory_rejected: "Unreliable tracking reference",
   target_lost: "Missing shooter",
   player_lost: "Missing player",
   outline_changed: "Abrupt outline change",

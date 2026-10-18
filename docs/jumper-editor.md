@@ -695,3 +695,30 @@ frame and track in the existing mask-quality timeline. Inspect it, adjust points
 and reprocess. Warnings keep saving blocked; no masks are painted or repaired to
 force a pass. Passing checks cannot establish player identity, recover occluded
 limbs, or replace full-motion review.
+
+## Tracking-memory quality gate
+
+For included players, forward and reverse runs check the native 256×256 mask logits before admitting a
+prediction as reference evidence. A missing/nonpositive object score, fewer than
+four foreground pixels, or fewer than 25% of foreground pixels with logits at
+least 1 rejects admission. Relative to the latest reliable mask, overlap below
+0.1 IoU combined with area shrinking below one quarter, growing above fourfold,
+or centroid movement above one quarter of the mask width also rejects admission.
+These are conservative heuristics; logits are not calibrated probabilities and
+passing does not establish identity. Explicit correction anchors bypass comparison
+to the old location but still need a usable mask of their own.
+
+Rejected raw predictions stay in the actual review footage; they are not replaced
+with held silhouettes. **Unreliable tracking reference** flags the frame and track
+and keeps saving blocked. Add a clear correction or shorten the clip. Browser
+processing skips memory encoding/admission for rejected automatic predictions.
+Native SAM compact outputs are quarantined from both spatial attention and object
+pointers; retaining an output for review does not admit it to tracking memory.
+One prior reliable automatic reference per object/direction survives the ordinary
+recent-frame window and is used with its actual timestamp as an additional anchor
+when needed. Reverse checks use independent references, and explicit anchor resets
+clear only the selected identity's retained reference. If no reliable initial
+reference exists, processing stops with a selection/retry error.
+
+Excluded tracks retain their existing discovery behavior without admission warnings;
+their independent memories are never used to track an included player.

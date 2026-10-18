@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {validateModelTensor, validateDecoderOutputs, InvalidModelOutputError} from '../frontend/src/features/jumper/modelOutputs.ts';
+import {validateAttentionOutput, validateModelTensor, validateDecoderOutputs, InvalidModelOutputError} from '../frontend/src/features/jumper/modelOutputs.ts';
 const tensor = dims => ({dims, data:new Float32Array(dims.reduce((a,b)=>a*b,1)).fill(-1024)});
 const valid = () => ({masks:tensor([1,4,256,256]),quality:tensor([1,4]),pointers:tensor([1,4,256]),scores:tensor([1,1])});
 validateDecoderOutputs(valid());
@@ -26,3 +26,10 @@ for (const dims of [[4096,1,64],[4096,1,256]]) {
   assert.throws(()=>validateModelTensor(output,dims,'memory'),InvalidModelOutputError);
 }
 console.log('Jumper model-output validation passed');
+
+// Actual pinned memory_attention.onnx output, verified with ONNX Runtime.
+const attention=tensor([1,1,4096,256]);
+validateAttentionOutput(attention);
+assert.throws(()=>validateAttentionOutput(tensor([4096,1,256])), InvalidModelOutputError);
+attention.data[attention.data.length-1]=NaN;
+assert.throws(()=>validateAttentionOutput(attention), InvalidModelOutputError);

@@ -1,5 +1,6 @@
+import { reliableMask, pruneReliable } from "./memoryQuality";
 import { checkCorrections } from "./correctionCheck";
-import { validateDecoderOutputs, validateModelTensor } from "./modelOutputs";
+import { validateAttentionOutput, validateDecoderOutputs, validateModelTensor } from "./modelOutputs";
 import { detailProof, type DetailProof } from "./compressionQuality";
 /// <reference lib="webworker" />
 import { latestShooterAnchor, shooterAnchors } from "./trackingAnchors";
@@ -559,7 +560,7 @@ async function process(
       let result: Record<string, ort.Tensor> | undefined;
       try {
         result = await attention.run(args);
-        validateModelTensor(result.conditioned_features, [4096, 1, 256], "conditioned features");
+        validateAttentionOutput(result.conditioned_features);
         return await predict(
           feats,
           channelsFirst(floats(result.conditioned_features)),
@@ -607,6 +608,8 @@ async function process(
             for (let i = 0; i < 4096; i++)
               raw[c * 4096 + i] += weights.no_mem_embed[c];
           const prediction = await predict(feats, raw, prompt);
+          if (!object.ignored && !reliableMask(prediction.low, undefined, prediction.score[0]))
+            throw Error(`The player selection at frame ${frame + 1} is too uncertain to seed tracking. Adjust the selection on a clear frame and retry.`);
           conditions
             .get(object.id)!
             .set(frame, await remember(feats, prediction, frame));
@@ -694,11 +697,20 @@ async function process(
       await cancelOutputs();
     }
     const warnings: MaskResult["warnings"] = [];
+    const rejectedMemory = new Set<string>();
+    function memoryWarning(frame: number, id: number) {
+      const key = `${frame}:${id}`;
+      if (!rejectedMemory.has(key)) {
+        rejectedMemory.add(key);
+        warnings.push({ frame, kind: "memory_rejected", track_ids: [id] });
+      }
+    }
     const discovery = new PeopleDiscovery();
     const cameraCuts = new CameraCuts();
     const quality = new MaskQuality();
     const joins = new MaskJoins(width, height);
     const ownership = new MaskOwnership(width, height);
+    const trustedMasks = new Map<number, Float32Array>();
     const recoveryAnchors = shooterAnchors(objects, target_id);
     const small = new OffscreenCanvas(64, 36),
       smallContext = small.getContext("2d", { willReadFrequently: true })!;
@@ -719,8 +731,10 @@ async function process(
       try {
         for (const object of trackedObjects) {
           if (frame < object.prompts[0].frame) continue;
-          if (object.id === target_id && recoveryAnchors.some(prompt => prompt.frame === frame))
+          if (object.id === target_id && recoveryAnchors.some(prompt => prompt.frame === frame)) {
             recents.get(object.id)!.clear();
+            trustedMasks.delete(object.id);
+          }
           let prediction = corrected.get(frame)?.get(object.id);
           if (!prediction) {
             const available = conditions.get(object.id)!;
@@ -736,10 +750,11 @@ async function process(
               causal,
               recents.get(object.id)!,
             );
-            recents
-              .get(object.id)!
-              .set(frame, await remember(feats, prediction, frame));
-          }
+            if (object.ignored || reliableMask(prediction.low, trustedMasks.get(object.id), prediction.score[0])) {
+              recents.get(object.id)!.set(frame, await remember(feats, prediction, frame));
+              trustedMasks.set(object.id, prediction.low);
+            } else memoryWarning(frame, object.id);
+          } else trustedMasks.set(object.id, prediction.low);
           // propagate_in_video resizes its stored 256px logits directly to the
           // source frame. The 1024px masks are used only by the memory encoder.
           const values = bilinear(prediction.low, 256, 256, width, height);
@@ -748,8 +763,7 @@ async function process(
           ownership.add(object.id, values);
           if (object.id === target_id)
             trackingCheck?.record(frame, values, width, height);
-          for (const old of recents.get(object.id)!.keys())
-            if (old < frame - 15) recents.get(object.id)!.delete(old);
+          pruneReliable(recents.get(object.id)!, frame);
         }
         if (detector) {
           report(
@@ -798,6 +812,9 @@ async function process(
                 for (let i = 0; i < 4096; i++)
                   raw[c * 4096 + i] += weights.no_mem_embed[c];
               const prediction = await predict(sampleFeatures, raw, prompt);
+              if (!reliableMask(prediction.low, undefined, prediction.score[0]))
+                throw Error(`A newly detected player at frame ${frame + 1} is too uncertain to seed tracking. Select court players manually and retry.`);
+              trustedMasks.set(id, prediction.low);
               conditions
                 .get(id)!
                 .set(frame, await remember(sampleFeatures, prediction, frame));
@@ -955,6 +972,7 @@ async function process(
           throw Error("The confirmed shooter frame is missing");
         const reverseConditions = new Map([[segment.anchor, segment.memory]]);
         const reverseRecent = new Map<number, Memory>();
+        let reverseTrusted = segment.prediction.low;
         for (let frame = segment.anchor; frame >= segment.first; frame--) {
           report(
             `Checking shooter backward · frame ${frame + 1} / ${trackingCheck.anchor + 1}`,
@@ -980,13 +998,13 @@ async function process(
               width,
               height,
             );
-            if (frame !== segment.anchor)
-              reverseRecent.set(
-                frame,
-                await remember(feats, prediction, frame),
-              );
-            for (const old of reverseRecent.keys())
-              if (old > frame + 15) reverseRecent.delete(old);
+            if (frame !== segment.anchor) {
+              if (reliableMask(prediction.low, reverseTrusted, prediction.score[0])) {
+                reverseRecent.set(frame, await remember(feats, prediction, frame));
+                reverseTrusted = prediction.low;
+              } else memoryWarning(frame, target_id);
+            }
+            pruneReliable(reverseRecent, frame, true);
           } finally {
             dispose(feats);
           }

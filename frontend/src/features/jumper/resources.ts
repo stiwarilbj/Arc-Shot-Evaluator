@@ -10,7 +10,7 @@ export interface ResourceEstimate {
 
 /** Planning allowance, not an allocation measurement or a guarantee against OOM.
  * Keep this formula aligned with backend/jumper/resources.py. No cache hits assumed.
- * SAM runs at 1024px regardless of output size. Retain 16 recent memories/object,
+ * SAM runs at 1024px regardless of output size. Retain 16 recent memories/object plus one reliable fallback,
  * every unique conditioning frame, and working attention tensors for one object.
  */
 export function estimateResources(
@@ -29,7 +29,7 @@ export function estimateResources(
   const corrections =
     counts.reduce((sum, count) => sum + count, 0) + players - tracks.length;
   const maxConditions = Math.max(1, ...counts);
-  const memories = players * Math.min(16, frames) + corrections;
+  const memories = players * Math.min(17, frames) + corrections;
   const largestBufferBytes = Math.max(16 * MIB, (maxConditions + 6) * MIB);
   const bytes = Math.ceil(
     (1536 + 192 + 96 + (request.auto_detect_others ? 256 : 0)) * MIB +

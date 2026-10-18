@@ -30,3 +30,9 @@ export function validateDecoderOutputs(result: Record<string, unknown>) {
   validateModelTensor(result.pointers, [1, 4, 256], "tracking pointer");
   validateModelTensor(result.scores, [1, 1], "object score");
 }
+
+/** The pinned attention graph returns [1, batch, spatial, channel], not a
+ * three-dimensional sequence tensor. Flattening remains sequence-first. */
+export function validateAttentionOutput(value: unknown) {
+  validateModelTensor(value, [1, 1, 4096, 256], "conditioned features");
+}

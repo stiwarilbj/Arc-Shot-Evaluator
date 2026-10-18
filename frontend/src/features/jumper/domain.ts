@@ -89,6 +89,7 @@ export interface MaskWarning {
   kind:
     | "target_lost"
     | "player_lost"
+    | "memory_rejected"
     | "tracking_unstable"
     | "outline_changed"
     | "mask_fragmented"
@@ -393,6 +394,7 @@ export function maskResult(value: unknown): value is MaskResult {
           "player_lost",
           "possible_camera_cut",
           "tracking_unstable",
+          "memory_rejected",
           "outline_changed",
           "mask_fragmented",
           "mask_joined",

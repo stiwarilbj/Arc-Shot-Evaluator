@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .memory_quality import MemoryQualityGate
 from .correction_check import check_corrections
 from .model_outputs import tracking_masks
 from .overlap_palette import OverlapPalette
@@ -371,6 +372,13 @@ def track(
     except Exception:
         pass
     warnings = []
+    rejected_memories = set()
+    def memory_warning(frame, identity):
+        key = (frame, identity)
+        if key not in rejected_memories:
+            rejected_memories.add(key)
+            warnings.append(dict(frame=frame, kind="memory_rejected",
+                                 **({"track_ids": [identity]} if identity is not None else {})))
     refiner = None
     if job.get("refine_small_players"):
         from backend.jumper.small_player import SmallPlayerRefiner, small_player_crop
@@ -449,7 +457,9 @@ def track(
             initial["box"] = require_shooter_box(
                 boxes, initial["points"], initial["labels"]
             )
-    with torch.inference_mode():
+    with MemoryQualityGate(
+        predictor, memory_warning, (obj["id"] for obj in job["objects"] if obj.get("ignored"))
+    ) as memory_gate, torch.inference_mode():
         state = bounded_state(predictor, frames)
         try:
             # Seed every identity before propagation. Additional prompts at
@@ -509,6 +519,7 @@ def track(
                             if at == index and at > 0 and identity == job["target_id"]:
                                 if prompt.get("anchor") is True:
                                     reset_shooter_memory(state, identity)
+                                    memory_gate.reset_object(state, identity)
                                 apply_prompt(state, at, identity, prompt)
                     _, ids, logits = next(
                         predictor.propagate_in_video(
@@ -682,6 +693,7 @@ def track(
                         )
         finally:
             predictor.reset_state(state)
+            memory_gate.clear()
         if tracking_check:
             # Each confirmed section starts with independent reverse memory.
             # Additional Include points shorten a difficult section on retry.
@@ -713,6 +725,7 @@ def track(
                             torch.mps.empty_cache()
                 finally:
                     predictor.reset_state(state)
+                    memory_gate.clear()
             checked = tracking_check.finish()
             warnings.extend(checked["warnings"])
             job["_tracking_check"] = checked["tracking_check"]

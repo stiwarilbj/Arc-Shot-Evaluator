@@ -1,0 +1,17 @@
+[
+  {"name": "strong initial mask", "rect": [30, 80, 10, 10], "expected": true},
+  {"name": "missing mask", "rect": null, "expected": false},
+  {"name": "weak outline", "rect": [30, 80, 10, 10], "value": 0.2, "expected": false},
+  {"name": "nonpositive object evidence", "rect": [30, 80, 10, 10], "score": 0, "expected": false},
+  {"name": "fewer than four pixels", "rect": [30, 80, 1, 3], "expected": false},
+  {"name": "four pixels allowed", "rect": [30, 80, 2, 2], "expected": true},
+  {"name": "normal motion", "previous": [30, 80, 10, 10], "rect": [32, 81, 10, 10], "expected": true},
+  {"name": "large disjoint takeover", "previous": [30, 80, 10, 10], "rect": [45, 70, 21, 20], "expected": false},
+  {"name": "fourfold boundary", "previous": [30, 80, 10, 10], "rect": [45, 70, 20, 20], "expected": true},
+  {"name": "quarter boundary", "previous": [40, 50, 40, 40], "rect": [90, 60, 20, 20], "expected": true},
+  {"name": "severe shrink", "previous": [40, 50, 40, 40], "rect": [90, 60, 19, 20], "expected": false},
+  {"name": "jump boundary", "previous": [20, 100, 20, 40], "rect": [84, 100, 20, 40], "expected": true},
+  {"name": "jump to another body", "previous": [20, 100, 20, 40], "rect": [85, 100, 20, 40], "expected": false},
+  {"name": "quarter confident foreground allowed", "rect": [30, 80, 10, 10], "value": 0.2, "strong": 25, "expected": true},
+  {"name": "less than quarter confident foreground", "rect": [30, 80, 10, 10], "value": 0.2, "strong": 24, "expected": false}
+]

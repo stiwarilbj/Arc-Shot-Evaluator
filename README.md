@@ -465,6 +465,13 @@ combined silhouettes, after other tracks and overlap handling. Ineffective point
 flag the frame and track in the mask-quality timeline and block saving until
 corrected and reprocessed. Passing this check verifies point membership, not identity.
 
+Tracking memory excludes severely uncertain predictions, such as missing/very
+weak masks and large discontinuities from the last reliable outline. The timeline
+flags **Unreliable tracking reference**; those frames remain visible for review
+and cannot be saved without correction. Both trackers retain an earlier reliable
+reference through a rejected stretch rather than learning from the suspect mask.
+An unusable initial selection requires a clearer prompt and retry.
+
 These checks do not prove tracking accuracy. Review the full motion and correct
 or reject uncertain masks; unresolved tracking warnings prevent approval. The
 editor reports its twenty-track limit instead of silently omitting extra people.
