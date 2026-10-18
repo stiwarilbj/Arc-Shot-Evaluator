@@ -1,0 +1,39 @@
+[
+ {"name":"occlusion and supported return", "frames":[
+  {"target":[40,40,20,40],"visible":true},
+  {"target":null,"others":[[40,40,20,40]],"score":-1,"visible":false},
+  {"target":[40,40,20,40],"others":[[40,40,20,40]],"visible":false},
+  {"target":[41,40,20,40],"visible":false},
+  {"target":[42,40,20,40],"visible":false},
+  {"target":[43,40,20,40],"visible":true}
+ ]},
+ {"name":"ambiguous return stays hidden until confirmed", "frames":[
+  {"target":[40,40,20,40],"visible":true},
+  {"target":null,"others":[[40,40,20,40]],"score":-1,"visible":false},
+  {"target":[40,40,20,40],"others":[[50,40,20,40]],"visible":false,"warning":"ambiguous_players"},
+  {"target":[40,40,20,40],"visible":false,"warning":"ambiguous_players"},
+  {"target":[40,40,20,40],"confirmed":true,"visible":true}
+ ]},
+ {"name":"lost track is not silently approved", "frames":[
+  {"target":[40,40,20,40],"visible":true},
+  {"target":null,"visible":false,"warning":"target_lost"},
+  {"target":[180,40,20,40],"visible":false,"warning":"ambiguous_players"}
+ ]},
+ {"name":"negative presence suppresses plausible foreground", "frames":[
+  {"target":[40,40,20,40],"visible":true},
+  {"target":[40,40,20,40],"others":[[40,40,20,40]],"score":-2,"visible":false},
+  {"target":[40,40,20,40],"uncertain":true,"visible":false,"warning":"ambiguous_players"}
+ ]},
+ {"name":"ordinary partial overlap stays visible", "frames":[
+  {"target":[40,40,20,40],"visible":true},
+  {"target":[40,40,20,40],"others":[[55,40,20,40]],"visible":true}
+ ]},
+ {"name":"return must be temporally stable", "frames":[
+  {"target":[40,40,20,40],"visible":true},
+  {"target":null,"others":[[40,40,20,40]],"score":-1,"visible":false},
+  {"target":[41,40,20,40],"visible":false},
+  {"target":[60,40,20,40],"visible":false},
+  {"target":[61,40,20,40],"visible":false},
+  {"target":[62,40,20,40],"visible":true}
+ ]}
+]

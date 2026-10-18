@@ -61,11 +61,15 @@ export class MaskQuality {
   private states = new Map<number, State>();
 
   inspect(frame: number, owners: Uint8Array, width: number, height: number,
-    tracks: readonly Track[], target: number, reset = false): MaskWarning[] {
+    tracks: readonly Track[], target: number, reset = false, invisible: ReadonlySet<number> = new Set()): MaskWarning[] {
     const extents = maskExtents(owners, width, height);
     const warnings: MaskWarning[] = [];
     for (const track of tracks) {
       if (track.ignored || frame < track.prompts[0].frame) continue;
+      if (invisible.has(track.id)) {
+        this.states.delete(track.id);
+        continue;
+      }
       const state = this.states.get(track.id) ?? { exiting: false, exited: false };
       const current = extents.get(track.id), previous = state.previous;
       if (!current) {

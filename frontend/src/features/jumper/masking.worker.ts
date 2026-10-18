@@ -1,3 +1,4 @@
+import { ShooterVisibility } from "./shooterVisibility";
 import { CONFIRM_SELECTION, selectionProbes, stableSelection } from "./selectionStability";
 import { sourceFrameMap } from "./sourceFrameMedia";
 import { sourceFrameTime, verifySourceFrame } from "./sourceFrames";
@@ -728,6 +729,7 @@ async function process(
         warnings.push({ frame, kind: "memory_rejected", track_ids: [id] });
       }
     }
+    const visibility = new ShooterVisibility();
     const discovery = new PeopleDiscovery();
     const cameraCuts = new CameraCuts();
     const quality = new MaskQuality();
@@ -748,7 +750,10 @@ async function process(
       const feats = await features(frame, sample.canvas);
       joins.begin();
       let frameBoxes: number[][] = [];
-      const frameMasks = fineSink ? new Map<number, Float32Array>() : undefined;
+      const frameMasks = new Map<number, Float32Array>();
+      let shooterPrediction: Prediction | undefined;
+      let shooterNeedsMemory = false;
+      let shooterAmbiguous = false;
       ownership.begin();
       const owners = ownership.owners;
       try {
@@ -773,19 +778,21 @@ async function process(
               causal,
               recents.get(object.id)!,
             );
-            if (object.ignored || reliableMask(prediction.low, trustedMasks.get(object.id), prediction.score[0])) {
+            if (object.id === target_id) {
+              shooterNeedsMemory = true;
+            } else if (object.ignored || reliableMask(prediction.low, trustedMasks.get(object.id), prediction.score[0])) {
               recents.get(object.id)!.set(frame, await remember(feats, prediction, frame));
               trustedMasks.set(object.id, prediction.low);
             } else memoryWarning(frame, object.id);
-          } else trustedMasks.set(object.id, prediction.low);
+          } else if (object.id !== target_id) trustedMasks.set(object.id, prediction.low);
+          if (object.id === target_id) shooterPrediction = prediction;
           // propagate_in_video resizes its stored 256px logits directly to the
           // source frame. The 1024px masks are used only by the memory encoder.
           const values = bilinear(prediction.low, 256, 256, width, height);
           frameMasks?.set(object.id, values);
           joins.add(object.id, values, width, height);
           ownership.add(object.id, values);
-          if (object.id === target_id)
-            trackingCheck?.record(frame, values, width, height);
+
           pruneReliable(recents.get(object.id)!, frame);
         }
         if (detector) {
@@ -803,6 +810,7 @@ async function process(
             height,
             objects,
           );
+          shooterAmbiguous = resolution.ambiguousTracks.includes(target_id);
           if (resolution.ambiguous)
             warnings.push({
               frame,
@@ -848,15 +856,38 @@ async function process(
             }
           }
         }
+        const target = frameMasks.get(target_id);
+        if (!target || !shooterPrediction) throw Error("Missing shooter prediction");
+        const confirmed = objects.find(o => o.id === target_id)!.prompts.some(p =>
+          p.frame === frame && (!!p.box || p.labels?.includes(1)));
+        const reliable = reliableMask(shooterPrediction.low, confirmed ? undefined : trustedMasks.get(target_id), shooterPrediction.score[0]);
+        const state = visibility.inspect(frame, target,
+          [...frameMasks].filter(([id]) => id !== target_id).map(([, mask]) => mask),
+          reliable ? shooterPrediction.score[0] : 0, width, confirmed, shooterAmbiguous);
+        if (state.warning) warnings.push({ frame, kind: state.warning, track_ids: [target_id] });
+        if (state.visible) {
+          if (shooterNeedsMemory)
+            recents.get(target_id)!.set(frame, await remember(feats, shooterPrediction, frame));
+          trustedMasks.set(target_id, shooterPrediction.low);
+        } else {
+          target.fill(-1024);
+          conditions.get(target_id)!.delete(frame);
+        }
+        // Rebuild after suppressing invisible target scores. Other players keep
+        // their own masks, including the person in front of the hidden shooter.
+        ownership.begin();
+        for (const [id, values] of frameMasks) ownership.add(id, values);
+        trackingCheck?.record(frame, target, width, height);
       } finally {
         dispose(feats);
       }
+      const shooterInvisible = !frameMasks.get(target_id)!.some(v => v > 0);
       if (fineSink && frameMasks) {
         const rawOwners = owners.slice();
         let fineSample: Awaited<ReturnType<typeof fineSink.getCanvas>>;
         for (const object of trackedObjects) {
           const values = frameMasks.get(object.id);
-          if (!values || object.ignored) continue;
+          if (!values || object.ignored || (object.id === target_id && shooterInvisible)) continue;
           const crop = smallPlayerCrop(
             values,
             width,
@@ -943,6 +974,7 @@ async function process(
           objects,
           target_id,
           cut,
+          shooterInvisible ? new Set([target_id]) : undefined,
         ),
       );
       if (paletteFrames && overlapPalette) {

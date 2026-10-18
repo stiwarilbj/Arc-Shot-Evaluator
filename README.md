@@ -482,8 +482,14 @@ corrected and reprocessed. Passing this check verifies point membership, not ide
 
 Tracking memory excludes severely uncertain predictions, such as missing/very
 weak masks and large discontinuities from the last reliable outline. The timeline
-flags **Unreliable tracking reference**; those frames remain visible for review
-and cannot be saved without correction. Both trackers retain an earlier reliable
+flags **Unreliable tracking reference** for other players; those frames remain
+reviewable and cannot be saved without correction. Uncertain shooter masks are
+suppressed instead of painting a possible foreground person black. When current
+masks support an occluder, the shooter can remain temporarily invisible without
+filling in a hidden body. Reappearance needs three consecutive, distinct tracking
+predictions; competing player matches, a discontinuous return, or an absence over
+1.5 seconds require a clear Include correction before the shooter resumes. Missing
+masks without occlusion evidence still require review. Both trackers retain an earlier reliable
 reference through a rejected stretch rather than learning from the suspect mask.
 An unusable initial selection requires a clearer prompt and retry.
 

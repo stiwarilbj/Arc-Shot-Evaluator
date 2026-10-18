@@ -53,7 +53,7 @@ class MaskQuality:
         self.previous_owners = None
         self.previous_frame = -2
 
-    def inspect(self, frame, owners, tracks, target, reset=False):
+    def inspect(self, frame, owners, tracks, target, reset=False, invisible=()):
         height, width = owners.shape
         extents = mask_extents(owners)
         warnings = []
@@ -61,6 +61,9 @@ class MaskQuality:
             if track.get("ignored") or frame < track["prompts"][0]["frame"]:
                 continue
             identity = track["id"]
+            if identity in invisible:
+                self.states.pop(identity, None)
+                continue
             state = self.states.setdefault(identity, dict(exiting=False, exited=False))
             current, previous = extents.get(identity), state.get("previous")
 

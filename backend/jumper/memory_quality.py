@@ -33,7 +33,8 @@ class MemoryQualityGate:
     filtered from attention (both spatial features and object pointers). One last
     reliable automatic output per object/direction survives ordinary pruning.
     """
-    def __init__(self, predictor, warn, ignored_ids=()):
+    def __init__(self, predictor, warn, ignored_ids=(), target_id=None):
+        self.target_id = target_id
         self.predictor = predictor
         self.warn = warn
         self.ignored_ids = set(ignored_ids)
@@ -95,7 +96,7 @@ class MemoryQualityGate:
         # memory. Retain their existing discovery behavior without review flags.
         accepted = identity in self.ignored_ids or reliable_mask(self.pixels(output), previous, score)
         output['_jumper_reliable'] = accepted
-        if not accepted:
+        if not accepted and identity != self.target_id:
             self.warn(frame, identity)
         return output, masks
 

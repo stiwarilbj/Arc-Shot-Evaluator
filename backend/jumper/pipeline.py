@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .shooter_visibility import ShooterVisibility
 from .memory_quality import MemoryQualityGate
 from .correction_check import check_corrections
 from .model_outputs import tracking_masks
@@ -458,7 +459,8 @@ def track(
     if initial.get("box") and 1 in initial.get("labels", []):
         check_opening_selection(predictor, frames, initial, job["target_id"], width, height)
     with MemoryQualityGate(
-        predictor, memory_warning, (obj["id"] for obj in job["objects"] if obj.get("ignored"))
+        predictor, memory_warning, (obj["id"] for obj in job["objects"] if obj.get("ignored")),
+        target_id=job["target_id"]
     ) as memory_gate, torch.inference_mode():
         state = bounded_state(predictor, frames)
         try:
@@ -500,12 +502,14 @@ def track(
             camera_cuts = CameraCuts()
             quality = MaskQuality()
             joins = MaskJoins(width, height)
+            visibility = ShooterVisibility()
             ownership = MaskOwnership(width, height)
             previous_areas = {}
             frame_boxes = []
+            shooter_ambiguous = False
 
             def propagation():
-                nonlocal frame_boxes
+                nonlocal frame_boxes, shooter_ambiguous
                 if detector is None and tracking_check is None and not recovery_anchors:
                     yield from predictor.propagate_in_video(state, start_frame_idx=0)
                     return
@@ -545,6 +549,7 @@ def track(
                     boxes = detect(index)
                     frame_boxes = boxes
                     resolution = discovery.resolve(index, boxes, owners, job["objects"])
+                    shooter_ambiguous = job["target_id"] in resolution["ambiguous_tracks"]
                     if resolution["ambiguous"]:
                         warning = {"frame": index, "kind": "ambiguous_players"}
                         if resolution["ambiguous_tracks"]:
@@ -586,10 +591,6 @@ def track(
                 if progress:
                     progress(index, len(frames))
                 values = tracking_masks(logits, ids, height, width)
-                if tracking_check:
-                    tracking_check.record(
-                        index, values[list(ids).index(job["target_id"])]
-                    )
                 starts = {
                     obj["id"]: obj["prompts"][0]["frame"] for obj in job["objects"]
                 }
@@ -601,6 +602,33 @@ def track(
                         device, previous_areas.get(identity), area, height * width
                     )
                     previous_areas[identity] = area
+                target_row = list(ids).index(job["target_id"])
+                target = values[target_row]
+                current = None
+                if memory_gate.originals:
+                    # Pinned native SAM exposes presence scores in compact outputs;
+                    # lightweight fixture predictors expose only their masks.
+                    outputs = state["output_dict_per_obj"][state["obj_id_to_idx"][job["target_id"]]]
+                    current = outputs["cond_frame_outputs"].get(index)
+                    if current is None:
+                        current = outputs["non_cond_frame_outputs"].get(index)
+                score = (float(current["object_score_logits"].reshape(-1)[0].item())
+                         if current is not None and "object_score_logits" in current else 1)
+                if current is not None and not current.get('_jumper_reliable', True):
+                    score = 0
+                confirmed = any(p["frame"] == index and (p.get("box") or 1 in p.get("labels", []))
+                                for o in job["objects"]
+                                if o["id"] == job["target_id"] for p in o["prompts"])
+                seen = visibility.inspect(index, target,
+                    [v for row, v in enumerate(values) if row != target_row], score, confirmed, shooter_ambiguous)
+                if seen["warning"]:
+                    warnings.append(dict(frame=index, kind=seen["warning"], track_ids=[job["target_id"]]))
+                if not seen["visible"]:
+                    target.fill(-1024)
+                    if current is not None:
+                        current['_jumper_reliable'] = False
+                if tracking_check:
+                    tracking_check.record(index, target)
                 if refiner is not None:
                     # Temporal tracking/discovery and backward checks retain their
                     # original scores. Crop refinement affects visible output only.
@@ -615,7 +643,7 @@ def track(
                         obj = next(
                             o for o in job["objects"] if o["id"] == identity
                         )
-                        if obj.get("ignored") or index < starts[identity]:
+                        if obj.get("ignored") or index < starts[identity] or (identity == job["target_id"] and not seen["visible"]):
                             continue
                         prompt = next(
                             (p for p in obj["prompts"] if p["frame"] == index), None
@@ -675,7 +703,8 @@ def track(
                 warnings.extend(joins.inspect(index, labels, job["objects"], frame_boxes, reset=cut))
                 np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
                 frame_warnings = quality.inspect(
-                    index, labels, job["objects"], job["target_id"], reset=cut
+                    index, labels, job["objects"], job["target_id"], reset=cut,
+                    invisible=() if seen["visible"] else (job["target_id"],)
                 )
                 for warning in frame_warnings:
                     check_device_tracking(device, warning["kind"])

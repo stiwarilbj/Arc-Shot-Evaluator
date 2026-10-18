@@ -729,8 +729,9 @@ These are conservative heuristics; logits are not calibrated probabilities and
 passing does not establish identity. Explicit correction anchors bypass comparison
 to the old location but still need a usable mask of their own.
 
-Rejected raw predictions stay in the actual review footage; they are not replaced
-with held silhouettes. **Unreliable tracking reference** flags the frame and track
+Rejected raw predictions for other players stay in the review footage. Uncertain
+shooter predictions are suppressed by the visibility gate below; neither path
+replaces them with held silhouettes. **Unreliable tracking reference** flags the frame and track
 and keeps saving blocked. Add a clear correction or shorten the clip. Browser
 processing skips memory encoding/admission for rejected automatic predictions.
 Native SAM compact outputs are quarantined from both spatial attention and object
@@ -787,3 +788,38 @@ Browser probes reuse opening-frame features; native probes use an independent
 one-frame state reset between predictions and disposed before normal tracking.
 This is a conservative prompt-sensitivity check, not an identity guarantee: stable
 but incorrect selections and hidden limbs still require full-motion review.
+
+
+## Temporary shooter invisibility
+
+Both processors now gate the selected shooter's visible output before refinement,
+compositing and the next tracking step. A nonpositive presence logit, unusable
+prediction, or a mask almost wholly shared with another current person mask
+suppresses black pixels. The other person's independent mask remains gray. No
+previous outline is held, moved, or synthesized across the gap. Suppressed outputs
+and tentative returns do not become tracking memories; the last reliable reference
+keeps its original timestamp.
+
+A missing target is treated as supported temporary invisibility only when another
+current mask covers at least 60% of the last reliable outline, or at least 85% of
+the current target prediction. Missing evidence elsewhere still raises **Missing
+shooter**. These conservative mask-overlap heuristics do not establish who is in
+front and do not recognize identity from appearance.
+
+An automatic return requires three consecutive usable predictions with at least
+0.5 mutual IoU, distinct from other current players, with bounded position/area
+continuity relative to the last visible evidence. Tentative frames remain
+unpainted. At least 25% overlap with another current player, ambiguous detection
+association, a discontinuous location/size, or more than 45 frames since the last
+visible evidence requires a correction. **Uncertain player match** remains flagged
+and the target stays unpainted until an explicit usable shooter prompt confirms
+the return. Use Include/Exclude points or a confirmed intermediate anchor on a
+clear returning frame and reprocess. A weak or empty correction cannot restore a
+visible target. Ordinary partial overlaps do not automatically suppress a target.
+
+The quality timeline continues checking gray players and unexplained tracking
+loss. It skips missing-shooter/outline comparisons across intentionally suppressed
+frames, avoiding a false discontinuity on a supported return. Existing correction,
+join, cut and independent backward checks remain active; they can still require
+review. All accepted clips require full-motion review. These rules reduce unsafe
+identity guesses; they cannot guarantee correct tracking through every occlusion.

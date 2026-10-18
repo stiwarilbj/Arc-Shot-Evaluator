@@ -67,8 +67,11 @@ export default function MaskTimeline({
         )
           ? " A correction did not take effect in the final silhouettes. Inspect the flagged frame and track, adjust Include/Exclude points, and reprocess. Points check visible mask membership, not player identity or hidden limbs."
           : ""}
+        {warnings.some((w) => w.kind === "ambiguous_players")
+          ? " After an uncertain disappearance, the shooter stays unpainted until the identity is supported. Inspect a clear returning frame, add an Include point on the shooter (and Exclude points on nearby people if needed), then reprocess. Hidden bodies are never filled in."
+          : ""}
         {warnings.some((w) => w.kind === "memory_rejected")
-          ? " An uncertain prediction was kept out of tracking memory. The actual frame remains visible for review; add a clear Include/Exclude correction or shorten the segment. Keeping earlier evidence does not guarantee the track stayed on the right person."
+          ? " An uncertain prediction was kept out of tracking memory. Other players’ rejected masks remain reviewable; uncertain shooter masks are suppressed. Add a clear Include/Exclude correction or shorten the segment. Keeping earlier evidence does not guarantee the track stayed on the right person."
           : ""}
         {stale ? " Selections changed; reprocess to refresh these hints." : ""}
       </p>
