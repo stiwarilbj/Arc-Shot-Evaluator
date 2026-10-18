@@ -12,6 +12,56 @@ import {
   pieceTrimLimits,
 } from "../frontend/src/features/jumper/editProject.ts";
 import { clip } from "../frontend/src/features/jumper/domain.ts";
+import {
+  captionLayout,
+  snapCaptionPosition,
+} from "../frontend/src/features/jumper/captionLayout.ts";
+// Hit areas and guides share the export layout, including wrapping and all sizes.
+const metrics = {
+  font: "",
+  measureText(text) {
+    return { width: text.length * 8 };
+  },
+};
+for (const [width, height] of [
+  [640, 250],
+  [250, 640],
+  [1280, 720],
+]) {
+  for (const size of ["small", "medium", "large"]) {
+    const baseCaption = {
+      id: "layout",
+      text: "A wrapped caption ".repeat(8),
+      start: 0,
+      end: 30,
+      size,
+      position: "center",
+    };
+    for (const position of ["top", "center", "bottom"]) {
+      const layout = captionLayout(metrics, width, height, {
+        ...baseCaption,
+        position,
+      });
+      assert(layout.lines.length > 1);
+      assert.equal(layout.y + layout.boxHeight / 2, layout.centers[position]);
+      assert.equal(layout.width, width * 0.92);
+      assert.equal(metrics.font, layout.font);
+      assert.equal(snapCaptionPosition(layout.cy, layout.centers), position);
+    }
+  }
+}
+assert.equal(
+  snapCaptionPosition(-100, { top: 10, center: 50, bottom: 90 }),
+  "top",
+);
+assert.equal(
+  snapCaptionPosition(500, { top: 10, center: 50, bottom: 90 }),
+  "bottom",
+);
+assert.equal(
+  snapCaptionPosition(31, { top: 10, center: 50, bottom: 90 }),
+  "center",
+);
 const p = newProject(3, "video/mp4");
 // Every exposed endpoint must remain a valid timeline across speeds and limits.
 for (const speed of [0.5, 1, 2]) {

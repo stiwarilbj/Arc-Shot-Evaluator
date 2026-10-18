@@ -253,16 +253,22 @@ export async function loadBackup(
   };
 }
 export function personalClips(backup: LoadedBackup): PersonalClip[] {
+  // ZIP entries have no MIME type. Restore the verified manifest's type without
+  // changing bytes, including masked bases used when saving an edited copy.
+  const media = (path: string, mime: string) => {
+    const blob = backup.media.get(path)!;
+    return blob.type === mime ? blob : blob.slice(0, blob.size, mime);
+  };
   return backup.manifest.clips.map((value) => ({
     ...cleanClip(value),
-    highlight: backup.media.get(value.files.highlight.path)!,
+    highlight: media(value.files.highlight.path, value.mime),
     ...(value.project
-      ? { base: backup.media.get(value.files.base!.path)! }
+      ? { base: media(value.files.base!.path, value.project.baseMime) }
       : {}),
     ...(value.quiz
       ? {
-          quizVideo: backup.media.get(value.files.quiz!.path)!,
-          reveal: backup.media.get(value.files.reveal!.path)!,
+          quizVideo: media(value.files.quiz!.path, value.mime),
+          reveal: media(value.files.reveal!.path, value.mime),
         }
       : {}),
   }));

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { newProject } from "../frontend/src/features/jumper/editProject.ts";
 import {
   collectBackup,
   encodeBackup,
@@ -50,6 +51,28 @@ value=dict(version=1,id=identity,player=dict(id=identity,name='Élan Shooter',al
   assert.equal(source.media.size, 1);
   assert.equal(source.manifest.clips[0].player.name, "Élan Shooter");
   const original = personalClips(source)[0];
+  for (const kind of ["highlight", "quizVideo", "reveal"]) {
+    assert.equal(original[kind].type, "video/mp4");
+    assert.deepEqual(
+      new Uint8Array(await original[kind].arrayBuffer()),
+      new Uint8Array(await source.media.values().next().value.arrayBuffer()),
+    );
+  }
+  const editedSource = {
+    ...original,
+    presentation: "silhouette-edited-v1",
+    project: newProject(0.1, "video/mp4", false),
+    base: original.highlight,
+  };
+  const editedBackup = await loadBackup(
+    await encodeBackup(await collectBackup([editedSource])),
+  );
+  const restoredEdit = personalClips(editedBackup)[0];
+  assert.equal(restoredEdit.base.type, restoredEdit.project.baseMime);
+  assert.deepEqual(
+    new Uint8Array(await restoredEdit.base.arrayBuffer()),
+    new Uint8Array(await original.highlight.arrayBuffer()),
+  );
   const answer = {
     id: "round-1",
     clipId: original.id,

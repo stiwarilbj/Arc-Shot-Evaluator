@@ -38,6 +38,14 @@ person detection or SAM. The private masked base is the only source for edits.
   size, and top/center/bottom placement. White text has a black backing. Moving
   pieces leaves captions at their edited times; shortening the video clamps
   their intervals and flags them for inspection.
+  Click or tap a visible caption in the masked preview to open Text and highlight
+  that caption's existing controls. Drag vertically to snap to the top, center,
+  or bottom guides. A drag is one undo step; interruption keeps the last accepted
+  placement. Clicking alone does not create an edit. Tab to a preview caption and
+  press Enter/Space to select it; the Placement dropdown offers the same positions
+  without dragging. Hit areas respect text wrapping and letterboxing. Guides and
+  selection outlines never enter exported videos. Captions cannot be selected in
+  clean-quiz or trim-boundary previews, where caption overlays are intentionally absent.
 - **Effects:** select 0.5×/1×/2× per piece; insert a one-second freeze and adjust
   its duration in Cut (0.5–3s). Set start/end zoom from 1–2× and drag the preview
   or use horizontal/vertical framing sliders. Fades last approximately 0.25s.

@@ -265,8 +265,12 @@ Personal videos stay on your device; they are never automatically published.
    The orange playhead marker and frame/time label show the split position.
    **Split at playhead** explains when it is unavailable, including empty-piece
    boundaries, freeze frames, and repeated slow-motion source frames.
-   Add timed captions in **Text**. **Effects** offers 0.5×/1×/2× speed,
-   0.5–3-second freezes, 1–2× zoom/pan, and optional 0.25-second fades.
+   Add timed captions in **Text**.
+   Click a caption in the masked preview to open **Text** and highlight its
+   existing controls. Drag it between the top, center, and bottom snap guides;
+   each drag is one undo step. Guides are editor-only and stay out of exports.
+   **Effects** offers 0.5×/1×/2× speed, 0.5–3-second freezes, 1–2× zoom/pan,
+   and optional 0.25-second fades.
    The preview and export use the same 30 fps timeline; finished edits can reach
    **60 seconds**. Undo/redo retains 50 edit operations separately from corrections.
 6. **Review and save/download:** click **Update finished video** after edits,
@@ -345,6 +349,7 @@ Play, download, or delete saved clips and reopen them after a reload. **Back up 
 restore library** exports one private ZIP with videos, player labels, and quiz
 eligibility, optionally including guessing history. Restore on either app target;
 identical clips are skipped and conflicting IDs become separate copies. Backups
+retain media formats so restored masked bases can be edited and saved again. They
 are capped at **512 MiB / 1,000 clips** and exclude source uploads, masks, and
 models. Keep a backup before clearing browser data.
 

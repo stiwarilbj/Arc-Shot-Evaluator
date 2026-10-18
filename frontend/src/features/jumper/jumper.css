@@ -979,3 +979,64 @@
     padding-top: 1rem;
   }
 }
+
+.jumper-preview-stage {
+  position: relative;
+}
+.jumper-caption-layer {
+  position: absolute;
+  pointer-events: none;
+  overflow: hidden;
+}
+.jumper-edit-panel button.jumper-caption-hit {
+  position: absolute;
+  min-height: 0;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.jumper-edit-panel button.jumper-caption-hit:hover,
+.jumper-edit-panel button.jumper-caption-hit[aria-pressed="true"],
+.jumper-edit-panel button.jumper-caption-hit:focus-visible {
+  border-color: #ff753c;
+  background: transparent;
+  outline: 1px solid #111;
+  outline-offset: -3px;
+}
+.jumper-edit-panel button.jumper-caption-hit:active {
+  cursor: grabbing;
+}
+.jumper-caption-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.jumper-caption-guides > div {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed #ff753c;
+}
+.jumper-caption-guides > .is-snapped {
+  border-top: 2px solid #ff753c;
+}
+.jumper-caption-guides span {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  padding: 2px 5px;
+  color: #fff;
+  background: #111;
+  border-radius: 3px;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+.jumper-caption-editor.is-selected {
+  outline: 2px solid #ff753c;
+  outline-offset: 3px;
+}

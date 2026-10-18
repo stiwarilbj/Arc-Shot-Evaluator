@@ -1,4 +1,5 @@
 import { editFrame, type EditProject } from "./editProject";
+import { captionLayout } from "./captionLayout";
 /** Used by preview and export; only receives a decoded masked-base frame. */
 export function drawEdit(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
@@ -30,36 +31,20 @@ export function drawEdit(
     height,
   );
   for (const caption of state.captions) {
-    const size = Math.max(
-      10,
-      Math.round(
-        height * { small: 0.045, medium: 0.065, large: 0.09 }[caption.size],
-      ),
-    );
-    context.font = `600 ${Math.max(10, size)}px JumperCaption, monospace`;
+    const {
+      font,
+      lines,
+      lineHeight,
+      boxHeight,
+      cy,
+      x: left,
+      width: boxWidth,
+    } = captionLayout(context, width, height, caption);
+    context.font = font;
     context.textAlign = "center";
     context.textBaseline = "middle";
-    const maxWidth = width * 0.88;
-    // Wrap explicitly, consistently in preview/export, instead of horizontal distortion.
-    const lines: string[] = [];
-    let line = "";
-    for (const char of caption.text.replace(/[\r\n]+/g, " ")) {
-      if (line && context.measureText(line + char).width > maxWidth) {
-        lines.push(line);
-        line = char;
-      } else line += char;
-    }
-    if (line) lines.push(line);
-    const lineHeight = Math.max(10, size) * 1.25,
-      boxHeight = lineHeight * lines.length + size * 0.5;
-    const cy =
-      caption.position === "top"
-        ? boxHeight / 2 + height * 0.04
-        : caption.position === "bottom"
-          ? height - boxHeight / 2 - height * 0.04
-          : height / 2;
     context.fillStyle = "black";
-    context.fillRect(width * 0.04, cy - boxHeight / 2, width * 0.92, boxHeight);
+    context.fillRect(left, cy - boxHeight / 2, boxWidth, boxHeight);
     context.fillStyle = "white";
     lines.forEach((text, i) =>
       context.fillText(

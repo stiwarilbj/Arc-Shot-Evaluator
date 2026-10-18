@@ -1,6 +1,7 @@
 import { loadEditFont } from "./editFont";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import TimelinePieces from "./TimelinePieces";
+import CaptionPreview from "./CaptionPreview";
 import { CanvasSink } from "mediabunny";
 import { openVideo } from "./media";
 import { drawEdit } from "./editDrawing";
@@ -17,6 +18,7 @@ import {
   splitPiece,
   splitPoint,
   type EditProject,
+  type Caption,
   type Piece,
 } from "./editProject";
 import { exportEdits } from "./editProcessing";
@@ -53,6 +55,11 @@ export default function VideoEditPanel({
       : newProject(baseDuration, base.type, palette),
   );
   const [history] = useState(() => new EditHistory());
+  const [selectedCaption, setSelectedCaption] = useState<string | null>(null);
+  const [previewDimensions, setPreviewDimensions] = useState({
+    width: 0,
+    height: 0,
+  });
   const splitHelpId = useId();
   const [videos, setVideos] = useState<EditedVideos>(
     () =>
@@ -83,6 +90,7 @@ export default function VideoEditPanel({
   });
   const panPointer = useRef<number | null>(null);
   const trimming = useRef(false);
+  const captionDragging = useRef(false);
   const canvas = useRef<HTMLCanvasElement>(null),
     decoder = useRef<{
       input: Awaited<ReturnType<typeof openVideo>>["input"];
@@ -112,6 +120,19 @@ export default function VideoEditPanel({
     trimming.current = false;
     gesture.current.active = false;
   }, []);
+  const selectCaption = useCallback((id: string) => {
+    setSelectedCaption(id);
+    setPanel("Text");
+    setPlaying(false);
+  }, []);
+  const beginCaptionDrag = useCallback(() => {
+    captionDragging.current = true;
+    gesture.current = { active: true, recorded: false };
+  }, []);
+  const endCaptionDrag = useCallback(() => {
+    captionDragging.current = false;
+    gesture.current.active = false;
+  }, []);
   const count = projectFrames(project),
     stale = exported !== JSON.stringify(project),
     piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0],
@@ -129,7 +150,7 @@ export default function VideoEditPanel({
   }, [videos, project, stale, busy, onChange]);
   useEffect(() => {
     const finishGesture = () => {
-      if (trimming.current) return;
+      if (trimming.current || captionDragging.current) return;
       gesture.current.active = false;
       panPointer.current = null;
     };
@@ -168,6 +189,10 @@ export default function VideoEditPanel({
           height: await track.getDisplayHeight(),
         };
         if (!cancelled) {
+          setPreviewDimensions({
+            width: decoder.current.width,
+            height: decoder.current.height,
+          });
           queued.current = true;
           void paint();
         }
@@ -346,6 +371,18 @@ export default function VideoEditPanel({
       ),
     });
   }
+  function moveCaption(id: string, position: Caption["position"]) {
+    if (disabled || busy) return;
+    const current = latest.current.project;
+    const target = current.captions.find((c) => c.id === id);
+    if (!target || target.position === position) return;
+    change({
+      ...current,
+      captions: current.captions.map((c) =>
+        c.id === id ? { ...c, position } : c,
+      ),
+    });
+  }
   function move(direction: number) {
     const i = project.pieces.findIndex((p) => p.id === piece.id),
       j = i + direction;
@@ -394,7 +431,7 @@ export default function VideoEditPanel({
       className="jumper-panel jumper-edit-panel"
       aria-label="Edit video"
       onPointerDownCapture={(e) => {
-        if (trimming.current) return;
+        if (trimming.current || captionDragging.current) return;
         const node = e.target as HTMLElement;
         if (
           node instanceof HTMLCanvasElement ||
@@ -405,6 +442,7 @@ export default function VideoEditPanel({
       onPointerUpCapture={(event) => {
         if (
           !trimming.current &&
+          !captionDragging.current &&
           !(event.target as HTMLElement).closest(".jumper-trim-handle")
         )
           gesture.current.active = false;
@@ -412,6 +450,7 @@ export default function VideoEditPanel({
       onPointerCancelCapture={(event) => {
         if (
           !trimming.current &&
+          !captionDragging.current &&
           !(event.target as HTMLElement).closest(".jumper-trim-handle")
         )
           gesture.current.active = false;
@@ -443,89 +482,113 @@ export default function VideoEditPanel({
       </div>
       <div className="jumper-edit-layout">
         <div className="jumper-edit-preview">
-          <canvas
-            ref={canvas}
-            className="jumper-edit-canvas"
-            aria-label="Edited masked video preview"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (disabled || busy) return;
-              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                e.preventDefault();
-                setPlaying(false);
-                setTrimPreview(null);
-                setFrame((f) =>
-                  Math.max(
-                    0,
-                    Math.min(count - 1, f + (e.key === "ArrowRight" ? 1 : -1)),
-                  ),
+          <div className="jumper-preview-stage">
+            <canvas
+              ref={canvas}
+              className="jumper-edit-canvas"
+              aria-label="Edited masked video preview"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (disabled || busy) return;
+                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                  e.preventDefault();
+                  setPlaying(false);
+                  setTrimPreview(null);
+                  setFrame((f) =>
+                    Math.max(
+                      0,
+                      Math.min(
+                        count - 1,
+                        f + (e.key === "ArrowRight" ? 1 : -1),
+                      ),
+                    ),
+                  );
+                }
+                if (e.key === " ") {
+                  e.preventDefault();
+                  setTrimPreview(null);
+                  setPlaying((v) => !v);
+                }
+              }}
+              onPointerDown={(e) => {
+                if (
+                  panel !== "Effects" ||
+                  clean ||
+                  disabled ||
+                  busy ||
+                  panPointer.current !== null
+                )
+                  return;
+                panPointer.current = e.pointerId;
+                e.currentTarget.setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (
+                  panPointer.current !== e.pointerId ||
+                  !e.currentTarget.hasPointerCapture(e.pointerId)
+                )
+                  return;
+                const r = e.currentTarget.getBoundingClientRect();
+                const scale = Math.min(
+                  r.width / e.currentTarget.width,
+                  r.height / e.currentTarget.height,
                 );
-              }
-              if (e.key === " ") {
-                e.preventDefault();
-                setTrimPreview(null);
-                setPlaying((v) => !v);
-              }
-            }}
-            onPointerDown={(e) => {
-              if (
-                panel !== "Effects" ||
-                clean ||
-                disabled ||
-                busy ||
-                panPointer.current !== null
-              )
-                return;
-              panPointer.current = e.pointerId;
-              e.currentTarget.setPointerCapture(e.pointerId);
-            }}
-            onPointerMove={(e) => {
-              if (
-                panPointer.current !== e.pointerId ||
-                !e.currentTarget.hasPointerCapture(e.pointerId)
-              )
-                return;
-              const r = e.currentTarget.getBoundingClientRect();
-              const scale = Math.min(
-                r.width / e.currentTarget.width,
-                r.height / e.currentTarget.height,
-              );
-              const imageWidth = e.currentTarget.width * scale,
-                imageHeight = e.currentTarget.height * scale;
-              const key = framingEnd ? "to" : "from";
-              const f = piece[key];
-              updatePiece({
-                [key]: {
-                  ...f,
-                  x: Math.max(
-                    0,
-                    Math.min(
-                      1,
-                      (e.clientX - r.left - (r.width - imageWidth) / 2) /
-                        imageWidth,
+                const imageWidth = e.currentTarget.width * scale,
+                  imageHeight = e.currentTarget.height * scale;
+                const key = framingEnd ? "to" : "from";
+                const f = piece[key];
+                updatePiece({
+                  [key]: {
+                    ...f,
+                    x: Math.max(
+                      0,
+                      Math.min(
+                        1,
+                        (e.clientX - r.left - (r.width - imageWidth) / 2) /
+                          imageWidth,
+                      ),
                     ),
-                  ),
-                  y: Math.max(
-                    0,
-                    Math.min(
-                      1,
-                      (e.clientY - r.top - (r.height - imageHeight) / 2) /
-                        imageHeight,
+                    y: Math.max(
+                      0,
+                      Math.min(
+                        1,
+                        (e.clientY - r.top - (r.height - imageHeight) / 2) /
+                          imageHeight,
+                      ),
                     ),
-                  ),
-                },
-              });
-            }}
-            onPointerUp={(e) => {
-              if (e.currentTarget.hasPointerCapture(e.pointerId))
-                e.currentTarget.releasePointerCapture(e.pointerId);
-              panPointer.current = null;
-            }}
-            onLostPointerCapture={() => {
-              panPointer.current = null;
-              gesture.current.active = false;
-            }}
-          />
+                  },
+                });
+              }}
+              onPointerUp={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId))
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                panPointer.current = null;
+              }}
+              onLostPointerCapture={() => {
+                panPointer.current = null;
+                gesture.current.active = false;
+              }}
+            />
+            <CaptionPreview
+              canvas={canvas}
+              dimensions={previewDimensions}
+              captions={project.captions}
+              frame={frame}
+              visible={
+                active &&
+                !clean &&
+                !trimPreview &&
+                !disabled &&
+                !busy &&
+                !previewError
+              }
+              selected={selectedCaption}
+              onSelect={selectCaption}
+              onMove={moveCaption}
+              onDragStart={beginCaptionDrag}
+              onDragEnd={endCaptionDrag}
+            />
+          </div>
           {previewError ? (
             <p role="alert">
               Preview unavailable: {previewError}{" "}
@@ -790,12 +853,13 @@ export default function VideoEditPanel({
                 <button
                   disabled={!caption.trim()}
                   onClick={() => {
-                    change({
+                    const id = crypto.randomUUID();
+                    const added = change({
                       ...project,
                       captions: [
                         ...project.captions,
                         {
-                          id: crypto.randomUUID(),
+                          id,
                           text: caption.trim(),
                           start: frame,
                           end: Math.min(count, frame + 60),
@@ -804,13 +868,29 @@ export default function VideoEditPanel({
                         },
                       ],
                     });
+                    if (added) setSelectedCaption(id);
                     setCaption("");
                   }}
                 >
                   Add at current time
                 </button>
-                {project.captions.map((c) => (
-                  <div className="jumper-caption-editor" key={c.id}>
+                <p className="jumper-caption">
+                  Click a visible caption in the preview to select it. Drag it
+                  to the top, center, or bottom guides, or use Placement below.
+                </p>
+                {project.captions.map((c, index) => (
+                  <div
+                    className={`jumper-caption-editor${selectedCaption === c.id ? " is-selected" : ""}`}
+                    key={c.id}
+                    role="group"
+                    aria-label={`Caption ${index + 1} controls`}
+                    onFocusCapture={() => setSelectedCaption(c.id)}
+                  >
+                    <strong>
+                      {selectedCaption === c.id
+                        ? "Selected caption"
+                        : `Caption ${index + 1}`}
+                    </strong>
                     <input
                       aria-label="Caption text"
                       value={c.text}

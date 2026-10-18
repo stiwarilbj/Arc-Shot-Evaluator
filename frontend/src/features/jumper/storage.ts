@@ -149,7 +149,9 @@ export async function videoBlob(id: string, kind: Variant): Promise<Blob> {
   const blob = kind === "quiz" ? value.quizVideo : value[kind];
   if (!(blob instanceof Blob) || !blob.size)
     throw Error("Video is unavailable");
-  return blob;
+  const mime = kind === "base" ? value.project?.baseMime : value.mime;
+  // Recover media restored by older versions that left ZIP-entry MIME empty.
+  return mime && !blob.type ? blob.slice(0, blob.size, mime) : blob;
 }
 export async function deleteClip(id: string) {
   if (IS_GITHUB_PAGES) await mutateClips((store) => store.delete(id));
