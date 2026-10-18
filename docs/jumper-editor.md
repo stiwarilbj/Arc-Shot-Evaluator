@@ -679,3 +679,19 @@ with a recoverable processing error. Valid negative logits (including an absent
 person) remain valid; empty visibility is handled by the existing review checks.
 Retry processing after correcting the input, or reload/restart if the error repeats.
 Invalid predictions are never replaced with fabricated masks.
+
+## Correction verification
+
+On each prompted frame, browser and native processing check every explicit Include
+point belongs to its track in the final mutually exclusive label mask, and every
+Exclude point is outside that track. This runs after crop refinement and overlap
+ownership, so another player overwriting a corrected mask cannot hide a failed
+prompt. Points are sampled at floor(normalized coordinate × output dimension),
+clamped at the right/bottom edge. Boxes alone do not assert every enclosed pixel
+is foreground; ignored tracks and points attached to other frames are skipped.
+
+**Include point missed** and **Exclude point still inside** identify the affected
+frame and track in the existing mask-quality timeline. Inspect it, adjust points,
+and reprocess. Warnings keep saving blocked; no masks are painted or repaired to
+force a pass. Passing checks cannot establish player identity, recover occluded
+limbs, or replace full-motion review.

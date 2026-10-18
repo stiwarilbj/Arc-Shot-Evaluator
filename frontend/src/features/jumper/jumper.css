@@ -635,6 +635,8 @@
 .jumper-warning-outline_changed,
 .jumper-warning-mask_fragmented,
 .jumper-warning-mask_joined,
+.jumper-warning-correction_include_missed,
+.jumper-warning-correction_exclude_failed,
 .jumper-warning-tracking_unstable {
   color: #d99d31;
 }

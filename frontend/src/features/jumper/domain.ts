@@ -95,6 +95,8 @@ export interface MaskWarning {
     | "mask_joined"
     | "ambiguous_players"
     | "tracking_disagreement"
+    | "correction_include_missed"
+    | "correction_exclude_failed"
     | "refinement_uncertain"
     | "possible_camera_cut";
   track_ids?: number[];
@@ -397,6 +399,8 @@ export function maskResult(value: unknown): value is MaskResult {
           "ambiguous_players",
           "tracking_disagreement",
           "refinement_uncertain",
+          "correction_include_missed",
+          "correction_exclude_failed",
         ].includes(w.kind) &&
         (w.track_ids === undefined ||
           (Array.isArray(w.track_ids) &&

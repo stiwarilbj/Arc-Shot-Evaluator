@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .correction_check import check_corrections
 from .model_outputs import tracking_masks
 from .overlap_palette import OverlapPalette
 from .neutral_edges import neutral_edges
@@ -656,6 +657,7 @@ def track(
                         for p in o["prompts"]
                     ),
                 )
+                warnings.extend(check_corrections(index, labels, job["objects"]))
                 joins.begin()
                 for row, identity in enumerate(ids):
                     joins.add(identity, values[row])

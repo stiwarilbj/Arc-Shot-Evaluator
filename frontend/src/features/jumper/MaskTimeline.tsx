@@ -60,6 +60,13 @@ export default function MaskTimeline({
         {warnings.some((w) => w.kind === "mask_joined")
           ? " Possible joined players means a mask may include a neighboring person. Inspect both tracks, add Include/Exclude points on the problem frame, and reprocess. Real occlusion can produce similar evidence; this is a review hint, not a confirmed identity error."
           : ""}
+        {warnings.some(
+          (w) =>
+            w.kind === "correction_include_missed" ||
+            w.kind === "correction_exclude_failed",
+        )
+          ? " A correction did not take effect in the final silhouettes. Inspect the flagged frame and track, adjust Include/Exclude points, and reprocess. Points check visible mask membership, not player identity or hidden limbs."
+          : ""}
         {stale ? " Selections changed; reprocess to refresh these hints." : ""}
       </p>
       {lanes.length ? (

@@ -1,3 +1,4 @@
+import { checkCorrections } from "./correctionCheck";
 import { validateDecoderOutputs, validateModelTensor } from "./modelOutputs";
 import { detailProof, type DetailProof } from "./compressionQuality";
 /// <reference lib="webworker" />
@@ -886,6 +887,7 @@ async function process(
         new Set(objects.filter((o) => o.ignored).map((o) => o.id)),
         cut || objects.some((o) => o.prompts.some((p) => p.frame === frame)),
       );
+      warnings.push(...checkCorrections(frame, labels, width, height, objects));
       warnings.push(
         ...joins.inspect(
           frame,

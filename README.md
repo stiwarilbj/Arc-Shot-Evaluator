@@ -460,6 +460,11 @@ Editing uses no paid service and does not download inference models. Cancelled o
 released local jobs cannot take ownership of a later retry. Browser worker
 communication failures stop cleanly and allow another attempt.
 
+Include/Exclude points are checked on their selected frame against the final
+combined silhouettes, after other tracks and overlap handling. Ineffective points
+flag the frame and track in the mask-quality timeline and block saving until
+corrected and reprocessed. Passing this check verifies point membership, not identity.
+
 These checks do not prove tracking accuracy. Review the full motion and correct
 or reject uncertain masks; unresolved tracking warnings prevent approval. The
 editor reports its twenty-track limit instead of silently omitting extra people.
