@@ -46,6 +46,18 @@ person detection or SAM. The private masked base is the only source for edits.
   size, and top/center/bottom placement. White text has a black backing. Moving
   pieces leaves captions at their edited times; shortening the video clamps
   their intervals and flags them for inspection.
+  **Caption timing → Magnet on/off** defaults on for pointer dragging. The start
+  or end of a moving caption, or the edge being trimmed, can align to an edited
+  cut, the playhead captured when the drag began, or another caption's start/end.
+  The caption's own boundaries are excluded. A dashed guide and destination/time
+  appear within 12 pixels (at most six frames); capture occurs within six pixels
+  (at most three frames) and changes the guide to solid orange. Nearest reachable
+  targets win; ties are deterministic. Whole-bar movement preserves duration,
+  trimming retains at least one frame, and all bounds remain inside the video.
+  Clicking alone does not snap. Each drag is still one undo operation. Disabling
+  the magnet leaves frame-based dragging unrestricted; keyboard and numeric
+  adjustments bypass snapping. The magnet is editor-only and does not affect
+  masking, exports, or saved project format.
   Click or tap a visible caption in the masked preview to open Text and highlight
   that caption's existing controls. Drag vertically to snap to the top, center,
   or bottom guides. A drag is one undo step; interruption keeps the last accepted

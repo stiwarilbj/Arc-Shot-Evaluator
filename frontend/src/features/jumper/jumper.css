@@ -1068,6 +1068,28 @@
   margin-top: 0.75rem;
   border-radius: 4px;
 }
+.jumper-caption-timing-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.jumper-caption-timing-heading button {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+}
+.jumper-caption-snap-hint { min-height: 2.8em; margin: .4rem 0; }
+.jumper-caption-snap-guide {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  border-left: 2px dashed var(--text);
+  pointer-events: none;
+  z-index: 5;
+}
+.jumper-caption-snap-guide.is-snapped { border-left: 3px solid var(--orange); }
 .jumper-caption-lane.is-selected {
   outline: 2px solid #ff753c;
   outline-offset: 5px;

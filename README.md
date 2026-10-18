@@ -278,6 +278,11 @@ Personal videos stay on your device; they are never automatically published.
    drag either edge to change its start/end. The numeric fields stay synchronized.
    Focus a bar or edge and use arrow keys (Shift for ten frames), Home, or End;
    each gesture is one undo step.
+   **Magnet on/off** in Caption timing controls alignment assistance for dragging.
+   Caption edges can align with cuts, the playhead, or another caption's boundary.
+   A guide names the destination and time before capture; snapping preserves bar
+   duration and valid trim bounds. Turn it off to drag freely. Keyboard/numeric
+   adjustments always remain precise; all timing still uses 30 fps.
    Click a caption in the masked preview to open **Text** and highlight its
    existing controls. Drag it between the top, center, and bottom snap guides;
    each drag is one undo step. Guides are editor-only and stay out of exports.

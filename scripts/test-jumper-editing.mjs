@@ -8,7 +8,123 @@ import {
   describeVideoEdit,
   videoEditFocus,
 } from "../frontend/src/features/jumper/editHistory.ts";
-import { shiftCaption } from "../frontend/src/features/jumper/captionTiming.ts";
+import {
+  shiftCaption,
+  captionSnapTargets,
+  alignCaption,
+} from "../frontend/src/features/jumper/captionTiming.ts";
+const snapTargets = captionSnapTargets(
+  [
+    { id: "own", start: 53, end: 113 },
+    { id: "other", start: 12, end: 30 },
+    { id: "overlap", start: 24, end: 66 },
+  ],
+  [24, 54, 90],
+  66,
+  "own",
+);
+assert.deepEqual(snapTargets, [
+  { frame: 24, label: "Cut 1" },
+  { frame: 54, label: "Cut 2" },
+  { frame: 90, label: "Cut 3" },
+  { frame: 66, label: "Playhead" },
+  { frame: 12, label: "Caption 2 start" },
+  { frame: 30, label: "Caption 2 end" },
+]);
+const oneTarget = [{ frame: 30, label: "Cut 1" }];
+assert.deepEqual(
+  alignCaption({ start: 27, end: 47 }, "move", 120, oneTarget, 3, 6),
+  {
+    interval: { start: 30, end: 50 },
+    guide: { frame: 30, label: "Cut 1", edge: "start", snapped: true },
+  },
+);
+assert.deepEqual(
+  alignCaption({ start: 10, end: 27 }, "move", 120, oneTarget, 3, 6).interval,
+  { start: 13, end: 30 },
+);
+assert.deepEqual(
+  alignCaption({ start: 10, end: 27 }, "end", 120, oneTarget, 3, 6).interval,
+  { start: 10, end: 30 },
+);
+const nearTarget = alignCaption(
+  { start: 26, end: 47 },
+  "start",
+  120,
+  oneTarget,
+  3,
+  6,
+);
+assert.deepEqual(nearTarget.interval, { start: 26, end: 47 });
+assert.equal(nearTarget.guide.snapped, false);
+assert.equal(
+  alignCaption({ start: 24, end: 47 }, "start", 120, oneTarget, 3, 6).guide
+    .snapped,
+  false,
+);
+assert.equal(
+  alignCaption({ start: 23, end: 47 }, "start", 120, oneTarget, 3, 6).guide,
+  null,
+);
+assert.equal(
+  alignCaption({ start: 29, end: 47 }, "start", 120, oneTarget, 0.8, 1.6).guide
+    .snapped,
+  false,
+);
+assert.equal(
+  alignCaption({ start: 29, end: 30 }, "start", 120, oneTarget, 3, 6).guide,
+  null,
+);
+assert.equal(
+  alignCaption({ start: 30, end: 31 }, "end", 120, oneTarget, 3, 6).guide,
+  null,
+);
+assert.equal(
+  alignCaption(
+    { start: 100, end: 120 },
+    "move",
+    120,
+    [{ frame: 105, label: "Beyond" }],
+    6,
+    6,
+  ).guide,
+  null,
+);
+assert.deepEqual(
+  alignCaption(
+    { start: 27, end: 47 },
+    "move",
+    120,
+    [
+      { frame: 30, label: "First" },
+      { frame: 24, label: "Second" },
+    ],
+    3,
+    6,
+  ).guide.label,
+  "First",
+);
+for (const part of ["move", "start", "end"]) {
+  for (let start = 0; start < 120; start += 7) {
+    for (let duration = 1; start + duration <= 120; duration += 11) {
+      const interval = { start, end: start + duration };
+      const snapshot = structuredClone(interval);
+      const result = alignCaption(interval, part, 120, snapTargets, 3, 6);
+      assert(
+        result.interval.start >= 0 &&
+          result.interval.start < result.interval.end &&
+          result.interval.end <= 120,
+      );
+      if (part === "move")
+        assert.equal(result.interval.end - result.interval.start, duration);
+      if (part === "start") assert.equal(result.interval.end, interval.end);
+      if (part === "end") assert.equal(result.interval.start, interval.start);
+      if (result.guide?.snapped)
+        assert.equal(result.interval[result.guide.edge], result.guide.frame);
+      assert.deepEqual(interval, snapshot);
+    }
+  }
+}
 import {
   framingRect,
   panFraming,

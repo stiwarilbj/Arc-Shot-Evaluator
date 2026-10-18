@@ -1,6 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Magnet } from "lucide-react";
 import type { Caption } from "./editProject";
-import { shiftCaption, type CaptionPart } from "./captionTiming";
+import {
+  shiftCaption,
+  alignCaption,
+  captionSnapTargets,
+  type CaptionPart,
+  type CaptionSnapTarget,
+  type CaptionSnapGuide,
+} from "./captionTiming";
 
 const seconds = (frame: number) => `${(frame / 30).toFixed(2)}s`;
 
@@ -8,6 +16,7 @@ export default function CaptionTimeline({
   captions,
   frames,
   frame,
+  cuts,
   selected,
   enabled,
   onSelect,
@@ -18,6 +27,7 @@ export default function CaptionTimeline({
   captions: Caption[];
   frames: number;
   frame: number;
+  cuts: number[];
   selected: string | null;
   enabled: boolean;
   onSelect: (id: string) => void;
@@ -25,6 +35,10 @@ export default function CaptionTimeline({
   onStart: () => void;
   onEnd: () => void;
 }) {
+  const [magnet, setMagnet] = useState(true);
+  const [guide, setGuide] = useState<
+    (CaptionSnapGuide & { captionId: string }) | null
+  >(null);
   const drag = useRef<{
     caption: Caption;
     part: CaptionPart;
@@ -32,6 +46,8 @@ export default function CaptionTimeline({
     x: number;
     scale: number;
     node: HTMLElement;
+    targets: CaptionSnapTarget[];
+    moved: boolean;
   } | null>(null);
   const keyboard = useRef<HTMLElement | null>(null);
   const callbacks = useRef({ onChange, onEnd });
@@ -41,6 +57,7 @@ export default function CaptionTimeline({
     const owned = !!current || !!keyboard.current;
     drag.current = null;
     keyboard.current = null;
+    setGuide(null);
     if (current?.node.hasPointerCapture(current.pointer))
       current.node.releasePointerCapture(current.pointer);
     if (owned) callbacks.current.onEnd();
@@ -76,23 +93,56 @@ export default function CaptionTimeline({
   function move(pointer: number, x: number) {
     const current = drag.current;
     if (!current || current.pointer !== pointer) return;
-    callbacks.current.onChange(
-      current.caption.id,
-      shiftCaption(
-        current.caption,
-        current.part,
-        (x - current.x) * current.scale,
-        frames,
-      ),
+    if (!current.moved && Math.abs(x - current.x) < 2) return;
+    current.moved = true;
+    const interval = shiftCaption(
+      current.caption,
+      current.part,
+      (x - current.x) * current.scale,
+      frames,
     );
+    const result = magnet
+      ? alignCaption(
+          interval,
+          current.part,
+          frames,
+          current.targets,
+          Math.min(3, 6 * current.scale),
+          Math.min(6, 12 * current.scale),
+        )
+      : { interval, guide: null };
+    setGuide(
+      result.guide ? { ...result.guide, captionId: current.caption.id } : null,
+    );
+    callbacks.current.onChange(current.caption.id, result.interval);
   }
   if (!captions.length) return null;
   return (
     <section className="jumper-caption-timeline" aria-label="Caption intervals">
-      <strong>Caption timing</strong>
+      <div className="jumper-caption-timing-heading">
+        <strong>Caption timing</strong>
+        <button
+          aria-label="Caption timing magnet"
+          aria-pressed={magnet}
+          disabled={!enabled}
+          onClick={() => {
+            finish();
+            setMagnet((value) => !value);
+          }}
+        >
+          <Magnet size={16} aria-hidden="true" /> Magnet {magnet ? "on" : "off"}
+        </button>
+      </div>
       <p className="jumper-caption">
         Drag a bar to move it; drag an edge to trim it. Arrow keys adjust one
         frame; Shift adjusts ten.
+      </p>
+      <p className="jumper-caption jumper-caption-snap-hint" role="status">
+        {guide
+          ? `${guide.snapped ? "Snapped" : "Align"} ${guide.edge} → ${guide.label} · ${seconds(guide.frame)}`
+          : magnet
+            ? "Magnet on · drag near a cut, playhead, or caption edge."
+            : "Magnet off · drag freely; timing still uses 30 fps."}
       </p>
       {captions.map((caption, index) => (
         <div
@@ -107,6 +157,14 @@ export default function CaptionTimeline({
             </span>
           </div>
           <div className="jumper-caption-track">
+            {guide?.captionId === caption.id ? (
+              <span
+                className={`jumper-caption-snap-guide${guide.snapped ? " is-snapped" : ""}`}
+                style={{ left: `${(guide.frame / frames) * 100}%` }}
+                data-snap-frame={guide.frame}
+                aria-hidden="true"
+              />
+            ) : null}
             <span
               className="jumper-caption-playhead"
               style={{ left: `${(frame / frames) * 100}%` }}
@@ -165,6 +223,13 @@ export default function CaptionTimeline({
                         x: event.clientX,
                         scale: frames / track.width,
                         node: event.currentTarget,
+                        targets: captionSnapTargets(
+                          captions,
+                          cuts,
+                          frame,
+                          caption.id,
+                        ),
+                        moved: false,
                       };
                       event.currentTarget.setPointerCapture(event.pointerId);
                       event.currentTarget.focus();

@@ -1,5 +1,12 @@
 import { loadEditFont } from "./editFont";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import TimelinePieces from "./TimelinePieces";
 import CaptionPreview from "./CaptionPreview";
 import FramingPreview from "./FramingPreview";
@@ -171,6 +178,10 @@ export default function VideoEditPanel({
     piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0],
     trimLimits = pieceTrimLimits(piece, project.baseFrames, count);
   const split = splitPoint(project, frame);
+  const captionCuts = useMemo(() => {
+    let offset = 0;
+    return project.pieces.slice(0, -1).map((p) => (offset += pieceFrames(p)));
+  }, [project.pieces]);
   const playbackRange = loop
     ? previewRange(project, piece.id, loopContext ? 15 : 0)
     : { start: 0, end: count };
@@ -782,6 +793,7 @@ export default function VideoEditPanel({
           />
           <CaptionTimeline
             captions={project.captions}
+            cuts={captionCuts}
             frames={count}
             frame={frame}
             selected={selectedCaption}
