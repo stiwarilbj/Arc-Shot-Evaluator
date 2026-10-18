@@ -98,6 +98,7 @@ export default function CaptionTimeline({
         <div
           className={`jumper-caption-lane${caption.id === selected ? " is-selected" : ""}`}
           key={caption.id}
+          data-caption-id={caption.id}
         >
           <div className="jumper-caption-lane-label">
             <span>{caption.text}</span>

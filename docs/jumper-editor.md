@@ -72,7 +72,14 @@ person detection or SAM. The private masked base is the only source for edits.
   and the guide. Guides and outside-crop shading never enter exports. Fades last
   approximately 0.25s.
   Slow motion repeats recorded frames; it does not invent body motion.
-- **Undo edit / Redo edit** keep up to 50 operations separately from mask history.
+- **Undo: … / Redo: …** describe the next operation (trim/delete/reorder/split,
+  speed/freeze/framing, caption text/timing/placement, fades, or reset). They keep
+  up to 50 operations separately from masking-correction history. Applying one
+  selects its original stable piece/caption identity, opens Cut/Text/Effects as
+  appropriate, seeks to its timeline position, and scrolls its strip/bar into view.
+  An item restored by undo becomes selected; if redo removes it, a surviving
+  piece at that position is selected instead. Framing restores the relevant
+  Start/End endpoint. Selection, seeking, and rendering do not add history entries.
   **Reset edits** restores the complete base timeline. Editing requires another
   final-motion review. Mask warnings still block saving until corrected.
 - **Update finished video** commits the preview to downloadable media. Cancellation

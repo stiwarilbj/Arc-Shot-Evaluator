@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import {
+  describeVideoEdit,
+  videoEditFocus,
+} from "../frontend/src/features/jumper/editHistory.ts";
 import { shiftCaption } from "../frontend/src/features/jumper/captionTiming.ts";
 import {
   framingRect,
@@ -307,6 +311,95 @@ assert(
     pieces: [...limit.pieces, { ...p.pieces[0], id: "c", start: 0, end: 1 }],
   }),
 );
+// Descriptions and stable targets survive undo/redo; document version stays unchanged.
+const namedHistory = new EditHistory();
+const describe = (before, after, selected = before.pieces[0].id, at = 0) =>
+  describeVideoEdit(before, after, selected, at);
+const sped = { ...p, pieces: p.pieces.map((v) => ({ ...v, speed: 0.5 })) };
+const speedEdit = describe(p, sped);
+assert.equal(speedEdit.label, "change piece speed");
+namedHistory.record(p, speedEdit);
+speedEdit.label = "mutated outside history";
+assert.equal(namedHistory.nextUndo.label, "change piece speed");
+assert.deepEqual(namedHistory.undo(sped), p);
+assert.equal(namedHistory.nextRedo.label, "change piece speed");
+assert.deepEqual(namedHistory.redo(p), sped);
+assert.equal(namedHistory.nextUndo.label, "change piece speed");
+const cut = splitPiece(p, 30);
+const cutEdit = describe(p, cut);
+assert.equal(cutEdit.label, "split piece");
+assert.equal(videoEditFocus(cut, cutEdit).pieceId, cut.pieces[1].id);
+assert.equal(videoEditFocus(p, cutEdit).pieceId, p.pieces[0].id);
+const deleted = { ...cut, pieces: [cut.pieces[1]] };
+const deleteEdit = describe(cut, deleted);
+assert.equal(deleteEdit.label, "delete piece");
+assert.equal(videoEditFocus(cut, deleteEdit).pieceId, cut.pieces[0].id);
+assert.equal(videoEditFocus(deleted, deleteEdit).pieceId, cut.pieces[1].id);
+const withCaption = {
+  ...p,
+  captions: [
+    {
+      id: "focus-caption",
+      text: "Note",
+      start: 30,
+      end: 60,
+      size: "medium",
+      position: "bottom",
+    },
+  ],
+};
+const timed = {
+  ...withCaption,
+  captions: [{ ...withCaption.captions[0], start: 45 }],
+};
+const timingEdit = describe(withCaption, timed);
+assert.equal(timingEdit.label, "change caption timing");
+assert.equal(videoEditFocus(withCaption, timingEdit).frame, 30);
+assert.equal(videoEditFocus(timed, timingEdit).frame, 45);
+assert.equal(videoEditFocus(timed, timingEdit).captionId, "focus-caption");
+const deletedCaptionEdit = describe(withCaption, p);
+assert.equal(deletedCaptionEdit.label, "delete caption");
+assert.equal(videoEditFocus(p, deletedCaptionEdit).captionId, null);
+assert.equal(videoEditFocus(p, deletedCaptionEdit).frame, 30);
+assert.equal(videoEditFocus(p, deletedCaptionEdit).panel, "Text");
+const freezePiece = {
+  ...p.pieces[0],
+  id: "focus-freeze",
+  start: 0,
+  end: 1,
+  freeze: 30,
+};
+const frozen = { ...p, pieces: [freezePiece, ...p.pieces] };
+const freezeEdit = describe(p, frozen);
+assert.equal(freezeEdit.label, "insert freeze");
+assert.equal(videoEditFocus(frozen, freezeEdit).pieceId, freezePiece.id);
+assert.equal(videoEditFocus(p, freezeEdit).pieceId, p.pieces[0].id);
+assert.equal(
+  describe(frozen, {
+    ...frozen,
+    pieces: [{ ...freezePiece, freeze: 60 }, ...p.pieces],
+  }).label,
+  "change freeze duration",
+);
+assert.equal(
+  describe(p, { ...p, fadeIn: !p.fadeIn }).label,
+  p.fadeIn ? "disable fade-in" : "enable fade-in",
+);
+const endpoint = {
+  ...p,
+  pieces: p.pieces.map((v) => ({ ...v, to: { zoom: 2, x: 0.2, y: 0.8 } })),
+};
+const endpointEdit = describe(p, endpoint);
+assert.equal(endpointEdit.label, "change end framing");
+assert.equal(videoEditFocus(endpoint, endpointEdit).framingEnd, true);
+assert.equal(
+  videoEditFocus(endpoint, endpointEdit).frame,
+  projectFrames(endpoint) - 1,
+);
+namedHistory.undo(sped);
+namedHistory.record(p, describe(p, withCaption));
+assert.equal(namedHistory.nextUndo.label, "add caption");
+assert(!namedHistory.canRedo);
 const history = new EditHistory();
 let current = p;
 for (let i = 0; i < 70; i++) {

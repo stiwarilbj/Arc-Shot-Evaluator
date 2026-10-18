@@ -184,6 +184,7 @@ export default memo(function TimelinePieces({
               <button
                 type="button"
                 className="jumper-edit-piece"
+                data-piece-id={piece.id}
                 aria-label={`${name}, ${duration} seconds`}
                 aria-pressed={piece.id === selected}
                 onClick={() => onSelect(piece.id, start)}

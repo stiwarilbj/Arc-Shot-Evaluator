@@ -288,6 +288,11 @@ Personal videos stay on your device; they are never automatically published.
    crop. Play to preview the finished zoom; outlines never enter exports.
    The preview and export use the same 30 fps timeline; finished edits can reach
    **60 seconds**. Undo/redo retains 50 edit operations separately from corrections.
+   Buttons describe the next action, such as **Undo: delete piece** or
+   **Redo: insert freeze**. Applying history selects the affected piece/caption,
+   opens its editing tool, and brings its timeline position into view. Deleted
+   items are selected when restored; removing them again selects a surviving
+   piece at that position.
 6. **Review and save/download:** click **Update finished video** after edits,
    review the entire finished motion, and save privately or download MP4 when
    supported, otherwise WebM. A failed render keeps the last successful download.

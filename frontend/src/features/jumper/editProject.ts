@@ -234,28 +234,46 @@ export function splitPiece(project: EditProject, frame: number): EditProject {
     ),
   };
 }
+export type VideoEdit = {
+  label: string;
+  panel: "Cut" | "Text" | "Effects";
+  pieceId?: string;
+  fallbackPieceId?: string;
+  captionId?: string;
+  frame: number;
+  atEnd?: boolean;
+};
+type EditEntry = { project: EditProject; edit?: VideoEdit };
 export class EditHistory {
-  private past: EditProject[] = [];
-  private future: EditProject[] = [];
+  private past: EditEntry[] = [];
+  private future: EditEntry[] = [];
   get canUndo() {
     return this.past.length > 0;
   }
   get canRedo() {
     return this.future.length > 0;
   }
-  record(previous: EditProject) {
-    this.past.push(structuredClone(previous));
+  get nextUndo() {
+    return this.past.at(-1)?.edit;
+  }
+  get nextRedo() {
+    return this.future.at(-1)?.edit;
+  }
+  record(previous: EditProject, edit?: VideoEdit) {
+    this.past.push(structuredClone({ project: previous, edit }));
     if (this.past.length > 50) this.past.shift();
     this.future = [];
   }
   undo(current: EditProject) {
     const next = this.past.pop();
-    if (next) this.future.push(structuredClone(current));
-    return next ?? current;
+    if (next)
+      this.future.push(structuredClone({ project: current, edit: next.edit }));
+    return next?.project ?? current;
   }
   redo(current: EditProject) {
     const next = this.future.pop();
-    if (next) this.past.push(structuredClone(current));
-    return next ?? current;
+    if (next)
+      this.past.push(structuredClone({ project: current, edit: next.edit }));
+    return next?.project ?? current;
   }
 }

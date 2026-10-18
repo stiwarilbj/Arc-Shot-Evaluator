@@ -7,6 +7,7 @@ import CaptionTimeline from "./CaptionTimeline";
 import { CanvasSink } from "mediabunny";
 import { openVideo } from "./media";
 import { drawEdit } from "./editDrawing";
+import { describeVideoEdit, videoEditFocus } from "./editHistory";
 import {
   EditHistory,
   clampCaptions,
@@ -57,6 +58,24 @@ export default function VideoEditPanel({
       : newProject(baseDuration, base.type, palette),
   );
   const [history] = useState(() => new EditHistory());
+  const editor = useRef<HTMLElement>(null);
+  const [historyReveal, setHistoryReveal] = useState<{
+    pieceId: string;
+    captionId: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!historyReveal) return;
+    const selector = historyReveal.captionId
+      ? `.jumper-caption-lane[data-caption-id="${CSS.escape(historyReveal.captionId)}"]`
+      : `.jumper-edit-piece[data-piece-id="${CSS.escape(historyReveal.pieceId)}"]`;
+    editor.current
+      ?.querySelector(selector)
+      ?.scrollIntoView({
+        block: "nearest",
+        inline: "nearest",
+        behavior: "auto",
+      });
+  }, [historyReveal]);
   const [selectedCaption, setSelectedCaption] = useState<string | null>(null);
   const [previewDimensions, setPreviewDimensions] = useState({
     width: 0,
@@ -312,7 +331,7 @@ export default function VideoEditPanel({
     },
     [],
   );
-  function change(next: EditProject, record = true) {
+  function change(next: EditProject, record = true, label?: string) {
     next = clampCaptions(next);
     if (!isProject(next)) {
       setError(
@@ -323,7 +342,9 @@ export default function VideoEditPanel({
     const current = latest.current.project;
     if (JSON.stringify(next) === JSON.stringify(current)) return true;
     if (record && (!gesture.current.active || !gesture.current.recorded)) {
-      history.record(current);
+      const edit = describeVideoEdit(current, next, piece.id, frame);
+      if (label) edit.label = label;
+      history.record(current, edit);
       gesture.current.recorded = true;
     }
     generation.current++;
@@ -336,6 +357,19 @@ export default function VideoEditPanel({
     setProject(next);
     setFrame((f) => Math.min(f, projectFrames(next) - 1));
     return true;
+  }
+  function applyHistory(direction: "undo" | "redo") {
+    if (disabled || busy) return;
+    const edit = direction === "undo" ? history.nextUndo : history.nextRedo;
+    const next = history[direction](latest.current.project);
+    if (!change(next, false) || !edit) return;
+    const focus = videoEditFocus(next, edit);
+    setSelected(focus.pieceId);
+    setSelectedCaption(focus.captionId);
+    setPanel(focus.panel);
+    setFrame(focus.frame);
+    setFramingEnd(focus.framingEnd);
+    setHistoryReveal({ pieceId: focus.pieceId, captionId: focus.captionId });
   }
   function trimBoundary(id: string, edge: "start" | "end", value: number) {
     if (disabled || busy || !Number.isFinite(value)) return;
@@ -378,13 +412,17 @@ export default function VideoEditPanel({
       .reduce((sum, p) => sum + pieceFrames(p), 0);
     setFrame(offset + (end ? pieceFrames(piece) - 1 : 0));
   }
-  function updatePiece(update: Partial<Piece>) {
-    change({
-      ...project,
-      pieces: project.pieces.map((p) =>
-        p.id === piece.id ? { ...p, ...update } : p,
-      ),
-    });
+  function updatePiece(update: Partial<Piece>, label?: string) {
+    change(
+      {
+        ...project,
+        pieces: project.pieces.map((p) =>
+          p.id === piece.id ? { ...p, ...update } : p,
+        ),
+      },
+      true,
+      label,
+    );
   }
   function moveCaption(id: string, position: Caption["position"]) {
     if (disabled || busy) return;
@@ -473,6 +511,7 @@ export default function VideoEditPanel({
   ) : null;
   return (
     <section
+      ref={editor}
       className="jumper-panel jumper-edit-panel"
       aria-label="Edit video"
       onPointerDownCapture={(e) => {
@@ -508,19 +547,25 @@ export default function VideoEditPanel({
         </div>
         <button
           disabled={disabled || !history.canUndo || busy}
-          onClick={() => change(history.undo(project), false)}
+          onClick={() => applyHistory("undo")}
         >
-          Undo edit
+          Undo: {history.nextUndo?.label ?? "no edits"}
         </button>
         <button
           disabled={disabled || !history.canRedo || busy}
-          onClick={() => change(history.redo(project), false)}
+          onClick={() => applyHistory("redo")}
         >
-          Redo edit
+          Redo: {history.nextRedo?.label ?? "no edits"}
         </button>
         <button
           disabled={disabled || busy}
-          onClick={() => change(newProject(baseDuration, base.type, palette))}
+          onClick={() =>
+            change(
+              newProject(baseDuration, base.type, palette),
+              true,
+              "reset edits",
+            )
+          }
         >
           Reset edits
         </button>
@@ -1151,7 +1196,10 @@ export default function VideoEditPanel({
                   }
                   onClick={() => {
                     seekFraming(true);
-                    updatePiece({ to: { ...piece.from } });
+                    updatePiece(
+                      { to: { ...piece.from } },
+                      "match start framing",
+                    );
                   }}
                 >
                   Match start framing
@@ -1210,10 +1258,13 @@ export default function VideoEditPanel({
                 ))}
                 <button
                   onClick={() =>
-                    updatePiece({
-                      from: neutralFraming(),
-                      to: neutralFraming(),
-                    })
+                    updatePiece(
+                      {
+                        from: neutralFraming(),
+                        to: neutralFraming(),
+                      },
+                      "reset framing",
+                    )
                   }
                 >
                   Reset framing
