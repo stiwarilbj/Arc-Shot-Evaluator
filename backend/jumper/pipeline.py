@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .floor_attachments import FloorAttachments
 from .shooter_visibility import ShooterVisibility
 from .memory_quality import MemoryQualityGate
 from .correction_check import check_corrections
@@ -502,6 +503,7 @@ def track(
             camera_cuts = CameraCuts()
             quality = MaskQuality()
             joins = MaskJoins(width, height)
+            floor_attachments = FloorAttachments(width, height)
             visibility = ShooterVisibility()
             ownership = MaskOwnership(width, height)
             previous_areas = {}
@@ -697,6 +699,7 @@ def track(
                     ),
                 )
                 warnings.extend(check_corrections(index, labels, job["objects"]))
+                warnings.extend(floor_attachments.inspect(index, labels, job["objects"], frame_boxes, reset=cut))
                 joins.begin()
                 for row, identity in enumerate(ids):
                     joins.add(identity, values[row])

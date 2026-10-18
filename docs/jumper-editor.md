@@ -823,3 +823,34 @@ frames, avoiding a false discontinuity on a supported return. Existing correctio
 join, cut and independent backward checks remain active; they can still require
 review. All accepted clips require full-motion review. These rules reduce unsafe
 identity guesses; they cannot guarantee correct tracking through every occlusion.
+
+
+## Shadows and reflections attached to masks
+
+With automatic person discovery enabled, both processors run the same review-only
+check on final, mutually exclusive visible masks, sampled on a grid no larger than
+128 pixels per side. A single detection must substantially contain that track's
+body core; tiny, bottom-clipped, unsupported or competing boxes are skipped.
+Missing detections, camera cuts, nonconsecutive frames and corrections restart the
+evidence window. Manual mode does not load a detector just for this check.
+
+Detection bottoms are approximate foot references, not cutting boundaries. The
+check tolerates at least three grid pixels or 8% of detected height below that
+reference. It looks for a substantial broad floor extension (wider than the lower
+feet and nearly the body box), or a sufficiently deep, vertically mirrored
+body-like pixel pattern. Regions inside another detected person are excluded from
+this evidence. Box motion, relative extension depth and area must remain reasonably
+consistent over three consecutive frames. On confirmation, the first two frames
+are flagged too; persistent problems continue to flag subsequent frames.
+
+**Possible shadow or reflection** appears on the existing mask-quality timeline
+with the affected track and frame, including gray players. Click or keyboard-seek
+a marker to open the original reference and corrections. Inspect the neighboring
+frames, add Exclude points on unwanted floor pixels, keep Include points on real
+shoes/legs, and reprocess. Existing unresolved-warning save protection applies.
+
+This diagnostic never edits masks, deletes pixels, changes tracking memory or
+selects another player. It may miss faint/small attachments, and perspective,
+inaccurate detections or unusual poses may produce false warnings. A warning is
+not proof of a shadow or reflection; preserve legitimate feet and review the full
+motion rather than automatically trimming at a detection box.

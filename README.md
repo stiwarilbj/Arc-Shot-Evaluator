@@ -493,6 +493,13 @@ masks without occlusion evidence still require review. Both trackers retain an e
 reference through a rejected stretch rather than learning from the suspect mask.
 An unusable initial selection requires a clearer prompt and retry.
 
+With automatic person discovery enabled, **Possible shadow or reflection** flags
+persistent broad floor extensions or mirrored body-like regions beneath a uniquely
+detected player. The check uses neighboring frames and approximate detection boxes;
+it never trims shoes, legs, or any other mask pixels. Inspect the original footage,
+add Exclude points only on unwanted floor regions while preserving real feet with
+Include points, and reprocess. Manual mode without detections cannot run this check.
+
 These checks do not prove tracking accuracy. Review the full motion and correct
 or reject uncertain masks; unresolved tracking warnings prevent approval. The
 editor reports its twenty-track limit instead of silently omitting extra people.

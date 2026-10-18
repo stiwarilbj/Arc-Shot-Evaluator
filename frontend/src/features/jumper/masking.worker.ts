@@ -1,3 +1,4 @@
+import { FloorAttachments } from "./floorAttachments";
 import { ShooterVisibility } from "./shooterVisibility";
 import { CONFIRM_SELECTION, selectionProbes, stableSelection } from "./selectionStability";
 import { sourceFrameMap } from "./sourceFrameMedia";
@@ -734,6 +735,7 @@ async function process(
     const cameraCuts = new CameraCuts();
     const quality = new MaskQuality();
     const joins = new MaskJoins(width, height);
+    const floorAttachments = new FloorAttachments(width, height);
     const ownership = new MaskOwnership(width, height);
     const trustedMasks = new Map<number, Float32Array>();
     const recoveryAnchors = shooterAnchors(objects, target_id);
@@ -954,6 +956,7 @@ async function process(
         cut || objects.some((o) => o.prompts.some((p) => p.frame === frame)),
       );
       warnings.push(...checkCorrections(frame, labels, width, height, objects));
+      warnings.push(...floorAttachments.inspect(frame, labels, width, height, objects, frameBoxes, cut));
       warnings.push(
         ...joins.inspect(
           frame,
