@@ -1,4 +1,6 @@
 /// <reference lib="webworker" />
+import { OverlapPalette } from "./overlapPalette";
+import { PaletteFrames } from "./paletteFrames";
 import { neutralEdges } from "./neutralEdges";
 import { CameraCuts } from "./cameraCuts";
 import * as ort from "onnxruntime-web/webgpu";
@@ -198,6 +200,10 @@ async function process(
   >[] = [];
   let cache: FrameCache | undefined;
   const exportCheckpoint = new ExportCheckpoint(width, height, count, start);
+  const overlapPalette = silhouette && request.request.presentation === "silhouette-palette-v1"
+    ? new OverlapPalette(target_id) : undefined;
+  const paletteFrames = overlapPalette ? new PaletteFrames(width * height, count) : undefined;
+  let grayShades: Uint8Array | undefined;
   let encodingError: unknown;
   try {
     const adapter = await navigator.gpu.requestAdapter();
@@ -644,6 +650,7 @@ async function process(
               owners,
               target_id,
               request.request.presentation === "silhouette-palette-v1",
+              grayShades,
             )
           : compositePixels(rgb!, owners, target_id, kind);
         validateComposite(
@@ -652,6 +659,7 @@ async function process(
           target_id,
           kind,
           request.request.presentation === "silhouette-palette-v1",
+          grayShades,
         );
         if (silhouette) neutralEdges(pixels, width, height);
         if (kind === "quiz")
@@ -664,7 +672,7 @@ async function process(
       }
     }
     try {
-      await createOutputs();
+      if (!paletteFrames) await createOutputs();
     } catch (error) {
       encodingError = error ?? Error("Video encoding failed");
       await cancelOutputs();
@@ -862,8 +870,11 @@ async function process(
           cut,
         ),
       );
-      exportCheckpoint.add(frame, labels);
-      if (!encodingError) {
+      if (paletteFrames && overlapPalette) {
+        overlapPalette.observe(labels, width, height);
+        await paletteFrames.add(frame, labels);
+      } else exportCheckpoint.add(frame, labels);
+      if (!paletteFrames && !encodingError) {
         report(
           `Rendering silhouettes · frame ${frame + 1} / ${count}`,
           frame / count,
@@ -964,6 +975,34 @@ async function process(
     detector = undefined;
     for (const at of cameraCuts.finish())
       warnings.push({ frame: at, kind: "possible_camera_cut" });
+    async function renderRecorded(stage: string) {
+      report(stage, 0);
+      await cancelOutputs();
+      await createOutputs();
+      for (let frame = 0; frame < count; frame++) {
+        const owners = paletteFrames ? await paletteFrames.frame(frame) : exportCheckpoint.frame(frame);
+        let rgb: Uint8ClampedArray | undefined;
+        if (!silhouette) {
+          const sample = await sink.getCanvas(start + frame / 30);
+          if (!sample) throw Error("Could not decode the export retry frame");
+          sourceContext!.drawImage(sample.canvas, 0, 0, width, height);
+          rgb = sourceContext!.getImageData(0, 0, width, height).data;
+        }
+        renderPixels(owners, rgb);
+        for (const output of outputs) await output.source.add(frame / 30, 1 / 30);
+        report(`${stage} · frame ${frame + 1} / ${count}`, frame / count);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    if (paletteFrames && overlapPalette) {
+      grayShades = overlapPalette.finish();
+      try {
+        await renderRecorded("Rendering fixed overlap-aware gray shades");
+      } catch (error) {
+        encodingError = error ?? Error("Video encoding failed");
+        await cancelOutputs();
+      }
+    }
     const [highlight, quiz, reveal] = await retryExport(
       async () => {
         if (encodingError) throw encodingError;
@@ -971,31 +1010,11 @@ async function process(
         return finishOutputs();
       },
       async () => {
-        report("Retrying export from completed masks", 0);
-        await cancelOutputs();
-        await createOutputs();
-        for (let frame = 0; frame < count; frame++) {
-          const owners = exportCheckpoint.frame(frame);
-          let rgb: Uint8ClampedArray | undefined;
-          if (!silhouette) {
-            const sample = await sink.getCanvas(start + frame / 30);
-            if (!sample) throw Error("Could not decode the export retry frame");
-            sourceContext.drawImage(sample.canvas, 0, 0, width, height);
-            rgb = sourceContext.getImageData(0, 0, width, height).data;
-          }
-          renderPixels(owners, rgb);
-          for (const output of outputs)
-            await output.source.add(frame / 30, 1 / 30);
-          report(
-            `Retrying export · frame ${frame + 1} / ${count}`,
-            frame / count,
-          );
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        }
+        await renderRecorded("Retrying export from completed masks");
         report("Finalizing retried export", 1);
         return finishOutputs();
       },
-      () => exportCheckpoint.ready(),
+      () => paletteFrames ? paletteFrames.ready() : exportCheckpoint.ready(),
     );
     return {
       highlight,
@@ -1008,6 +1027,7 @@ async function process(
     };
   } finally {
     exportCheckpoint.clear();
+    paletteFrames?.close();
     cache?.close();
     input.dispose();
     try {

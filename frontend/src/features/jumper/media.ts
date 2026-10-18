@@ -136,6 +136,7 @@ export function silhouettePixels(
   owners: Uint8Array,
   target: number,
   palette = false,
+  shades?: Uint8Array,
 ) {
   if (!Number.isInteger(target) || target < 1 || target > 255)
     throw Error("Invalid target identity");
@@ -148,7 +149,7 @@ export function silhouettePixels(
         : owners[i] === target
           ? 0
           : palette
-            ? 64 + (((owners[i] - 1) * 47) % 137)
+            ? shades?.[owners[i]] ?? 64 + (((owners[i] - 1) * 47) % 137)
             : 128;
     result[at] = result[at + 1] = result[at + 2] = value;
     result[at + 3] = 255;

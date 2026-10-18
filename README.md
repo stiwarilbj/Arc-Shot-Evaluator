@@ -220,7 +220,18 @@ Personal videos stay on your device; they are never automatically published.
 3. **Process:** track people and render a muted video up to **720p/30 fps**. The
    shooter becomes solid black, other included players gray, and the background
    flat neutral gray. Finished silhouette outputs copy no original image pixels,
-   removing original court colors, jersey text, graphics, and audio.
+   removing original court colors, jersey text, graphics, and audio. For new personal
+   clips, both processors choose fixed per-player gray shades after scanning the
+   full tracked segment. Players whose visible silhouettes frequently touch or
+   cross get priority for stronger gray contrast. This uses tracked boundaries,
+   never teams, clothing, or source colors; the shooter stays black throughout.
+   Very crowded groups have limited gray contrast, and fully hidden players do
+   not supply contact evidence. Existing saved clips keep their current shades.
+   Browser rendering keeps compressed owner maps temporarily: small jobs stay in
+   memory and larger ones use private scratch browser storage, removed when the
+   job finishes or fails. Day-old scratch jobs left by a closed tab are cleaned on
+   the next large job. If both storage and the bounded memory fallback are full,
+   shorten the segment or allow browser storage; processing does not use a server.
 4. **Review and correct:** original reference and masked playback share one clock.
    Desktop shows them together; mobile offers a comparison toggle. The review
    timeline checks every included player, black or gray, for missing masks,

@@ -28,6 +28,7 @@ export function validateComposite(
   target: number,
   kind: "quiz" | "highlight" | "reveal",
   palette = false,
+  shades?: Uint8Array,
 ) {
   if (pixels.length !== owners.length * 4)
     throw Error("Invalid output frame size");
@@ -44,7 +45,7 @@ export function validateComposite(
       : kind === "quiz" && owners[i] === target
         ? 0
         : palette
-          ? 64 + (((owners[i] - 1) * 47) % 137)
+          ? shades?.[owners[i]] ?? 64 + (((owners[i] - 1) * 47) % 137)
           : 128;
     if (
       pixels[at] !== expected ||

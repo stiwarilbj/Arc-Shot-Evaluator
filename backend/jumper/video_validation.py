@@ -14,7 +14,7 @@ CHROMA_TOLERANCE = 8
 LUMA_TOLERANCE = 16
 
 
-def validate_composite(image, labels, target, kind, palette=False):
+def validate_composite(image, labels, target, kind, palette=False, shades=None):
     if image.dtype != np.uint8 or image.shape != (*labels.shape, 3):
         raise ValueError("Invalid output frame size")
     expected = np.where(
@@ -23,7 +23,7 @@ def validate_composite(image, labels, target, kind, palette=False):
         np.where(
             labels == target,
             0,
-            64 + ((labels.astype(np.int32) - 1) * 47 % 137) if palette else 128,
+            (shades[labels] if shades is not None else 64 + ((labels.astype(np.int32) - 1) * 47 % 137)) if palette else 128,
         ),
     )
     checked = np.ones(labels.shape, dtype=bool)

@@ -241,7 +241,19 @@ bounded decoding, a bundled OFL caption font, and independent output validation.
 
 Finished previews, downloads, saved clips and personal quiz playback use a
 masked timeline: target black, other included people in stable per-track gray shades, flat neutral gray
-background. The silhouette compositor copies no original pixels, even inside a
+background. New personal clips choose gray shades from a clip-wide graph of
+visible silhouette contacts (including diagonal boundaries), prioritizing pairs
+that meet repeatedly. The shooter is always black; each other track keeps one
+shade throughout. No team labels, uniform colors, or original pixels influence
+assignment. A fully hidden player contributes no contact evidence, and crowded
+groups have a limited range of gray contrast. Rendering waits until tracking is
+complete and replays lossless owner maps without rerunning segmentation. In the
+browser, compressed temporary maps spill from bounded memory into private
+IndexedDB when necessary; finished and failed jobs remove their scratch data.
+Native rendering rereads its existing temporary mask files. Older saved clips
+are unchanged.
+
+The silhouette compositor copies no original pixels, even inside a
 bad mask, and exports contain no audio. Original footage is only an editing
 reference. Masks can still include background shapes or miss limbs: approve only
 after reviewing all frames and correct or reject uncertain results.
@@ -416,7 +428,10 @@ Masking remains computationally heavy; the progress display does not imply real-
 Use `.venv/bin/python scripts/jumper_validate_silhouette.py /path/to/export.mp4`
 to independently decode every exported frame, check neutral color channels,
 30 fps, dimensions, duration limits and absence of audio. Before encoding,
-compositor tests assert the exact 0/128/224 palette independently of source pixels.
+compositor tests assert the assigned palette before the one-pixel neutral edge
+filter, independently of source pixels. Legacy three-color outputs retain their
+0/128/224 interiors; new personal palettes use fixed gray shades in 64–200.
+Browser/native fixtures require identical contact graphs and shade choices.
 
 The silhouette update was exercised in installed Chrome on the M4 test machine,
 using Playwright because the Browser plugin was unavailable. The browser flow

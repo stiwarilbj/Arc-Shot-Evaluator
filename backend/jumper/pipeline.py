@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .overlap_palette import OverlapPalette
 from .neutral_edges import neutral_edges
 from .camera_cuts import CameraCuts
 from .mask_quality import MaskQuality
@@ -157,14 +158,14 @@ def validate_job(job: object) -> dict:
 
 
 def silhouette_pixels(
-    labels: np.ndarray, target_id: int, palette: bool = False
+    labels: np.ndarray, target_id: int, palette: bool = False, shades=None
 ) -> np.ndarray:
     """Render from labels alone: source colors/text can never enter this path."""
     if labels.dtype != np.uint8 or labels.ndim != 2:
         raise ValueError("Expected an 8-bit foreground label map")
     if type(target_id) is not int or not 1 <= target_id <= 255:
         raise ValueError("Invalid target identity")
-    shades = (
+    shades = np.array(shades, dtype=np.uint8, copy=True) if palette and shades is not None else (
         (64 + ((np.arange(256, dtype=np.int32) - 1) * 47 % 137)).astype(np.uint8)
         if palette
         else np.full(256, OTHER_PLAYER, np.uint8)
@@ -772,6 +773,15 @@ def render(
         / f"{hashlib.sha256(f'{token}:{kind}'.encode()).hexdigest()[:32]}.mp4"
         for kind in kinds
     }
+    shades = None
+    if silhouette and palette:
+        graph = OverlapPalette(target)
+        for index in range(len(frames)):
+            labels = np.load(masks / f"{index:06d}.npy", allow_pickle=False)
+            if labels.shape != (height, width):
+                raise ValueError("Mask dimensions changed during palette planning")
+            graph.observe(labels)
+        shades = graph.finish()
     proofs = []
     with ExitStack() as stack:
         streams = [
@@ -782,12 +792,12 @@ def render(
             if labels.shape != (height, width):
                 raise ValueError("Mask dimensions changed during export")
             if silhouette:
-                composites = (silhouette_pixels(labels, target, palette),)
+                composites = (silhouette_pixels(labels, target, palette, shades),)
             else:
                 rgb = cv2.cvtColor(cv2.imread(str(frame)), cv2.COLOR_BGR2RGB)
                 composites = composite(rgb, labels, target)
             for kind, image in zip(kinds, composites):
-                validate_composite(image, labels, target, kind, palette=palette)
+                validate_composite(image, labels, target, kind, palette=palette, shades=shades)
             if silhouette:
                 composites = tuple(neutral_edges(image) for image in composites)
             proofs.append(silhouette_proof(composites[0]))
