@@ -12,6 +12,7 @@ import {
   newProject,
   neutralFraming,
   pieceFrames,
+  pieceTrimLimits,
   projectFrames,
   splitPiece,
   type EditProject,
@@ -70,11 +71,16 @@ export default function VideoEditPanel({
     [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(0),
     [framingEnd, setFramingEnd] = useState(false);
+  const [trimPreview, setTrimPreview] = useState<{
+    edge: "start" | "end";
+    source: number;
+  } | null>(null);
   const gesture = useRef<{ active: boolean; recorded: boolean }>({
     active: false,
     recorded: false,
   });
   const panPointer = useRef<number | null>(null);
+  const trimming = useRef(false);
   const canvas = useRef<HTMLCanvasElement>(null),
     decoder = useRef<{
       input: Awaited<ReturnType<typeof openVideo>>["input"];
@@ -85,23 +91,35 @@ export default function VideoEditPanel({
     request = useRef(0),
     generation = useRef(0),
     controller = useRef<AbortController | null>(null),
-    latest = useRef({ project, frame, clean }),
+    latest = useRef({ project, frame, clean, trimPreview }),
     drawing = useRef(false),
     queued = useRef(false);
-  latest.current = { project, frame, clean };
+  latest.current = { project, frame, clean, trimPreview };
   const selectPiece = useCallback((id: string, start: number) => {
     setSelected(id);
     setFrame(start);
     setPlaying(false);
+    setTrimPreview(null);
+  }, []);
+  const beginTrim = useCallback(() => {
+    trimming.current = true;
+    gesture.current = { active: true, recorded: false };
+    setPlaying(false);
+  }, []);
+  const endTrim = useCallback(() => {
+    trimming.current = false;
+    gesture.current.active = false;
   }, []);
   const count = projectFrames(project),
     stale = exported !== JSON.stringify(project),
-    piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0];
+    piece = project.pieces.find((p) => p.id === selected) ?? project.pieces[0],
+    trimLimits = pieceTrimLimits(piece, project.baseFrames, count);
   useEffect(() => {
     onChange({ ...videos, project, stale, rendering: busy });
   }, [videos, project, stale, busy, onChange]);
   useEffect(() => {
     const finishGesture = () => {
+      if (trimming.current) return;
       gesture.current.active = false;
       panPointer.current = null;
     };
@@ -167,7 +185,9 @@ export default function VideoEditPanel({
         const state = latest.current,
           id = ++request.current;
         const image = await current.sink.getCanvas(
-          editFrame(state.project, state.frame, state.clean).source / 30 +
+          (state.trimPreview?.source ??
+            editFrame(state.project, state.frame, state.clean).source) /
+            30 +
             0.00001,
         );
         if (id !== request.current || current !== decoder.current) continue;
@@ -176,15 +196,25 @@ export default function VideoEditPanel({
         if (image && target && context) {
           target.width = current.width;
           target.height = current.height;
-          drawEdit(
-            context,
-            image.canvas,
-            current.width,
-            current.height,
-            state.project,
-            state.frame,
-            state.clean,
-          );
+          if (state.trimPreview) {
+            // Boundary inspection must remain visible even with fades/zoom/captions.
+            context.drawImage(
+              image.canvas,
+              0,
+              0,
+              current.width,
+              current.height,
+            );
+          } else
+            drawEdit(
+              context,
+              image.canvas,
+              current.width,
+              current.height,
+              state.project,
+              state.frame,
+              state.clean,
+            );
         }
       }
     } catch (e) {
@@ -200,7 +230,7 @@ export default function VideoEditPanel({
   useEffect(() => {
     queued.current = true;
     void paint();
-  }, [project, frame, clean]);
+  }, [project, frame, clean, trimPreview]);
   useEffect(() => {
     if (disabled) {
       generation.current++;
@@ -247,11 +277,12 @@ export default function VideoEditPanel({
       setError(
         "Keep the finished video between 2 frames and 60 seconds, with valid piece and caption times.",
       );
-      return;
+      return false;
     }
-    if (JSON.stringify(next) === JSON.stringify(project)) return;
+    const current = latest.current.project;
+    if (JSON.stringify(next) === JSON.stringify(current)) return true;
     if (record && (!gesture.current.active || !gesture.current.recorded)) {
-      history.record(project);
+      history.record(current);
       gesture.current.recorded = true;
     }
     generation.current++;
@@ -259,8 +290,43 @@ export default function VideoEditPanel({
     setBusy(false);
     setPlaying(false);
     setError("");
+    setTrimPreview(null);
+    latest.current.project = next;
     setProject(next);
     setFrame((f) => Math.min(f, projectFrames(next) - 1));
+    return true;
+  }
+  function trimBoundary(id: string, edge: "start" | "end", value: number) {
+    if (disabled || busy || !Number.isFinite(value)) return;
+    const current = latest.current.project;
+    const target = current.pieces.find((p) => p.id === id);
+    if (!target || target.freeze) return;
+    const limits = pieceTrimLimits(
+      target,
+      current.baseFrames,
+      projectFrames(current),
+    )[edge];
+    const updated = {
+      ...target,
+      [edge]: Math.max(limits.min, Math.min(limits.max, Math.round(value))),
+    };
+    const next = {
+      ...current,
+      pieces: current.pieces.map((p) => (p.id === id ? updated : p)),
+    };
+    if (!change(next)) return;
+    setPlaying(false);
+    const offset = next.pieces
+      .slice(
+        0,
+        next.pieces.findIndex((p) => p.id === id),
+      )
+      .reduce((sum, p) => sum + pieceFrames(p), 0);
+    setFrame(offset + (edge === "end" ? pieceFrames(updated) - 1 : 0));
+    setTrimPreview({
+      edge,
+      source: edge === "start" ? updated.start : updated.end - 1,
+    });
   }
   function updatePiece(update: Partial<Piece>) {
     change({
@@ -318,6 +384,7 @@ export default function VideoEditPanel({
       className="jumper-panel jumper-edit-panel"
       aria-label="Edit video"
       onPointerDownCapture={(e) => {
+        if (trimming.current) return;
         const node = e.target as HTMLElement;
         if (
           node instanceof HTMLCanvasElement ||
@@ -325,11 +392,19 @@ export default function VideoEditPanel({
         )
           gesture.current = { active: true, recorded: false };
       }}
-      onPointerUpCapture={() => {
-        gesture.current.active = false;
+      onPointerUpCapture={(event) => {
+        if (
+          !trimming.current &&
+          !(event.target as HTMLElement).closest(".jumper-trim-handle")
+        )
+          gesture.current.active = false;
       }}
-      onPointerCancelCapture={() => {
-        gesture.current.active = false;
+      onPointerCancelCapture={(event) => {
+        if (
+          !trimming.current &&
+          !(event.target as HTMLElement).closest(".jumper-trim-handle")
+        )
+          gesture.current.active = false;
       }}
     >
       <div className="jumper-toolbar">
@@ -368,6 +443,7 @@ export default function VideoEditPanel({
               if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
                 e.preventDefault();
                 setPlaying(false);
+                setTrimPreview(null);
                 setFrame((f) =>
                   Math.max(
                     0,
@@ -377,6 +453,7 @@ export default function VideoEditPanel({
               }
               if (e.key === " ") {
                 e.preventDefault();
+                setTrimPreview(null);
                 setPlaying((v) => !v);
               }
             }}
@@ -455,6 +532,7 @@ export default function VideoEditPanel({
             <button
               disabled={!active || !!previewError}
               onClick={() => {
+                setTrimPreview(null);
                 if (frame >= count - 1) setFrame(0);
                 setPlaying((v) => !v);
               }}
@@ -468,7 +546,10 @@ export default function VideoEditPanel({
               <input
                 type="checkbox"
                 checked={clean}
-                onChange={(e) => setClean(e.target.checked)}
+                onChange={(e) => {
+                  setTrimPreview(null);
+                  setClean(e.target.checked);
+                }}
               />{" "}
               Clean quiz preview
             </label>
@@ -482,14 +563,28 @@ export default function VideoEditPanel({
             value={Math.min(frame, count - 1)}
             onChange={(e) => {
               setPlaying(false);
+              setTrimPreview(null);
               setFrame(Number(e.target.value));
             }}
           />
+          {trimPreview ? (
+            <p className="jumper-trim-preview" role="status">
+              Trim preview · {trimPreview.edge === "start" ? "First" : "Last"}{" "}
+              retained source frame {trimPreview.source + 1} ·{" "}
+              {time(trimPreview.source)}s (masked base, without presentation
+              effects)
+            </p>
+          ) : null}
           <TimelinePieces
             base={base}
             pieces={project.pieces}
             selected={piece.id}
             active={active}
+            baseFrames={project.baseFrames}
+            trimEnabled={panel === "Cut" && !disabled && !busy}
+            onTrimStart={beginTrim}
+            onTrim={trimBoundary}
+            onTrimEnd={endTrim}
             onSelect={selectPiece}
           />
           <p className="jumper-caption">
@@ -528,23 +623,27 @@ export default function VideoEditPanel({
                       <input
                         aria-label="Piece start seconds"
                         type="number"
-                        min={0}
-                        max={(piece.end - 1) / 30}
+                        min={trimLimits.start.min / 30}
+                        max={trimLimits.start.max / 30}
                         step={1 / 30}
                         value={time(piece.start)}
                         onChange={(e) =>
-                          updatePiece({ start: seconds(e.target.value) })
+                          trimBoundary(
+                            piece.id,
+                            "start",
+                            seconds(e.target.value),
+                          )
                         }
                       />
                     </label>
                     <input
                       aria-label="Drag piece start"
                       type="range"
-                      min={0}
-                      max={piece.end - 1}
+                      min={trimLimits.start.min}
+                      max={trimLimits.start.max}
                       value={piece.start}
                       onChange={(e) =>
-                        updatePiece({ start: Number(e.target.value) })
+                        trimBoundary(piece.id, "start", Number(e.target.value))
                       }
                     />
                     <label>
@@ -552,23 +651,23 @@ export default function VideoEditPanel({
                       <input
                         aria-label="Piece end seconds"
                         type="number"
-                        min={(piece.start + 1) / 30}
-                        max={project.baseFrames / 30}
+                        min={trimLimits.end.min / 30}
+                        max={trimLimits.end.max / 30}
                         step={1 / 30}
                         value={time(piece.end)}
                         onChange={(e) =>
-                          updatePiece({ end: seconds(e.target.value) })
+                          trimBoundary(piece.id, "end", seconds(e.target.value))
                         }
                       />
                     </label>
                     <input
                       aria-label="Drag piece end"
                       type="range"
-                      min={piece.start + 1}
-                      max={project.baseFrames}
+                      min={trimLimits.end.min}
+                      max={trimLimits.end.max}
                       value={piece.end}
                       onChange={(e) =>
-                        updatePiece({ end: Number(e.target.value) })
+                        trimBoundary(piece.id, "end", Number(e.target.value))
                       }
                     />
                     <button

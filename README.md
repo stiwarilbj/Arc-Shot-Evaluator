@@ -256,6 +256,11 @@ Personal videos stay on your device; they are never automatically published.
    Select pieces from thumbnail strips showing their masked footage, duration,
    and an orange selected outline. Freeze pieces show the held frame. The strips
    scroll horizontally on smaller screens and support keyboard selection.
+   In **Cut**, drag the selected moving piece’s orange left/right handles to
+   trim its source start/end. The preview shows the exact first/last retained
+   masked source frame, without fades or other presentation effects. Handles
+   snap to 30 fps and support arrow keys; numeric source times remain available.
+   Each drag is one undo step. Freeze pieces retain their duration control.
    Add timed captions in **Text**. **Effects** offers 0.5×/1×/2× speed,
    0.5–3-second freezes, 1–2× zoom/pan, and optional 0.25-second fades.
    The preview and export use the same 30 fps timeline; finished edits can reach

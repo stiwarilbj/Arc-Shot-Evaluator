@@ -16,6 +16,17 @@ person detection or SAM. The private masked base is the only source for edits.
   Set source start/end with sliders or
   seconds, split at the playhead, delete, and move left/right. The last piece
   cannot be deleted. All times snap to 30 fps; the timeline cannot exceed 60s.
+  In Cut, the selected moving piece has orange trim handles on its left/right
+  edges. Drag to adjust the source boundaries; the shared preview shows the
+  exact first or last retained source frame, labeled with its frame/time.
+  This boundary view omits fades, captions and framing so the frame stays visible.
+  Normal playback or seeking returns to the edited preview. Source end is
+  exclusive: the last retained frame is one frame before that time.
+  Focus a handle and use arrows for one frame, Shift+arrows for ten, or Home/End
+  for its valid limits. Numeric fields and existing sliders use the same bounds.
+  A pointer drag or held arrow key is one undo operation. Pointer interruption
+  or Escape ends the gesture at the last accepted boundary. Freeze pieces use
+  their existing duration control. Trimming never reruns masking.
 - **Text:** enter up to 200 characters, then **Add at current time**. A caption
   starts there and lasts two seconds or until the end. Edit its interval,
   size, and top/center/bottom placement. White text has a black backing. Moving

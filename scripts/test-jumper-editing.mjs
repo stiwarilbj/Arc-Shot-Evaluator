@@ -8,9 +8,44 @@ import {
   splitPiece,
   clampCaptions,
   EditHistory,
+  pieceTrimLimits,
 } from "../frontend/src/features/jumper/editProject.ts";
 import { clip } from "../frontend/src/features/jumper/domain.ts";
 const p = newProject(3, "video/mp4");
+// Every exposed endpoint must remain a valid timeline across speeds and limits.
+for (const speed of [0.5, 1, 2]) {
+  for (const others of [0, 1, 1500]) {
+    const trial = newProject(15, "video/mp4");
+    trial.pieces[0] = { ...trial.pieces[0], start: 20, end: 120, speed };
+    for (let remaining = others; remaining > 0; remaining -= 450) {
+      trial.pieces.push({
+        ...trial.pieces[0],
+        id: `other-${remaining}`,
+        start: 0,
+        end: Math.min(450, remaining),
+        speed: 1,
+      });
+    }
+    const piece = trial.pieces[0];
+    const limits = pieceTrimLimits(
+      piece,
+      trial.baseFrames,
+      projectFrames(trial),
+    );
+    for (const edge of ["start", "end"]) {
+      for (let frame = limits[edge].min; frame <= limits[edge].max; frame++) {
+        const next = {
+          ...trial,
+          pieces: [{ ...piece, [edge]: frame }, ...trial.pieces.slice(1)],
+        };
+        assert(
+          isProject(next),
+          `${speed}× ${others} other frames: ${edge} ${frame}`,
+        );
+      }
+    }
+  }
+}
 assert(isProject(p));
 assert.equal(projectFrames(p), 90);
 const split = splitPiece(p, 30);

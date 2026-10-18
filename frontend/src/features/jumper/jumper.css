@@ -851,13 +851,51 @@
   overflow-x: auto;
   padding: 0.5rem 3px;
 }
-.jumper-edit-panel button.jumper-edit-piece {
+.jumper-piece-wrapper {
+  position: relative;
   flex: 1 0 156px;
   min-width: 156px;
+}
+.jumper-edit-panel button.jumper-edit-piece {
+  display: block;
+  width: 100%;
   padding: 3px;
   overflow: hidden;
   text-align: left;
   border: 2px solid var(--line-strong);
+}
+.jumper-trim-handle {
+  position: absolute;
+  top: 4px;
+  bottom: 25px;
+  width: 24px;
+  display: grid;
+  place-items: center;
+  background: #ff753c;
+  color: #111;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  border: 1px solid #141414;
+  border-radius: 4px;
+}
+.jumper-trim-start { left: 2px; }
+.jumper-trim-end { right: 2px; }
+.jumper-trim-handle span {
+  width: 5px;
+  height: 20px;
+  border-left: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+}
+.jumper-trim-handle:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.jumper-trim-preview {
+  font-size: 0.8rem;
+  color: var(--text);
+  margin: 0.35rem 0;
+  line-height: 1.5;
 }
 .jumper-edit-panel button.jumper-edit-piece[aria-pressed="true"] {
   border-color: #ff753c;

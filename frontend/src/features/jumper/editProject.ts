@@ -36,6 +36,23 @@ export const pieceFrames = (p: Piece) =>
   p.freeze || Math.ceil((p.end - p.start) / p.speed);
 export const projectFrames = (p: EditProject) =>
   p.pieces.reduce((sum, piece) => sum + pieceFrames(piece), 0);
+/** Inclusive source-boundary limits, preserving a 2–1800 frame edited timeline. */
+export function pieceTrimLimits(
+  piece: Piece,
+  baseFrames: number,
+  total: number,
+) {
+  const others = total - pieceFrames(piece);
+  const minimum = others >= 1 ? 1 : Math.floor(piece.speed) + 1;
+  const maximum = Math.floor((1800 - others) * piece.speed);
+  return {
+    start: { min: Math.max(0, piece.end - maximum), max: piece.end - minimum },
+    end: {
+      min: piece.start + minimum,
+      max: Math.min(baseFrames, piece.start + maximum),
+    },
+  };
+}
 export function newProject(
   duration: number,
   mime: string,
