@@ -486,6 +486,11 @@ fresh CPU process; cancellation never starts that retry. Within one local job,
 tracking and cache preparation reuse the verified checkpoint SHA-256 only while
 file identity, size, and modification metadata still match. Changed or replaced
 checkpoints are verified again; this record is never reused across jobs.
+Local model installation uses a separate lock for each checkpoint and unique
+partial-download files. Concurrent app instances recheck installed weights after
+waiting, avoiding duplicate downloads. Valid installed weights and ordinary
+tracking do not hold this installation lock; failed downloads clean up their own
+temporary file.
 Local masking status combines small progress updates within a stage, publishing
 after a one-percentage-point increase or 250 ms on the next callback. Stage
 changes, completion, and errors publish immediately; video processing is unchanged.

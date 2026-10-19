@@ -8,11 +8,10 @@ from pathlib import Path
 import shutil
 import sys
 import time
-import urllib.request
 
 from backend.jumper.pipeline import extract, render, track
 from backend.jumper.export_checkpoint import render_with_retry
-from backend.jumper.checkpoint_verification import VerifiedCheckpoint, CheckpointVerificationError
+from backend.jumper.model_install import ensure_checkpoint
 from backend.jumper.resources import (
     check_resources,
     estimate_resources,
@@ -113,29 +112,9 @@ def run(directory: Path):
 
         progress("Checking local masking model")
         checkpoint = MODEL_WEIGHTS_DIR / "sam2.1_hiera_tiny.pt"
-        try:
-            verified_checkpoint = VerifiedCheckpoint(checkpoint, CHECKPOINT_SHA)
-        except (FileNotFoundError, CheckpointVerificationError):
-            progress("Downloading local masking model")
-            temporary = checkpoint.with_suffix(".download")
-            with (
-                urllib.request.urlopen(CHECKPOINT_URL, timeout=60) as response,
-                temporary.open("wb") as out,
-            ):
-                total = int(response.headers.get("Content-Length", 0))
-                done = 0
-                while data := response.read(1024 * 1024):
-                    out.write(data)
-                    done += len(data)
-                    if done > 200 * 1024 * 1024:
-                        raise ValueError("Model download exceeds its expected size")
-                    progress("Downloading local masking model", done, total)
-            try:
-                verified_checkpoint = VerifiedCheckpoint(temporary, CHECKPOINT_SHA)
-            except CheckpointVerificationError:
-                temporary.unlink(missing_ok=True)
-                raise
-            temporary.replace(checkpoint)
+        verified_checkpoint = ensure_checkpoint(
+            checkpoint, CHECKPOINT_URL, CHECKPOINT_SHA, progress
+        )
         device = (
             "cpu"
             if os.environ.get("ARCADE_JUMPER_CPU_FALLBACK") == "1"
