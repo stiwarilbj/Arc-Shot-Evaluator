@@ -64,7 +64,7 @@ import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
 import { validateComposite, silhouetteProof } from "./videoValidation";
 import { samPixels } from "./preprocessing";
-import { downloadProgress } from "./processingEstimate";
+import { checkedAsset } from "./checkedAsset";
 import {
   bilinear,
   buildBank,
@@ -81,71 +81,31 @@ const HF = `https://huggingface.co/jax-image-tools/sam21-tiny-video-onnx/resolve
 const LOCAL = `${import.meta.env.BASE_URL}jumper/models/`;
 const ASSETS = {
   vision: {
+    maxBytes: 109497134,
     url: HF + "vision_encoder.onnx",
     sha: "98311f41182f40c57cac2522180fff34b53931ce981412ddd8643ec27fb830e3",
   },
   attention: {
+    maxBytes: 32364264,
     url: HF + "memory_attention.onnx",
     sha: "afd5045a8fe48628d4da49a82b77351a43f7554f1f101a5052ab74aae69e3737",
   },
   decoder: {
+    maxBytes: 17827854,
     url: LOCAL + "native_mask_decoder.onnx",
     sha: "b9ca43b2d2bd4c8db6363b555d924ff2ab1ceed400a34503ae5ffc4098abbc0a",
   },
   memory: {
+    maxBytes: 5591983,
     url: LOCAL + "native_memory_encoder.onnx",
     sha: "fb8951150c52c7765cededa9bf8fc1fab4d213c087b3c230f641e4f87cae6fa3",
   },
   weights: {
+    maxBytes: 366544,
     url: LOCAL + "native_tracker.json",
     sha: "5cf5f2391e7a7a196ed5b15f21850d1b16c2282aae5f00179831c5b1ea61d646",
   },
 };
-async function checkedAsset(
-  asset: { url: string; sha: string },
-  progress: (done: number, fraction: number) => void,
-) {
-  const url = new URL(asset.url, context.location.href).href;
-  let cache: Cache | undefined;
-  try {
-    cache = await caches.open("arc-jumper-models-v1");
-  } catch {}
-  let response = await cache?.match(url);
-  if (!response) {
-    const fetched = await fetch(url);
-    if (!fetched.ok || !fetched.body)
-      throw Error(`Model download failed (${fetched.status}); retry Create.`);
-    const reader = fetched.body.getReader();
-    const pieces: Uint8Array<ArrayBuffer>[] = [];
-    const total = Number(fetched.headers.get("Content-Length") ?? 0);
-    const encoding = fetched.headers.get("Content-Encoding");
-    let done = 0;
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      pieces.push(new Uint8Array(chunk.value));
-      done += chunk.value.length;
-      progress(done, downloadProgress(done, total, encoding));
-    }
-    response = new Response(new Blob(pieces));
-  }
-  const bytes = await response.arrayBuffer();
-  const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
-  if (hash !== asset.sha) {
-    await cache?.delete(url);
-    throw Error(
-      "Model integrity check failed. Retry to download a fresh copy.",
-    );
-  }
-  try {
-    await cache?.put(url, new Response(bytes));
-  } catch {
-    /* Model works even when persistent cache is unavailable. */
-  }
-  return bytes;
-}
 const tensor = (values: Float32Array, dims: number[]) =>
   new ort.Tensor("float32", values, dims);
 const floats = (value: ort.Tensor) =>
@@ -276,6 +236,7 @@ async function process(
           `Downloading masking model · ${key} · ${(done / 1024 / 1024).toFixed(1)} MB`,
           fraction,
         ),
+        context.location.href,
       );
       report(`Preparing ${key} model`, 0);
       sessionsByName[key] = await ort.InferenceSession.create(bytes, {
@@ -287,7 +248,7 @@ async function process(
       sessions.push(sessionsByName[key]);
     }
     const weights: TrackerWeights = JSON.parse(
-      new TextDecoder().decode(await checkedAsset(ASSETS.weights, () => {})),
+      new TextDecoder().decode(await checkedAsset(ASSETS.weights, () => {}, context.location.href)),
     );
     const { vision, attention, decoder, memory } = sessionsByName;
     const sink = new CanvasSink(video, {

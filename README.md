@@ -483,6 +483,9 @@ released local jobs cannot take ownership of a later retry. Browser worker
 communication failures stop cleanly and allow another attempt. Processing checks
 for cancellation again after shooter preparation and abort-listener registration,
 so cancelled startup cannot proceed to a masking request or local upload.
+Browser masking-model downloads enforce each pinned asset’s byte limit while
+reading network and cached bodies, regardless of response size headers. Oversized
+streams stop early; accepted bytes still require the pinned SHA-256 checksum.
 
 Opposing Include/Exclude points on the same SAM input pixel are rejected before
 inference, with the frame and track identified. Repeated points with the same
