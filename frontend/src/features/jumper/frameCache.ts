@@ -116,6 +116,33 @@ export class FrameCache {
       return undefined;
     }
   }
+  async remove(name: string) {
+    if (!this.available) return;
+    try {
+      const tx = this.db.transaction(["meta", "values"], "readwrite");
+      const complete = new Promise<boolean>(resolve => {
+        const timer = setTimeout(() => {
+          try { tx.abort(); } catch {}
+          resolve(false);
+        }, 5000);
+        tx.oncomplete = () => { clearTimeout(timer); resolve(true); };
+        tx.onabort = tx.onerror = () => { clearTimeout(timer); resolve(false); };
+      });
+      const key = this.scope + ":" + name;
+      tx.objectStore("meta").delete(key);
+      tx.objectStore("values").delete(key);
+      if (!(await complete)) this.available = false;
+    } catch {
+      this.available = false;
+      // Deletion failure disables only this disposable optimization.
+    }
+  }
+  async getFeatures(name: string): Promise<Record<string, CachedFeatures> | undefined> {
+    const value = await this.get<unknown>(name);
+    if (validFeatures(value)) return value;
+    if (value !== undefined) await this.remove(name);
+    return undefined;
+  }
   async canPut(name: string, bytes: number) {
     if (!this.available) return false;
     try {

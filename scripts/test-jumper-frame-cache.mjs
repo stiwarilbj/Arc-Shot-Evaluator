@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import {
+  FrameCache,
   admission,
   contentHash,
   validFeatures,
@@ -95,3 +96,22 @@ for (const fixture of evidenceCases) {
 for (const value of [null, [], {}, { boxes: [], hands: null }, { boxes: [], hands: [[]] }])
   assert.equal(validDetectionEvidence(value), false);
 console.log("Detection cache: exact retained-box links, duplicate poses, partial pose coverage and invalid records passed");
+
+const removedFeatures = [];
+let storedFeatures;
+const featureCache = {
+  get: async name => { assert.equal(name, "features:7"); return storedFeatures; },
+  remove: async name => { removedFeatures.push(name); storedFeatures = undefined; },
+};
+for (const invalid of [null, {}, features]) {
+  storedFeatures = invalid;
+  assert.equal(await FrameCache.prototype.getFeatures.call(featureCache, "features:7"), undefined);
+}
+assert.deepEqual(removedFeatures, Array(3).fill("features:7"));
+await FrameCache.prototype.getFeatures.call(featureCache, "features:7");
+assert.equal(removedFeatures.length, 3, "Cache misses need no deletion");
+features.feats2.dims = shapes.feats2;
+storedFeatures = features;
+assert.equal(await FrameCache.prototype.getFeatures.call(featureCache, "features:7"), features);
+assert.equal(removedFeatures.length, 3, "Valid entries must not be deleted");
+console.log("Frame features: targeted invalid-entry removal, ordinary misses and valid hits passed");

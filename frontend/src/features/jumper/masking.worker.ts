@@ -40,7 +40,6 @@ import {
 import { createPersonDetector, PERSON_DETECTOR_SHA } from "./personDetector";
 import {
   FrameCache,
-  validFeatures,
   validDetectionEvidence,
   type CachedFeatures,
 } from "./frameCache";
@@ -325,8 +324,8 @@ async function process(
       const key = region
         ? `detail-v2-boundary:${frame}:${Object.values(region).join(":")}`
         : `features:${frame}`;
-      const cached = await cache?.get<unknown>(key);
-      if (validFeatures(cached))
+      const cached = await cache?.getFeatures(key);
+      if (cached)
         return Object.fromEntries(
           Object.entries(cached).map(([key, item]) => [
             key,

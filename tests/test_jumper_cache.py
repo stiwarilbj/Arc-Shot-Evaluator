@@ -3,6 +3,7 @@ import os
 import time
 
 import numpy as np
+import pytest
 
 from backend.jumper.cache import FrameCache, identity
 
@@ -102,3 +103,52 @@ def test_detection_evidence_matches_browser_fixtures():
                   dict(boxes=np.array([[0., 0., 1., float("nan")]]), hands=np.empty((0, 10))),
                   dict(boxes=np.array([[0., 0., 1., 1.]]), hands=np.full((1, 10), float("inf")))):
         assert not valid_detection_evidence(value)
+
+
+def test_remove_targets_only_named_frame_and_scope(tmp_path):
+    cache = FrameCache(tmp_path / "cache", "a")
+    other = FrameCache(cache.root, "b")
+    for target in (cache, other):
+        for name in ("features:0", "features:1"):
+            target.put(name, {"x": np.ones(1)})
+    cache.remove("features:0")
+    cache.remove("missing")
+    assert cache.get("features:0") is None
+    assert cache.get("features:1") is not None
+    assert other.get("features:0") is not None
+    assert other.get("features:1") is not None
+    blocked = tmp_path / "blocked"
+    blocked.write_text("unavailable")
+    FrameCache(blocked, "a").remove("features:0")
+
+
+@pytest.mark.parametrize("invalid", ["shape", "nan", "infinity", "layout", "missing"])
+def test_rejected_backbone_entry_removed_before_recompute(tmp_path, invalid):
+    from types import SimpleNamespace
+    from backend.jumper.cache import cache_backbone
+
+    cache = FrameCache(tmp_path / "cache", "a")
+    values = {f"backbone_fpn{i}": np.zeros(shape, np.float32) for i, shape in
+              enumerate(((1, 32, 256, 256), (1, 64, 128, 128), (1, 256, 64, 64)))}
+    if invalid == "shape":
+        values["backbone_fpn0"] = np.zeros(1, np.float32)
+    elif invalid in ("nan", "infinity"):
+        values["backbone_fpn0"].flat[0] = float("nan" if invalid == "nan" else "inf")
+    elif invalid == "layout":
+        values["layout_backbone_fpn0"] = np.array([0, 0, 0, 0])
+    else:
+        values.pop("backbone_fpn0")
+    cache.put("features:0", values)
+    cache.put("features:1", {"valid_neighbor": np.ones(1)})
+    calls = []
+    def original(state, frame, batch):
+        calls.append(frame)
+        assert cache.get("features:0") is None, "Delete before recomputation, even if re-caching fails"
+        assert cache.get("features:1") is not None
+        return "recomputed"
+    predictor = SimpleNamespace(_get_image_feature=original)
+    cache_backbone(predictor, cache)
+    for _ in range(2):
+        assert predictor._get_image_feature({"cached_features": {}}, 0, 1) == "recomputed"
+    assert calls == [0, 0]
+    assert cache.get("features:0") is None

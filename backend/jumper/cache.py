@@ -154,6 +154,13 @@ class FrameCache:
         except Exception:
             return None
 
+    def remove(self, name):
+        try:
+            with self.locked():
+                self.path(name).unlink(missing_ok=True)
+        except Exception:
+            pass  # Disposable cache cleanup must not interrupt inference.
+
     def can_put(self, size):
         try:
             with self.locked():
@@ -273,7 +280,8 @@ def cache_backbone(predictor, cache, device="cpu"):
                         .unsqueeze(0)
                     )
                     state["cached_features"] = {frame_idx: (image, groups)}
-                except (KeyError, ValueError, RuntimeError):
+                except (KeyError, ValueError, RuntimeError, TypeError):
+                    cache.remove(key)
                     cached = None
             if cached is None:
                 result = original(state, frame_idx, batch_size)
