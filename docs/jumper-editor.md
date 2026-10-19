@@ -880,3 +880,35 @@ regions, and likely head regions; it may miss occluded/low-contrast balls or fla
 a rounded fist. It is not anatomical reconstruction or guaranteed ball detection.
 Neither fingers nor ball-shaped regions are cut automatically. Correct the mask
 or choose clearer footage when the visible evidence is insufficient.
+
+### Players at the image boundary
+
+Visible player crops retain a neutral RGB(114,114,114) inference margin where the
+source ends. The margin is not mirrored footage and contains no inferred anatomy.
+Prompts, boxes and mask samples use the same integer source rectangle and padded
+input. Predictions in the margin are discarded: only pixel centers in the
+original visible image map back to the silhouette. Supported coarse mask pixels
+on the actual frame boundary must survive refinement; otherwise the refinement
+is rejected, the coarse mask is retained and **Small-player detail uncertain**
+requests review. Bounded, larger edge players use this same refinement path when
+refinement is enabled. Very large or unresolved crops remain unrefined.
+
+Outline comparisons use only positions observed in both aligned frames. A
+component touching an image boundary does not by itself establish a severed limb;
+interior missing regions, unsafe occlusions and transfer/identity checks remain
+active. No mask is extended beyond the video dimensions.
+
+**Shooting motion may be cropped** requires three consecutive frames with a
+uniquely supported person detection plus substantial visible contact at the
+source edge, or a confident wrist meeting that edge. Small toe/hand contact alone
+is not enough without wrist evidence. Detection boxes and pose estimates are
+approximate: these checks cannot identify every missing anatomical part or the
+exact release phase. Tiny players, weak detections and brief cropping may be
+missed. Without automatic discovery there is no source-supported crop warning.
+
+Select the warning marker to open the shooter’s original frame and correction
+controls; keyboard Left/Right moves between flagged frames. If the shooting hand,
+head or substantial body motion is outside the image, shorten the segment to a
+fully visible shot or use wider footage. Include/Exclude points fix visible masks
+only; they cannot reconstruct offscreen pixels. Unresolved crop warnings continue
+to prevent approval. This adds no model, API, payment or cloud processing.

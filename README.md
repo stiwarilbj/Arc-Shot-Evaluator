@@ -508,6 +508,16 @@ fingers, then reprocess. Nothing is removed automatically. This is a conservativ
 review hint, not a ball detector: tiny players, low-confidence wrists, weak edges,
 face overlaps, or cropped balls may be skipped, and rounded hands can be flagged.
 
+Visible players at a frame edge receive neutral padding during crop refinement;
+only the original image area is mapped back. A refinement that removes supported
+border pixels is rejected, leaving the original prediction and a review warning.
+Outline comparisons do not treat unseen offscreen pixels as missing limbs.
+**Shooting motion may be cropped** flags sustained, source-supported severe
+cropping of the selected player (including confidently detected wrists at an
+edge). Open the marker to inspect the source and choose a fully visible segment
+or wider footage. Corrections cannot recover offscreen anatomy. Minor edge
+contact alone is not a segmentation failure; interior mask checks remain active.
+
 These checks do not prove tracking accuracy. Review the full motion and correct
 or reject uncertain masks; unresolved tracking warnings prevent approval. The
 editor reports its twenty-track limit instead of silently omitting extra people.

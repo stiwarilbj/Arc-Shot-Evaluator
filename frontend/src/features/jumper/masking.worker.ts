@@ -1,3 +1,4 @@
+import { FrameBoundary } from "./frameBoundary";
 import { BallAttachments, validHands } from "./ballAttachments";
 import { FloorAttachments } from "./floorAttachments";
 import { ShooterVisibility } from "./shooterVisibility";
@@ -45,7 +46,7 @@ import {
 import { requireShooterBox, PeopleDiscovery, ShooterSelectionError } from "./discovery";
 import {
   smallPlayerCrop,
-  sourceCrop,
+  paddedSourceCrop,
   sourceCropPrompt,
   projectRefinement,
   acceptRefinement,
@@ -358,10 +359,10 @@ async function process(
       crop?: PlayerCrop,
     ) {
       const region = crop
-        ? sourceCrop(crop, width, height, fineWidth, fineHeight)
+        ? paddedSourceCrop(crop, width, height, fineWidth, fineHeight)
         : undefined;
       const key = region
-        ? `detail-v1:${frame}:${Object.values(region).join(":")}`
+        ? `detail-v2-boundary:${frame}:${Object.values(region).join(":")}`
         : `features:${frame}`;
       const cached = await cache?.get<unknown>(key);
       if (validFeatures(cached))
@@ -373,23 +374,25 @@ async function process(
         );
       let pixels: Float32Array;
       if (region) {
-        cropCanvas.width = region.width;
-        cropCanvas.height = region.height;
+        cropCanvas.width = region.inputWidth;
+        cropCanvas.height = region.inputHeight;
+        cropContext!.fillStyle = "rgb(114,114,114)";
+        cropContext!.fillRect(0,0,region.inputWidth,region.inputHeight);
         cropContext!.drawImage(
           canvas,
           region.x,
           region.y,
           region.width,
           region.height,
-          0,
-          0,
+          region.left,
+          region.top,
           region.width,
           region.height,
         );
         pixels = samPixels(
-          cropContext!.getImageData(0, 0, region.width, region.height).data,
-          region.width,
-          region.height,
+          cropContext!.getImageData(0, 0, region.inputWidth, region.inputHeight).data,
+          region.inputWidth,
+          region.inputHeight,
         );
       } else {
         sourceContext!.drawImage(canvas, 0, 0, width, height);
@@ -743,6 +746,7 @@ async function process(
     const joins = new MaskJoins(width, height);
     const floorAttachments = new FloorAttachments(width, height);
     const ballAttachments = new BallAttachments();
+    const frameBoundary = new FrameBoundary();
     const ownership = new MaskOwnership(width, height);
     const trustedMasks = new Map<number, Float32Array>();
     const recoveryAnchors = shooterAnchors(objects, target_id);
@@ -906,7 +910,7 @@ async function process(
           );
           if (!crop) continue;
           report(
-            `Refining small player ${object.id} · frame ${frame + 1} / ${count}`,
+            `Refining visible player ${object.id} · frame ${frame + 1} / ${count}`,
             frame / count,
           );
           let refined: Float32Array | undefined;
@@ -965,6 +969,8 @@ async function process(
       );
       warnings.push(...checkCorrections(frame, labels, width, height, objects));
       warnings.push(...floorAttachments.inspect(frame, labels, width, height, objects, frameBoxes, cut));
+      warnings.push(...frameBoundary.inspect(frame, labels, width, height, objects, target_id, frameBoxes, frameHands,
+        cut || objects.some(o => o.id===target_id && o.prompts.some(p=>p.frame===frame))));
       if (frameHands.length) {
         sourceContext.drawImage(sample.canvas, 0, 0, width, height);
         const rgb = sourceContext.getImageData(0, 0, width, height).data;

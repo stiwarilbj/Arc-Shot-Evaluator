@@ -11,6 +11,7 @@ export interface PlayerCrop {
   points: number[][];
   labels: number[];
   unusable: boolean;
+  padding?: number[]; // left/top/right/bottom outside the visible image, never output pixels
 }
 
 export function smallPlayerCrop(
@@ -34,14 +35,11 @@ export function smallPlayerCrop(
       bottom = Math.max(bottom, y + 1);
       area++;
     }
-  if (
-    !area ||
-    area > width * height * 0.015 ||
-    bottom - top > height * 0.4 ||
-    right - left > width * 0.2
-  )
-    return;
-  const pad = Math.max(8, Math.ceil((bottom - top) * 0.5));
+  const boundary = left === 0 || top === 0 || right === width || bottom === height;
+  const small = area <= width*height*.015 && bottom-top <= height*.4 && right-left <= width*.2;
+  const boundedEdge = boundary && area <= width*height*.35 && bottom-top <= height*.95 && right-left <= width*.85;
+  if (!area || (!small && !boundedEdge)) return;
+  const pad = Math.max(8, Math.min(boundary ? 32 : Infinity, Math.ceil((bottom-top)*.5)));
   const x = Math.max(0, left - pad),
     y = Math.max(0, top - pad);
   const w = Math.min(width, right + pad) - x,
@@ -96,6 +94,8 @@ export function smallPlayerCrop(
     points,
     labels,
     unusable,
+    padding: [Math.max(0,pad-left),Math.max(0,pad-top),
+      Math.max(0,right+pad-width),Math.max(0,bottom+pad-height)],
   };
 }
 
@@ -116,12 +116,20 @@ export function sourceCrop(
   };
 }
 
+/** Visible source rectangle plus a bounded neutral margin outside the actual frame. */
+export function paddedSourceCrop(crop: PlayerCrop, width: number, height: number, sourceWidth: number, sourceHeight: number) {
+  const region = sourceCrop(crop,width,height,sourceWidth,sourceHeight);
+  const padding = (crop.padding ?? [0,0,0,0]).map((n,i) => Math.ceil(n*(i%2 ? sourceHeight/height : sourceWidth/width)));
+  return {...region, left:padding[0], top:padding[1],
+    inputWidth:region.width+padding[0]+padding[2], inputHeight:region.height+padding[1]+padding[3]};
+}
+
 /** Map prompts through the actual integer source crop, including its rounded edges. */
 export function sourceCropPrompt(crop: PlayerCrop, width: number, height: number, sourceWidth: number, sourceHeight: number) {
-  const region = sourceCrop(crop, width, height, sourceWidth, sourceHeight);
+  const region = paddedSourceCrop(crop, width, height, sourceWidth, sourceHeight);
   const point = (x: number, y: number) => [
-    ((crop.x + x * crop.width) * sourceWidth / width - region.x) / region.width,
-    ((crop.y + y * crop.height) * sourceHeight / height - region.y) / region.height,
+    ((crop.x + x * crop.width) * sourceWidth / width - region.x + region.left) / region.inputWidth,
+    ((crop.y + y * crop.height) * sourceHeight / height - region.y + region.top) / region.inputHeight,
   ];
   return { points: crop.points.map(([x, y]) => point(x, y)), labels: crop.labels,
     box: [...point(crop.box[0], crop.box[1]), ...point(crop.box[2], crop.box[3])] };
@@ -129,13 +137,13 @@ export function sourceCropPrompt(crop: PlayerCrop, width: number, height: number
 
 /** Sample crop logits at coarse pixel centers; do not stretch rounded margins. */
 export function projectRefinement(values: Float32Array, crop: PlayerCrop, width: number, height: number, sourceWidth: number, sourceHeight: number) {
-  const region = sourceCrop(crop, width, height, sourceWidth, sourceHeight);
+  const region = paddedSourceCrop(crop, width, height, sourceWidth, sourceHeight);
   const result = new Float32Array(crop.width * crop.height);
   for (let y = 0; y < crop.height; y++) {
-    const fy = Math.max(0, Math.min(255, (((crop.y + y + .5) * sourceHeight / height - region.y) / region.height) * 256 - .5));
+    const fy = Math.max(0, Math.min(255, (((crop.y + y + .5) * sourceHeight / height - region.y + region.top) / region.inputHeight) * 256 - .5));
     const y0 = Math.floor(fy), y1 = Math.min(255, y0 + 1), dy = fy - y0;
     for (let x = 0; x < crop.width; x++) {
-      const fx = Math.max(0, Math.min(255, (((crop.x + x + .5) * sourceWidth / width - region.x) / region.width) * 256 - .5));
+      const fx = Math.max(0, Math.min(255, (((crop.x + x + .5) * sourceWidth / width - region.x + region.left) / region.inputWidth) * 256 - .5));
       const x0 = Math.floor(fx), x1 = Math.min(255, x0 + 1), dx = fx - x0;
       result[y * crop.width + x] =
         (values[y0 * 256 + x0] * (1 - dx) + values[y0 * 256 + x1] * dx) * (1 - dy) +
@@ -160,13 +168,16 @@ export function acceptRefinement(
     intersection = 0,
     blocked = 0,
     occluded = 0,
-    leaked = false;
+    leaked = false,
+    lostVisibleEdge = false;
   for (let y = 0; y < crop.height; y++)
     for (let x = 0; x < crop.width; x++) {
       const at = (crop.y + y) * width + crop.x + x,
         a = coarse[at] > 0,
         b = cropValues[y * crop.width + x] > 0;
       if (a) {
+        if (!b && ((crop.x+x===0) || (crop.y+y===0) ||
+          (crop.x+x===width-1) || (crop.y+y===height-1))) lostVisibleEdge = true;
         original++;
         if (owners[at] && owners[at] !== id) occluded++;
       }
@@ -192,7 +203,7 @@ export function acceptRefinement(
     refined > original * 1.6 ||
     blocked > Math.max(2, refined * 0.03) ||
     occluded > Math.max(2, original * 0.03) ||
-    leaked ||
+    leaked || lostVisibleEdge ||
     !cropValues.every(Number.isFinite)
   )
     return;

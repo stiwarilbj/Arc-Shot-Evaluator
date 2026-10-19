@@ -57,6 +57,9 @@ export default function MaskTimeline({
         {warnings.some((w) => w.kind === "refinement_uncertain")
           ? " Small-player detail uncertain means a close crop could not safely refine the visible outline. Inspect hands, feet and overlaps; add Include/Exclude points or choose a closer segment. Hidden details cannot be recovered."
           : ""}
+        {warnings.some((w) => w.kind === "frame_cropped")
+          ? " Shooting motion may be cropped means source detections and visible mask contact indicate sustained cropping at the image edge. Inspect the original frame and trim to a fully visible shot or use wider footage if the hand, head or body is missing. Include/Exclude points can correct visible masks but cannot restore offscreen anatomy. Minor contact is not automatically a tracking failure; uncertain interior masks still need correction."
+          : ""}
         {warnings.some((w) => w.kind === "ball_attachment")
           ? " Possible ball in shooter mask means a round, image-supported attachment near a detected wrist persists across neighboring frames. Inspect the original release frame, add Exclude points inside the ball and Include points on visible fingers, then reprocess. Do not exclude an uncertain hand boundary; use a clearer neighboring frame if necessary. This hint never removes pixels automatically and cannot prove where the ball ends and fingers begin."
           : ""}

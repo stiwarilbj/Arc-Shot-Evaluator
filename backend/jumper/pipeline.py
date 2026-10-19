@@ -13,6 +13,7 @@ import imageio_ffmpeg
 import numpy as np
 
 from .ball_attachments import BallAttachments, valid_hands
+from .frame_boundary import FrameBoundary
 from .floor_attachments import FloorAttachments
 from .shooter_visibility import ShooterVisibility
 from .memory_quality import MemoryQualityGate
@@ -523,6 +524,7 @@ def track(
             joins = MaskJoins(width, height)
             floor_attachments = FloorAttachments(width, height)
             ball_attachments = BallAttachments()
+            frame_boundary = FrameBoundary()
             visibility = ShooterVisibility()
             ownership = MaskOwnership(width, height)
             previous_areas = {}
@@ -719,6 +721,8 @@ def track(
                 )
                 warnings.extend(check_corrections(index, labels, job["objects"]))
                 warnings.extend(floor_attachments.inspect(index, labels, job["objects"], frame_boxes, reset=cut))
+                warnings.extend(frame_boundary.inspect(index,labels,job["objects"],job["target_id"],frame_boxes,frame_hands,
+                    reset=cut or any(p["frame"]==index for o in job["objects"] if o["id"]==job["target_id"] for p in o["prompts"])))
                 # Source pixels are evidence only; never enter silhouette outputs.
                 gray = (cv2.imread(str(frames[index])).astype(np.uint16).sum(axis=2)//3).astype(np.uint8) if frame_hands else np.empty((0,0),np.uint8)
                 warnings.extend(ball_attachments.inspect(index, labels, gray, job["target_id"], frame_hands,

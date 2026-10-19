@@ -57,8 +57,10 @@ export function outlineChanges(previous: Uint8Array, current: Uint8Array,
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const px = left + x, py = top + y, qx = px + dx, qy = py + dy;
     const i = y * w + x;
-    if (px >= 0 && px < width && py >= 0 && py < height) old[i] = +(previous[py * width + px] === id);
-    if (qx >= 0 && qx < width && qy >= 0 && qy < height) now[i] = +(current[qy * width + qx] === id);
+    // Outside either observed image is unknown, never evidence of a lost limb.
+    if (px >= 0 && px < width && py >= 0 && py < height && qx >= 0 && qx < width && qy >= 0 && qy < height) {
+      old[i]=+(previous[py*width+px]===id); now[i]=+(current[qy*width+qx]===id);
+    }
   }
   const before = components(old, w, h), after = components(now, w, h);
   const minArea = Math.max(4, Math.ceil(Math.min(a.area, b.area) * 0.005));
@@ -66,14 +68,17 @@ export function outlineChanges(previous: Uint8Array, current: Uint8Array,
   for (let label = 1; label < after.parts.length; label++) {
     const part = after.parts[label];
     if (label === after.main || part.area < minArea || Math.max(part.right-part.left, part.bottom-part.top) < 3) continue;
-    let overlap = 0, mainOverlap = 0;
+    let overlap = 0, mainOverlap = 0, cropped = false;
     for (let y = part.top; y < part.bottom; y++) for (let x = part.left; x < part.right; x++) {
       const i = y * w + x;
       if (after.labels[i] !== label) continue;
+      const px=left+x,py=top+y;
+      if (px===0 || py===0 || px===width-1 || py===height-1 ||
+          px+dx===0 || py+dy===0 || px+dx===width-1 || py+dy===height-1) cropped=true;
       if (old[i]) overlap++;
       if (before.labels[i] === before.main) mainOverlap++;
     }
-    if (mainOverlap >= part.area * 0.5 || overlap < part.area * 0.25) fragmented = true;
+    if (!cropped && (mainOverlap >= part.area * 0.5 || overlap < part.area * 0.25)) fragmented = true;
   }
   const bodyHeight = Math.max((a.bounds[3]-a.bounds[1])*height, (b.bounds[3]-b.bounds[1])*height);
   const tolerance = Math.max(1, Math.min(4, Math.floor(bodyHeight * 0.02 + 0.5)));

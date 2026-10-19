@@ -27,6 +27,11 @@ def outline_changes(previous, current, identity, a, b):
         x1, y1, x2, y2 = max(0, sx), max(0, sy), min(width, sx+w), min(height, sy+h)
         if x2 > x1 and y2 > y1:
             mask[y1-sy:y2-sy, x1-sx:x2-sx] = source[y1:y2, x1:x2] == identity
+    yy,xx=np.indices((h,w))
+    px,py=xx+left,yy+top
+    common=(px>=0)&(px<width)&(py>=0)&(py<height)&(px+dx>=0)&(px+dx<width)&(py+dy>=0)&(py+dy<height)
+    old[~common]=0;now[~common]=0
+    image_edge=(px==0)|(py==0)|(px==width-1)|(py==height-1)|(px+dx==0)|(py+dy==0)|(px+dx==width-1)|(py+dy==height-1)
     before, _, before_main = components(old)
     after, stats, after_main = components(now)
     minimum = max(4, math.ceil(min(a["area"], b["area"]) * .005))
@@ -38,7 +43,8 @@ def outline_changes(previous, current, identity, a, b):
         piece = after[y:y+bh, x:x+bw] == label
         overlap = np.count_nonzero(old[y:y+bh, x:x+bw][piece])
         main_overlap = np.count_nonzero(before[y:y+bh, x:x+bw][piece] == before_main)
-        if main_overlap >= area * .5 or overlap < area * .25:
+        cropped=np.any(image_edge[y:y+bh,x:x+bw][piece])
+        if not cropped and (main_overlap >= area * .5 or overlap < area * .25):
             fragmented = True
     body_height = max((a["bounds"][3]-a["bounds"][1])*height, (b["bounds"][3]-b["bounds"][1])*height)
     tolerance = max(1, min(4, rounded(body_height * .02)))
