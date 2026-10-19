@@ -18,6 +18,33 @@ TTL = 3600
 MAX_ENTRIES = 1024
 
 
+def valid_detection_evidence(value):
+    """Accept only structurally valid, uniquely box-linked cached wrist evidence."""
+    from .ball_attachments import valid_hands
+
+    if not isinstance(value, dict):
+        return False
+    boxes, hands = value.get("boxes"), value.get("hands")
+    if not (
+        isinstance(boxes, np.ndarray)
+        and np.issubdtype(boxes.dtype, np.floating)
+        and boxes.ndim == 2 and boxes.shape[1] == 4 and len(boxes) <= 20
+        and np.isfinite(boxes).all() and np.all((boxes >= 0) & (boxes <= 1))
+        and np.all(boxes[:, 0] < boxes[:, 2]) and np.all(boxes[:, 1] < boxes[:, 3])
+        and isinstance(hands, np.ndarray) and hands.ndim == 2 and hands.shape[1] == 10
+        and valid_hands(hands)
+    ):
+        return False
+    retained = {tuple(box) for box in boxes}
+    seen = set()
+    for row in hands:
+        box = tuple(row[:4])
+        if box not in retained or box in seen:
+            return False
+        seen.add(box)
+    return True
+
+
 def identity(source, job, checkpoint, device, frames):
     from importlib.metadata import version
     from backend.jumper.pipeline import digest

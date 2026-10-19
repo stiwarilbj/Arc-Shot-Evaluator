@@ -14,6 +14,7 @@ import numpy as np
 
 from .ball_attachments import BallAttachments, valid_hands
 from .frame_boundary import FrameBoundary
+from .cache import valid_detection_evidence
 from .correction_points import correction_prompt
 from .floor_attachments import FloorAttachments
 from .shooter_visibility import ShooterVisibility
@@ -410,23 +411,9 @@ def track(
         nonlocal frame_hands
         key = f"people-hands-v1:{detector_key}:{index}"
         cached = cache.get(key) if cache else None
-        if cached is not None:
-            boxes = cached.get("boxes")
-            if (
-                isinstance(boxes, np.ndarray)
-                and np.issubdtype(boxes.dtype, np.floating)
-                and boxes.ndim == 2
-                and boxes.shape[1] == 4
-                and len(boxes) <= 20
-                and np.isfinite(boxes).all()
-                and np.all((boxes >= 0) & (boxes <= 1))
-                and np.all(boxes[:, 0] < boxes[:, 2])
-                and np.all(boxes[:, 1] < boxes[:, 3])
-                and isinstance(cached.get("hands"), np.ndarray)
-                and valid_hands(cached["hands"])
-            ):
-                frame_hands = cached["hands"].tolist()
-                return boxes.tolist()
+        if valid_detection_evidence(cached):
+            frame_hands = cached["hands"].tolist()
+            return cached["boxes"].tolist()
         detections = detector.predict(
             cv2.imread(str(frames[index])),
             classes=[0],

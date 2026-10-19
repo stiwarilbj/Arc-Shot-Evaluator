@@ -82,3 +82,23 @@ def test_unverified_native_gpu_keeps_original_encoder_path():
     for device in ("mps", "cuda"):
         cache_backbone(predictor, None, device=device)
         assert predictor._get_image_feature is original
+
+
+def test_detection_evidence_matches_browser_fixtures():
+    import json
+    from pathlib import Path
+    from backend.jumper.cache import valid_detection_evidence
+
+    fixtures = json.loads((Path(__file__).parent / "fixtures/jumper/detection-evidence.json").read_text())
+    for fixture in fixtures:
+        record = dict(boxes=np.asarray(fixture["boxes"], dtype=float).reshape(-1, 4),
+                      hands=np.asarray(fixture["hands"], dtype=float).reshape(-1, 10))
+        snapshot = deepcopy(record)
+        assert valid_detection_evidence(record) == fixture["valid"], fixture["name"]
+        for key in record:
+            np.testing.assert_array_equal(record[key], snapshot[key])
+    for value in (None, [], {}, dict(boxes=np.empty((0, 4)), hands=np.array(1.)),
+                  dict(boxes=np.empty((0, 4)), hands=np.empty((0, 9))),
+                  dict(boxes=np.array([[0., 0., 1., float("nan")]]), hands=np.empty((0, 10))),
+                  dict(boxes=np.array([[0., 0., 1., 1.]]), hands=np.full((1, 10), float("inf")))):
+        assert not valid_detection_evidence(value)

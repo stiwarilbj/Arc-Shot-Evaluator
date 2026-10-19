@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import {
   admission,
   contentHash,
   validFeatures,
   validDetections,
+  validDetectionEvidence,
   FRAME_CACHE_TTL,
 } from "../frontend/src/features/jumper/frameCache.ts";
 const now = FRAME_CACHE_TTL + 100;
@@ -82,3 +84,14 @@ assert.equal(
   ).fits,
   true,
 );
+
+const evidenceCases = JSON.parse(readFileSync(new URL("../tests/fixtures/jumper/detection-evidence.json", import.meta.url)));
+for (const fixture of evidenceCases) {
+  const record = { boxes: fixture.boxes, hands: fixture.hands };
+  const snapshot = structuredClone(record);
+  assert.equal(validDetectionEvidence(record), fixture.valid, fixture.name);
+  assert.deepEqual(record, snapshot, "Validation must not mutate cached evidence");
+}
+for (const value of [null, [], {}, { boxes: [], hands: null }, { boxes: [], hands: [[]] }])
+  assert.equal(validDetectionEvidence(value), false);
+console.log("Detection cache: exact retained-box links, duplicate poses, partial pose coverage and invalid records passed");

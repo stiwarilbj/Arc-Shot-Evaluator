@@ -1,3 +1,4 @@
+import { validHands } from "./ballAttachments.ts";
 /** Private, disposable inference inputs. Never masks, identities, or tracking memory. */
 export const FRAME_CACHE_BYTES = 192 * 1024 * 1024;
 const MAX_ENTRIES = 1024;
@@ -222,4 +223,21 @@ export function validDetections(value: unknown): value is number[][] {
         b[1] < b[3],
     )
   );
+}
+
+/** Wrist rows must refer uniquely to retained boxes; missing pose evidence is valid. */
+export function validDetectionEvidence(
+  value: unknown,
+): value is { boxes: number[][]; hands: number[][] } {
+  if (!value || typeof value !== "object") return false;
+  const { boxes, hands } = value as { boxes?: unknown; hands?: unknown };
+  if (!validDetections(boxes) || !validHands(hands)) return false;
+  const retained = new Set(boxes.map(box => JSON.stringify(box)));
+  const seen = new Set<string>();
+  return hands.every(row => {
+    const box = JSON.stringify(row.slice(0, 4));
+    if (!retained.has(box) || seen.has(box)) return false;
+    seen.add(box);
+    return true;
+  });
 }

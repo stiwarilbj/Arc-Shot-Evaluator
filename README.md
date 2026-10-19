@@ -460,6 +460,11 @@ malformed mask dimensions, missing values, and non-finite predictions before
 resizing or compositing. Processing stops with a retry message rather than
 exporting damaged silhouettes; this check does not establish tracking accuracy.
 
+Both processors discard cached person detections when wrist evidence references
+a missing person box or repeats a pose for the same box, then rerun detection
+for that frame. Missing wrist evidence remains valid; these cache checks do not
+prove pose accuracy.
+
 Personal silhouette rendering uses label masks alone, without rereading original
 pixels or creating color reveals. Edited clips store a viewing version and a
 separate **clean quiz video**, used identically before and after answering. The

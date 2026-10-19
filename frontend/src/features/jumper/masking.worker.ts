@@ -1,6 +1,6 @@
 import { correctionPrompt } from "./correctionPoints";
 import { FrameBoundary } from "./frameBoundary";
-import { BallAttachments, validHands } from "./ballAttachments";
+import { BallAttachments } from "./ballAttachments";
 import { FloorAttachments } from "./floorAttachments";
 import { ShooterVisibility } from "./shooterVisibility";
 import { CONFIRM_SELECTION, selectionProbes, stableSelection } from "./selectionStability";
@@ -41,7 +41,7 @@ import { createPersonDetector, PERSON_DETECTOR_SHA } from "./personDetector";
 import {
   FrameCache,
   validFeatures,
-  validDetections,
+  validDetectionEvidence,
   type CachedFeatures,
 } from "./frameCache";
 import { requireShooterBox, PeopleDiscovery, ShooterSelectionError } from "./discovery";
@@ -345,9 +345,8 @@ async function process(
       canvas: HTMLCanvasElement | OffscreenCanvas,
     ) {
       const cached = await cache?.get<unknown>(`people-hands-v1:${frame}`);
-      const evidence = cached as {boxes?: unknown; hands?: unknown} | undefined;
-      if (validDetections(evidence?.boxes) && validHands(evidence?.hands)) {
-        frameHands = evidence.hands; return evidence.boxes;
+      if (validDetectionEvidence(cached)) {
+        frameHands = cached.hands; return cached.boxes;
       }
       const boxes = await detector!.detect(canvas);
       frameHands = detector!.hands;
