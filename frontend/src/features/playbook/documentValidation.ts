@@ -16,6 +16,7 @@ function point(value: unknown) {
 export function validatePlaybookDocument(value: unknown): void {
   check(object(value), "Playbook must be an object.");
   check(value.version === undefined || value.version === 1, "Only version-1 plays are supported.");
+  check(value.revision === undefined || typeof value.revision === "string" && /^[0-9a-f]{32}(?![\s\S])/.test(value.revision), "Invalid saved revision.");
   const name = value.name === undefined ? "Untitled play" : value.name;
   check(typeof name === "string" && name.trim().length > 0 && Array.from(name.trim()).length <= 80, "Play name must be 1–80 characters.");
   check(value.defenders_visible === undefined || typeof value.defenders_visible === "boolean", "defenders_visible must be boolean.");

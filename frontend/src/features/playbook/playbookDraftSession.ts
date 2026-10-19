@@ -1,11 +1,19 @@
 import { newCreationId } from "./creationAttempt.ts";
 import type { CourtPoint, PlaybookDocument, PlaybookDraft } from "./types.ts";
 
-type SavedIdentity = Pick<PlaybookDocument, "id" | "created_at" | "updated_at">;
+type SavedIdentity = Pick<PlaybookDocument, "id" | "created_at" | "updated_at" | "revision">;
 type PendingSave = { document: number; revision: number; draft: PlaybookDraft; creationId?: string };
 
+function withSavedRevision(draft: PlaybookDraft, revision: string | undefined): PlaybookDraft {
+  if (draft.revision === revision) return draft;
+  const next = { ...draft };
+  if (revision === undefined) delete next.revision;
+  else next.revision = revision;
+  return next;
+}
+
 function withIdentity(draft: PlaybookDraft, saved: SavedIdentity): PlaybookDraft {
-  return { ...draft, id: saved.id, created_at: saved.created_at, updated_at: saved.updated_at };
+  return withSavedRevision({ ...draft, id: saved.id, created_at: saved.created_at, updated_at: saved.updated_at }, saved.revision);
 }
 
 /** Only persisted content matters; IDs, timestamps, and presentation state do not. */
@@ -41,7 +49,7 @@ export function createPlaybookDraftSession(initial: PlaybookDraft, contentKey = 
     edit(next: PlaybookDraft) {
       revision++;
       // Undo snapshots and in-progress drags may still carry the pre-save ID.
-      current = identity ? withIdentity(next, identity) : next;
+      current = identity ? withIdentity(next, identity) : withSavedRevision(next, current.revision);
       dirty = baseline === null || contentKey(current) !== baseline;
       return current;
     },
@@ -69,7 +77,7 @@ export function createPlaybookDraftSession(initial: PlaybookDraft, contentKey = 
       if (document !== request.document) return null;
       const unchanged = revision === request.revision;
       retryCreation = null;
-      identity = { id: saved.id, created_at: saved.created_at, updated_at: saved.updated_at };
+      identity = { id: saved.id, created_at: saved.created_at, updated_at: saved.updated_at, revision: saved.revision };
       current = unchanged ? structuredClone(saved) : withIdentity(current, identity);
       baseline = contentKey(saved);
       dirty = contentKey(current) !== baseline;

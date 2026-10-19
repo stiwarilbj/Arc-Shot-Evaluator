@@ -43,6 +43,29 @@ same persistence entry points.
 Run `npm run test:playbook-document-validation` in `frontend` and
 `.venv/bin/python -m pytest tests/test_playbooks.py` from the repository root.
 
+## Saved revisions
+
+Creates and successful updates assign an opaque 32-character lowercase hexadecimal
+`revision`, independently of timestamps. The editor carries the last saved token
+through undo/redo and edits made during pending saves. It is persistence metadata,
+excluded from dirty-content comparisons, creation receipts' request signatures,
+and simulation behavior. Copies receive a fresh identity and revision.
+
+Updates compare the loaded revision with the stored revision under the existing
+write lock. Hosted storage checks within its Web Locks transaction. Local API
+clients must send `If-Match: "<revision>"` on PUT; a missing precondition returns
+428, malformed preconditions return 400, and mismatches return 409 without writing
+the document or its receipt. Conflicts use the existing save error, preserving
+the draft, unsaved state, and undo history. Save a copy or reopen the current
+saved drawing to continue; never automatically substitute a newer token and retry.
+
+Legacy version-1 documents without a revision load without rewriting storage.
+Their first update sends `If-Match: "legacy"` locally, or compares an absent token
+in hosted storage. That accepted update assigns a revision, so a second stale
+legacy client is rejected. Supplied revisions must have the same valid format on
+both targets. Existing idempotent create retries still return their original save
+result, including its original revision when available.
+
 
 ## Save precision
 

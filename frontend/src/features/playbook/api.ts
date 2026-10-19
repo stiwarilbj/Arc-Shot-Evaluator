@@ -12,6 +12,7 @@ import { createSharedLibraryRead } from "./sharedLibraryRead.ts";
 import { createParsedLibraryCache } from "./parsedLibraryCache.ts";
 
 const LOCAL_STORAGE_KEY = "arc-playbooks-v1";
+const SAVE_CONFLICT = "This play was changed by another tab or client. Your draft is still in memory. Save a copy or reopen the latest saved play before updating it.";
 // All tabs on this origin must finish the entire transaction before another
 // writer reads the library. Never substitute an unsafe localStorage spin lock.
 function withLibraryWrite<T>(write: () => T): Promise<T> {
@@ -77,7 +78,7 @@ async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIde
     return await withPersistenceDeadline(async (signal) => {
       const response = await fetch(identity.operation === "create" ? "/api/playbooks" : `/api/playbooks/${encodeURIComponent(id)}`, {
         method: identity.operation === "create" ? "POST" : "PUT", signal,
-        headers: { "Content-Type": "application/json", ...(identity.operation === "create" ? { "X-ARC-Create-ID": id } : {}) },
+        headers: { "Content-Type": "application/json", ...(identity.operation === "create" ? { "X-ARC-Create-ID": id } : { "If-Match": `"${playbook.revision ?? "legacy"}"` }) },
         body: JSON.stringify(playbook),
       });
       const saved = await parseSave(response, identity);
@@ -145,6 +146,7 @@ function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identity: Pla
   const now = new Date().toISOString();
   const saved: PlaybookDocument = {
     version: 1,
+    revision: newCreationId().slice(5),
     id,
     name: playbook.name.trim() || "Untitled play",
     created_at: playbook.created_at ?? now,
@@ -197,7 +199,9 @@ export async function updatePlaybook(playbook: PlaybookDraft) {
   const identity: PlaybookSaveIdentity = { operation: "update", id: playbook.id };
   return libraryReads.mutate(() => queuePlayMutation(playbook.id, async () => {
     if (IS_GITHUB_PAGES) return withLibraryWrite(() => {
-      if (!readLocalPlaybooks().some((item) => item.id === playbook.id)) throw new Error("Saved play not found");
+      const current = readLocalPlaybooks().find((item) => item.id === playbook.id);
+      if (!current) throw new Error("Saved play not found");
+      if (current.revision !== playbook.revision) throw new PersistenceResponseError(SAVE_CONFLICT, 409);
       return persistLocalPlaybook(playbook, playbook.id, identity);
     });
     const saved = await saveRemotePlay(playbook, identity);

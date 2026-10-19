@@ -93,6 +93,8 @@ export interface PlaybookArrow {
 
 export interface PlaybookDocument {
   version: 1;
+  /** Opaque save precondition; absent only on legacy version-1 documents. */
+  revision?: string;
   id: string;
   name: string;
   created_at: string;

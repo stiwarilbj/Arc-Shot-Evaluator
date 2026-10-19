@@ -147,3 +147,29 @@ for (const sameId of [false, true]) {
 }
 
 console.log('Playbook draft save regressions passed: save races, locking, saved-content baselines, undo/redo, display exclusions, duplicates, and failures.');
+
+{
+  const loaded = { ...saved(draft()), revision: 'a'.repeat(32) };
+  const session = createPlaybookDraftSession(loaded);
+  session.edit({ ...loaded, name: 'My conflicting drawing' });
+  const request = session.beginSave();
+  assert.equal(request.draft.revision, loaded.revision);
+  session.failSave(request);
+  assert.equal(session.current.name, 'My conflicting drawing');
+  assert.equal(session.current.revision, loaded.revision, 'a conflict cannot silently adopt another client revision');
+  assert.equal(session.dirty, true);
+  const retry = session.beginSave();
+  const confirmed = { ...retry.draft, revision: 'b'.repeat(32) };
+  session.edit({ ...session.current, name: 'Newer edit during save' });
+  session.completeSave(retry, confirmed);
+  assert.equal(session.current.revision, confirmed.revision, 'pending edits retain the successful saved revision');
+  assert.equal(session.current.name, 'Newer edit during save');
+  session.edit(loaded);
+  assert.equal(session.current.revision, confirmed.revision, 'undo cannot restore an obsolete save token');
+  session.edit({ ...loaded, revision: 'c'.repeat(32) });
+  assert.equal(session.current.revision, confirmed.revision, 'redo metadata cannot replace the last saved token');
+  session.load(loaded);
+  session.edit({ ...loaded, revision: undefined, name: 'Edit after loading' });
+  assert.equal(session.current.revision, loaded.revision, 'loading another play resets the revision owner');
+  assert.equal(playbookContentKey(loaded), playbookContentKey({ ...loaded, revision: confirmed.revision }), 'tokens do not mark content dirty');
+}

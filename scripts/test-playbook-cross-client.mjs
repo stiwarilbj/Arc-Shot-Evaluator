@@ -39,3 +39,40 @@ window.localStorage.setItem = originalSet;
 await clients[1].createPlaybook(draft('Retry'));
 assert.ok((JSON.parse(raw).plays ?? JSON.parse(raw)).some(p => p.name === 'Retry'), 'failed writes release the lock');
 console.log('Cross-client library transactions passed: held locks, independent clients, creates/updates/deletes, deletion preservation, unavailable locks and failed-write recovery');
+
+// Separate clients must compare the loaded revision after acquiring the lock,
+// rather than silently adopting whichever revision another writer just saved.
+const initial = await clients[0].createPlaybook(draft('Revision fixture'));
+const snapshots = [structuredClone(initial), structuredClone(initial)];
+const beforeCaller = structuredClone(snapshots);
+let unlock, ready;
+const locked = new Promise(resolve => ready = resolve);
+const blocker = navigator.locks.request('arc-playbooks-v1:write', { mode: 'exclusive' }, async () => { ready(); await new Promise(resolve => unlock = resolve); });
+await locked;
+const updates = snapshots.map((play, index) => clients[index].updatePlaybook({ ...play, name: `Revision client ${index}`, players: [{ id: 1, x: 20 + index * 40, y: 50 }] }));
+const outcomes = Promise.allSettled(updates);
+await Promise.resolve(); unlock(); await blocker;
+const settled = await outcomes;
+assert.equal(settled.filter(result => result.status === 'fulfilled').length, 1);
+const winner = settled.find(result => result.status === 'fulfilled').value;
+const rejected = settled.find(result => result.status === 'rejected');
+assert.match(rejected.reason.message, /changed by another tab or client/);
+assert.notEqual(winner.revision, initial.revision);
+assert.deepEqual(snapshots, beforeCaller, 'conflicts never modify callers');
+const acceptedRaw = raw, acceptedWrites = writes;
+await assert.rejects(clients[1].updatePlaybook({ ...initial, name: 'Stale retry' }), /draft is still in memory/);
+assert.equal(raw, acceptedRaw); assert.equal(writes, acceptedWrites, 'conflicts do not touch storage or receipts');
+const fresh = await clients[1].updatePlaybook({ ...winner, name: 'Latest loaded revision' });
+assert.notEqual(fresh.revision, winner.revision);
+const copy = await clients[1].createPlaybook({ ...initial, name: 'Preserved conflict copy' });
+assert.notEqual(copy.id, initial.id); assert.notEqual(copy.revision, initial.revision);
+assert.equal(JSON.parse(raw).plays.find(play => play.id === initial.id).name, fresh.name);
+
+const legacy = { ...draft('Legacy revision fixture'), id: 'play-legacy-revision' };
+raw = JSON.stringify([legacy]);
+const upgraded = await clients[0].updatePlaybook(legacy);
+assert.match(upgraded.revision, /^[0-9a-f]{32}$/);
+const legacyBefore = raw;
+await assert.rejects(clients[1].updatePlaybook(legacy), /changed by another/);
+assert.equal(raw, legacyBefore);
+console.log('Hosted save revisions passed: two clients, queued lock comparison, stale retry, fresh reload, copy recovery and legacy upgrade');

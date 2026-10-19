@@ -26,6 +26,7 @@ NAME_WHITESPACE = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u
 MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
+SAVE_CONFLICT = "This play was changed by another tab or client. Your draft is still in memory. Save a copy or reopen the latest saved play before updating it."
 # Version-1 save precision; Python round uses binary float, nearest/ties-to-even.
 COORDINATE_DECIMAL_PLACES = 4
 TIMING_DECIMAL_PLACES = 2
@@ -108,6 +109,8 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         raise HTTPException(400, "Playbook must be an object")
     if "version" in payload and (not _integer(payload["version"]) or payload["version"] != 1):
         raise HTTPException(400, "Only version-1 plays are supported")
+    if "revision" in payload and (not isinstance(payload["revision"], str) or not re.fullmatch(r"[0-9a-f]{32}", payload["revision"])):
+        raise HTTPException(400, "Invalid saved revision")
     name = payload.get("name", "Untitled play")
     if not isinstance(name, str) or not name.strip(NAME_WHITESPACE) or len(name.strip(NAME_WHITESPACE)) > MAX_NAME_LENGTH:
         raise HTTPException(400, f"Play name must be 1-{MAX_NAME_LENGTH} characters")
@@ -298,7 +301,7 @@ def list_playbooks(response: Response) -> list[dict]:
 
 
 def _creation_request(value: dict) -> str:
-    return json.dumps({key: item for key, item in value.items() if key not in {"id", "created_at", "updated_at"}}, sort_keys=True, separators=(",", ":"))
+    return json.dumps({key: item for key, item in value.items() if key not in {"id", "created_at", "updated_at", "revision"}}, sort_keys=True, separators=(",", ":"))
 
 
 def _replay_creation(path: Path, request: str) -> dict:
@@ -324,7 +327,7 @@ def create_playbook(payload: dict, create_id: Annotated[str | None, Header(alias
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
-    value = _document(payload, playbook_id=playbook_id)
+    value = {**_document(payload, playbook_id=playbook_id), "revision": uuid.uuid4().hex}
     path = _path(playbook_id)
     with _playbook_lock(path):
         request = _creation_request(value)
@@ -350,13 +353,21 @@ def get_playbook(playbook_id: str) -> dict:
 
 
 @router.put("/{playbook_id}")
-def update_playbook(playbook_id: str, payload: dict) -> dict:
+def update_playbook(playbook_id: str, payload: dict, if_match: Annotated[str | None, Header(alias="If-Match")] = None) -> dict:
     path = _path(playbook_id)
     with _playbook_lock(path):
         if not path.is_file():
             raise HTTPException(404, "Playbook not found")
         current = _read(path, include_creation=True)
-        value = _document(payload, playbook_id=playbook_id, created_at=str(current.get("created_at", _now())))
+        # Compare inside the same transaction as replacement. Legacy documents
+        # get one explicit precondition until their first revisioned save.
+        if if_match is None:
+            raise HTTPException(428, "A saved revision is required before updating this play. Reopen it and retry; your draft is still in memory.")
+        if not re.fullmatch(r'"(?:[0-9a-f]{32}|legacy)"', if_match):
+            raise HTTPException(400, "Invalid saved revision precondition")
+        if if_match != f'"{current.get("revision", "legacy")}"':
+            raise HTTPException(409, SAVE_CONFLICT)
+        value = {**_document(payload, playbook_id=playbook_id, created_at=str(current.get("created_at", _now()))), "revision": uuid.uuid4().hex}
         stored = {**value, "_creation": current["_creation"]} if "_creation" in current else value
         _write(path, stored)
         return value

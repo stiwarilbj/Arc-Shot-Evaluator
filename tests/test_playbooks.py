@@ -6,6 +6,10 @@ import backend.api.playbooks as playbooks_module
 from backend.api.app import app
 
 
+def _match(play):
+    return f'"{play.get("revision", "legacy")}"'
+
+
 def _payload(name: str = "Pick and roll") -> dict:
     return {
         "name": name,
@@ -46,7 +50,7 @@ def test_playbook_crud_is_local_and_versioned(tmp_path, monkeypatch) -> None:
     assert listed.status_code == 200
     assert listed.json()[0]["id"] == value["id"]
 
-    updated = client.put(f"/api/playbooks/{value['id']}", json=_payload("Updated play"))
+    updated = client.put(f"/api/playbooks/{value['id']}", json=_payload("Updated play"), headers={"If-Match": _match(value)})
     assert updated.status_code == 200
     assert updated.json()["name"] == "Updated play"
     assert updated.json()["created_at"] == value["created_at"]
@@ -332,7 +336,7 @@ def test_shared_document_validation_contract(tmp_path, monkeypatch) -> None:
         assert response.status_code == (200 if example["valid"] else 400), example["name"]
         if example["valid"]:
             saved = response.json()
-            assert client.put(f"/api/playbooks/{saved['id']}", json=example["document"]).status_code == 200
+            assert client.put(f"/api/playbooks/{saved['id']}", json=example["document"], headers={"If-Match": _match(saved)}).status_code == 200
             assert client.get(f"/api/playbooks/{saved['id']}").status_code == 200
 
 
@@ -386,7 +390,7 @@ def test_shared_persistence_precision(tmp_path, monkeypatch) -> None:
     assert saved["arrows"][0]["timing"] == 2.67
     for _ in range(5):
         reopened = client.get(f"/api/playbooks/{saved['id']}").json()
-        updated = client.put(f"/api/playbooks/{saved['id']}", json=reopened).json()
+        updated = client.put(f"/api/playbooks/{saved['id']}", json=reopened, headers={"If-Match": _match(reopened)}).json()
         for field in ("players", "defenders", "ball", "arrows"):
             assert updated[field] == saved[field]
 
@@ -414,7 +418,7 @@ def test_playbook_lock_coordinates_processes_and_independent_ids(tmp_path, monke
     try:
         assert entered.wait(10)
         with ThreadPoolExecutor(max_workers=2) as pool:
-            waiting = pool.submit(playbooks_module.update_playbook, saved["id"], _payload("After lock"))
+            waiting = pool.submit(playbooks_module.update_playbook, saved["id"], _payload("After lock"), _match(saved))
             try:
                 with pytest.raises(TimeoutError):
                     waiting.result(timeout=0.15)
@@ -452,7 +456,7 @@ def test_concurrent_update_and_delete_cannot_recreate_play(tmp_path, monkeypatch
 
     monkeypatch.setattr(playbooks_module, "_write", delayed_write)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        updating = pool.submit(playbooks_module.update_playbook, saved["id"], _payload("Pending update"))
+        updating = pool.submit(playbooks_module.update_playbook, saved["id"], _payload("Pending update"), _match(saved))
         try:
             assert entered.wait(3)
             deleting = pool.submit(playbooks_module.delete_playbook, saved["id"])
@@ -469,7 +473,7 @@ def test_concurrent_update_and_delete_cannot_recreate_play(tmp_path, monkeypatch
     # Failed validation also releases the lock and keeps existing content intact.
     other = playbooks_module.create_playbook(_payload("Retained"))
     with pytest.raises(HTTPException):
-        playbooks_module.update_playbook(other["id"], {"players": [False]})
+        playbooks_module.update_playbook(other["id"], {"players": [False]}, _match(other))
     assert playbooks_module.get_playbook(other["id"])["name"] == "Retained"
     assert playbooks_module.delete_playbook(other["id"])["deleted"]
 
@@ -506,7 +510,7 @@ def test_idempotent_creation_replays_original_through_edits_deletion_and_restart
     assert all(response.json() == original for response in responses)
     assert "_creation" not in original
     assert len(list(tmp_path.glob("*.json"))) == 1
-    assert client.put(f"/api/playbooks/{identity}", json=_payload("Later rename")).status_code == 200
+    assert client.put(f"/api/playbooks/{identity}", json=_payload("Later rename"), headers={"If-Match": _match(original)}).status_code == 200
     fresh_client = TestClient(app)  # Receipts come from disk, not a client/session cache.
     assert fresh_client.post("/api/playbooks", json=_payload(), headers=headers).json() == original
     mismatch = fresh_client.post("/api/playbooks", json=_payload("Different request"), headers=headers)
@@ -569,3 +573,65 @@ def test_library_order_is_stable_for_tied_timestamps(tmp_path, monkeypatch) -> N
         assert response.status_code == 200
         assert [play["id"] for play in response.json()] == fixture["expected"]
     assert {path.name: path.read_bytes() for path in tmp_path.glob("*.json")} == before
+
+
+def test_save_revision_rejects_stale_clients_inside_transaction(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    clients = [TestClient(app), TestClient(app)]
+    saved = clients[0].post("/api/playbooks", json=_payload()).json()
+    snapshots = [client.get(f"/api/playbooks/{saved['id']}").json() for client in clients]
+    assert snapshots[0] == snapshots[1] == saved
+    gate = Barrier(2)
+
+    def update(index):
+        draft = snapshots[index]
+        draft["players"][0]["x"] = 20 + index * 40
+        draft["name"] = f"Client {index}"
+        gate.wait(timeout=5)
+        return clients[index].put(f"/api/playbooks/{saved['id']}", json=draft, headers={"If-Match": _match(draft)})
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(update, range(2)))
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    winner = next(response.json() for response in responses if response.status_code == 200)
+    assert winner["revision"] != saved["revision"]
+    assert clients[0].get(f"/api/playbooks/{saved['id']}").json() == winner
+    path = tmp_path / f"{saved['id']}.json"
+    before = path.read_bytes()
+    for client in clients:
+        rejected = client.put(f"/api/playbooks/{saved['id']}", json=_payload("Stale retry"), headers={"If-Match": _match(saved)})
+        assert rejected.status_code == 409
+        assert "draft is still in memory" in rejected.json()["detail"]
+    assert path.read_bytes() == before
+    latest = clients[1].get(f"/api/playbooks/{saved['id']}").json()
+    latest["name"] = "Freshly loaded edit"
+    accepted = clients[1].put(f"/api/playbooks/{saved['id']}", json=latest, headers={"If-Match": _match(latest)})
+    assert accepted.status_code == 200
+    assert accepted.json()["revision"] not in [saved["revision"], winner["revision"]]
+    assert accepted.json()["created_at"] == saved["created_at"]
+
+
+def test_revision_preconditions_and_legacy_upgrade_preserve_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    legacy = {**_payload("Legacy"), "version": 1, "id": "play-revision-legacy"}
+    path = tmp_path / f"{legacy['id']}.json"
+    path.write_text(json.dumps(legacy))
+    raw = path.read_bytes()
+    assert client.get(f"/api/playbooks/{legacy['id']}").json() == legacy
+    for headers, status in [({}, 428), ({"If-Match": "*"}, 400), ({"If-Match": '"bad"'}, 400), ({"If-Match": '"' + "a" * 32 + '"'}, 409)]:
+        assert client.put(f"/api/playbooks/{legacy['id']}", json=_payload(), headers=headers).status_code == status
+        assert path.read_bytes() == raw
+    first = client.put(f"/api/playbooks/{legacy['id']}", json=legacy, headers={"If-Match": '"legacy"'})
+    assert first.status_code == 200
+    assert len(first.json()["revision"]) == 32
+    assert client.put(f"/api/playbooks/{legacy['id']}", json=legacy, headers={"If-Match": '"legacy"'}).status_code == 409
+    # Every accepted save gets a token even at identical timestamp precision.
+    monkeypatch.setattr(playbooks_module, "_now", lambda: "2026-10-19T00:00:00+0000")
+    second = client.put(f"/api/playbooks/{legacy['id']}", json=first.json(), headers={"If-Match": _match(first.json())}).json()
+    third = client.put(f"/api/playbooks/{legacy['id']}", json=second, headers={"If-Match": _match(second)}).json()
+    assert second["updated_at"] == third["updated_at"]
+    assert second["revision"] != third["revision"]

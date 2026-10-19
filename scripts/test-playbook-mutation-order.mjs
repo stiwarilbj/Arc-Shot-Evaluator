@@ -37,7 +37,7 @@ for(const target of ['local','github-pages']){
   const code=(Array.isArray(output)?output[0]:output).output[0].code;
   const api=await import(`data:text/javascript;base64,${Buffer.from(code+`\n// mutation order ${target}`).toString('base64')}`);
   const one=document('play-queue-one'),two=document('play-queue-two');let library=[one,two], events=[], mode='normal';
-  let gate=deferred(), bodyGate=deferred(), reads=0;
+  let gate=deferred(), bodyGate=deferred(), reads=0, revision=0;
   const window=new EventTarget();globalThis.window=window;
   window.localStorage={getItem:()=>JSON.stringify(library),setItem:(_key,value)=>{const parsed=JSON.parse(value),next=parsed.plays??parsed;const deleted=library.find(p=>!next.some(n=>n.id===p.id));events.push(deleted?`delete:${deleted.id}`:`save:${next[0].name}`);library=next;}};
   globalThis.fetch=async(url,options)=>{
@@ -47,7 +47,8 @@ for(const target of ['local','github-pages']){
     events.push(`${method}:${payload?.name??id}`);
     if(payload?.name==='Slow save'){
       await gate.promise;
-      const value={...payload,updated_at:'2026-10-15T12:01:00Z'};
+      assert.equal(options.headers['If-Match'], '"legacy"');
+      const value={...payload,revision:(++revision).toString(16).padStart(32,'0'),updated_at:'2026-10-15T12:01:00Z'};
       library=library.map(p=>p.id===id?value:p);
       // The response body is part of the mutation, not just the HTTP headers.
       return {ok:true,json:async()=>{await bodyGate.promise;return value;}};
@@ -56,11 +57,14 @@ for(const target of ['local','github-pages']){
     if(method==='DELETE'&&mode==='delete-fails')return Response.json({detail:'Delete failed'},{status:503});
     if(!library.some(p=>p.id===id))return Response.json({detail:'Saved play not found'},{status:404});
     if(method==='DELETE'){library=library.filter(p=>p.id!==id);return Response.json({deleted:true,id});}
-    library=library.map(p=>p.id===id?payload:p);return Response.json(payload);
+    const current=library.find(p=>p.id===id);
+    if(options.headers['If-Match']!==`"${current.revision??'legacy'}"`)return Response.json({detail:'This play was changed by another tab or client'},{status:409});
+    const result={...payload,revision:(++revision).toString(16).padStart(32,'0')};
+    library=library.map(p=>p.id===id?result:p);return Response.json(result);
   };
   if(target==='local'){
     const snapshot={...one,name:'Slow save'};
-    const a=api.updatePlaybook(snapshot),b=api.updatePlaybook({...one,name:'New name'}),c=api.deletePlaybook(one.id),d=api.updatePlaybook({...two,name:'Other play'});
+    const a=api.updatePlaybook(snapshot),b=assert.rejects(api.updatePlaybook({...one,name:'New name'}),/changed by another/),c=api.deletePlaybook(one.id),d=api.updatePlaybook({...two,name:'Other play'});
     snapshot.name='Mutated caller';snapshot.players[0].x=99;
     const pendingRead=api.fetchPlaybooks();await flush();
     assert.deepEqual(events,['PUT:Slow save','PUT:Other play'],'different identities run concurrently');assert.equal(reads,0);
@@ -74,23 +78,23 @@ for(const target of ['local','github-pages']){
     assert.ok(!library.some(p=>p.id===one.id),'a queued update cannot recreate a deleted play');
     library.push(document(one.id));
     const failed=api.updatePlaybook({...document(one.id),name:'Failing save'}),next=api.updatePlaybook({...document(one.id),name:'Recovered name'});
-    await assert.rejects(failed,/Save failed/);assert.equal((await next).name,'Recovered name');
-    mode='delete-fails';const deletion=api.deletePlaybook(one.id),rename=api.updatePlaybook({...document(one.id),name:'Retained after failure'});
+    await assert.rejects(failed,/Save failed/);const recovered=await next;assert.equal(recovered.name,'Recovered name');
+    mode='delete-fails';const deletion=api.deletePlaybook(one.id),rename=api.updatePlaybook({...recovered,name:'Retained after failure'});
     await assert.rejects(deletion,/Delete failed/);assert.equal((await rename).name,'Retained after failure');mode='normal';
     const remove=api.deletePlaybook(one.id),late=api.updatePlaybook({...document(one.id),name:'Queued after deletion'});
     const missing=assert.rejects(late,/not found/);await Promise.all([remove,missing]);assert.ok(!library.some(p=>p.id===one.id));
   }else{
-    const a=api.updatePlaybook({...one,name:'First save'}),b=api.updatePlaybook({...one,name:'New name'}),c=api.deletePlaybook(one.id),d=api.updatePlaybook({...two,name:'Other play'});
+    const a=api.updatePlaybook({...one,name:'First save'}),b=assert.rejects(api.updatePlaybook({...one,name:'New name'}),/changed by another/),c=api.deletePlaybook(one.id),d=api.updatePlaybook({...two,name:'Other play'});
     const pendingRead=api.fetchPlaybooks();await Promise.all([a,b,c,d]);
-    assert.deepEqual(events.filter(e=>e!=='save:Other play'),['save:First save','save:New name',`delete:${one.id}`]);
+    assert.deepEqual(events.filter(e=>e!=='save:Other play'),['save:First save',`delete:${one.id}`]);
     assert.equal((await pendingRead).some(p=>p.id===one.id),false);assert.equal(library.find(p=>p.id===two.id).name,'Other play');
     await assert.rejects(api.updatePlaybook({...one,name:'After deletion'}),/not found/);assert.ok(!library.some(p=>p.id===one.id));
     library.push(document(one.id));
     const originalSet=window.localStorage.setItem;let fail=true;
     window.localStorage.setItem=(key,value)=>{if(fail){fail=false;throw new Error('quota');}originalSet(key,value);};
     const deletion=api.deletePlaybook(one.id),rename=api.updatePlaybook({...document(one.id),name:'Retained after failure'});
-    await assert.rejects(deletion,/could not be saved/);assert.equal((await rename).name,'Retained after failure');
-    const first=api.updatePlaybook({...document(one.id),name:'Before deletion'}),remove=api.deletePlaybook(one.id),late=api.updatePlaybook({...document(one.id),name:'Must not recreate'});
+    await assert.rejects(deletion,/could not be saved/);const retained=await rename;assert.equal(retained.name,'Retained after failure');
+    const first=api.updatePlaybook({...retained,name:'Before deletion'}),remove=api.deletePlaybook(one.id),late=api.updatePlaybook({...document(one.id),name:'Must not recreate'});
     const missing=assert.rejects(late,/not found/);await Promise.all([first,remove,missing]);assert.ok(!library.some(p=>p.id===one.id));
   }
   console.log(`${target}: save/rename/delete order, other-play concurrency, snapshots, read barriers, failures and no resurrection passed`);
