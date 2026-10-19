@@ -502,6 +502,12 @@ partial-download files. Concurrent app instances recheck installed weights after
 waiting, avoiding duplicate downloads. Valid installed weights and ordinary
 tracking do not hold this installation lock; failed downloads clean up their own
 temporary file.
+Native masking, extraction, and edit encoding continuously drain FFmpeg error
+output, retaining only the latest 64 KiB in memory. Failed encodes include a short
+diagnostic tail; cancellation and timeouts stop the child and close its streams.
+The independent video-validation pass separately captures stream metadata for
+its audio, timeline, and orientation checks. Hosted browser encoding is unchanged.
+
 Local masking status combines small progress updates within a stage, publishing
 after a one-percentage-point increase or 250 ms on the next callback. Stage
 changes, completion, and errors publish immediately; video processing is unchanged.

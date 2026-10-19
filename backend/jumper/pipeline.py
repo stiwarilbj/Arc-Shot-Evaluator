@@ -5,13 +5,13 @@ import hashlib
 import math
 import shutil
 import subprocess
-import tempfile
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .subprocess_output import diagnostic_process
 from .ball_attachments import BallAttachments, valid_hands
 from .frame_boundary import FrameBoundary
 from .cache import valid_detection_evidence
@@ -224,20 +224,11 @@ def composite(
 
 
 def run_ffmpeg(arguments: list[str]) -> None:
-    result = subprocess.run(
-        [
-            imageio_ffmpeg.get_ffmpeg_exe(),
-            "-nostdin",
-            "-loglevel",
-            "error",
-            "-y",
-            *arguments,
-        ],
-        capture_output=True,
-        timeout=120,
-    )
-    if result.returncode:
-        raise RuntimeError(result.stderr.decode(errors="replace")[-2000:])
+    with diagnostic_process(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-nostdin", "-loglevel", "error", "-y", *arguments]
+    ) as (process, errors):
+        if process.wait(timeout=120):
+            raise RuntimeError(errors.finish()[-2000:])
 
 
 class MappedFrames(list):
@@ -803,53 +794,48 @@ def track(
 
 @contextmanager
 def encoder(path: Path, width: int, height: int, high_quality=False):
-    with tempfile.TemporaryFile() as errors:
-        process = subprocess.Popen(
-            [
-                imageio_ffmpeg.get_ffmpeg_exe(),
-                "-nostdin",
-                "-loglevel",
-                "error",
-                "-y",
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                "rgb24",
-                "-s",
-                f"{width}x{height}",
-                "-r",
-                str(FPS),
-                "-i",
-                "pipe:0",
-                "-an",
-                "-map_metadata",
-                "-1",
-                "-c:v",
-                "libx264",
-                "-crf",
-                "8" if high_quality else "18",
-                "-preset",
-                "fast",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+faststart",
-                str(path),
-            ],
-            stdin=subprocess.PIPE,
-            stderr=errors,
-        )
+    with diagnostic_process(
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(),
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            f"{width}x{height}",
+            "-r",
+            str(FPS),
+            "-i",
+            "pipe:0",
+            "-an",
+            "-map_metadata",
+            "-1",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "8" if high_quality else "18",
+            "-preset",
+            "fast",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(path),
+        ],
+        stdin=subprocess.PIPE,
+    ) as (process, errors):
         try:
             yield process.stdin
             process.stdin.close()
             if process.wait(timeout=120) != 0:
-                errors.seek(0)
-                raise RuntimeError(errors.read().decode(errors="replace")[-2000:])
-        finally:
-            if process.poll() is None:
-                process.kill()
-            process.wait()
-            process.stdin.close()
+                raise RuntimeError(errors.finish()[-2000:])
+        except BrokenPipeError as error:
+            process.wait(timeout=120)
+            raise RuntimeError(errors.finish()[-2000:] or "Local video encoding failed") from error
 
 
 def _render(

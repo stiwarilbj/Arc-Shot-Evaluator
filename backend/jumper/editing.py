@@ -8,6 +8,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from .subprocess_output import diagnostic_process
 from .compression_quality import detail_proof, SilhouetteCompressionError
 from .video_validation import validate_finished_video, silhouette_proof
 
@@ -287,7 +288,7 @@ def _render(base: Path, project: dict, directory: Path, cancel, progress, high_q
         count = length(project)
         for clean, kind in ((False, "highlight"), (True, "clean")):
             destination = directory / (kind + ".mp4")
-            process = subprocess.Popen(
+            with diagnostic_process(
                 [
                     imageio_ffmpeg.get_ffmpeg_exe(),
                     "-hide_banner",
@@ -320,53 +321,50 @@ def _render(base: Path, project: dict, directory: Path, cancel, progress, high_q
                     str(destination),
                 ],
                 stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            proofs = []
-            details = []
-            last = -1
-            image = None
-            try:
-                for index in range(count):
-                    if cancel.is_set():
-                        raise InterruptedError("Rendering cancelled")
-                    source = frame_state(project, index, clean)["source"]
-                    if source != last:
-                        if source != last + 1:
-                            capture.set(cv2.CAP_PROP_POS_FRAMES, source)
-                        ok, decoded = capture.read()
-                        if not ok:
-                            raise ValueError("Masked base has a missing frame")
-                        image = cv2.cvtColor(decoded, cv2.COLOR_BGR2RGB)
-                        last = source
-                    out = draw_frame(image, project, index, clean)
-                    if np.any(out.max(axis=2) != out.min(axis=2)):
-                        raise ValueError("Edited frame is not neutral")
-                    proofs.append(silhouette_proof(out))
-                    details.append(detail_proof(out))
-                    process.stdin.write(out.tobytes())
-                    progress((int(clean) * count + index + 1) / (2 * count + 2))
-                process.stdin.close()
-                if process.wait(timeout=60):
-                    raise ValueError("Local video encoding failed")
-                if destination.stat().st_size > 100 * 1024 * 1024:
-                    raise ValueError("Finished video exceeds 100 MB")
-                validate_finished_video(
-                    destination,
-                    width,
-                    height,
-                    count,
-                    proofs,
-                    neutral=True,
-                    profile="edited",
-                    details=details,
-                )
-            finally:
-                if process.poll() is None:
-                    process.kill()
-                    process.wait()
+            ) as (process, errors):
+                capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                proofs = []
+                details = []
+                last = -1
+                image = None
+                try:
+                    for index in range(count):
+                        if cancel.is_set():
+                            raise InterruptedError("Rendering cancelled")
+                        source = frame_state(project, index, clean)["source"]
+                        if source != last:
+                            if source != last + 1:
+                                capture.set(cv2.CAP_PROP_POS_FRAMES, source)
+                            ok, decoded = capture.read()
+                            if not ok:
+                                raise ValueError("Masked base has a missing frame")
+                            image = cv2.cvtColor(decoded, cv2.COLOR_BGR2RGB)
+                            last = source
+                        out = draw_frame(image, project, index, clean)
+                        if np.any(out.max(axis=2) != out.min(axis=2)):
+                            raise ValueError("Edited frame is not neutral")
+                        proofs.append(silhouette_proof(out))
+                        details.append(detail_proof(out))
+                        process.stdin.write(out.tobytes())
+                        progress((int(clean) * count + index + 1) / (2 * count + 2))
+                    process.stdin.close()
+                    if process.wait(timeout=60):
+                        raise ValueError("Local video encoding failed: " + errors.finish()[-2000:])
+                    if destination.stat().st_size > 100 * 1024 * 1024:
+                        raise ValueError("Finished video exceeds 100 MB")
+                    validate_finished_video(
+                        destination,
+                        width,
+                        height,
+                        count,
+                        proofs,
+                        neutral=True,
+                        profile="edited",
+                        details=details,
+                    )
+                except BrokenPipeError as error:
+                    process.wait(timeout=60)
+                    raise ValueError(errors.finish()[-2000:] or "Local video encoding failed") from error
         progress(1)
     finally:
         capture.release()
