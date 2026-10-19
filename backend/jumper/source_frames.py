@@ -6,6 +6,31 @@ import subprocess
 import sys
 from pathlib import Path
 
+MAX_SOURCE_EDGE = 8192
+MAX_SOURCE_PIXELS = 32 * 1024 * 1024
+DIMENSION_ERRORS = {
+    'invalid': 'The video contains invalid frame dimensions. Re-export the video and retry.',
+    'oversized': 'The video contains an oversized frame. Re-export at a lower resolution and retry.',
+    'changed': 'The video changes frame dimensions. Re-export at a fixed resolution and retry.',
+}
+
+
+class SourceFrameDimensionsError(ValueError):
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__(DIMENSION_ERRORS[reason])
+
+
+def check_frame_dimensions(width, height, expected=None):
+    """Check decoded geometry before creating scaled tracking/detail images."""
+    if type(width) is not int or type(height) is not int or min(width, height) < 1:
+        raise SourceFrameDimensionsError('invalid')
+    if max(width, height) > MAX_SOURCE_EDGE or width * height > MAX_SOURCE_PIXELS:
+        raise SourceFrameDimensionsError('oversized')
+    if expected is not None and (width, height) != expected:
+        raise SourceFrameDimensionsError('changed')
+    return width, height
+
 
 def micros(seconds):
     return math.floor(seconds * 1_000_000 + .5)
@@ -77,12 +102,16 @@ def _inspect_source(source: Path, end: float):
     # console metadata cannot identify the last frame of a VFR phone video.
     import av
     found = []
+    dimensions = None
     try:
         with av.open(str(source)) as container:
             stream = container.streams.video[0]
             stream_end = (float((stream.start_time or 0) + stream.duration) * float(stream.time_base)
                           if stream.duration is not None else None)
             for index, frame in enumerate(container.decode(stream)):
+                # Check every decoded frame, including skipped negative-PTS and
+                # lookahead frames. Container opening metadata is insufficient.
+                dimensions = check_frame_dimensions(frame.width, frame.height, dimensions)
                 if frame.pts is None or frame.time_base is None:
                     raise ValueError('Source-frame timing is unavailable')
                 timestamp = float(frame.pts * frame.time_base)
@@ -114,6 +143,13 @@ def inspect_source(source: Path, end: float):
         capture_output=True, timeout=120,
     )
     if result.returncode:
+        try:
+            error = json.loads(result.stdout)
+        except (ValueError, UnicodeError):
+            error = None
+        if (isinstance(error, dict) and error.get('error') == 'source_frame_dimensions'
+                and isinstance(error.get('reason'), str) and error['reason'] in DIMENSION_ERRORS):
+            raise SourceFrameDimensionsError(error['reason'])
         raise ValueError('Could not decode the source-frame timeline')
     return json.loads(result.stdout)
 
@@ -160,4 +196,8 @@ def extract_single(source, destination, time):
 
 
 if __name__ == '__main__':
-    print(json.dumps(_inspect_source(Path(sys.argv[1]), float(sys.argv[2]))))
+    try:
+        print(json.dumps(_inspect_source(Path(sys.argv[1]), float(sys.argv[2]))))
+    except SourceFrameDimensionsError as error:
+        print(json.dumps(dict(error='source_frame_dimensions', reason=error.reason)))
+        sys.exit(1)

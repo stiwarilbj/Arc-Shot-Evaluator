@@ -331,6 +331,10 @@ Personal videos stay on your device; they are never automatically published.
    After local tracking succeeds, including any CPU retry, temporary detail
    frames are removed before encoding. Regular frames and completed masks remain
    available for export retries until the job is released or expires.
+   Before creating local tracking or detail images, the decoder checks each
+   examined source frame: dimensions must stay fixed, neither side may exceed
+   8,192 pixels, and a frame may contain at most 33,554,432 pixels. Unsupported
+   footage asks you to re-export at a fixed or lower resolution and retry.
 5. **Edit video:** after masking, split, trim, delete, or reorder pieces in **Cut**.
    Select pieces from thumbnail strips showing their masked footage, duration,
    and an orange selected outline. Freeze pieces show the held frame. The strips
