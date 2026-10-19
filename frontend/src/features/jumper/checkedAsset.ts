@@ -45,8 +45,10 @@ export async function checkedAsset(
     await cache?.delete(url);
     throw Error("Model integrity check failed. Retry to download a fresh copy.");
   }
-  try { await cache?.put(url, new Response(bytes)); } catch {
-    /* Model works even when persistent cache is unavailable. */
+  if (!cached) {
+    try { await cache?.put(url, new Response(bytes)); } catch {
+      /* Model works even when persistent cache is unavailable. */
+    }
   }
   return bytes.buffer;
 }

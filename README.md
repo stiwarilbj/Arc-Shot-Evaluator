@@ -486,6 +486,8 @@ so cancelled startup cannot proceed to a masking request or local upload.
 Browser masking-model downloads enforce each pinned asset’s byte limit while
 reading network and cached bodies, regardless of response size headers. Oversized
 streams stop early; accepted bytes still require the pinned SHA-256 checksum.
+Verified model cache hits are reused without rewriting their bytes; fresh
+downloads are cached after verification, and corrupt entries are removed.
 
 Opposing Include/Exclude points on the same SAM input pixel are rejected before
 inference, with the frame and track identified. Repeated points with the same

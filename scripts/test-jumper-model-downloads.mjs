@@ -36,14 +36,16 @@ try {
     assert.equal(puts, 0); assert.equal(deletes, 1); assert.equal(fetched, fromCache ? 0 : 1);
     assert.deepEqual(progress, fromCache ? [] : [2]);
   }
-  for (const chunks of [[[1, 2, 3]], [[1, 2, 3, 5]]]) {
-    reset(); response = stream(chunks);
+  for (const fromCache of [false, true]) for (const chunks of [[[1, 2, 3]], [[1, 2, 3, 5]]]) {
+    reset(); cached = fromCache; response = stream(chunks);
     await assert.rejects(checkedAsset(asset, () => {}, 'https://models.test/'), /integrity/);
     assert.equal(puts, 0); assert.equal(deletes, 1);
   }
   reset(); cached = true; response = stream([[1, 2, 3, 4]]);
   assert.deepEqual(new Uint8Array(await checkedAsset(asset, () => { throw Error('Cached bodies should not report download progress'); }, 'https://models.test/')), bytes);
   assert.equal(fetched, 0);
+  assert.equal(puts, 0, "Verified cache hits must not rewrite model bytes");
+  assert.equal(deletes, 0, "Verified cache hits must retain the existing entry");
   reset(); unavailable = true; response = stream([[1, 2, 3, 4]]);
   assert.deepEqual(new Uint8Array(await checkedAsset(asset, () => {}, 'https://models.test/')), bytes);
 } finally {
@@ -51,4 +53,4 @@ try {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key];
   }
 }
-console.log('Model downloads: streamed/cached byte caps, cancellation, header independence, exact limits, checksums and unavailable cache passed');
+console.log('Model downloads: streamed/cached byte caps, cancellation, header independence, exact limits, checksums, read-only verified cache hits and unavailable cache passed');
