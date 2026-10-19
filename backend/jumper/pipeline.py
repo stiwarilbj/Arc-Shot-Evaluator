@@ -12,6 +12,7 @@ import imageio_ffmpeg
 import numpy as np
 
 from .subprocess_output import diagnostic_process
+from .mask_files import publish_mask
 from .ball_attachments import BallAttachments, valid_hands
 from .frame_boundary import FrameBoundary
 from .cache import valid_detection_evidence
@@ -724,7 +725,7 @@ def track(
                 for row, identity in enumerate(ids):
                     joins.add(identity, values[row])
                 warnings.extend(joins.inspect(index, labels, job["objects"], frame_boxes, reset=cut))
-                np.save(destination / f"{index:06d}.npy", labels, allow_pickle=False)
+                publish_mask(destination / f"{index:06d}.npy", labels)
                 frame_warnings = quality.inspect(
                     index, labels, job["objects"], job["target_id"], reset=cut,
                     invisible=() if seen["visible"] else (job["target_id"],)

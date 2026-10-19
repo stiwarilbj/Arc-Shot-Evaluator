@@ -460,8 +460,12 @@ based on measured processing speed. Resource checks flag oversized jobs.
 Compressed model downloads retain byte progress without assuming the compressed
 transfer length equals the decoded model size.
 Corrections can reuse unchanged detections/frame features, and an export failure can retry
-from a bounded temporary mask checkpoint without rerunning segmentation. Finished
-videos are decoded and checked for timeline, dimensions, neutral colors, and no
+from a bounded temporary mask checkpoint without rerunning segmentation. Native
+tracking writes each mask to a unique `.partial` file, closes it, then atomically
+renames it to its finished frame filename. Checkpoints and encoding read only
+finished masks. Failed writes clean up their temporary file; a hard interruption
+may leave a distinguishable partial file until the job is retried or removed.
+Finished videos are decoded and checked for timeline, dimensions, neutral colors, and no
 audio before becoming ready for review. Both browser and local masking reject
 malformed mask dimensions, missing values, and non-finite predictions before
 resizing or compositing. Processing stops with a retry message rather than
