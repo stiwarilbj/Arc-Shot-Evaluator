@@ -4,6 +4,13 @@ import inspect
 import numpy as np
 
 
+def causal_memory(at, output, frame, reverse):
+    return (type(at) is int and at >= 0
+            and output.get('_jumper_frame', at) == at
+            and (frame - at) * (-1 if reverse else 1) > 0
+            and output.get('_jumper_reliable', True))
+
+
 def reliable_mask(values, previous=None, score=1):
     if (values.shape != (256, 256) or not np.isfinite(values).all()
             or not np.isfinite(score) or score <= 0):
@@ -76,13 +83,29 @@ class MemoryQualityGate:
         if saved:
             entries.setdefault(saved[0], saved[1])
         return sorted(((at, out) for at, out in entries.items()
-                       if (frame-at)*direction > 0 and out.get('_jumper_reliable', True)),
+                       if causal_memory(at, out, frame, reverse)),
                       key=lambda entry: (frame-entry[0])*direction)
 
     def infer(self, original, args):
-        output, masks = original(**args)
         frame, reverse = args['frame_idx'], args['reverse']
         outputs = args['output_dict']
+        # SAM normally backfills an identity from its future first prompt. Match
+        # the browser's not-yet-selected behavior without consulting that mask.
+        seeds = outputs['cond_frame_outputs']
+        if (not reverse and not args['is_init_cond_frame'] and seeds
+                and frame < min(seeds) and args['point_inputs'] is None
+                and args['mask_inputs'] is None):
+            import torch
+            state = args['inference_state']
+            masks = torch.full((args['batch_size'], 1, 256, 256), -1024.0,
+                               device=state['device'])
+            return dict(pred_masks=masks.to(state['storage_device']),
+                        object_score_logits=masks.new_full((args['batch_size'], 1), -1024),
+                        obj_ptr=masks.new_zeros((args['batch_size'], 256)),
+                        maskmem_features=None, maskmem_pos_enc=None,
+                        _jumper_reliable=False, _jumper_frame=frame), masks
+        output, masks = original(**args)
+        output['_jumper_frame'] = frame
         # Human prompts can legitimately move an anchor; test their own confidence
         # but do not reject them merely for differing from an older location.
         prompted = args['point_inputs'] is not None or args['mask_inputs'] is not None
@@ -105,7 +128,7 @@ class MemoryQualityGate:
             return original(**args)
         outputs, frame, reverse = args['output_dict'], args['frame_idx'], args['track_in_reverse']
         filtered = {name: {at: out for at, out in outputs[name].items()
-                           if out.get('_jumper_reliable', True)}
+                           if causal_memory(at, out, frame, reverse)}
                     for name in ('cond_frame_outputs', 'non_cond_frame_outputs')}
         references = self.references(outputs, frame, reverse)
         if references:

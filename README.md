@@ -530,6 +530,13 @@ predictions; competing player matches, a discontinuous return, or an absence ove
 1.5 seconds require a clear Include correction before the shooter resumes. Missing
 masks without occlusion evidence still require review. Both trackers retain an earlier reliable
 reference through a rejected stretch rather than learning from the suspect mask.
+Both processors restrict attention and object-pointer history to earlier frames
+in the active tracking direction: lower frame numbers going forward, higher
+numbers during the independent backward check. Saved future corrections remain
+available at their own frames without influencing earlier forward predictions.
+Tracks first selected later stay invisible before that selection. Mismatched
+memory frame identities are excluded; missing usable references require a clearer
+Include correction and retry rather than borrowing future evidence.
 An unusable initial selection requires a clearer prompt and retry.
 
 With automatic person discovery enabled, **Possible shadow or reflection** flags

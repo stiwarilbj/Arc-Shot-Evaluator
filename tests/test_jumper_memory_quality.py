@@ -85,7 +85,8 @@ def test_explicit_prompt_can_reanchor_without_resetting_other_players():
     outputs['cond_frame_outputs'][0]=output([20,100,20,40])
     state=dict(obj_idx_to_id={0:7,1:9},obj_id_to_idx={7:0,9:1},output_dict_per_obj={0:outputs,1:other})
     gate=MemoryQualityGate(object(),lambda *args:None)
-    args=dict(frame_idx=1,reverse=False,output_dict=outputs,inference_state=state,point_inputs=None,mask_inputs=None)
+    args=dict(frame_idx=1,reverse=False,output_dict=outputs,inference_state=state,point_inputs=None,mask_inputs=None,
+              is_init_cond_frame=False)
     def infer(**args):
         value=output([100,100,20,40]);return value,value['pred_masks']
     assert not gate.infer(infer,args)[0]['_jumper_reliable']
@@ -96,3 +97,64 @@ def test_explicit_prompt_can_reanchor_without_resetting_other_players():
                (id(other),False):(0,output([30,80,10,10]))}
     gate.reset_object(state,7)
     assert list(gate.last)==[(id(other),False)]
+
+
+ORDER_CASES = json.loads((Path(__file__).parent/'fixtures/jumper/memory-order.json').read_text())
+
+
+@pytest.mark.parametrize('case', ORDER_CASES, ids=lambda case:case['name'])
+def test_native_attention_uses_only_directional_frame_identities(case):
+    outputs = {name: {key: dict(_jumper_frame=frame, label=frame)
+                     for key, frame in case[source]}
+               for name, source in [('cond_frame_outputs','conditions'),
+                                    ('non_cond_frame_outputs','recent')]}
+    before = {key: dict(group) for key,group in outputs.items()}
+    gate = MemoryQualityGate(object(), lambda *args: None)
+    args = dict(is_init_cond_frame=False, output_dict=outputs,
+                frame_idx=case['frame'], track_in_reverse=case['reverse'])
+    if case.get('error'):
+        with pytest.raises(ValueError, match='No reliable player reference'):
+            gate.prepare(lambda **kwargs: pytest.fail('Noncausal attention ran'), args)
+    else:
+        filtered = gate.prepare(lambda **kwargs: kwargs['output_dict'], args)
+        assert list(filtered['cond_frame_outputs']) == case['spatial'][:1]
+        assert list(filtered['non_cond_frame_outputs']) == case['spatial'][1:]
+        assert [at for at,_ in gate.references(outputs,case['frame'],case['reverse'])] == list(reversed(case['pointers']))
+    assert outputs == before, 'Filtering must preserve stored correction anchors'
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_direction_change_does_not_reuse_wrong_side_saved_fallback(reverse):
+    at = 5 if reverse else 15
+    outputs = dict(cond_frame_outputs={at: {}}, non_cond_frame_outputs={})
+    gate = MemoryQualityGate(object(), lambda *args: None)
+    gate.last[(id(outputs),reverse)] = (at,{})
+    with pytest.raises(ValueError, match='No reliable player reference'):
+        gate.prepare(lambda **args: pytest.fail('Saved future memory leaked'),
+                     dict(is_init_cond_frame=False,output_dict=outputs,frame_idx=10,track_in_reverse=reverse))
+
+
+def test_same_frame_explicit_prompt_remains_independent():
+    gate = MemoryQualityGate(object(), lambda *args: None)
+    outputs = dict(cond_frame_outputs={0:{}}, non_cond_frame_outputs={})
+    received = gate.prepare(lambda **args:args, dict(is_init_cond_frame=True,
+                  output_dict=outputs,frame_idx=0,track_in_reverse=False))
+    assert received['is_init_cond_frame'] is True
+    assert received['output_dict'] is outputs
+
+
+def test_later_first_selection_stays_invisible_until_its_frame():
+    import torch
+    outputs = dict(cond_frame_outputs={10:{}}, non_cond_frame_outputs={})
+    gate = MemoryQualityGate(object(), lambda *args:pytest.fail('Unselected player warned'))
+    args = dict(frame_idx=5,reverse=False,output_dict=outputs,batch_size=1,
+                is_init_cond_frame=False,point_inputs=None,mask_inputs=None,
+                inference_state=dict(device='cpu',storage_device='cpu'))
+    output, masks = gate.infer(lambda **args:pytest.fail('Future first selection used'),args)
+    assert masks.shape == (1,1,256,256)
+    assert torch.all(masks < 0)
+    assert output['_jumper_reliable'] is False
+    assert output['_jumper_frame'] == 5
+    assert output['maskmem_features'] is None
+    assert output['object_score_logits'].item() < 0
+    assert outputs['cond_frame_outputs'] == {10:{}}

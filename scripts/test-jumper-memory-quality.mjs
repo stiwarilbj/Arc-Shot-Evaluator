@@ -38,3 +38,22 @@ const blob=new Blob(['fixture'],{type:'video/mp4'});
 assert(warningLabels.memory_rejected);
 assert(maskResult({duration:.1,highlight:blob,quiz:blob,reveal:blob,warnings:[{frame:1,kind:'memory_rejected',track_ids:[7]}]}));
 console.log('Tracking-memory thresholds, forward/reverse retention, timestamped fallback, bounded replacement and warnings passed');
+
+const orderCases=JSON.parse(fs.readFileSync(new URL('../tests/fixtures/jumper/memory-order.json',import.meta.url)));
+const weights={maskmem_tpos_enc:Array.from({length:7},()=>new Array(64).fill(0)),pointer_weight:Array.from({length:64},()=>new Array(256).fill(0)),pointer_bias:new Array(64).fill(0)};
+const memory=frame=>({frame,tokens:new Float32Array(4096*64).fill(frame),position:new Float32Array(4096*64),pointer:new Float32Array(256).fill(frame)});
+for(const test of orderCases){
+ const conditions=new Map(test.conditions.map(([key,frame])=>[key,memory(frame)]));
+ const recent=new Map(test.recent.map(([key,frame])=>[key,memory(frame)]));
+ const beforeConditions=[...conditions],beforeRecent=[...recent];
+ const run=()=>buildBank(test.frame,30,conditions,recent,weights,test.reverse);
+ if(test.error) assert.throws(run,/Tracking memory is empty/,test.name);
+ else {
+  const bank=run();
+  assert.deepEqual([...bank.spatial].filter((_,i)=>i%(4096*64)===0),test.spatial,test.name);
+  assert.deepEqual([...bank.pointerData].filter((_,i)=>i%256===0),test.pointers,test.name);
+ }
+ assert.deepEqual([...conditions],beforeConditions,'Stored correction anchors stay intact');
+ assert.deepEqual([...recent],beforeRecent,'Filtering must not mutate recent history');
+}
+console.log('PASS forward/reverse causal memory, same-frame exclusion, mismatched frame identities and future-only rejection');

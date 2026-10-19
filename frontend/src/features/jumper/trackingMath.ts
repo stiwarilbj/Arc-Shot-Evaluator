@@ -67,6 +67,15 @@ export function buildBank(
   reverse = false,
 ) {
   const direction = reverse ? -1 : 1;
+  // An anchor may seed its own direction, but cannot influence an earlier
+  // forward prediction or a later reverse prediction. Check map keys against
+  // recorded frame identities before selecting spatial memory or pointers.
+  const causal = (entries: Map<number, Memory>) => new Map(
+    [...entries].filter(([at, value]) => Number.isSafeInteger(at) && at >= 0
+      && value.frame === at && (frame - at) * direction > 0),
+  );
+  conditions = causal(conditions);
+  recent = causal(recent);
   const memories: { value: Memory; temporal: number }[] = [
     ...conditions.values(),
   ].map((value) => ({ value, temporal: 6 }));
@@ -97,7 +106,7 @@ export function buildBank(
   const pointers: { difference: number; value: Memory }[] = [
     ...conditions.values(),
   ]
-    .filter((value) => (frame - value.frame) * direction >= 0)
+    .filter((value) => (frame - value.frame) * direction > 0)
     .map((value) => ({ difference: (frame - value.frame) * direction, value }));
   for (let difference = 1; difference < maxPointers; difference++) {
     const value = recent.get(frame - direction * difference);
