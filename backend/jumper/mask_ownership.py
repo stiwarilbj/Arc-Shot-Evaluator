@@ -20,7 +20,8 @@ class MaskOwnership:
         for identity, scores in zip(ids, values):
             previous = self.previous == identity
             prior_score[previous] = scores[previous]
-            wins = scores > best
+            # Exact positive ties use identity, never input order or shooter/color.
+            wins = (scores > best) | ((scores > 0) & (scores == best) & (identity < raw))
             second = np.where(wins, best, np.maximum(second, scores))
             best = np.where(wins, scores, best)
             raw[wins] = identity

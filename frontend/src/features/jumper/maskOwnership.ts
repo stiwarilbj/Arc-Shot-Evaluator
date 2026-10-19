@@ -38,7 +38,9 @@ export class MaskOwnership {
     for (let i = 0; i < scores.length; i++) {
       const score = scores[i];
       if (this.previous[i] === id) this.priorScore[i] = score;
-      if (score > this.best[i]) {
+      // Exact positive ties use identity, never input order or shooter/color.
+      if (score > this.best[i] ||
+        (score > 0 && score === this.best[i] && id < this.owners[i])) {
         this.second[i] = this.best[i];
         this.best[i] = score;
         this.owners[i] = id;

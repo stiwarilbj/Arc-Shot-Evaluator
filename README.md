@@ -263,7 +263,9 @@ Personal videos stay on your device; they are never automatically published.
    Stronger occlusion evidence wins immediately; missing masks, camera cuts, new
    tracks, and correction frames bypass this consistency check. It favors no
    player or color, does not add body pixels, and cannot guarantee correct depth
-   ordering during every overlap.
+   ordering during every overlap. Exact positive-score ties use the lower stable
+   track ID in both processors, independent of track-list order; this tie rule
+   gives no priority to the black shooter and leaves unequal-score handling intact.
    Expand corrections to remove spectators, manage tracks, or add Include/Exclude
    points on problem frames. **Find people in first frame** preserves the chosen
    shooter, track IDs, removed tracks, and every correction. It adds distinct

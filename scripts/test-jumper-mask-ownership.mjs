@@ -2,10 +2,18 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { MaskOwnership } from '../frontend/src/features/jumper/maskOwnership.ts';
 const fixtures = JSON.parse(readFileSync(new URL('../tests/fixtures/jumper/mask-ownership.json', import.meta.url)));
-for (const fixture of fixtures) {
+function permutations(items) {
+  if (!items.length) return [[]];
+  return items.flatMap((item, i) => permutations(items.filter((_, j) => i !== j)).map(rest => [item, ...rest]));
+}
+function schedules(frames) {
+  if (!frames.length) return [[]];
+  return permutations(frames[0].scores).flatMap(scores => schedules(frames.slice(1)).map(rest => [{ ...frames[0], scores }, ...rest]));
+}
+for (const fixture of fixtures) for (const frames of schedules(fixture.frames)) {
   const ownership = new MaskOwnership(fixture.width, fixture.height);
   let previous;
-  for (const [index, frame] of fixture.frames.entries()) {
+  for (const [index, frame] of frames.entries()) {
     ownership.begin();
     const scores = frame.scores.map(([id, sparse]) => {
       const values = new Float32Array(fixture.width * fixture.height).fill(-2);
@@ -27,4 +35,4 @@ for (const fixture of fixtures) {
     labels.fill(255); // Render/checkpoint consumers cannot corrupt temporal history.
   }
 }
-console.log('Mask ownership: uncertain flicker, two-frame cap, strong occlusion, current/core evidence, missing masks, resets, exclusions, symmetric colors and independent frames passed');
+console.log('Mask ownership: uncertain flicker, two-frame cap, strong occlusion, current/core evidence, missing masks, resets, exclusions, symmetric colors, independent frames and every per-frame track-order permutation passed');
