@@ -336,3 +336,49 @@ def test_processing_preserves_resolved_shooter_prompt(client, monkeypatch, resol
     assert stored["shooter_selection_resolved"] is resolved
     assert stored["objects"] == payload["objects"]
     assert stored["auto_detect_others"] is True
+
+
+@pytest.mark.parametrize("removed_frame", [0, 2, 4])
+def test_reprocessing_removes_deleted_prompt_and_all_prediction_artifacts(client, monkeypatch, removed_frame):
+    from concurrent.futures import Future
+    from types import SimpleNamespace
+
+    identity, job = uploaded_job(client)
+    monkeypatch.setattr(jumper, "capabilities", lambda: {"native": True})
+    submissions = []
+    monkeypatch.setattr(jumper, "EXECUTOR", SimpleNamespace(
+        submit=lambda *args: submissions.append(args) or Future()))
+    prompts = [dict(frame=0, box=[0.1, 0.1, 0.5, 0.9], points=[[0.3, 0.4]], labels=[1]),
+               dict(frame=2, points=[[0.3, 0.4], [0.8, 0.6]], labels=[1, 0], anchor=True),
+               dict(frame=4, points=[[0.4, 0.5]], labels=[1])]
+    payload = dict(start=0, end=0.2, target_id=7,
+                   objects=[dict(id=7, prompts=prompts)], presentation="silhouette")
+    url = f"/api/jumper-lab/jobs/{identity}/process"
+    assert client.post(url, json=payload).status_code == 200
+    generation = job["generation"]
+    job["status"] = "done"
+    # Seed real filesystem artifacts from the preceding run, including frames
+    # before the removed correction: bidirectional dependencies are job-local.
+    for name in ("frames", "detail-frames", "masks", "output"):
+        directory = job["directory"] / name
+        directory.mkdir()
+        for frame in (0, 2, 4):
+            (directory / str(frame)).write_bytes(b"old prediction")
+    for name in ("progress.json", "result.json", "error.json"):
+        (job["directory"] / name).write_text("{}")
+    cache = jumper.ROOT / "calculation-cache"
+    cache.mkdir()
+    evidence = cache / "unchanged-frame.npz"
+    evidence.write_bytes(b"prompt-independent image features")
+    # Removing only the points on frame zero keeps the detector box usable.
+    remaining = [({"frame": 0, "box": prompt["box"]} if removed_frame == 0 and prompt["frame"] == 0 else prompt)
+                 for prompt in prompts if prompt["frame"] != removed_frame or removed_frame == 0]
+    payload["objects"][0]["prompts"] = remaining
+    assert client.post(url, json=payload).status_code == 200
+    stored = json.loads((job["directory"] / "request.json").read_text())
+    assert stored["objects"][0]["prompts"] == remaining
+    assert job["generation"] == generation + 1
+    assert len(submissions) == 2
+    for name in ("frames", "detail-frames", "masks", "output", "progress.json", "result.json", "error.json"):
+        assert not (job["directory"] / name).exists()
+    assert evidence.read_bytes() == b"prompt-independent image features"

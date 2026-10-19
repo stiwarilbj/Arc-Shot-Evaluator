@@ -74,6 +74,29 @@ def test_identity_ignores_corrections_but_changes_for_execution_inputs(tmp_path)
     assert identity(source, job, checkpoint, "cpu", [source]) != key
 
 
+@pytest.mark.parametrize("removed_frame", [0, 2, 4])
+def test_deleted_correction_keeps_only_prompt_independent_cache_reusable(tmp_path, removed_frame):
+    source, checkpoint = tmp_path / "source", tmp_path / "checkpoint"
+    source.write_bytes(b"video")
+    checkpoint.write_bytes(b"weights")
+    job = dict(start=0, end=1, target_id=1, objects=[dict(id=1, prompts=[
+        dict(frame=0, box=[0.1, 0.1, 0.5, 0.9], points=[[0.3, 0.4]], labels=[1]),
+        dict(frame=2, points=[[0.3, 0.4]], labels=[1], anchor=True),
+        dict(frame=4, points=[[0.8, 0.6]], labels=[0])])])
+    key = identity(source, job, checkpoint, "cpu", [source])
+    cache = FrameCache(tmp_path / "cache", key)
+    cache.put("features:4", {"image_feature": np.array([1.25], np.float32)})
+    cache.put("detection:4", {"boxes": np.array([[0.1, 0.1, 0.5, 0.9]])})
+    after = deepcopy(job)
+    after["objects"][0]["prompts"] = [prompt for prompt in after["objects"][0]["prompts"]
+                                        if prompt["frame"] != removed_frame]
+    next_key = identity(source, after, checkpoint, "cpu", [source])
+    assert next_key == key
+    reused = FrameCache(cache.root, next_key)
+    np.testing.assert_array_equal(reused.get("features:4")["image_feature"], [1.25])
+    np.testing.assert_array_equal(reused.get("detection:4")["boxes"], [[0.1, 0.1, 0.5, 0.9]])
+
+
 def test_unverified_native_gpu_keeps_original_encoder_path():
     from types import SimpleNamespace
     from backend.jumper.cache import cache_backbone

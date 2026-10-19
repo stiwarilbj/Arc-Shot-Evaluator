@@ -473,6 +473,13 @@ for that frame. Missing wrist evidence remains valid; these cache checks do not
 prove pose accuracy. Invalid cached frame features are removed individually
 before recomputation, including rejected tensor shapes, values, or native layouts.
 Other cached frames and saved clips are retained.
+Deleting correction points, including a confirmed tracking anchor, marks the
+current output out of date. Process again before saving: both targets rebuild
+all tracking predictions from the remaining prompts, including any backward
+checks, so deleted prompts cannot survive in a reused prediction. Undo and redo
+use the same fresh-run path. Only prompt-independent frame features and person
+detections remain reusable; this is a full tracking rebuild, not incremental
+prediction reuse.
 
 Personal silhouette rendering uses label masks alone, without rereading original
 pixels or creating color reveals. Edited clips store a viewing version and a
