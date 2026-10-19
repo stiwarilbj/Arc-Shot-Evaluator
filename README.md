@@ -500,6 +500,14 @@ it never trims shoes, legs, or any other mask pixels. Inspect the original foota
 add Exclude points only on unwanted floor regions while preserving real feet with
 Include points, and reprocess. Manual mode without detections cannot run this check.
 
+With automatic person discovery enabled, **Possible ball in shooter mask** flags
+round, image-supported attachments near a confidently detected wrist across
+neighboring frames. Select the marker to open the shooter and source frame for
+correction. Exclude the ball interior while keeping Include points on visible
+fingers, then reprocess. Nothing is removed automatically. This is a conservative
+review hint, not a ball detector: tiny players, low-confidence wrists, weak edges,
+face overlaps, or cropped balls may be skipped, and rounded hands can be flagged.
+
 These checks do not prove tracking accuracy. Review the full motion and correct
 or reject uncertain masks; unresolved tracking warnings prevent approval. The
 editor reports its twenty-track limit instead of silently omitting extra people.

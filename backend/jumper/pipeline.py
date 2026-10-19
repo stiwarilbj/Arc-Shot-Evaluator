@@ -12,6 +12,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 
+from .ball_attachments import BallAttachments, valid_hands
 from .floor_attachments import FloorAttachments
 from .shooter_visibility import ShooterVisibility
 from .memory_quality import MemoryQualityGate
@@ -398,8 +399,10 @@ def track(
 
         detector_key = digest(detector_path) + version("ultralytics")
 
+    frame_hands = []
     def detect(index):
-        key = f"people:{detector_key}:{index}"
+        nonlocal frame_hands
+        key = f"people-hands-v1:{detector_key}:{index}"
         cached = cache.get(key) if cache else None
         if cached is not None:
             boxes = cached.get("boxes")
@@ -413,7 +416,10 @@ def track(
                 and np.all((boxes >= 0) & (boxes <= 1))
                 and np.all(boxes[:, 0] < boxes[:, 2])
                 and np.all(boxes[:, 1] < boxes[:, 3])
+                and isinstance(cached.get("hands"), np.ndarray)
+                and valid_hands(cached["hands"])
             ):
+                frame_hands = cached["hands"].tolist()
                 return boxes.tolist()
         detections = detector.predict(
             cv2.imread(str(frames[index])),
@@ -430,8 +436,20 @@ def track(
             raise ValueError(
                 "More than 20 people detected. Trim to a closer view or use manual selection."
             )
+        frame_hands = []
+        keypoints = getattr(detections, "keypoints", None)
+        if keypoints is not None and keypoints.data is not None:
+            pose = keypoints.data.cpu().numpy()
+            if pose.ndim == 3 and pose.shape[0] == len(boxes) and pose.shape[1] >= 11 and pose.shape[2] >= 3:
+                for box, points in zip(boxes, pose):
+                    wrists = points[[9,10], :3].astype(float).copy()
+                    wrists[:, :2] /= [width,height]
+                    outside = (~np.isfinite(wrists).all(axis=1) | (wrists[:,:2]<0).any(axis=1) | (wrists[:,:2]>1).any(axis=1))
+                    wrists[outside] = 0
+                    row = [*box.tolist(), *np.clip(wrists,0,1).flatten().tolist()]
+                    if valid_hands([row]): frame_hands.append(row)
         if cache:
-            cache.put(key, {"boxes": boxes})
+            cache.put(key, {"boxes": boxes, "hands": np.asarray(frame_hands,dtype=float).reshape(-1,10)})
         return boxes.tolist()
 
     if detector is not None:
@@ -504,6 +522,7 @@ def track(
             quality = MaskQuality()
             joins = MaskJoins(width, height)
             floor_attachments = FloorAttachments(width, height)
+            ball_attachments = BallAttachments()
             visibility = ShooterVisibility()
             ownership = MaskOwnership(width, height)
             previous_areas = {}
@@ -700,6 +719,10 @@ def track(
                 )
                 warnings.extend(check_corrections(index, labels, job["objects"]))
                 warnings.extend(floor_attachments.inspect(index, labels, job["objects"], frame_boxes, reset=cut))
+                # Source pixels are evidence only; never enter silhouette outputs.
+                gray = (cv2.imread(str(frames[index])).astype(np.uint16).sum(axis=2)//3).astype(np.uint8) if frame_hands else np.empty((0,0),np.uint8)
+                warnings.extend(ball_attachments.inspect(index, labels, gray, job["target_id"], frame_hands,
+                    reset=cut or any(p["frame"]==index for o in job["objects"] if o["id"]==job["target_id"] for p in o["prompts"])))
                 joins.begin()
                 for row, identity in enumerate(ids):
                     joins.add(identity, values[row])

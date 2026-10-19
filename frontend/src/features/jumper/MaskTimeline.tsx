@@ -57,6 +57,9 @@ export default function MaskTimeline({
         {warnings.some((w) => w.kind === "refinement_uncertain")
           ? " Small-player detail uncertain means a close crop could not safely refine the visible outline. Inspect hands, feet and overlaps; add Include/Exclude points or choose a closer segment. Hidden details cannot be recovered."
           : ""}
+        {warnings.some((w) => w.kind === "ball_attachment")
+          ? " Possible ball in shooter mask means a round, image-supported attachment near a detected wrist persists across neighboring frames. Inspect the original release frame, add Exclude points inside the ball and Include points on visible fingers, then reprocess. Do not exclude an uncertain hand boundary; use a clearer neighboring frame if necessary. This hint never removes pixels automatically and cannot prove where the ball ends and fingers begin."
+          : ""}
         {warnings.some((w) => w.kind === "floor_attachment")
           ? " Possible shadow or reflection means a persistent extension below detected feet or a repeated body-like shape needs review. Inspect neighboring original frames. Add Exclude points only on unwanted floor regions, keeping Include points on real shoes and legs, then reprocess. Detection boxes are approximate; this check never trims a body automatically."
           : ""}

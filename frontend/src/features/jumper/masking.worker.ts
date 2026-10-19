@@ -1,3 +1,4 @@
+import { BallAttachments, validHands } from "./ballAttachments";
 import { FloorAttachments } from "./floorAttachments";
 import { ShooterVisibility } from "./shooterVisibility";
 import { CONFIRM_SELECTION, selectionProbes, stableSelection } from "./selectionStability";
@@ -336,14 +337,19 @@ async function process(
       trackedObjects.map((object) => [object.id, new Map()]),
     );
     const corrected = new Map<number, Map<number, Prediction>>();
+    let frameHands: number[][] = [];
     async function detect(
       frame: number,
       canvas: HTMLCanvasElement | OffscreenCanvas,
     ) {
-      const cached = await cache?.get<unknown>(`people:${frame}`);
-      if (validDetections(cached)) return cached;
+      const cached = await cache?.get<unknown>(`people-hands-v1:${frame}`);
+      const evidence = cached as {boxes?: unknown; hands?: unknown} | undefined;
+      if (validDetections(evidence?.boxes) && validHands(evidence?.hands)) {
+        frameHands = evidence.hands; return evidence.boxes;
+      }
       const boxes = await detector!.detect(canvas);
-      await cache?.put(`people:${frame}`, boxes, 256 + boxes.length * 32);
+      frameHands = detector!.hands;
+      await cache?.put(`people-hands-v1:${frame}`, {boxes, hands:frameHands}, 256 + boxes.length * 112);
       return boxes;
     }
     async function features(
@@ -736,6 +742,7 @@ async function process(
     const quality = new MaskQuality();
     const joins = new MaskJoins(width, height);
     const floorAttachments = new FloorAttachments(width, height);
+    const ballAttachments = new BallAttachments();
     const ownership = new MaskOwnership(width, height);
     const trustedMasks = new Map<number, Float32Array>();
     const recoveryAnchors = shooterAnchors(objects, target_id);
@@ -752,6 +759,7 @@ async function process(
       const feats = await features(frame, sample.canvas);
       joins.begin();
       let frameBoxes: number[][] = [];
+      frameHands = [];
       const frameMasks = new Map<number, Float32Array>();
       let shooterPrediction: Prediction | undefined;
       let shooterNeedsMemory = false;
@@ -957,6 +965,14 @@ async function process(
       );
       warnings.push(...checkCorrections(frame, labels, width, height, objects));
       warnings.push(...floorAttachments.inspect(frame, labels, width, height, objects, frameBoxes, cut));
+      if (frameHands.length) {
+        sourceContext.drawImage(sample.canvas, 0, 0, width, height);
+        const rgb = sourceContext.getImageData(0, 0, width, height).data;
+        const gray = new Uint8Array(width*height);
+        for(let i=0;i<gray.length;i++) gray[i]=Math.floor((rgb[i*4]+rgb[i*4+1]+rgb[i*4+2])/3);
+        warnings.push(...ballAttachments.inspect(frame, labels, gray, width, height, target_id, frameHands,
+          cut || objects.some(o => o.id===target_id && o.prompts.some(p => p.frame===frame))));
+      } else ballAttachments.inspect(frame, labels, new Uint8Array(), width, height, target_id, [], true);
       warnings.push(
         ...joins.inspect(
           frame,

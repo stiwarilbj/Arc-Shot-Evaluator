@@ -28,7 +28,9 @@ export async function createPersonDetector() {
     executionProviders: ["webgpu"],
   });
 
+  let hands: number[][] = [];
   return {
+    get hands() { return hands; },
     async detect(image: HTMLCanvasElement | OffscreenCanvas) {
       const width = image.width,
         height = image.height;
@@ -60,7 +62,7 @@ export async function createPersonDetector() {
         const scale = Math.min(640 / width, 640 / height),
           ox = (640 - width * scale) / 2,
           oy = (640 - height * scale) / 2;
-        const candidates: { box: number[]; score: number }[] = [];
+        const candidates: { box: number[]; score: number; wrists: number[] }[] = [];
         for (let i = 0; i < n; i++) {
           if (values[4 * n + i] < 0.25) continue;
           const x = values[i],
@@ -75,11 +77,18 @@ export async function createPersonDetector() {
             clamp((y + h / 2 - oy) / (height * scale)),
           ];
           if (box[2] > box[0] && box[3] > box[1])
-            candidates.push({ box, score: values[4 * n + i] });
+            candidates.push({ box, score: values[4 * n + i], wrists: [9,10].flatMap(j => {
+              const k = 5+j*3;
+              if (value.dims[1] < k+3) return [0,0,0];
+              const px=(values[k*n+i]-ox)/(width*scale), py=(values[(k+1)*n+i]-oy)/(height*scale);
+              const confidence=values[(k+2)*n+i];
+              return [clamp(px),clamp(py),Number.isFinite(confidence) && px>=0 && px<=1 && py>=0 && py<=1 ? clamp(confidence) : 0];
+            }) });
         }
         candidates.sort((a, b) => b.score - a.score);
         const kept: number[][] = [];
-        for (const { box } of candidates) {
+        hands = [];
+        for (const { box, wrists } of candidates) {
           if (
             kept.some((other) => {
               const intersect =
@@ -102,6 +111,7 @@ export async function createPersonDetector() {
           )
             continue;
           kept.push(box);
+          if ([...box,...wrists].every(Number.isFinite)) hands.push([...box,...wrists]);
           if (kept.length > 20)
             throw Error(
               "More than 20 people detected. Trim to a closer view or turn off automatic discovery and select court players manually.",

@@ -20,10 +20,10 @@ try {
   const media = readFileSync(
     new URL("../tests/fixtures/jumper/research-short.mp4", import.meta.url),
   ).toString("base64");
-  await page.route(/\/masking[^/]*\.js(?:\?.*)?$/, (route) =>
+  await page.route(/\/masking[^/]*\.(?:js|ts)(?:\?.*)?$/, (route) =>
     route.fulfill({
       contentType: "application/javascript",
-      body: `self.onmessage=({data})=>{const bytes=Uint8Array.from(atob(${JSON.stringify(media)}),c=>c.charCodeAt(0));const blob=new Blob([bytes],{type:'video/mp4'});self.postMessage({kind:'done',id:data.id,result:{highlight:blob,quiz:blob,reveal:blob,duration:.3,objects:[{id:1,prompts:[{frame:0,points:[[.5,.5]],labels:[1]}]},{id:7,prompts:[{frame:0,box:[.1,.1,.3,.9]}]},{id:9,prompts:[{frame:0,box:[.6,.1,.9,.9]}]}],warnings:[{frame:0,kind:'target_lost',track_ids:[1]},{frame:1,kind:'tracking_unstable',track_ids:[1]},{frame:2,kind:'ambiguous_players',track_ids:[7,9]},{frame:3,kind:'ambiguous_players',track_ids:[7,9]},{frame:7,kind:'ambiguous_players',track_ids:[7,9]},{frame:8,kind:'possible_camera_cut'},{frame:4,kind:'mask_joined',track_ids:[7,9]},{frame:5,kind:'mask_joined',track_ids:[7,9]}]}})};`,
+      body: `self.onmessage=({data})=>{const bytes=Uint8Array.from(atob(${JSON.stringify(media)}),c=>c.charCodeAt(0));const blob=new Blob([bytes],{type:'video/mp4'});self.postMessage({kind:'done',id:data.id,result:{highlight:blob,quiz:blob,reveal:blob,duration:.3,frame_map:data.request.frame_map,objects:[{id:1,prompts:[{frame:0,points:[[.5,.5]],labels:[1]}]},{id:7,prompts:[{frame:0,box:[.1,.1,.3,.9]}]},{id:9,prompts:[{frame:0,box:[.6,.1,.9,.9]}]}],warnings:[{frame:0,kind:'target_lost',track_ids:[1]},{frame:1,kind:'tracking_unstable',track_ids:[1]},{frame:2,kind:'ambiguous_players',track_ids:[7,9]},{frame:3,kind:'ambiguous_players',track_ids:[7,9]},{frame:7,kind:'ambiguous_players',track_ids:[7,9]},{frame:8,kind:'possible_camera_cut'},{frame:4,kind:'mask_joined',track_ids:[7,9]},{frame:5,kind:'mask_joined',track_ids:[7,9]},{frame:5,kind:'ball_attachment',track_ids:[1]},{frame:6,kind:'ball_attachment',track_ids:[1]},{frame:6,kind:'floor_attachment',track_ids:[7]},{frame:7,kind:'floor_attachment',track_ids:[7]}]}})};`,
     }),
   );
   await page.goto(
@@ -56,7 +56,7 @@ try {
   await expect(timeline).toBeVisible();
   await expect(
     timeline.getByRole("button", { name: /flagged frames?/ }),
-  ).toHaveCount(5);
+  ).toHaveCount(7);
   const overlap = timeline.getByRole("button", {
     name: "Uncertain player match: 3 flagged frames",
     exact: true,
@@ -141,6 +141,25 @@ try {
   await expect(
     timeline.getByText(/Real occlusion can produce similar evidence/),
   ).toBeVisible();
+  const floor = timeline.getByRole("button", {name:"Possible shadow or reflection: 2 flagged frames",exact:true});
+  await floor.press("Enter");
+  await expect(page.getByLabel("Correction frame", {exact:true})).toHaveValue("6");
+  await expect(page.getByText("Editing track 7 ·",{exact:false})).toBeVisible();
+  await expect(timeline.getByText(/this check never trims a body automatically/)).toBeVisible();
+  await floor.press("ArrowRight");
+  await expect(page.getByLabel("Correction frame", {exact:true})).toHaveValue("7");
+  await expect(page.getByRole("button",{name:"Save to My Clips",exact:true})).toBeDisabled();
+  const ball = timeline.getByRole("button", {name:"Possible ball in shooter mask: 2 flagged frames",exact:true});
+  await ball.press("Enter");
+  await expect(page.getByLabel("Correction frame",{exact:true})).toHaveValue("6");
+  await ball.press("ArrowLeft");
+  await expect(page.getByLabel("Correction frame",{exact:true})).toHaveValue("5");
+  await expect(page.getByText("Editing track 1 ·",{exact:false})).toBeVisible();
+  await expect(page.locator(".jumper-corrections")).toHaveAttribute("open", "");
+  await expect(timeline.getByText(/Include points on visible fingers/)).toBeVisible();
+  await ball.press("ArrowRight");
+  await expect(page.getByLabel("Correction frame",{exact:true})).toHaveValue("6");
+  await expect(page.getByRole("button",{name:"Save to My Clips",exact:true})).toBeDisabled();
   // Adding a correction retains the report as explicitly stale review evidence.
   await overlap.press("ArrowRight");
   await image.focus();
@@ -158,10 +177,10 @@ try {
     throw Error("Mobile overflow");
   await expect(image).toBeVisible();
   await page.waitForTimeout(200);
-  await timeline.screenshot({ path: "/tmp/jumper-timeline-mobile.png" });
+  await timeline.screenshot({ path: "/tmp/jumper-ball-timeline-mobile.png" });
   await page.getByRole("button", { name: "Light", exact: true }).click();
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await timeline.screenshot({ path: "/tmp/jumper-timeline-light.png" });
+  await timeline.screenshot({ path: "/tmp/jumper-ball-timeline-light.png" });
   await page
     .getByRole("button", { name: "Select shooter again", exact: true })
     .click();

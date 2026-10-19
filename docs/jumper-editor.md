@@ -854,3 +854,29 @@ selects another player. It may miss faint/small attachments, and perspective,
 inaccurate detections or unusual poses may produce false warnings. A warning is
 not proof of a shadow or reflection; preserve legitimate feet and review the full
 motion rather than automatically trimming at a detection box.
+
+### Ball attached to the shooting hand
+
+**Possible ball in shooter mask** appears on the mask-quality timeline when a
+round region in the shooter’s final visible mask has image-edge evidence near a
+confidently detected wrist in two consecutive frames. Select its marker (or focus
+it and press Enter); the editor selects the shooter, opens corrections and shows
+the original frame. Left/Right moves among flagged frames. Pause near the release,
+use precision aiming, place Exclude points inside the ball and Include points on
+visible fingertips, then reprocess and review the motion. If the boundary is
+unclear, use a clearer neighboring frame rather than excluding an uncertain hand.
+Warnings continue to prevent approval until corrected.
+
+The browser and downloaded trackers reuse wrist predictions from the existing
+pose detector, final mask ownership and source intensity edges. No extra model or
+API is loaded. Detector evidence is cached with a new schema key so older
+box-only entries cannot be mistaken for wrist evidence. Source pixels used for
+this check never enter silhouette videos. The diagnostic does not change masks,
+tracking memory, player colors or corrections.
+
+This conservative review aid requires automatic discovery and a uniquely
+supported shooter detection. It skips tiny players, weak wrists, clipped round
+regions, and likely head regions; it may miss occluded/low-contrast balls or flag
+a rounded fist. It is not anatomical reconstruction or guaranteed ball detection.
+Neither fingers nor ball-shaped regions are cut automatically. Correct the mask
+or choose clearer footage when the visible evidence is insufficient.

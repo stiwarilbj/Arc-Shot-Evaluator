@@ -7,6 +7,7 @@ export const warningLabels = {
   target_lost: "Missing shooter",
   player_lost: "Missing player",
   outline_changed: "Abrupt outline change",
+  ball_attachment: "Possible ball in shooter mask",
   floor_attachment: "Possible shadow or reflection",
   mask_joined: "Possible joined players",
   mask_fragmented: "Detached mask fragment",
