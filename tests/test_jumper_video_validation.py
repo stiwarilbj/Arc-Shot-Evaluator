@@ -234,3 +234,52 @@ def test_native_proof_matches_guarded_reference():
         np.testing.assert_array_equal(silhouette_proof(image), reference)
     with pytest.raises(ValueError, match="color"):
         validate_neutral_pixels(np.full((48, 64, 3), 64, np.uint8))
+
+
+def boundary_frames():
+    images = []
+    for offset in (4, 12, 20, 28, 36, 44):
+        image = np.full((48, 64, 3), 224, np.uint8)
+        image[8:40, offset:offset + 12] = 0
+        images.append(image)
+    return images
+
+
+@pytest.mark.parametrize("fault,endpoint", [("repeat", "last"), ("omit_finish", "last"), ("shift", "first"), ("reverse", "first")])
+def test_encoded_timeline_boundary_mismatch(tmp_path, fault, endpoint):
+    from backend.jumper.video_validation import boundary_proof
+    images = boundary_frames()
+    wrong = {
+        "repeat": [images[0]] * len(images),
+        "omit_finish": images[:-1] + [images[-2]],
+        "shift": images[1:] + [images[-1]],
+        "reverse": images[::-1],
+    }[fault]
+    path = tmp_path / f"{fault}.mp4"
+    with pipeline.encoder(path, 64, 48) as stream:
+        for image in wrong:
+            stream.write(image.tobytes())
+    # Same geometry, frame count, timestamps and duration all pass without evidence.
+    validate_finished_video(path, 64, 48, len(images))
+    with pytest.raises(ValueError, match=f"{endpoint} frame.*intended timeline"):
+        validate_finished_video(path, 64, 48, len(images),
+                                boundaries=[boundary_proof(images[0]), boundary_proof(images[-1])])
+
+
+def test_encoded_boundaries_and_rgb_partial_blocks(tmp_path):
+    from backend.jumper.video_validation import boundary_proof, validate_boundary_pixels
+    small = np.array([[[i * 10 + c for c in range(3)] for i in range(y * 6, y * 6 + 6)] for y in range(2)], np.uint8)
+    assert boundary_proof(small).tolist() == [45, 46, 47, 75, 76, 77]
+    images = boundary_frames()
+    # Non-neutral foreground exercises the OpenCV BGR -> RGB conversion too.
+    images[0][8:40, 4:16] = [180, 40, 20]
+    images[-1][8:40, 44:56] = [20, 40, 180]
+    path = tmp_path / "boundaries.mp4"
+    with pipeline.encoder(path, 64, 48) as stream:
+        for image in images:
+            stream.write(image.tobytes())
+    proofs = [boundary_proof(images[0]), boundary_proof(images[-1])]
+    validate_finished_video(path, 64, 48, len(images), boundaries=proofs)
+    validate_boundary_pixels(np.minimum(images[0].astype(int) + 3, 255).astype(np.uint8), proofs[0], "first")
+    with pytest.raises(ValueError, match="boundary"):
+        validate_finished_video(path, 64, 48, len(images), boundaries=[])

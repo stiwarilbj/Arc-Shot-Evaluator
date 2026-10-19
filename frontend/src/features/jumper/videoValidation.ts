@@ -156,3 +156,45 @@ export function validateFrameTime(
   )
     throw Error("Encoded video has an incorrect frame timeline");
 }
+
+/** Compact spatial RGB evidence captured before encoding, only at timeline ends.
+ * Allow 24 levels per block and 4 on average for codec/color-conversion noise.
+ */
+export function boundaryProof(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+): Uint8Array {
+  if (pixels.length !== width * height * 4) throw Error("Invalid boundary frame size");
+  const proof = new Uint8Array(Math.ceil(width / 4) * Math.ceil(height / 4) * 3);
+  let at = 0;
+  for (let y = 0; y < height; y += 4)
+    for (let x = 0; x < width; x += 4) {
+      const endY = Math.min(height, y + 4), endX = Math.min(width, x + 4);
+      for (let c = 0; c < 3; c++) {
+        let sum = 0;
+        for (let yy = y; yy < endY; yy++)
+          for (let xx = x; xx < endX; xx++) sum += pixels[(yy * width + xx) * 4 + c];
+        proof[at++] = Math.round(sum / ((endY - y) * (endX - x)));
+      }
+    }
+  return proof;
+}
+
+export function validateBoundaryPixels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  expected: Uint8Array,
+  end: string,
+) {
+  const actual = boundaryProof(pixels, width, height);
+  if (!expected.length || expected.length !== actual.length) throw Error("Invalid timeline boundary proof");
+  let total = 0;
+  for (let i = 0; i < actual.length; i++) {
+    const error = Math.abs(actual[i] - expected[i]);
+    if (error > 24) throw Error(`Export ${end} frame does not match the intended timeline`);
+    total += error;
+  }
+  if (total / actual.length > 4) throw Error(`Export ${end} frame does not match the intended timeline`);
+}

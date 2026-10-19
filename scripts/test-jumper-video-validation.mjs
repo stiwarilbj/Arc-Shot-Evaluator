@@ -70,3 +70,26 @@ assert.throws(
 console.log(
   "Finished-video exact palette, opaque compositing, lossy tolerance, geometry and frame-clock checks passed",
 );
+
+const { boundaryProof, validateBoundaryPixels } = await import("../frontend/src/features/jumper/videoValidation.ts");
+function boundaryFrame(offset) {
+  const frame = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const v = x >= offset && x < offset + 12 && y >= 4 && y < 28 ? 0 : 224;
+    frame.set([v, v, v, 255], (y * width + x) * 4);
+  }
+  return frame;
+}
+const opening = boundaryFrame(4), finish = boundaryFrame(44);
+const openingProof = boundaryProof(opening, width, height);
+validateBoundaryPixels(opening, width, height, openingProof, "first");
+const compressed = opening.slice();
+for (let i = 0; i < compressed.length; i += 4) for (let c = 0; c < 3; c++) compressed[i + c] += 3;
+validateBoundaryPixels(compressed, width, height, openingProof, "first");
+assert.throws(() => validateBoundaryPixels(finish, width, height, openingProof, "first"), /first frame.*timeline/);
+assert.throws(() => validateBoundaryPixels(opening, width, height, boundaryProof(finish, width, height), "last"), /last frame.*timeline/);
+assert.throws(() => validateBoundaryPixels(opening, width, height, new Uint8Array(), "first"), /proof/);
+// Partial blocks and RGB ordering match the native implementation.
+const small = Uint8ClampedArray.from({ length: 6 * 2 * 4 }, (_, i) => i % 4 === 3 ? 255 : Math.floor(i / 4) * 10 + i % 4);
+assert.deepEqual([...boundaryProof(small, 6, 2)], [45, 46, 47, 75, 76, 77]);
+console.log("First/last intended-frame evidence, lossy tolerance and partial-block RGB checks passed");

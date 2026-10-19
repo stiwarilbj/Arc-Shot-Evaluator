@@ -469,7 +469,13 @@ ignored; detailed mask and video checks still run. Checkpoints and encoding read
 only finished masks. Failed writes clean up their temporary file; a hard interruption
 may leave a distinguishable partial file until the job is retried or removed.
 Finished videos are decoded and checked for timeline, dimensions, neutral colors, and no
-audio before becoming ready for review. Both browser and local masking reject
+audio before becoming ready for review. Browser and native masking/editing exports
+also compare their first and last decoded images against compact spatial RGB
+evidence captured from the intended output samples before encoding. Compression
+tolerance allows small codec differences; repeated openings, missing finishes, and
+shifted boundaries are rejected when their visible content differs. Identical-looking
+frames cannot prove source identity, and imported clips without an intended timeline
+retain the existing structural checks. These comparisons never rerun segmentation. Both browser and local masking reject
 malformed mask dimensions, missing values, and non-finite predictions before
 resizing or compositing. Processing stops with a retry message rather than
 exporting damaged silhouettes; this check does not establish tracking accuracy.

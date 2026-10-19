@@ -14,7 +14,7 @@ import {
 } from "./editProject";
 import { drawEdit } from "./editDrawing";
 import { captionLayout } from "./captionLayout";
-import { silhouetteProof } from "./videoValidation";
+import { boundaryProof, silhouetteProof } from "./videoValidation";
 import { MAX_BYTES } from "./domain";
 export type EditedVideos = { highlight: Blob; clean: Blob; duration: number };
 export async function renderEdits(
@@ -62,7 +62,8 @@ export async function renderEdits(
           signal?.throwIfAborted();
           const output = await writer.create(highQuality),
             proofs: Uint8Array[] = [],
-            details: DetailProof[] = [];
+            details: DetailProof[] = [],
+            boundaries: Uint8Array[] = [];
           let last = -1,
             sample: Awaited<ReturnType<typeof sink.getCanvas>> = null;
           try {
@@ -107,6 +108,8 @@ export async function renderEdits(
                   pixels[n + 3] !== 255
                 )
                   throw Error("Editor produced non-neutral pixels");
+              if (i === 0 || i === count - 1)
+                boundaries.push(boundaryProof(pixels, width, height));
               proofs.push(silhouetteProof(pixels, width, height));
               details.push(detailProof(pixels, width, height));
               await output.source.add(i / 30, 1 / 30);
@@ -122,6 +125,7 @@ export async function renderEdits(
               true,
               "edited",
               details,
+              boundaries,
             );
             variants.push(blob);
           } catch (error) {

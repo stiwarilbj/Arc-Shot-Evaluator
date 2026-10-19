@@ -34,6 +34,7 @@ from .video_validation import (
     validate_composite,
     silhouette_proof,
     validate_finished_video,
+    boundary_proof,
 )
 
 SAM_CONFIG = "configs/sam2.1/sam2.1_hiera_t.yaml"
@@ -873,6 +874,7 @@ def _render(
         shades = graph.finish()
     proofs = []
     details = []
+    boundaries = {kind: [] for kind in kinds}
     with ExitStack() as stack:
         streams = [
             stack.enter_context(encoder(path, width, height, high_quality)) for path in paths.values()
@@ -901,6 +903,9 @@ def _render(
                     str(thumbnail), cv2.cvtColor(composites[0], cv2.COLOR_RGB2BGR)
                 ):
                     raise RuntimeError("Could not write the neutral thumbnail")
+            if index in (0, len(frames) - 1):
+                for kind, image in zip(kinds, composites):
+                    boundaries[kind].append(boundary_proof(image))
             for stream, image in zip(streams, composites):
                 stream.write(image.tobytes())
             if progress:
@@ -909,6 +914,7 @@ def _render(
         validate_finished_video(
             path, width, height, len(frames), proofs if kind == "quiz" else None,
             details=details if kind == "quiz" else None,
+            boundaries=boundaries[kind],
         )
     if silhouette:
         paths["highlight"] = paths["quiz"]

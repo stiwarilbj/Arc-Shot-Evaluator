@@ -62,7 +62,7 @@ import {
 import { MaskOwnership } from "./maskOwnership";
 import { checkResources, estimateResources } from "./resources";
 import { ExportCheckpoint, retryExport } from "./exportCheckpoint";
-import { validateComposite, silhouetteProof } from "./videoValidation";
+import { validateComposite, silhouetteProof, boundaryProof } from "./videoValidation";
 import { samPixels } from "./preprocessing";
 import { checkedAsset } from "./checkedAsset";
 import {
@@ -627,8 +627,10 @@ async function process(
     }
     const colorProofs: Uint8Array[] = [];
     const detailProofs: DetailProof[] = [];
+    const boundaries: Uint8Array[][] = [];
     let highQuality = false;
     async function createOutputs() {
+      boundaries.length = 0;
       colorProofs.length = 0;
       detailProofs.length = 0;
       for (let i = 0; i < (silhouette ? 1 : 3); i++)
@@ -650,11 +652,16 @@ async function process(
           silhouette || i === 1 ? colorProofs : undefined,
           false, "legacy",
           silhouette || i === 1 ? detailProofs : undefined,
+          boundaries[i] ?? [],
         );
       }
       return blobs;
     }
-    function renderPixels(owners: Uint8Array, rgb?: Uint8ClampedArray) {
+    function renderPixels(
+      owners: Uint8Array,
+      frameIndex: number,
+      rgb?: Uint8ClampedArray,
+    ) {
       for (let i = 0; i < outputs.length; i++) {
         const kind = silhouette
           ? "quiz"
@@ -677,6 +684,9 @@ async function process(
           grayShades,
         );
         if (silhouette) neutralEdges(pixels, width, height);
+        if (frameIndex === 0 || frameIndex === count - 1) {
+          (boundaries[i] ??= []).push(boundaryProof(pixels, width, height));
+        }
         if (kind === "quiz") {
           colorProofs.push(silhouetteProof(pixels, width, height));
           detailProofs.push(detailProof(pixels, width, height));
@@ -981,7 +991,7 @@ async function process(
             sourceContext.drawImage(sample.canvas, 0, 0, width, height);
             rgb = sourceContext.getImageData(0, 0, width, height).data;
           }
-          renderPixels(labels, rgb);
+          renderPixels(labels, frame, rgb);
           for (const output of outputs)
             await output.source.add(frame / 30, 1 / 30);
         } catch (error) {
@@ -1085,7 +1095,7 @@ async function process(
           sourceContext!.drawImage(sample.canvas, 0, 0, width, height);
           rgb = sourceContext!.getImageData(0, 0, width, height).data;
         }
-        renderPixels(owners, rgb);
+        renderPixels(owners, frame, rgb);
         for (const output of outputs) await output.source.add(frame / 30, 1 / 30);
         report(`${stage} · frame ${frame + 1} / ${count}`, frame / count);
         await new Promise((resolve) => setTimeout(resolve, 0));

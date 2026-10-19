@@ -3,6 +3,7 @@ import {
   type DetailProof,
 } from "./compressionQuality.ts";
 import {
+  validateBoundaryPixels,
   validateGeometry,
   validateFrameTime,
   validateDecodedPixels,
@@ -188,7 +189,10 @@ export async function validateFinishedVideo(
   neutral = false,
   profile: "legacy" | "palette" | "edited" = "legacy",
   details?: readonly DetailProof[],
+  boundaries?: readonly Uint8Array[],
 ) {
+  if (boundaries && boundaries.length !== 2)
+    throw Error("Missing timeline boundary checks");
   validateGeometry(geometry, profile === "edited");
   if (proofs && proofs.length !== geometry.count)
     throw Error("Missing output color checks");
@@ -225,7 +229,7 @@ export async function validateFinishedVideo(
         sample.canvas.height !== geometry.height
       )
         throw Error("Decoded frame dimensions changed");
-      if (proofs || neutral || details) {
+      if (proofs || neutral || details || boundaries) {
         const context = sample.canvas.getContext("2d", {
           willReadFrequently: true,
         });
@@ -237,6 +241,11 @@ export async function validateFinishedVideo(
           geometry.height,
         ).data;
         if (details) validateDetailPixels(pixels, details[index]);
+        if (boundaries && (index === 0 || index === geometry.count - 1))
+          validateBoundaryPixels(
+            pixels, geometry.width, geometry.height,
+            boundaries[index === 0 ? 0 : 1], index === 0 ? "first" : "last",
+          );
         if (proofs)
           validateDecodedPixels(
             pixels,
@@ -244,9 +253,9 @@ export async function validateFinishedVideo(
             geometry.height,
             proofs[index],
           );
-        else if (profile === "legacy")
+        else if (neutral && profile === "legacy")
           validateNeutralPixels(pixels, geometry.width, geometry.height);
-        else {
+        else if (neutral) {
           for (let i = 0; i < pixels.length; i += 4)
             if (
               Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) -

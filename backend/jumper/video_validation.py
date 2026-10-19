@@ -16,6 +16,27 @@ CHROMA_TOLERANCE = 8
 LUMA_TOLERANCE = 16
 
 
+def boundary_proof(image):
+    """RGB 4px block means, including partial edge blocks; matches browser proof."""
+    height, width, channels = image.shape
+    if channels != 3 or image.dtype != np.uint8:
+        raise ValueError("Invalid boundary frame size")
+    ys, xs = np.arange(0, height, 4), np.arange(0, width, 4)
+    sums = np.add.reduceat(np.add.reduceat(image.astype(np.uint32), ys, axis=0), xs, axis=1)
+    counts = np.minimum(4, height - ys)[:, None] * np.minimum(4, width - xs)[None, :]
+    return np.floor(sums / counts[:, :, None] + 0.5).astype(np.uint8).ravel()
+
+
+def validate_boundary_pixels(image, expected, end):
+    actual = boundary_proof(image)
+    if not isinstance(expected, np.ndarray) or expected.dtype != np.uint8 or expected.shape != actual.shape:
+        raise ValueError("Invalid timeline boundary proof")
+    error = np.abs(actual.astype(np.int16) - expected.astype(np.int16))
+    # Same per-block/mean compression tolerance as the browser validator.
+    if error.max() > 24 or error.mean() > 4:
+        raise ValueError(f"Export {end} frame does not match the intended timeline")
+
+
 def validate_composite(image, labels, target, kind, palette=False, shades=None):
     if image.dtype != np.uint8 or image.shape != (*labels.shape, 3):
         raise ValueError("Invalid output frame size")
@@ -98,6 +119,7 @@ def validate_finished_video(
     neutral=False,
     profile="legacy",
     details=None,
+    boundaries=None,
 ):
     if not (
         2 <= width <= 1280
@@ -106,6 +128,8 @@ def validate_finished_video(
         and 2 <= count <= (1800 if profile == "edited" else 450)
     ):
         raise ValueError("Invalid finished-video geometry or frame count")
+    if boundaries is not None and len(boundaries) != 2:
+        raise ValueError("Missing timeline boundary checks")
     if proofs is not None and len(proofs) != count:
         raise ValueError("Missing output color checks")
     if details is not None and len(details) != count:
@@ -182,6 +206,12 @@ def validate_finished_video(
                 raise ValueError("Encoded video has an incorrect frame timeline")
             if details is not None:
                 validate_detail_pixels(image, details[index])
+            if boundaries is not None and index in (0, count - 1):
+                validate_boundary_pixels(
+                    cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+                    boundaries[0 if index == 0 else 1],
+                    "first" if index == 0 else "last",
+                )
             if proofs is not None:
                 validate_decoded_pixels(image, proofs[index])
             elif neutral:

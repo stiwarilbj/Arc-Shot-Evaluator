@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from .subprocess_output import diagnostic_process
 from .compression_quality import detail_proof, SilhouetteCompressionError
-from .video_validation import validate_finished_video, silhouette_proof
+from .video_validation import validate_finished_video, silhouette_proof, boundary_proof
 
 PROFILE = "silhouette-edited-v1"
 PALETTE = "silhouette-palette-v1"
@@ -325,6 +325,7 @@ def _render(base: Path, project: dict, directory: Path, cancel, progress, high_q
                 capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 proofs = []
                 details = []
+                boundaries = []
                 last = -1
                 image = None
                 try:
@@ -343,6 +344,8 @@ def _render(base: Path, project: dict, directory: Path, cancel, progress, high_q
                         out = draw_frame(image, project, index, clean)
                         if np.any(out.max(axis=2) != out.min(axis=2)):
                             raise ValueError("Edited frame is not neutral")
+                        if index in (0, count - 1):
+                            boundaries.append(boundary_proof(out))
                         proofs.append(silhouette_proof(out))
                         details.append(detail_proof(out))
                         process.stdin.write(out.tobytes())
@@ -361,6 +364,7 @@ def _render(base: Path, project: dict, directory: Path, cancel, progress, high_q
                         neutral=True,
                         profile="edited",
                         details=details,
+                        boundaries=boundaries,
                     )
                 except BrokenPipeError as error:
                     process.wait(timeout=60)
