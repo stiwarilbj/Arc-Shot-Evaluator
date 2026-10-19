@@ -1,5 +1,6 @@
-"""Publish job-local masks only after NumPy has finished and the file is closed."""
+"""Atomic publication and startup inventory for job-local masks."""
 
+from collections import Counter
 from pathlib import Path
 import tempfile
 
@@ -21,3 +22,26 @@ def publish_mask(path: Path, labels):
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def check_mask_inventory(directory: Path, count: int):
+    """Check names against the timeline without reading any prediction arrays."""
+    if count <= 0:
+        raise ValueError("Cannot export an empty processing timeline. Retry processing.")
+    expected = {f"{index:06d}.npy" for index in range(count)}
+    entries = [path for path in directory.iterdir() if path.suffix.lower() == ".npy"]
+    present = {path.name for path in entries if path.is_file()}
+    numbers = Counter(int(path.stem) for path in entries
+                      if path.stem.isascii() and path.stem.isdecimal())
+    missing = sorted(expected - present)
+    duplicates = sorted(f"{index:06d}" for index, total in numbers.items() if total > 1)
+    unexpected = sorted(path.name for path in entries
+                        if path.name not in expected or path.name not in present)
+    if missing or duplicates or unexpected:
+        details = []
+        for label, values in (("missing masks", missing), ("duplicate frames", duplicates),
+                              ("unexpected masks", unexpected)):
+            if values:
+                details.append(f"{label}: {', '.join(values[:5])}" +
+                               (f" (+{len(values) - 5} more)" if len(values) > 5 else ""))
+        raise ValueError("Mask inventory mismatch; " + "; ".join(details) + ". Retry processing.")

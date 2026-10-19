@@ -12,7 +12,7 @@ import imageio_ffmpeg
 import numpy as np
 
 from .subprocess_output import diagnostic_process
-from .mask_files import publish_mask
+from .mask_files import check_mask_inventory, publish_mask
 from .ball_attachments import BallAttachments, valid_hands
 from .frame_boundary import FrameBoundary
 from .cache import valid_detection_evidence
@@ -850,6 +850,7 @@ def _render(
     progress=None,
     high_quality=False,
 ) -> dict:
+    check_mask_inventory(masks, len(frames))
     output.mkdir(exist_ok=True)
     if silhouette:
         height, width = np.load(masks / "000000.npy", allow_pickle=False).shape
