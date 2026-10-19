@@ -56,6 +56,7 @@ export async function processVideo(
   signal: AbortSignal,
 ): Promise<MaskResult> {
   request = await prepareShooterSelection(file, request, progress, signal);
+  signal.throwIfAborted();
   const anchor = request.verify_shooter
     ? confirmedShooterFrame(request.objects, request.target_id)
     : undefined;
@@ -67,6 +68,7 @@ export async function processVideo(
         result.tracking_check.target_id === request.target_id);
   if (IS_GITHUB_PAGES) {
     return new Promise((resolve, reject) => {
+      signal.throwIfAborted();
       const worker = new Worker(
         new URL("./masking.worker.ts", import.meta.url),
         { type: "module" },
@@ -87,6 +89,7 @@ export async function processVideo(
         fail(new DOMException("Processing cancelled", "AbortError"));
       };
       signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) { abort(); return; }
       worker.onerror = () => {
         fail(
           Error(
@@ -153,6 +156,7 @@ export async function processVideo(
   }
   let id: string | undefined;
   async function api(path: string, init: RequestInit = {}) {
+    signal.throwIfAborted();
     const response = await fetch(`/api/jumper-lab${path}`, {
       ...init,
       signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]),
@@ -167,6 +171,7 @@ export async function processVideo(
     return response;
   }
   try {
+    signal.throwIfAborted();
     progress({ stage: "Sending video to your local app", progress: 0 });
     const form = new FormData();
     form.set("file", file);
@@ -257,6 +262,7 @@ export async function processVideo(
       await new Promise<void>((resolve, reject) => {
         const abort = () => {
           clearTimeout(timer);
+          signal.removeEventListener("abort", abort);
           reject(new DOMException("Cancelled", "AbortError"));
         };
         const timer = setTimeout(() => {
@@ -264,6 +270,7 @@ export async function processVideo(
           resolve();
         }, 600);
         signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
       });
     }
   } finally {

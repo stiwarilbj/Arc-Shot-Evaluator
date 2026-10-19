@@ -480,7 +480,9 @@ otherwise. Native masking also retries an OS-terminated accelerator once in a
 fresh CPU process; cancellation never starts that retry.
 Editing uses no paid service and does not download inference models. Cancelled or
 released local jobs cannot take ownership of a later retry. Browser worker
-communication failures stop cleanly and allow another attempt.
+communication failures stop cleanly and allow another attempt. Processing checks
+for cancellation again after shooter preparation and abort-listener registration,
+so cancelled startup cannot proceed to a masking request or local upload.
 
 Opposing Include/Exclude points on the same SAM input pixel are rejected before
 inference, with the frame and track identified. Repeated points with the same
