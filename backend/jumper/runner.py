@@ -5,6 +5,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import time
 import urllib.request
@@ -94,7 +95,6 @@ def run(directory: Path):
         refinement_frames = None
         if job.get("refine_small_players"):
             progress("Decoding detail frames")
-            import shutil
             required = (
                 math.ceil((job["end"] - job["start"]) * 30)
                 * math.ceil(min(sw * sh, 2560 * 1440)) * 3
@@ -206,6 +206,11 @@ def run(directory: Path):
                     if refinement_frames is not None else {}
                 ),
             )
+        if refinement_frames is not None:
+            # Tracking and any CPU retry have finished. Export retries use only the
+            # regular frames and completed masks, which remain owned by the job.
+            refinement_frames = None
+            shutil.rmtree(directory / "detail-frames", ignore_errors=True)
         progress("Rendering masked videos")
         outputs = render_with_retry(
             render,
