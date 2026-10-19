@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 import urllib.request
 
 from backend.jumper.pipeline import extract, render, track
@@ -29,14 +30,38 @@ def write(path, value):
     tmp.replace(path)
 
 
+class ProgressWriter:
+    """Coalesce status callbacks, never tracking or rendering work."""
+
+    def __init__(self, path):
+        self.path = path
+        self.latest = None
+        self.published = None
+        self.published_at = 0.0
+
+    def __call__(self, stage, done=0, total=1):
+        self.latest = {"stage": stage, "progress": done / total if total > 0 else 0}
+        now = time.monotonic()
+        previous = self.published
+        if (
+            previous is None
+            or stage != previous["stage"]
+            or self.latest["progress"] - previous["progress"] >= 0.01
+            or (self.latest["progress"] >= 1 and previous["progress"] < 1)
+            or now - self.published_at >= 0.25
+        ):
+            self.flush(now)
+
+    def flush(self, now=None):
+        if self.latest is not None and self.latest != self.published:
+            write(self.path, self.latest)
+            self.published = self.latest
+            self.published_at = time.monotonic() if now is None else now
+
+
 def run(directory: Path):
     job = json.loads((directory / "request.json").read_text())
-
-    def progress(stage, done=0, total=1):
-        write(
-            directory / "progress.json",
-            {"stage": stage, "progress": done / total if total > 0 else 0},
-        )
+    progress = ProgressWriter(directory / "progress.json")
 
     try:
         progress("Checking device resources")
@@ -208,6 +233,10 @@ def run(directory: Path):
         progress("Ready for review", 1)
     except Exception as error:
         write(directory / "error.json", {"error": str(error)[:2000]})
+        try:
+            progress.flush()
+        except (OSError, ValueError):
+            pass  # Keep the original processing error if status cannot be written.
         raise
 
 

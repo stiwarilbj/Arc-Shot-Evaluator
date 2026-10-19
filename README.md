@@ -483,6 +483,9 @@ fresh CPU process; cancellation never starts that retry. Within one local job,
 tracking and cache preparation reuse the verified checkpoint SHA-256 only while
 file identity, size, and modification metadata still match. Changed or replaced
 checkpoints are verified again; this record is never reused across jobs.
+Local masking status combines small progress updates within a stage, publishing
+after a one-percentage-point increase or 250 ms on the next callback. Stage
+changes, completion, and errors publish immediately; video processing is unchanged.
 Editing uses no paid service and does not download inference models. Cancelled or
 released local jobs cannot take ownership of a later retry. Browser worker
 communication failures stop cleanly and allow another attempt. Processing checks
