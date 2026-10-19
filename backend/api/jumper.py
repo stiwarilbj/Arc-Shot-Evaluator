@@ -131,6 +131,7 @@ async def upload(file: UploadFile):
             JOBS[identity] = {
                 "id": identity,
                 "status": "uploaded",
+                "termination_reason": None,
                 "directory": directory,
                 "generation": 0,
                 "cancel": threading.Event(),
@@ -199,9 +200,9 @@ def execute(identity, generation):
             with LOCK:
                 if cancelled.is_set() or not owns():
                     if owns() and cancelled.is_set():
-                        job["status"] = "cancelled"
+                        job.update(status="cancelled", termination_reason="cancelled")
                     return
-                job["status"] = "processing"
+                job.update(status="processing", termination_reason=None)
                 process = subprocess.Popen(
                     [sys.executable, "-m", "backend.jumper.runner", str(directory)],
                     cwd=PROJECT_ROOT,
@@ -229,7 +230,7 @@ def execute(identity, generation):
             with LOCK:
                 if cancelled.is_set() or not owns():
                     if owns() and cancelled.is_set():
-                        job["status"] = "cancelled"
+                        job.update(status="cancelled", termination_reason="cancelled")
                     return
                 try:
                     stage = json.loads((directory / "progress.json").read_text())[
@@ -247,30 +248,35 @@ def execute(identity, generation):
             if not owns():
                 return
             if cancelled.is_set():
-                job["status"] = "cancelled"
+                job.update(status="cancelled", termination_reason="cancelled")
             elif process.returncode != 0:
-                job["status"] = "error"
                 path = directory / "error.json"
+                job.update(status="error", termination_reason="failed" if path.exists() else "interrupted")
                 job["error"] = (
                     json.loads(path.read_text())["error"]
                     if path.exists()
-                    else f"Local masking process stopped (exit {process.returncode}). Retry a shorter clip or restart the downloaded app."
+                    else f"Local masking operation interrupted (exit {process.returncode}). Retry a shorter clip or restart the downloaded app. Your previous finished video is preserved."
                 )
             else:
                 completed_result(directory)
-                job["status"] = "done"
+                job.update(status="done", termination_reason="completed")
     except Exception as error:
         with LOCK:
             if owns():
                 if cancelled.is_set():
-                    job["status"] = "cancelled"
+                    job.update(status="cancelled", termination_reason="cancelled")
                 else:
-                    job.update(status="error", error=str(error))
+                    job.update(status="error", error=str(error), termination_reason="interrupted")
     finally:
-        with LOCK:
-            if job.get("process") is process:
-                job.pop("process", None)
-        PROCESS_LOCK.release()
+        try:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait()
+        finally:
+            with LOCK:
+                if job.get("process") is process:
+                    job.pop("process", None)
+            PROCESS_LOCK.release()
 
 
 def completed_result(directory):
@@ -350,6 +356,7 @@ async def process(identity: str, request: Request):
         job.update(
             status="queued",
             error=None,
+            termination_reason=None,
             cancel=threading.Event(),
             generation=job["generation"] + 1,
         )
@@ -358,6 +365,7 @@ async def process(identity: str, request: Request):
         except RuntimeError as error:
             job.update(
                 status="error",
+                termination_reason="failed",
                 error="Local processing queue is unavailable; restart the downloaded app.",
             )
             raise HTTPException(503, job["error"]) from error
@@ -373,6 +381,7 @@ def status(identity: str):
         value = {
             "id": identity,
             "status": job["status"],
+            "termination_reason": job.get("termination_reason"),
             "stage": "Waiting for local processing",
             "progress": 0,
             "error": job.get("error"),
@@ -392,8 +401,8 @@ def status(identity: str):
             try:
                 value["result"] = completed_result(job["directory"])
             except ValueError as error:
-                job.update(status="error", error=str(error))
-                value.update(status="error", error=str(error))
+                job.update(status="error", error=str(error), termination_reason="interrupted")
+                value.update(status="error", error=str(error), termination_reason="interrupted")
         return value
 
 
@@ -403,10 +412,20 @@ def cancel(identity: str):
     if job.get("kind") == "edit":
         raise HTTPException(404, "Masking job unavailable")
     with LOCK:
+        process = job.get("process")
+        # A late Cancel must not relabel a worker that has already exited.
+        if job["status"] not in ("uploaded", "queued", "processing") or (
+            process is not None and process.poll() is not None
+        ):
+            return {"id": identity, "status": job["status"],
+                    "termination_reason": job.get("termination_reason")}
         job["cancel"].set()
-        if job["status"] in ("uploaded", "queued"):
-            job["status"] = "cancelled"
-    return {"id": identity, "status": "cancelled"}
+        if process is None:
+            job.update(status="cancelled", termination_reason="cancelled")
+        else:
+            job["termination_reason"] = "cancel_requested"
+    return {"id": identity, "status": job["status"],
+            "termination_reason": job.get("termination_reason")}
 
 
 @router.get("/jobs/{identity}/output/{kind}")
@@ -663,6 +682,7 @@ async def create_edit(request: Request):
             "directory": directory,
             "cancel": threading.Event(),
             "kind": "edit",
+            "termination_reason": None,
             "last_seen": time.monotonic(),
             "progress": 0,
             "done": False,
@@ -686,12 +706,18 @@ async def create_edit(request: Request):
                 render(base, project, directory, job["cancel"], progress)
                 with LOCK:
                     if JOBS.get(identity) is job and not job["cancel"].is_set():
-                        job["done"] = True
+                        job.update(done=True, termination_reason="completed")
             except Exception as error:
                 with LOCK:
                     if JOBS.get(identity) is job:
-                        job["error"] = str(error)
+                        job.update(error=str(error), termination_reason="failed")
             finally:
+                with LOCK:
+                    if JOBS.get(identity) is job:
+                        if job["cancel"].is_set():
+                            job["termination_reason"] = "cancelled"
+                        elif not job["done"] and not job.get("error"):
+                            job.update(termination_reason="interrupted", error="Local rendering interrupted. Your previous finished video is preserved.")
                 if acquired:
                     PROCESS_LOCK.release()
                 if job["cancel"].is_set():
@@ -720,7 +746,8 @@ def edit_status(identity: str):
     job = job_for(identity)
     if job.get("kind") != "edit":
         raise HTTPException(404, "Edit job unavailable")
-    return {"done": job["done"], "progress": job["progress"], "error": job.get("error")}
+    return {"done": job["done"], "progress": job["progress"], "error": job.get("error"),
+            "termination_reason": job.get("termination_reason")}
 
 
 @router.get("/edits/{identity}/{kind}")

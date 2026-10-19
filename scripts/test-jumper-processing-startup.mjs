@@ -26,7 +26,13 @@ try {
       set('Worker', class {
         constructor() { created++; onCreate?.(); }
         terminate() { terminated++; }
-        postMessage() { posted++; onPost?.(); }
+        postMessage(message) {
+          if (message.kind === 'job-cancel') {
+            queueMicrotask(() => this.onmessage?.({ data: { id: message.id, kind: 'job-cancelled' } }));
+            return;
+          }
+          posted++; onPost?.();
+        }
       });
       set('fetch', async (...args) => {
         fetched++;

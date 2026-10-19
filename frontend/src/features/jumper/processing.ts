@@ -1,3 +1,4 @@
+import { WorkerJob } from "./workerJob";
 import { sameFrameMap } from "./sourceFrames";
 import { sourceFrameMap } from "./sourceFrameMedia";
 import { IS_GITHUB_PAGES } from "../../runtime";
@@ -74,37 +75,10 @@ export async function processVideo(
         { type: "module" },
       );
       const id = crypto.randomUUID();
-      let settled = false;
-      const cleanup = () => {
-        settled = true;
-        worker.terminate();
-        signal.removeEventListener("abort", abort);
-      };
-      const fail = (error: unknown) => {
-        if (settled) return;
-        cleanup();
-        reject(error);
-      };
-      const abort = () => {
-        fail(new DOMException("Processing cancelled", "AbortError"));
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      if (signal.aborted) { abort(); return; }
-      worker.onerror = () => {
-        fail(
-          Error(
-            "Masking worker stopped. Your source is unchanged; retry. If this page was updated, reload ARCade Hoops and select your video again, or use the free downloaded editor.",
-          ),
-        );
-      };
-      worker.onmessageerror = () =>
-        fail(
-          Error(
-            "The masking worker response could not be read. Retry processing.",
-          ),
-        );
+      const job = new WorkerJob(worker, id, signal, reject);
+      const fail = (error: unknown) => job.fail("failed", error);
       worker.onmessage = ({ data }: MessageEvent<WorkerResponse>) => {
-        if (settled || !data || data.id !== id) return;
+        if (job.receive(data)) return;
         if (
           data.kind === "progress" &&
           Number.isFinite(data.progress) &&
@@ -114,10 +88,8 @@ export async function processVideo(
         )
           progress(data);
         else if (data.kind === "error" && typeof data.error === "string") {
-          cleanup();
-          reject(Error(data.error));
+          fail(Error(data.error));
         } else if (data.kind === "done") {
-          cleanup();
           if (
             maskResult(data.result) &&
             matchesCheck(data.result) &&
@@ -129,9 +101,9 @@ export async function processVideo(
                 (o) => o.id === request.target_id && !o.ignored,
               ))
           )
-            resolve(data.result);
+            { job.finish("completed"); resolve(data.result); }
           else
-            reject(
+            fail(
               Error(
                 "The masking worker returned invalid videos. Retry processing.",
               ),
@@ -143,15 +115,7 @@ export async function processVideo(
             ),
           );
       };
-      try {
-        worker.postMessage({ kind: "process", id, file, request });
-      } catch {
-        fail(
-          Error(
-            "Could not send the video to the masking worker. Retry processing.",
-          ),
-        );
-      }
+      job.start({ kind: "process", id, file, request });
     });
   }
   let id: string | undefined;

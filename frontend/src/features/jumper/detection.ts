@@ -1,3 +1,4 @@
+import { WorkerJob } from "./workerJob";
 import type { SourceFrameMap } from "./sourceFrames";
 import { IS_GITHUB_PAGES } from "../../runtime";
 export async function detectPeople(
@@ -13,22 +14,11 @@ export async function detectPeople(
         new URL("./detection.worker.ts", import.meta.url),
         { type: "module" },
       );
-      const cleanup = () => {
-        worker.terminate();
-        signal.removeEventListener("abort", abort);
-      };
-      const abort = () => {
-        cleanup();
-        reject(new DOMException("Cancelled", "AbortError"));
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      worker.onerror = () => {
-        cleanup();
-        reject(Error("Detection failed; add players manually."));
-      };
+      const id = crypto.randomUUID();
+      const job = new WorkerJob(worker, id, signal, reject);
       worker.onmessage = ({ data }) => {
-        cleanup();
-        if (data.error) reject(Error(data.error));
+        if (job.receive(data)) return;
+        if (data.error) job.fail("failed", Error(data.error));
         else if (
           Array.isArray(data.boxes) &&
           data.boxes.length <= 20 &&
@@ -45,10 +35,10 @@ export async function detectPeople(
               ),
           )
         )
-          resolve(data.boxes);
-        else reject(Error("Invalid detection result"));
+          { job.finish("completed"); resolve(data.boxes); }
+        else job.fail("failed", Error("Invalid detection result"));
       };
-      worker.postMessage({ file, time, frame_map: frameMap });
+      job.start({ id, file, time, frame_map: frameMap });
     });
   let id: string | undefined;
   try {

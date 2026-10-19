@@ -1,5 +1,6 @@
-import { sourceFrameTime, validFrameMap, verifySourceFrame } from "./sourceFrames";
 /// <reference lib="webworker" />
+import { installWorkerControl } from "./workerControl";
+import { sourceFrameTime, validFrameMap, verifySourceFrame } from "./sourceFrames";
 import * as ort from "onnxruntime-web/webgpu";
 import ortModule from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
 import wasm from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
@@ -9,6 +10,7 @@ import { CanvasSink } from "mediabunny";
 import { createPersonDetector } from "./personDetector";
 ort.env.wasm.numThreads = 1;
 ort.env.wasm.wasmPaths = { wasm, mjs: ortModule };
+installWorkerControl(self);
 self.onmessage = async ({ data }) => {
   let input: Awaited<ReturnType<typeof openVideo>> | undefined;
   let detector: Awaited<ReturnType<typeof createPersonDetector>> | undefined;
@@ -29,9 +31,9 @@ self.onmessage = async ({ data }) => {
     if (!sample) throw Error("No decodable starting frame");
     if (data.frame_map) verifySourceFrame(data.frame_map, 0, sample);
     detector = await createPersonDetector();
-    self.postMessage({ boxes: await detector.detect(sample.canvas) });
+    self.postMessage({ id: data.id, boxes: await detector.detect(sample.canvas) });
   } catch (error) {
-    self.postMessage({ error: String(error) });
+    self.postMessage({ id: data.id, error: String(error) });
   } finally {
     input?.input.dispose();
     try {

@@ -1,3 +1,5 @@
+/// <reference lib="webworker" />
+import { installWorkerControl } from "./workerControl";
 import { correctionPrompt } from "./correctionPoints";
 import { FrameBoundary } from "./frameBoundary";
 import { BallAttachments } from "./ballAttachments";
@@ -10,7 +12,6 @@ import { reliableMask, pruneReliable } from "./memoryQuality";
 import { checkCorrections } from "./correctionCheck";
 import { validateAttentionOutput, validateDecoderOutputs, validateModelTensor } from "./modelOutputs";
 import { detailProof, type DetailProof } from "./compressionQuality";
-/// <reference lib="webworker" />
 import { latestShooterAnchor, shooterAnchors } from "./trackingAnchors";
 import { MaskJoins } from "./maskJoins";
 import { OverlapPalette } from "./overlapPalette";
@@ -1143,6 +1144,7 @@ async function process(
     }
   }
 }
+installWorkerControl(context);
 let running = false;
 context.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
   const send = (value: WorkerResponse) => context.postMessage(value);

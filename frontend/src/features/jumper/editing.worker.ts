@@ -1,7 +1,9 @@
 /// <reference lib="webworker" />
+import { installWorkerControl } from "./workerControl";
 import { isProject } from "./editProject";
 import { renderEdits } from "./editRenderer";
 const scope = self as unknown as DedicatedWorkerGlobalScope;
+installWorkerControl(scope);
 let running = false;
 scope.onmessage = async ({ data }) => {
   if (

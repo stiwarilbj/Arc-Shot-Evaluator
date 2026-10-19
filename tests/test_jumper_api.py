@@ -382,3 +382,58 @@ def test_reprocessing_removes_deleted_prompt_and_all_prediction_artifacts(client
     for name in ("frames", "detail-frames", "masks", "output", "progress.json", "result.json", "error.json"):
         assert not (job["directory"] / name).exists()
     assert evidence.read_bytes() == b"prompt-independent image features"
+
+
+@pytest.mark.parametrize("code,reported,expected", [(0, False, "interrupted"), (1, False, "interrupted"), (1, True, "failed")])
+def test_worker_exit_has_explicit_reason_and_never_becomes_cancellation(client, monkeypatch, code, reported, expected):
+    identity, job = uploaded_job(client)
+    job.update(generation=1, status="queued")
+    if reported:
+        (job["directory"] / "error.json").write_text(json.dumps({"error": "Tracking failed"}))
+    process = type("Exited", (), {"returncode": code, "poll": lambda self: code})()
+    monkeypatch.setattr(jumper.subprocess, "Popen", lambda *a, **k: process)
+    jumper.execute(identity, 1)
+    state = client.get(f"/api/jumper-lab/jobs/{identity}").json()
+    assert state["status"] == "error"
+    assert state["termination_reason"] == expected
+    assert not job["cancel"].is_set()
+    assert "process" not in job
+    assert jumper.PROCESS_LOCK.acquire(blocking=False)
+    jumper.PROCESS_LOCK.release()
+    # Neither Cancel nor a stale polling callback may turn this into cancellation.
+    late = client.post(f"/api/jumper-lab/jobs/{identity}/cancel").json()
+    assert late["termination_reason"] == expected
+    assert late["status"] == "error"
+
+
+def test_cancel_waits_for_running_worker_exit(client, monkeypatch):
+    identity, job = uploaded_job(client)
+    class Process:
+        returncode = None
+        def poll(self): return self.returncode
+        def terminate(self): self.returncode = -15
+        def wait(self, **kwargs): return self.returncode
+    process = Process()
+    job.update(status="processing", generation=1, process=process)
+    response = client.post(f"/api/jumper-lab/jobs/{identity}/cancel").json()
+    assert response["status"] == "processing"
+    assert response["termination_reason"] == "cancel_requested"
+    # Run the real executor cancellation loop, rather than claiming that the
+    # signal alone establishes a completed handshake.
+    job["cancel"] = threading.Event()
+    def launch(*a, **k):
+        job["cancel"].set()
+        return process
+    monkeypatch.setattr(jumper.subprocess, "Popen", launch)
+    jumper.execute(identity, 1)
+    assert process.returncode == -15
+    assert job["termination_reason"] == "cancelled"
+    assert job["status"] == "cancelled" and "process" not in job
+
+
+def test_cancel_racing_an_unexpected_exit_does_not_claim_success(client):
+    identity, job = uploaded_job(client)
+    job.update(status="processing", process=type("Exited", (), {"poll": lambda self: 1})())
+    response = client.post(f"/api/jumper-lab/jobs/{identity}/cancel").json()
+    assert response["status"] == "processing"
+    assert not job["cancel"].is_set()

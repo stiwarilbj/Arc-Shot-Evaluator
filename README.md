@@ -520,7 +520,16 @@ after a one-percentage-point increase or 250 ms on the next callback. Stage
 changes, completion, and errors publish immediately; video processing is unchanged.
 Editing uses no paid service and does not download inference models. Cancelled or
 released local jobs cannot take ownership of a later retry. Browser worker
-communication failures stop cleanly and allow another attempt. Processing checks
+communication failures stop cleanly and allow another attempt. Detection,
+masking, and edit workers track completion, reported failure, acknowledged
+cancellation, and interruption separately. Cancel gives a running browser worker
+two seconds to acknowledge; a missing acknowledgment or unexpected worker error
+is an interruption, not a successful cancellation. Heartbeat checks stop waiting
+after two minutes without a response while visible; hidden pages suspend this
+check and receive a fresh grace period when shown. Previous finished downloads
+remain available after a failed attempt. Native jobs likewise distinguish worker
+exit without a valid result from a requested cancellation, and late cancellation
+cannot relabel an already exited worker. Processing checks
 for cancellation again after shooter preparation and abort-listener registration,
 so cancelled startup cannot proceed to a masking request or local upload.
 Browser masking-model downloads enforce each pinned asset’s byte limit while

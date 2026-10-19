@@ -1,3 +1,4 @@
+import { WorkerJob } from "./workerJob";
 import { IS_GITHUB_PAGES } from "../../runtime";
 import { isProject, projectFrames, type EditProject } from "./editProject";
 import { type EditedVideos } from "./editRenderer";
@@ -15,46 +16,15 @@ export async function exportEdits(
         worker = new Worker(new URL("./editing.worker.ts", import.meta.url), {
           type: "module",
         });
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(
-          Error("Rendering timed out. Your previous result is preserved."),
-        );
-      }, 300000);
-      const cleanup = () => {
-        clearTimeout(timer);
-        worker.terminate();
-        signal.removeEventListener("abort", abort);
-      };
-      const abort = () => {
-        cleanup();
-        reject(new DOMException("Rendering cancelled", "AbortError"));
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      worker.onerror = () => {
-        cleanup();
-        reject(
-          Error("Video rendering stopped. Your previous result is preserved."),
-        );
-      };
-      worker.onmessageerror = () => {
-        cleanup();
-        reject(
-          Error(
-            "The rendered response could not be read. Retry without masking again.",
-          ),
-        );
-      };
+      const job = new WorkerJob(worker, id, signal, reject, 300000);
       worker.onmessage = ({ data }) => {
-        if (signal.aborted || data?.id !== id) return;
+        if (job.receive(data)) return;
         if (data.kind === "progress" && Number.isFinite(data.progress))
           progress(data.progress);
         if (data.kind === "error") {
-          cleanup();
-          reject(Error(data.error));
+          job.fail("failed", Error(data.error));
         }
         if (data.kind === "done") {
-          cleanup();
           if (
             ![data.result?.highlight, data.result?.clean].every(
               (v) =>
@@ -65,16 +35,11 @@ export async function exportEdits(
             ) ||
             data.result.duration !== projectFrames(project) / 30
           )
-            reject(Error("Invalid rendered video response"));
-          else resolve(data.result);
+            job.fail("failed", Error("Invalid rendered video response"));
+          else { job.finish("completed"); resolve(data.result); }
         }
       };
-      try {
-        worker.postMessage({ kind: "render", id, base, project });
-      } catch (error) {
-        cleanup();
-        reject(error);
-      }
+      job.start({ kind: "render", id, base, project });
     });
   } catch (error) {
     if (signal.aborted || IS_GITHUB_PAGES) throw error;
