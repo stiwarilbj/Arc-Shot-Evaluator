@@ -1,3 +1,9 @@
+import {
+  retainTemporaryMedia,
+  discardAbandonedMedia,
+  removeTemporaryDatabase,
+} from "./temporaryMedia.ts";
+
 /** Lossless job-local owner maps for clip-wide palette assignment. No source pixels.
  * Small jobs stay in RAM; larger jobs spill to temporary IndexedDB records.
  * Only one decoded owner map is loaded at a time. */
@@ -32,12 +38,14 @@ export function unpackLabels(packed: PackedLabels, size: number): Uint8Array {
   if (offset !== size) throw Error("Incomplete palette mask");
   return labels;
 }
-const PREFIX = "arc-jumper-palette-temp-";
+// Versioned namespace: older scratch DBs did not participate in ownership locks.
+// Their age cannot prove abandonment, so the new sweep leaves them alone.
+const PREFIX = "arc-jumper-palette-temp-v2-";
 const MEMORY_LIMIT = 16 * 1024 * 1024;
 const FALLBACK_LIMIT = 96 * 1024 * 1024;
 const EXPIRED = 24 * 60 * 60 * 1000;
-function discard(name: string) {
-  try { indexedDB.deleteDatabase(name); } catch { /* Storage may be disabled. */ }
+function discard(name: string, release?: () => void) {
+  void removeTemporaryDatabase(name).catch(() => {}).finally(() => release?.());
 }
 export class PaletteFrames {
   private memory = new Map<number, PackedLabels>();
@@ -46,6 +54,7 @@ export class PaletteFrames {
   private db: IDBDatabase | undefined;
   private closed = false;
   private unavailable = false;
+  private releaseOwnership: (() => void) | undefined;
   private name = `${PREFIX}${Date.now()}-${crypto.randomUUID()}`;
   private size: number;
   private expected: number;
@@ -61,11 +70,15 @@ export class PaletteFrames {
   private async spill() {
     if (this.unavailable || this.db) return;
     try {
-      // A terminated worker cannot run finally; discard only day-old scratch DBs.
+      // Claim before opening storage. A suspended worker retains the lock; a
+      // terminated worker loses it automatically. Unsupported browsers use RAM.
+      this.releaseOwnership = await retainTemporaryMedia(this.name);
+      if (this.closed) throw Error("Palette job closed");
+      // Age only selects candidates; an exclusive ownership check permits removal.
       if (indexedDB.databases) for (const entry of await indexedDB.databases()) {
         if (entry.name?.startsWith(PREFIX) &&
             Date.now() - Number(entry.name.slice(PREFIX.length).split('-')[0]) > EXPIRED)
-          discard(entry.name);
+          void discardAbandonedMedia(entry.name).catch(() => {});
       }
       this.db = await new Promise<IDBDatabase>((resolve, reject) => {
         const opening = indexedDB.open(this.name, 1);
@@ -84,7 +97,9 @@ export class PaletteFrames {
       this.memory.clear(); this.bytes = 0;
     } catch {
       this.db?.close(); this.db = undefined;
-      if (typeof indexedDB !== "undefined") discard(this.name);
+      if (typeof indexedDB !== "undefined") discard(this.name, this.releaseOwnership);
+      else this.releaseOwnership?.();
+      this.releaseOwnership = undefined;
       this.unavailable = true;
     }
   }
@@ -121,6 +136,8 @@ export class PaletteFrames {
   close() {
     this.closed = true; this.memory.clear(); this.bytes = 0;
     this.db?.close(); this.db = undefined;
-    if (typeof indexedDB !== "undefined") discard(this.name);
+    if (typeof indexedDB !== "undefined") discard(this.name, this.releaseOwnership);
+    else this.releaseOwnership?.();
+    this.releaseOwnership = undefined;
   }
 }

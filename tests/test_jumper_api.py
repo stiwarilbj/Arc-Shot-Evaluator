@@ -437,3 +437,17 @@ def test_cancel_racing_an_unexpected_exit_does_not_claim_success(client):
     response = client.post(f"/api/jumper-lab/jobs/{identity}/cancel").json()
     assert response["status"] == "processing"
     assert not job["cancel"].is_set()
+
+
+def test_pending_save_records_directory_ownership(client, monkeypatch):
+    original = jumper.atomic
+    observed = []
+    def checking_atomic(path, value):
+        owners = jumper.OWNERS.get(path.parent, {})
+        assert "pending save" in owners.values()
+        assert not jumper.discard_directory(path.parent)
+        observed.append(path.parent)
+        original(path, value)
+    monkeypatch.setattr(jumper, "atomic", checking_atomic)
+    assert save(client, metadata()).status_code == 200
+    assert observed and all(path not in jumper.OWNERS for path in observed)

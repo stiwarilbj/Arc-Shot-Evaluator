@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from datetime import datetime
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 import importlib.util
 import hashlib
 import json
@@ -41,18 +41,7 @@ async def lifespan(app):
 
     def sweep():
         while not stopped.wait(30):
-            now = time.monotonic()
-            with LOCK:
-                expired = [
-                    identity
-                    for identity, job in JOBS.items()
-                    if now - job.get("last_seen", now) > 180
-                ]
-            for identity in expired:
-                try:
-                    release(identity)
-                except HTTPException:
-                    pass
+            expire_jobs()
 
     thread = threading.Thread(target=sweep, daemon=True)
     thread.start()
@@ -72,6 +61,102 @@ PROCESS_LOCK = threading.Lock()
 JOBS: dict[str, dict] = {}
 EXECUTOR = None
 MAX_BYTES = 100 * 1024 * 1024
+
+
+# Explicit operation leases, independent of polling timestamps. Access and removal
+# share LOCK so cleanup cannot race a new owner between checking and deletion.
+OWNERS: dict[Path, dict[str, str]] = {}
+OWNERS_CHANGED = threading.Condition(LOCK)
+
+
+def retain_directory(directory, purpose):
+    token = uuid.uuid4().hex
+    directory = Path(directory)
+    with LOCK:
+        OWNERS.setdefault(directory, {})[token] = purpose
+
+    def release_owner():
+        with OWNERS_CHANGED:
+            owners = OWNERS.get(directory, {})
+            owners.pop(token, None)
+            if not owners:
+                OWNERS.pop(directory, None)
+            OWNERS_CHANGED.notify_all()
+
+    return release_owner
+
+
+@contextmanager
+def own_job(identity, purpose):
+    with LOCK:
+        job = job_for(identity)
+        finished = retain_directory(job["directory"], purpose)
+    try:
+        yield job
+    finally:
+        with LOCK:
+            if JOBS.get(identity) is job:
+                job["last_seen"] = time.monotonic()
+            finished()
+
+
+def discard_directory(directory):
+    """Return false while a live operation still owns this private directory."""
+    with LOCK:
+        if OWNERS.get(directory):
+            return False
+        shutil.rmtree(directory, ignore_errors=True)
+        return True
+
+
+def submit_owned(job, purpose, callback, *args):
+    finished = retain_directory(job["directory"], purpose)
+    try:
+        future = EXECUTOR.submit(callback, *args)
+
+        def completed(_):
+            with LOCK:
+                job["last_seen"] = time.monotonic()
+                finished()
+
+        future.add_done_callback(completed)
+        return future
+    except BaseException:
+        finished()
+        raise
+
+
+def expire_jobs(now=None):
+    now = time.monotonic() if now is None else now
+    with LOCK:
+        for identity, job in list(JOBS.items()):
+            if now - job.get("last_seen", now) <= 180 or OWNERS.get(job["directory"]):
+                continue
+            job["cancel"].set()
+            JOBS.pop(identity)
+            discard_directory(job["directory"])
+
+
+class OwnedFileResponse(FileResponse):
+    def __init__(self, path, finished, **kwargs):
+        super().__init__(path, **kwargs)
+        self.finished_owner = finished
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # A disconnect or failed send must release the lease too.
+            self.finished_owner()
+
+
+def owned_response(job, path, **kwargs):
+    finished = retain_directory(job["directory"], "media response")
+    try:
+        return OwnedFileResponse(path, finished, **kwargs)
+    except BaseException:
+        finished()
+        raise
 
 
 def configure(executor):
@@ -146,9 +231,7 @@ async def upload(file: UploadFile):
         await file.close()
 
 
-@router.get("/jobs/{identity}/frame")
-def frame(identity: str, time: float = 0):
-    job = job_for(identity)
+def preview_path(job, time):
     if not math.isfinite(time) or time < 0:
         raise HTTPException(400, "Invalid preview timestamp")
     destination = job["directory"] / f"preview-{time:.6f}.jpg"
@@ -158,21 +241,25 @@ def frame(identity: str, time: float = 0):
             extract_single(job["directory"] / "source", destination, time)
         if not destination.is_file():
             raise ValueError("No frame at this timestamp")
-        return FileResponse(destination, media_type="image/png")
+        return destination
     except Exception as error:
         raise HTTPException(400, str(error))
 
 
+@router.get("/jobs/{identity}/frame")
+def frame(identity: str, time: float = 0):
+    with own_job(identity, "preview extraction") as job:
+        return owned_response(job, preview_path(job, time), media_type="image/png")
+
+
 @router.get("/jobs/{identity}/people")
 def people(identity: str, time: float = 0):
-    job = job_for(identity)
-    frame(identity, time)
-    return {
-        "boxes": propose_people(
-            job["directory"] / f"preview-{time:.6f}.jpg",
-            MODEL_WEIGHTS_DIR / "yolo11n-pose.pt",
-        )
-    }
+    with own_job(identity, "person detection") as job:
+        return {
+            "boxes": propose_people(
+                preview_path(job, time), MODEL_WEIGHTS_DIR / "yolo11n-pose.pt"
+            )
+        }
 
 
 def execute(identity, generation):
@@ -321,55 +408,55 @@ def completed_result(directory):
 
 @router.post("/jobs/{identity}/process")
 async def process(identity: str, request: Request):
-    job = job_for(identity)
-    if job.get("kind") == "edit":
-        raise HTTPException(404, "Masking job unavailable")
-    try:
-        payload = await request.json()
-        payload = validate_job(
-            {
-                **payload,
-                "version": 1,
-                "source": str(job["directory"] / "source"),
-                "event_id": identity,
-                "player_id": identity,
-                "player_name": "Personal player",
-                "identity_evidence": "User selected track",
-            }
-        )
-    except (ValueError, TypeError) as error:
-        raise HTTPException(400, str(error))
-    if not capabilities()["native"]:
-        raise HTTPException(503, "Run setup again to install the local masking engine")
-    with LOCK:
-        if JOBS.get(identity) is not job:
-            raise HTTPException(404, "Job expired; upload again")
-        if job["status"] in ("queued", "processing"):
-            raise HTTPException(409, "Cancel the current processing job first")
-        if EXECUTOR is None:
-            raise HTTPException(503, "Local processing queue is unavailable")
-        for name in ("frames", "detail-frames", "masks", "output"):
-            shutil.rmtree(job["directory"] / name, ignore_errors=True)
-        for name in ("progress.json", "result.json", "error.json"):
-            (job["directory"] / name).unlink(missing_ok=True)
-        atomic(job["directory"] / "request.json", payload)
-        job.update(
-            status="queued",
-            error=None,
-            termination_reason=None,
-            cancel=threading.Event(),
-            generation=job["generation"] + 1,
-        )
+    with own_job(identity, "processing request") as job:
+        if job.get("kind") == "edit":
+            raise HTTPException(404, "Masking job unavailable")
         try:
-            EXECUTOR.submit(execute, identity, job["generation"])
-        except RuntimeError as error:
-            job.update(
-                status="error",
-                termination_reason="failed",
-                error="Local processing queue is unavailable; restart the downloaded app.",
+            payload = await request.json()
+            payload = validate_job(
+                {
+                    **payload,
+                    "version": 1,
+                    "source": str(job["directory"] / "source"),
+                    "event_id": identity,
+                    "player_id": identity,
+                    "player_name": "Personal player",
+                    "identity_evidence": "User selected track",
+                }
             )
-            raise HTTPException(503, job["error"]) from error
-    return {"id": identity, "status": "queued"}
+        except (ValueError, TypeError) as error:
+            raise HTTPException(400, str(error))
+        if not capabilities()["native"]:
+            raise HTTPException(503, "Run setup again to install the local masking engine")
+        with LOCK:
+            if JOBS.get(identity) is not job:
+                raise HTTPException(404, "Job expired; upload again")
+            if job["status"] in ("queued", "processing"):
+                raise HTTPException(409, "Cancel the current processing job first")
+            if EXECUTOR is None:
+                raise HTTPException(503, "Local processing queue is unavailable")
+            for name in ("frames", "detail-frames", "masks", "output"):
+                shutil.rmtree(job["directory"] / name, ignore_errors=True)
+            for name in ("progress.json", "result.json", "error.json"):
+                (job["directory"] / name).unlink(missing_ok=True)
+            atomic(job["directory"] / "request.json", payload)
+            job.update(
+                status="queued",
+                error=None,
+                termination_reason=None,
+                cancel=threading.Event(),
+                generation=job["generation"] + 1,
+            )
+            try:
+                submit_owned(job, "processing/export retry", execute, identity, job["generation"])
+            except RuntimeError as error:
+                job.update(
+                    status="error",
+                    termination_reason="failed",
+                    error="Local processing queue is unavailable; restart the downloaded app.",
+                )
+                raise HTTPException(503, job["error"]) from error
+        return {"id": identity, "status": "queued"}
 
 
 @router.get("/jobs/{identity}")
@@ -430,18 +517,18 @@ def cancel(identity: str):
 
 @router.get("/jobs/{identity}/output/{kind}")
 def output(identity: str, kind: str):
-    job = job_for(identity)
-    if job.get("kind") == "edit":
-        raise HTTPException(404, "Masking job unavailable")
-    if job["status"] != "done":
-        raise HTTPException(409, "Video is not ready")
-    if kind not in ("quiz", "reveal", "highlight"):
-        raise HTTPException(404, "Unknown video")
-    try:
-        result = completed_result(job["directory"])
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-    return FileResponse(job["directory"] / "output" / result["outputs"][kind]["file"])
+    with own_job(identity, "output validation") as job:
+        if job.get("kind") == "edit":
+            raise HTTPException(404, "Masking job unavailable")
+        if job["status"] != "done":
+            raise HTTPException(409, "Video is not ready")
+        if kind not in ("quiz", "reveal", "highlight"):
+            raise HTTPException(404, "Unknown video")
+        try:
+            result = completed_result(job["directory"])
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        return owned_response(job, job["directory"] / "output" / result["outputs"][kind]["file"])
 
 
 @router.delete("/jobs/{identity}")
@@ -458,7 +545,10 @@ def release(identity: str):
     def cleanup():
         if process is not None:
             process.wait()
-        shutil.rmtree(job["directory"], ignore_errors=True)
+        with OWNERS_CHANGED:
+            while OWNERS.get(job["directory"]):
+                OWNERS_CHANGED.wait()
+            discard_directory(job["directory"])
 
     threading.Thread(target=cleanup, daemon=True).start()
     return {"deleted": True}
@@ -497,6 +587,7 @@ async def save(request: Request):
             if staging.exists():
                 raise HTTPException(409, "Save is already pending")
             staging.mkdir(parents=True)
+            finished_save = retain_directory(staging, "pending save")
         try:
             checksums = []
             for kind in kinds:
@@ -563,6 +654,8 @@ async def save(request: Request):
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
             raise
+        finally:
+            finished_save()
     except (ValueError, TypeError, KeyError, AttributeError) as error:
         raise HTTPException(400, str(error))
     finally:
@@ -720,11 +813,11 @@ async def create_edit(request: Request):
                             job.update(termination_reason="interrupted", error="Local rendering interrupted. Your previous finished video is preserved.")
                 if acquired:
                     PROCESS_LOCK.release()
-                if job["cancel"].is_set():
-                    shutil.rmtree(directory, ignore_errors=True)
+                # release() waits for this future and any open response leases
+                # before deleting the directory, including cancelled edit jobs.
 
         try:
-            EXECUTOR.submit(work)
+            submit_owned(job, "edit/export retry", work)
         except RuntimeError:
             with LOCK:
                 JOBS.pop(identity, None)
@@ -752,14 +845,14 @@ def edit_status(identity: str):
 
 @router.get("/edits/{identity}/{kind}")
 def edit_video(identity: str, kind: str):
-    job = job_for(identity)
-    if (
-        job.get("kind") != "edit"
-        or not job.get("done")
-        or kind not in ("highlight", "clean")
-    ):
-        raise HTTPException(404, "Rendered video unavailable")
-    return FileResponse(job["directory"] / (kind + ".mp4"), media_type="video/mp4")
+    with own_job(identity, "output validation") as job:
+        if (
+            job.get("kind") != "edit"
+            or not job.get("done")
+            or kind not in ("highlight", "clean")
+        ):
+            raise HTTPException(404, "Rendered video unavailable")
+        return owned_response(job, job["directory"] / (kind + ".mp4"), media_type="video/mp4")
 
 
 @router.delete("/edits/{identity}")

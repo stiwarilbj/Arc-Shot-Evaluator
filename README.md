@@ -465,7 +465,15 @@ tracking writes each mask to a unique `.partial` file, closes it, then atomicall
 renames it to its finished frame filename. Before opening any encoder, native mask
 export checks the mask filenames against the full processing timeline and rejects
 missing frames, duplicate frame numbers, and unexpected masks. Partial files are
-ignored; detailed mask and video checks still run. Checkpoints and encoding read
+ignored; detailed mask and video checks still run. Temporary media cleanup checks
+explicit live ownership before deletion: local queued/running jobs, export retries,
+media responses, and pending saves retain their files. Expired idle jobs are removed
+only after that check, and completed local work gets a fresh idle grace period.
+Browser scratch databases use Web Locks across tabs and workers, so a paused owner
+is protected and a terminated worker releases ownership automatically. Browsers
+without those locks use the bounded memory fallback and skip scratch sweeping.
+Older scratch databases without the ownership protocol are left untouched.
+Saved personal clips are outside this temporary cleanup. Checkpoints and encoding read
 only finished masks. Failed writes clean up their temporary file; a hard interruption
 may leave a distinguishable partial file until the job is retried or removed.
 Finished videos are decoded and checked for timeline, dimensions, neutral colors, and no
