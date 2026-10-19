@@ -1,3 +1,4 @@
+import { correctionPrompt } from "./correctionPoints";
 import { FrameBoundary } from "./frameBoundary";
 import { BallAttachments, validHands } from "./ballAttachments";
 import { FloorAttachments } from "./floorAttachments";
@@ -450,7 +451,10 @@ async function process(
       feats: Record<string, ort.Tensor>,
       conditioned: Float32Array,
       prompt?: PointPrompt,
+      trackId?: number,
+      context="",
     ): Promise<Prediction> {
+      if (prompt) prompt = correctionPrompt(prompt, trackId!, context);
       const points = [
         ...(prompt?.box
           ? [
@@ -630,14 +634,14 @@ async function process(
           for (let c = 0; c < 256; c++)
             for (let i = 0; i < 4096; i++)
               raw[c * 4096 + i] += weights.no_mem_embed[c];
-          const prediction = await predict(feats, raw, prompt);
+          const prediction = await predict(feats, raw, prompt, object.id);
           if (!object.ignored && !reliableMask(prediction.low, undefined, prediction.score[0]))
             throw Error(`The player selection at frame ${frame + 1} is too uncertain to seed tracking. Adjust the selection on a clear frame and retry.`);
           if (frame === 0 && object.id === target_id && prompt.box && prompt.labels?.includes(1)) {
             report("Checking starting shooter selection", 0);
             const compared = [prediction.low];
-            for (const probe of selectionProbes(prompt, prediction.low)) {
-              const candidate = await predict(feats, raw, probe);
+            for (const probe of selectionProbes(correctionPrompt(prompt, object.id), prediction.low)) {
+              const candidate = await predict(feats, raw, probe, object.id);
               if (!reliableMask(candidate.low, undefined, candidate.score[0]) ||
                   !compared.every(previous => stableSelection(previous, candidate.low)))
                 throw new ShooterSelectionError(CONFIRM_SELECTION);
@@ -856,7 +860,7 @@ async function process(
               for (let c = 0; c < 256; c++)
                 for (let i = 0; i < 4096; i++)
                   raw[c * 4096 + i] += weights.no_mem_embed[c];
-              const prediction = await predict(sampleFeatures, raw, prompt);
+              const prediction = await predict(sampleFeatures, raw, prompt, id);
               if (!reliableMask(prediction.low, undefined, prediction.score[0]))
                 throw Error(`A newly detected player at frame ${frame + 1} is too uncertain to seed tracking. Select court players manually and retry.`);
               trustedMasks.set(id, prediction.low);
@@ -926,7 +930,7 @@ async function process(
               const prediction = await predict(detail, raw, {
                 frame,
                 ...sourceCropPrompt(crop, width, height, fineWidth, fineHeight),
-              });
+              }, object.id, "detail crop");
               refined = acceptRefinement(
                 values,
                 projectRefinement(

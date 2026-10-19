@@ -1,6 +1,7 @@
 """Conservative crop refinement; kept equivalent to smallPlayer.ts."""
 import math
 import numpy as np
+from .correction_points import correction_prompt
 from .model_outputs import validate_array
 
 
@@ -134,15 +135,16 @@ class SmallPlayerRefiner:
         std = torch.tensor([.229, .224, .225])[:, None, None]
         return (value - mean) / std
 
-    def refine(self, image, coarse, crop, owners, identity):
+    def refine(self, image, coarse, crop, owners, identity, frame=0):
         height, width = coarse.shape
         region = padded_source_crop(crop, width, height, image.shape[1], image.shape[0])
         x, y, w, h = (region[k] for k in ("x", "y", "width", "height"))
+        prompt = correction_prompt(dict(frame=frame, **source_crop_prompt(crop, width, height, image.shape[1], image.shape[0])),
+                                   identity, (region["input_width"],region["input_height"]), "detail crop")
         try:
             pixels=np.full((region['input_height'],region['input_width'],3),114,dtype=np.uint8)
             pixels[region['top']:region['top']+h,region['left']:region['left']+w]=image[y:y+h,x:x+w]
             self.predictor.set_image(pixels)
-            prompt = source_crop_prompt(crop, width, height, image.shape[1], image.shape[0])
             masks, quality, low = self.predictor.predict(
                 point_coords=np.array(prompt["points"], dtype=np.float32) * [region["input_width"], region["input_height"]],
                 point_labels=np.array(prompt["labels"], dtype=np.int32),

@@ -1,6 +1,7 @@
 """Opening-frame prompt perturbations; kept equivalent to selectionStability.ts."""
 import copy
 import numpy as np
+from .correction_points import correction_prompt
 
 CONFIRM_SELECTION = (
     'Your starting shooter selection changes with nearby points. Add another Include point '
@@ -63,6 +64,7 @@ def selection_probes(prompt, mask):
 
 def check_opening_selection(predictor, frames, prompt, target_id, width, height):
     """Independent one-frame state; original tracking state and prompts stay intact."""
+    prompt = correction_prompt(prompt, target_id, (width, height))
     if 'box' not in prompt or 1 not in prompt.get('labels', []):
         return
     import torch
@@ -70,6 +72,7 @@ def check_opening_selection(predictor, frames, prompt, target_id, width, height)
     from .model_outputs import validate_array
     state = bounded_state(predictor, frames[:1])
     def predict(probe):
+        probe = correction_prompt(probe, target_id, (width, height))
         predictor.reset_state(state)  # No previous mask, pointers or memory.
         predictor.add_new_points_or_box(
             state, frame_idx=0, obj_id=target_id,

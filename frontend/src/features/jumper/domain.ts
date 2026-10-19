@@ -1,10 +1,11 @@
+import { correctionPrompt } from "./correctionPoints.ts";
 import { validFrameMap, frameCount, type SourceFrameMap } from "./sourceFrames.ts";
 import { isProject, projectFrames, type EditProject } from "./editProject.ts";
 export const MAX_BYTES = 100 * 1024 * 1024;
 export const FPS = 30;
 export function maskingErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (error instanceof Error && error.name === "ShooterSelectionError") return message;
+  if (error instanceof Error && ["ShooterSelectionError", "CorrectionConflictError"].includes(error.name)) return message;
   if (
     /mapAsync|valid external Instance|device.*lost|GPU.*out.of.memory/i.test(
       message,
@@ -341,6 +342,7 @@ export function validateMaskRequest(
         throw Error("Invalid correction points.");
       if (!p.box && !p.points)
         throw Error("Select the player with a point or box.");
+      correctionPrompt(p, track.id);
     }
   }
   if (!ids.has(v.target_id)) throw Error("Select the named player.");

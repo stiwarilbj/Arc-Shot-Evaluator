@@ -475,6 +475,11 @@ Editing uses no paid service and does not download inference models. Cancelled o
 released local jobs cannot take ownership of a later retry. Browser worker
 communication failures stop cleanly and allow another attempt.
 
+Opposing Include/Exclude points on the same SAM input pixel are rejected before
+inference, with the frame and track identified. Repeated points with the same
+label are consolidated only for inference; correction history stays intact. The
+check also runs after detail-crop mapping and keeps frames and tracks separate.
+
 Include/Exclude points are checked on their selected frame against the final
 combined silhouettes, after other tracks and overlap handling. Ineffective points
 flag the frame and track in the mask-quality timeline and block saving until

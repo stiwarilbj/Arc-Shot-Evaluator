@@ -14,6 +14,7 @@ import numpy as np
 
 from .ball_attachments import BallAttachments, valid_hands
 from .frame_boundary import FrameBoundary
+from .correction_points import correction_prompt
 from .floor_attachments import FloorAttachments
 from .shooter_visibility import ShooterVisibility
 from .memory_quality import MemoryQualityGate
@@ -166,6 +167,7 @@ def validate_job(job: object) -> dict:
                 raise ValueError(
                     "Corrective points need normalized coordinates and binary labels"
                 )
+            correction_prompt(prompt, obj["id"])
         if frames != sorted(set(frames)):
             raise ValueError("Prompt frames must be unique and increasing per person")
     if (
@@ -323,6 +325,9 @@ def track(
     )
 
     height, width = cv2.imread(str(frames[0])).shape[:2]
+    for obj in job["objects"]:
+        for prompt in obj["prompts"]:
+            correction_prompt(prompt, obj["id"], (width, height))
     initial_estimate = estimate_resources(job, width, height)
     check_resources(initial_estimate, previous_bytes=resident_memory())
     import torch
@@ -496,6 +501,7 @@ def track(
             def apply_prompt(state, index, obj_id, prompt):
                 if index >= len(frames):
                     raise ValueError("Correction frame is beyond decoded input")
+                prompt = correction_prompt(prompt, obj_id, (width, height))
                 kwargs = {}
                 if "box" in prompt:
                     kwargs["box"] = np.array(prompt["box"], dtype=np.float32) * [
@@ -687,7 +693,7 @@ def track(
                                     cv2.COLOR_BGR2RGB,
                                 )
                             refined = refiner.refine(
-                                fine_image, values[row], crop, raw_owners, identity
+                                fine_image, values[row], crop, raw_owners, identity, frame=index
                             )
                         if refined is None:
                             warnings.append(dict(

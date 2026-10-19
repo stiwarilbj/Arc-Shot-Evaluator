@@ -13,6 +13,15 @@ point prompts are not rotated again. Full-frame SAM input stretches the upright
 image to its model dimensions without padding. Person-detection letterboxing
 uses matching forward/inverse padding offsets.
 
+Include/Exclude points are checked on SAM’s 1024-pixel input grid after mapping
+and float32 conversion. Opposing labels in one cell stop the operation with a
+one-based frame number and track ID; remove or move one point in Corrections.
+Repeated same-label points keep the first coordinate for inference without
+changing the saved prompt or undo history. Box-corner labels remain separate.
+Checks are scoped to one frame and track and run again for padded detail crops;
+the native path checks its actual absolute-coordinate resize as well. This is a
+prompt-consistency check, not an identity or mask-accuracy guarantee.
+
 Small-player crops round outward to source pixels. Both implementations remap
 points and boxes into that actual crop, then sample refined logits at the
 original coarse pixel centers. Neither prompts nor masks stretch across the
