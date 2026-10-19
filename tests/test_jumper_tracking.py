@@ -188,8 +188,11 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
     )
     (tmp_path / "request.json").write_text(json.dumps(job))
     attempts = []
+    verifications = []
 
-    def tracking(frames, masks, value, checkpoint, device, progress, cache_source=None):
+    def tracking(frames, masks, value, checkpoint, device, progress, cache_source=None, checkpoint_verification=None):
+        verifications.append(checkpoint_verification)
+        assert checkpoint_verification.fingerprint(checkpoint) == runner.CHECKPOINT_SHA
         attempts.append(device)
         assert [o["id"] for o in value["objects"]] == [1]
         value["objects"].append(
@@ -210,8 +213,17 @@ def test_gpu_retry_discards_partial_discovery_and_keeps_silhouette(
         return {}
 
     monkeypatch.setattr(runner, "render", rendering)
+    original_digest = hashlib.file_digest
+    checkpoint_reads = []
+    def counted_digest(stream, algorithm):
+        if str(stream.name) == str(checkpoint):
+            checkpoint_reads.append(True)
+        return original_digest(stream, algorithm)
+    monkeypatch.setattr(hashlib, "file_digest", counted_digest)
     runner.run(tmp_path)
+    assert len(checkpoint_reads) == 1, "Runner and same-job retry reuse verified checkpoint"
     assert attempts == (["cpu"] if force_cpu else ["mps", "cpu"])
+    assert all(value is verifications[0] for value in verifications)
     assert budgets == ([] if force_cpu else [0.5])
     result = json.loads((tmp_path / "result.json").read_text())
     assert [o["id"] for o in result["objects"]] == [1, 2]

@@ -15,6 +15,7 @@ import numpy as np
 from .ball_attachments import BallAttachments, valid_hands
 from .frame_boundary import FrameBoundary
 from .cache import valid_detection_evidence
+from .checkpoint_verification import CheckpointVerificationError
 from .correction_points import correction_prompt
 from .floor_attachments import FloorAttachments
 from .shooter_visibility import ShooterVisibility
@@ -317,6 +318,7 @@ def track(
     progress=None,
     cache_source=None,
     refinement_frames=None,
+    checkpoint_verification=None,
 ) -> list[dict]:
     """Use native SAM 2.1 video tracking memory and per-frame corrections."""
     from backend.jumper.resources import (
@@ -354,6 +356,8 @@ def track(
     if destination.exists():
         shutil.rmtree(destination)
     destination.mkdir()
+    if checkpoint_verification is not None:
+        checkpoint_verification.fingerprint(checkpoint)
     predictor = build_sam2_video_predictor(
         SAM_CONFIG,
         str(checkpoint),
@@ -368,13 +372,18 @@ def track(
     from backend.jumper.cache import FrameCache, cache_backbone, identity
     from backend.config import PROJECT_ROOT
 
+    if checkpoint_verification is not None:
+        checkpoint_verification.fingerprint(checkpoint)
     cache = None
     try:
         cache = FrameCache(
             PROJECT_ROOT / "jumper-media" / "calculation-cache",
-            identity(cache_source, job, checkpoint, device, frames),
+            identity(cache_source, job, checkpoint, device, frames,
+                     checkpoint_verification=checkpoint_verification),
         )
         cache_backbone(predictor, cache, device=device)
+    except CheckpointVerificationError:
+        raise
     except Exception:
         pass
     warnings = []

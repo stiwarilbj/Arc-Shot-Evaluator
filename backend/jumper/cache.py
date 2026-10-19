@@ -45,7 +45,7 @@ def valid_detection_evidence(value):
     return True
 
 
-def identity(source, job, checkpoint, device, frames):
+def identity(source, job, checkpoint, device, frames, *, checkpoint_verification=None):
     from importlib.metadata import version
     from backend.jumper.pipeline import digest
 
@@ -74,7 +74,8 @@ def identity(source, job, checkpoint, device, frames):
                 "frames": len(frames),
                 "frame_map": job.get("frame_map"),
                 "geometry": [1280, 720, 30, 1024],
-                "checkpoint": digest(checkpoint),
+                "checkpoint": (checkpoint_verification.fingerprint(checkpoint)
+                               if checkpoint_verification is not None else digest(checkpoint)),
                 "device": device,
                 "torch": version("torch"),
                 "numerics": [

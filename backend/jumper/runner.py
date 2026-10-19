@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 import copy
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,6 +10,7 @@ import urllib.request
 
 from backend.jumper.pipeline import extract, render, track
 from backend.jumper.export_checkpoint import render_with_retry
+from backend.jumper.checkpoint_verification import VerifiedCheckpoint, CheckpointVerificationError
 from backend.jumper.resources import (
     check_resources,
     estimate_resources,
@@ -88,11 +88,9 @@ def run(directory: Path):
 
         progress("Checking local masking model")
         checkpoint = MODEL_WEIGHTS_DIR / "sam2.1_hiera_tiny.pt"
-        if (
-            not checkpoint.exists()
-            or hashlib.file_digest(checkpoint.open("rb"), "sha256").hexdigest()
-            != CHECKPOINT_SHA
-        ):
+        try:
+            verified_checkpoint = VerifiedCheckpoint(checkpoint, CHECKPOINT_SHA)
+        except (FileNotFoundError, CheckpointVerificationError):
             progress("Downloading local masking model")
             temporary = checkpoint.with_suffix(".download")
             with (
@@ -107,12 +105,11 @@ def run(directory: Path):
                     if done > 200 * 1024 * 1024:
                         raise ValueError("Model download exceeds its expected size")
                     progress("Downloading local masking model", done, total)
-            if (
-                hashlib.file_digest(temporary.open("rb"), "sha256").hexdigest()
-                != CHECKPOINT_SHA
-            ):
+            try:
+                verified_checkpoint = VerifiedCheckpoint(temporary, CHECKPOINT_SHA)
+            except CheckpointVerificationError:
                 temporary.unlink(missing_ok=True)
-                raise ValueError("Model checksum failed; retry the download")
+                raise
             temporary.replace(checkpoint)
         device = (
             "cpu"
@@ -151,6 +148,7 @@ def run(directory: Path):
                     total,
                 ),
                 cache_source=directory / "source",
+                checkpoint_verification=verified_checkpoint,
                 **(
                     {"refinement_frames": refinement_frames}
                     if refinement_frames is not None else {}
@@ -177,6 +175,7 @@ def run(directory: Path):
                 "cpu",
                 lambda done, total, stage=None: progress(stage or "Tracking players · CPU", done, total),
                 cache_source=directory / "source",
+                checkpoint_verification=verified_checkpoint,
                 **(
                     {"refinement_frames": refinement_frames}
                     if refinement_frames is not None else {}

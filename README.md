@@ -479,7 +479,10 @@ files, colors, audio, or broken timelines leave no partial saved clip.
 Browser exports use a dedicated cancellable rendering worker. The downloaded
 app uses the same renderer when supported and a queued local FFmpeg fallback
 otherwise. Native masking also retries an OS-terminated accelerator once in a
-fresh CPU process; cancellation never starts that retry.
+fresh CPU process; cancellation never starts that retry. Within one local job,
+tracking and cache preparation reuse the verified checkpoint SHA-256 only while
+file identity, size, and modification metadata still match. Changed or replaced
+checkpoints are verified again; this record is never reused across jobs.
 Editing uses no paid service and does not download inference models. Cancelled or
 released local jobs cannot take ownership of a later retry. Browser worker
 communication failures stop cleanly and allow another attempt. Processing checks
