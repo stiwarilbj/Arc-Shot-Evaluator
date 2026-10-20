@@ -35,7 +35,7 @@ try {
   globalThis.fetch = async (_url, options) => {
    calls++; signal = options.signal;
    if (!body) return new Promise(resolve => resolveLate = resolve);
-   return { ok: true, headers: new Headers(), text: () => new Promise(resolve => resolveLate = resolve) };
+   return new Response(new ReadableStream({ start(controller) { resolveLate = text => { controller.enqueue(new TextEncoder().encode(text)); controller.close(); }; } }));
   };
   const first = api.fetchPlaybooks(), second = api.fetchPlaybooks();
   const failures = [assert.rejects(first, /timed out/), assert.rejects(second, /timed out/)];
@@ -55,7 +55,7 @@ try {
    if (options.method) {
     writes++; writeSignal = options.signal;
     value = saved(method === 'POST' ? options.headers['X-ARC-Create-ID'] : draft.id.replace('draft-', 'play-'), JSON.parse(options.body));
-    return body ? { ok: true, json: () => new Promise(resolve => releaseLate = resolve) } : new Promise(resolve => releaseLate = resolve);
+    return body ? new Response(new ReadableStream({ start(controller) { releaseLate = value => { controller.enqueue(new TextEncoder().encode(JSON.stringify(value))); controller.close(); }; } })) : new Promise(resolve => releaseLate = resolve);
    }
    checks++; assert.equal(options.cache, 'no-store'); assert.equal(url, `/api/playbooks/${value.id}`); return Response.json(value);
   };
@@ -114,7 +114,7 @@ try {
   ...[null, [], false, 'deleted', {}, { id }, { deleted: true },
    { deleted: false, id }, { deleted: 'true', id }, { deleted: 1, id },
    { deleted: true, id: 'play-other01' }, { deleted: true, id: null }].map(value => () => Response.json(value)),
-  () => ({ ok: true, json: async () => { throw new TypeError('Response body interrupted'); } }),
+  () => new Response(new ReadableStream({ start(controller) { controller.error(new TypeError('Response body interrupted')); } })),
   () => { throw new TypeError('Connection interrupted after deletion'); },
  ];
  for (const response of malformedDeletes) for (const outcome of ['absent', 'present', 'unavailable', 'invalid']) {

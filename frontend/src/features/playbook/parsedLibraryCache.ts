@@ -1,10 +1,12 @@
+import { MAX_PLAYBOOK_LIBRARY_BYTES, parsePlaybookJson } from "./jsonIntake.ts";
+
 /** Retain only the last successful JSON parse. Callers must still read the source
  * on every refresh; failures never fall back to previously cached documents. */
 export function createParsedLibraryCache<T>(validate: (value: unknown) => T) {
   let cached: { content: string; value: T } | undefined;
   return (content: string): T => {
     if (cached?.content === content) return cached.value;
-    const value = validate(JSON.parse(content));
+    const value = validate(parsePlaybookJson(content, MAX_PLAYBOOK_LIBRARY_BYTES));
     // Freeze once, on a cache miss. Public readers get mutable, independent
     // copies through sharedLibraryRead; internal persistence only reads these.
     const pending: unknown[] = [value];

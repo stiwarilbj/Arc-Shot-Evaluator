@@ -11,6 +11,7 @@ import { IS_GITHUB_PAGES } from "../../runtime";
 import { createSharedLibraryRead } from "./sharedLibraryRead.ts";
 import { createParsedLibraryCache } from "./parsedLibraryCache.ts";
 import { IncompletePlaybookLibraryError, readLibraryIssues } from "./libraryReadStatus.ts";
+import { checkPlaybookJsonText, MAX_PLAYBOOK_LIBRARY_BYTES, readPlaybookJson, readPlaybookJsonText } from "./jsonIntake.ts";
 export { IncompletePlaybookLibraryError } from "./libraryReadStatus.ts";
 
 const LOCAL_STORAGE_KEY = "arc-playbooks-v1";
@@ -32,16 +33,16 @@ class InvalidDeletionAcknowledgement extends Error {}
 
 async function parse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: "Request failed" })) as { detail?: string };
+    const body = await readPlaybookJson(response).catch(() => ({ detail: "Request failed" })) as { detail?: string };
     throw new PersistenceResponseError(body.detail ?? `Request failed (${response.status})`, response.status);
   }
-  return response.json() as Promise<T>;
+  return readPlaybookJson(response) as Promise<T>;
 }
 
 async function parseSave(response: Response, identity: PlaybookSaveIdentity): Promise<PlaybookDocument> {
   if (!response.ok) return parse<never>(response);
   let saved: unknown;
-  try { saved = await response.json(); }
+  try { saved = await readPlaybookJson(response); }
   catch { throw new Error(INVALID_PLAYBOOK_SAVE); }
   validatePlaybookSaveResult(saved, identity);
   return saved;
@@ -59,7 +60,7 @@ async function readRemotePlaybooks(): Promise<PlaybookDocument[]> {
   return withPersistenceDeadline(async (signal) => {
     const response = await fetch("/api/playbooks", { signal, cache: "no-store" });
     if (!response.ok) await parse<never>(response);
-    const plays = parseLibrary(await response.text());
+    const plays = parseLibrary(await readPlaybookJsonText(response, MAX_PLAYBOOK_LIBRARY_BYTES));
     const issues = readLibraryIssues(response.headers);
     if (issues !== null) throw new IncompletePlaybookLibraryError(structuredClone([...plays].sort(compareSavedPlaybooks)), issues);
     return plays;
@@ -107,7 +108,7 @@ async function deleteRemotePlay(id: string) {
       const response = await fetch(`/api/playbooks/${encodeURIComponent(id)}`, { method: "DELETE", signal });
       if (!response.ok) return parse<never>(response);
       let acknowledgement: unknown;
-      try { acknowledgement = await response.json(); }
+      try { acknowledgement = await readPlaybookJson(response); }
       catch { throw new InvalidDeletionAcknowledgement(); }
       if (!acknowledgement || typeof acknowledgement !== "object" || Array.isArray(acknowledgement)
         || !("deleted" in acknowledgement) || acknowledgement.deleted !== true
@@ -152,7 +153,9 @@ function readLocalLibrary(): HostedLibrary {
 }
 function readLocalPlaybooks(): PlaybookDocument[] { return readLocalLibrary().plays; }
 function writeLocalPlaybooks(playbooks: PlaybookDocument[], creations = readLocalLibrary().creations) {
-  try { window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ version: 1, plays: playbooks, creations })); }
+  const content = JSON.stringify({ version: 1, plays: playbooks, creations });
+  checkPlaybookJsonText(content, MAX_PLAYBOOK_LIBRARY_BYTES);
+  try { window.localStorage.setItem(LOCAL_STORAGE_KEY, content); }
   catch { throw new Error("This play could not be saved: browser storage is unavailable or full. Free some space and retry."); }
   announceChange();
 }
@@ -212,7 +215,7 @@ export async function createPlaybook(playbook: PlaybookDraft, creationId = newCr
     });
   } catch (error) {
     throw new CreationAttemptError(error instanceof Error ? error.message : "The create response could not be confirmed.",
-      !(error instanceof PersistenceResponseError && [400, 422].includes(error.status)));
+      !(error instanceof PersistenceResponseError && [400, 413, 422].includes(error.status)));
   }
 }
 export async function updatePlaybook(playbook: PlaybookDraft) {

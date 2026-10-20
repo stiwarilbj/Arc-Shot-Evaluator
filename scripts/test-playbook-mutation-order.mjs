@@ -51,7 +51,7 @@ for(const target of ['local','github-pages']){
       const value={...payload,revision:(++revision).toString(16).padStart(32,'0'),updated_at:'2026-10-15T12:01:00Z'};
       library=library.map(p=>p.id===id?value:p);
       // The response body is part of the mutation, not just the HTTP headers.
-      return {ok:true,json:async()=>{await bodyGate.promise;return value;}};
+      return new Response(new ReadableStream({async start(controller){await bodyGate.promise;controller.enqueue(new TextEncoder().encode(JSON.stringify(value)));controller.close();}}));
     }
     if(payload?.name==='Failing save')return Response.json({detail:'Save failed'},{status:503});
     if(method==='DELETE'&&mode==='delete-fails')return Response.json({detail:'Delete failed'},{status:503});

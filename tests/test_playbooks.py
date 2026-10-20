@@ -317,7 +317,7 @@ def test_partial_library_classifies_invalid_and_unavailable_files_and_recovers(t
     assert "X-ARC-Playbook-Warnings" not in complete.headers
     bad = tmp_path / f"{saved[-1]['id']}.json"
     original = bad.read_bytes()
-    read_text = Path.read_text
+    open_file = Path.open
     for problem in ("invalid-json", "invalid-document", "invalid-encoding", "unavailable"):
         bad.write_bytes(original)
         if problem == "invalid-json":
@@ -332,8 +332,8 @@ def test_partial_library_classifies_invalid_and_unavailable_files_and_recovers(t
                 def unavailable(path, *args, **kwargs):
                     if path == bad:
                         raise PermissionError("Temporarily unavailable")
-                    return read_text(path, *args, **kwargs)
-                patch.setattr(Path, "read_text", unavailable)
+                    return open_file(path, *args, **kwargs)
+                patch.setattr(Path, "open", unavailable)
             response = client.get("/api/playbooks")
             assert response.status_code == 200
             assert {play["id"] for play in response.json()} == {play["id"] for play in saved[:-1]}

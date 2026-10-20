@@ -155,6 +155,13 @@ before retrying. Creation retries recheck synchronization without duplicating
 the play. These safeguards improve shutdown recovery; durability still depends
 on the operating system, filesystem, and hardware. Hosted browser storage and
 the saved document format are unchanged.
+Playbook JSON intake rejects documents above 256 KiB before parsing; whole
+browser library reads have a separate 16 MiB budget. Both targets reject nesting
+deeper than 32 levels and retain the current draft on failed loads. The local
+API counts actual uploaded bytes rather than trusting request headers. Oversized
+or malformed saved files remain on disk and produce an incomplete-library warning.
+These budgets leave ample room for five players per side and all 30 actions;
+see the [document validation guide](docs/playbook-document-validation.md).
 
 ### Shared arrow visibility
 

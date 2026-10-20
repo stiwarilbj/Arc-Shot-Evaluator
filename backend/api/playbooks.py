@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
 from backend.config import PLAYBOOKS_DIR
 
@@ -28,6 +28,9 @@ NAME_WHITESPACE = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u
 MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
+MAX_DOCUMENT_BYTES = 256 * 1024
+MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
+MAX_JSON_DEPTH = 32
 SAVE_CONFLICT = "This play was changed by another tab or client. Your draft is still in memory. Save a copy or reopen the latest saved play before updating it."
 # Version-1 save precision; Python round uses binary float, nearest/ties-to-even.
 COORDINATE_DECIMAL_PLACES = 4
@@ -211,9 +214,55 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
     }
 
 
+def _check_json_depth(text: str) -> None:
+    depth = 0
+    quoted = escaped = False
+    for character in text:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                quoted = False
+        elif character == '"':
+            quoted = True
+        elif character in "[{":
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                raise ValueError("Playbook JSON exceeds the nesting limit of 32")
+        elif character in "]}":
+            depth -= 1
+
+
+async def _request_document(request: Request) -> dict:
+    # A dependency, rather than a Body parameter: FastAPI must not parse or
+    # buffer the entire request before enforcing the received-byte budget.
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > MAX_DOCUMENT_BYTES:
+            raise HTTPException(413, "Playbook JSON exceeds the 256 KiB document limit")
+        content.extend(chunk)
+    try:
+        text = content.decode("utf-8-sig")
+        _check_json_depth(text)
+        value = json.loads(text)
+    except (ValueError, RecursionError) as error:
+        raise HTTPException(400, "Playbook JSON is invalid or exceeds the nesting limit of 32") from error
+    if not isinstance(value, dict):
+        raise HTTPException(400, "Playbook must be an object")
+    return value
+
+
 def _read(path: Path, *, include_creation: bool = False) -> dict:
     try:
-        value = json.loads(path.read_text())
+        with path.open("rb") as stream:
+            content = stream.read(MAX_SAVED_FILE_BYTES + 1)
+        if len(content) > MAX_SAVED_FILE_BYTES:
+            raise ValueError("Saved play exceeds its byte limit")
+        text = content.decode("utf-8-sig")
+        _check_json_depth(text)
+        value = json.loads(text)
     except OSError as error:
         raise HTTPException(503, "Playbook storage is temporarily unavailable; retry") from error
     except (ValueError, TypeError) as error:
@@ -452,7 +501,7 @@ def _replay_creation(path: Path, request: str) -> dict:
 
 
 @router.post("")
-def create_playbook(payload: dict, create_id: Annotated[str | None, Header(alias="X-ARC-Create-ID")] = None) -> dict:
+def create_playbook(payload: Annotated[dict, Depends(_request_document)], create_id: Annotated[str | None, Header(alias="X-ARC-Create-ID")] = None) -> dict:
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -482,7 +531,7 @@ def get_playbook(playbook_id: str) -> dict:
 
 
 @router.put("/{playbook_id}")
-def update_playbook(playbook_id: str, payload: dict, if_match: Annotated[str | None, Header(alias="If-Match")] = None) -> dict:
+def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_document)], if_match: Annotated[str | None, Header(alias="If-Match")] = None) -> dict:
     path = _path(playbook_id)
     with _playbook_lock(path):
         if not path.is_file():

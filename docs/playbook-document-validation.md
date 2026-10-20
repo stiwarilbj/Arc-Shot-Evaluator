@@ -241,6 +241,49 @@ write after its acquisition deadline. Native two-tab browser checks
 also verify waiting and release against the deployed persistence code.
 
 
+## Bounded JSON intake
+
+POST and PUT use an asynchronous request dependency that counts actual received
+bytes while streaming, before FastAPI can parse a body parameter. A document
+over 256 KiB returns HTTP 413; `Content-Length` is not trusted. Up to the limit,
+UTF-8 decoding and a string/escape-aware scan reject nesting deeper than 32
+before `json.loads`. Invalid JSON, encoding, or non-object requests return 400.
+Normal version-1 structural validation still runs afterward, and rejected intake
+never acquires a play mutation lock or changes saved drawings.
+HTTP 413 is a definitive intake rejection: the editor keeps its dirty draft but
+releases the rejected creation attempt, so correcting the drawing uses fresh
+content and a fresh creation identity on the next save.
+
+The budget covers full 5-on-5 rosters, every rating/badge, 30 curved actions with
+64-character IDs and participant/exit fields, and pretty-printed JSON with a
+maximum-length Unicode name. The shared maximal fixture is below one quarter
+of the document budget. Arbitrarily long unused fields or whitespace are not
+supported extensions to the version-1 format.
+
+Browser JSON boundaries use the same 256 KiB document and 32-level depth limits.
+API bodies are read from their streams with byte accounting and early reader
+cancellation; no unbounded `response.json()` or `response.text()` is used by the
+Playbook client. The file/blob reader rejects known oversized files before
+reading and still counts streamed bytes. It does not add a file-import UI.
+Whole library responses and legacy/current browser-storage envelopes instead
+use a 16 MiB aggregate budget, allowing many plays and creation receipts. Browser
+storage necessarily returns an existing string; its length is checked before
+UTF-8 byte counting, then depth is checked before JSON parsing. Identical verified
+cache hits retain their existing fast path. Browser writes check the same library
+budget before replacing storage so they cannot create an unreadable library.
+
+The local saved-file reader reads at most 1 MiB plus a sentinel byte before
+decoding/scanning/parsing. This separate allowance accommodates private creation
+receipts. Rejected files are preserved and follow existing invalid-file/partial
+listing reporting. Browser load failures leave the existing library and draft
+in place and do not overwrite storage or poison the verified parse cache.
+
+Run `npm run test:playbook-intake` and
+`.venv/bin/python -m pytest tests/test_playbook_intake.py -q` for full-roster
+compatibility, exact byte/depth boundaries, multibyte and chunk-split UTF-8,
+misleading/absent length headers, early stream cancellation, escaped delimiters,
+rejected unknown fields, corrupt saved files, and recovery without draft loss.
+
 ## Local file durability
 
 The downloaded app flushes the complete temporary JSON and calls `fsync` before
