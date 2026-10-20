@@ -70,7 +70,7 @@ const scripted = createSimulationRun(source, { ...settings(), offenseMode: 'scri
 assert.equal(scripted.settings.offenseOffBall, 'off');
 assert.deepEqual(scripted.settings.automaticActions, { screen: false, handoff: false, pickRoll: false, offBallScreen: false });
 
-// Coordinated-defense snapshots include every display/diagnostic sample.
+// Congestion-planning snapshots include every display/diagnostic sample.
 // Historical pre-validation hashes remain in the fixture for before/after audits.
 const baselineFile = JSON.parse(readFileSync(new URL('../tests/fixtures/simulation-settings-baseline.json', import.meta.url)));
 assert.equal(Math.random(), baselineFile.randomSample);
@@ -86,11 +86,11 @@ for (const fixture of baseline) {
   while (current.elapsedMs < current.durationMs) {
     advanceSimulationState(current, 50);
     hash.update(JSON.stringify([current.elapsedMs, current.durationMs, getSimulationFrame(current), observeCounterLabRun(current)]));
-    assert.ok(++steps <= fixture.responsibilitiesSteps);
+    assert.ok(++steps <= fixture.congestionSteps);
   }
-  assert.equal(hash.digest('hex'), fixture.responsibilitiesSha256, `Exact coordinated-defense replay/diagnostic equality: ${JSON.stringify(input)}`);
-  assert.equal(steps, fixture.responsibilitiesSteps);
+  assert.equal(hash.digest('hex'), fixture.congestionSha256, `Exact congestion-planning replay/diagnostic equality: ${JSON.stringify(input)}`);
+  assert.equal(steps, fixture.congestionSteps);
   assert.deepEqual(input, fixture.settings);
 }
 Math.random = originalRandom;
-console.log(`Simulation settings passed: ${invalid.length} malformed inputs across direct/prepared/update/advance boundaries; unchanged state on failure, defaults, mutable caller inputs, scripted overrides and ${baseline.length} exact coordinated-defense deterministic trials across all ${STARTER_PLAYS.length} starters`);
+console.log(`Simulation settings passed: ${invalid.length} malformed inputs across direct/prepared/update/advance boundaries; unchanged state on failure, defaults, mutable caller inputs, scripted overrides and ${baseline.length} exact congestion-planning deterministic trials across all ${STARTER_PLAYS.length} starters`);

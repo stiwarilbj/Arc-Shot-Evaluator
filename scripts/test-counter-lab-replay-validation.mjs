@@ -67,6 +67,16 @@ for (const change of [
   v => { v.execution[0].usedAtMs = '0'; }, v => { v.execution[0].releasedAtMs = NaN; },
   v => { v.execution[0].releasedAtMs = -1; }, v => { v.execution[0].notice = {}; },
 ]) { const item = frame(); change(item); invalid([item]); }
+const congestionFrame = frame();
+congestionFrame.execution[0].congestion = { status: 'yielding', playerId: 1, blockers: ['player:2', 'defender:1'], sinceMs: 0, reason: 'Reserved passage' };
+assert.deepEqual(decodeReplayForPlayback(packReplay([congestionFrame])), [congestionFrame], 'valid congestion evidence survives packed replay decoding');
+for (const change of [
+  c => { c.status = 'stuck'; }, c => { c.playerId = 99; }, c => { c.sinceMs = NaN; },
+  c => { c.sinceMs = -1; }, c => { c.sinceMs = 1; }, c => { c.reason = ''; },
+  c => { c.blockers = []; }, c => { c.blockers = ['player:99']; },
+  c => { c.blockers = ['player:1']; }, c => { c.blockers = ['defender:99']; },
+  c => { c.blockers = ['player:2', 'player:2']; }, c => { c.blockers = {}; },
+]) { const item = structuredClone(congestionFrame); change(item.execution[0].congestion); invalid([item]); }
 const missingPlayer = structuredClone(frames); missingPlayer[1] = { ...partial, elapsedMs: 100 };
 invalid(missingPlayer);
 const replacedDefender = structuredClone(frames); replacedDefender[1].defenders[0].id = 2; replacedDefender[1].assignments[0].defenderId = 2;

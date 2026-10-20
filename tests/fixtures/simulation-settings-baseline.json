@@ -22,7 +22,9 @@
       "ballStateSha256": "9c9d12a293fc1e90b4faf2c5b611fa7b7a1da5834de6fcf8e18aa7e000193e8c",
       "ballStateSteps": 317,
       "responsibilitiesSha256": "54e16a4d39e6bbb23590da975a041a71a585da8ffa5fa0ff57269592eab65034",
-      "responsibilitiesSteps": 262
+      "responsibilitiesSteps": 262,
+      "congestionSha256": "7cc127a9551a80a0df74eee47047e9ad31a5fbedec814e6f6611789b645c531a",
+      "congestionSteps": 319
     },
     {
       "playIndex": 1,
@@ -44,7 +46,9 @@
       "ballStateSha256": "a30eff9340ea3985f21e21405f354da4a3021944aa2ce8a310c0a4b4bc621afc",
       "ballStateSteps": 269,
       "responsibilitiesSha256": "52543183ec98c0823dcc4060fec74cf775c7d4350580cd70e862ee2a44765ee1",
-      "responsibilitiesSteps": 293
+      "responsibilitiesSteps": 293,
+      "congestionSha256": "6d97db254f4871cc3e1c45392736b38779b3afaca4fc03eedc65cc3afa10c310",
+      "congestionSteps": 290
     },
     {
       "playIndex": 2,
@@ -67,7 +71,9 @@
       "ballStateSha256": "a729b497cfea26c874ed6cc48f4cfd16cc4c4276f66dc6f65bbad1d218bd22f0",
       "ballStateSteps": 246,
       "responsibilitiesSha256": "65273cf8bf8c54ce81728a38681a7276cfc0d206a9ef136710f1f226d618f788",
-      "responsibilitiesSteps": 246
+      "responsibilitiesSteps": 246,
+      "congestionSha256": "5fa43667e06390bc6014ed6cdaba0b87e692febc34f77506220556620c89f8f2",
+      "congestionSteps": 247
     },
     {
       "playIndex": 3,
@@ -90,7 +96,9 @@
       "ballStateSha256": "068345d1b9fe5dd96d4c386f9e3217f4b05887e7c89a3956fba4c0462b7ebe9b",
       "ballStateSteps": 288,
       "responsibilitiesSha256": "ccccf32b9514b8dd8d7eadbb3f645cb647a9f3275942352aab8b129d34163230",
-      "responsibilitiesSteps": 288
+      "responsibilitiesSteps": 288,
+      "congestionSha256": "1b4f477460276b45ac80637088425cedf0b79248471dd9afeaaf64ef6cb04d97",
+      "congestionSteps": 288
     },
     {
       "playIndex": 4,
@@ -113,7 +121,9 @@
       "ballStateSha256": "1ec7cc9502c2ce0af31b570cb7c40a441a878906606270d562b354d81aceb4f6",
       "ballStateSteps": 333,
       "responsibilitiesSha256": "a23dfbef1c8e52e5f6cd903893462f80198ff36c4718093ebefec58dd6c5a29d",
-      "responsibilitiesSteps": 339
+      "responsibilitiesSteps": 339,
+      "congestionSha256": "fd768b2a29d8baf69a953fd2b7961654796fdc42f166c76188351908a8d41bb5",
+      "congestionSteps": 335
     },
     {
       "playIndex": 5,
@@ -136,7 +146,9 @@
       "ballStateSha256": "dd5d23d00776eab121113f611af5797aeb88c031834641ad9ebb86be55cb4862",
       "ballStateSteps": 226,
       "responsibilitiesSha256": "d151a4d3bb789c5d3de6316376fb4c07734215df4f63789fc3146135cc5953b1",
-      "responsibilitiesSteps": 236
+      "responsibilitiesSteps": 236,
+      "congestionSha256": "a339b8cf3f4d43ef7c11e138c318fdcebeb39000171e643c040e437435fc6201",
+      "congestionSteps": 221
     },
     {
       "playIndex": 6,
@@ -159,7 +171,9 @@
       "ballStateSha256": "ac028882504a2bfb8a5e64882e3ebf13ce613dab6487e4920585959245eb7e52",
       "ballStateSteps": 299,
       "responsibilitiesSha256": "594520c94027914c47823f075e54dfb6f73580f2dd40dd851c14548176359dc0",
-      "responsibilitiesSteps": 318
+      "responsibilitiesSteps": 318,
+      "congestionSha256": "755cd2659d99cdefe399c7674bcb98094790c969320f5a43f2900b8eba8152ef",
+      "congestionSteps": 287
     },
     {
       "playIndex": 7,
@@ -182,7 +196,9 @@
       "ballStateSha256": "67315ea74bcd0af265b5184431a0e7d602d37c59c6d72357ee419de8c93dcb1d",
       "ballStateSteps": 309,
       "responsibilitiesSha256": "4144a6794a99f8ca5bdaddfcbe3fc9ddcd8385580b6a08d32cb5bf1878f52ec3",
-      "responsibilitiesSteps": 319
+      "responsibilitiesSteps": 319,
+      "congestionSha256": "baa5557e5df8b80e0b4dcac52a761456e0a8d9fe9f0db65fa7a4caf8144b2b95",
+      "congestionSteps": 309
     },
     {
       "playIndex": 8,
@@ -205,7 +221,9 @@
       "ballStateSha256": "c90ca405c6b636df64b44af0ee7707b698458e6b58a1514916f12adafc928d57",
       "ballStateSteps": 259,
       "responsibilitiesSha256": "fccdac91eb8418d51378fed7e4cbaf540488e544f5cd34e03a01b3a5725efc57",
-      "responsibilitiesSteps": 259
+      "responsibilitiesSteps": 259,
+      "congestionSha256": "fccdac91eb8418d51378fed7e4cbaf540488e544f5cd34e03a01b3a5725efc57",
+      "congestionSteps": 259
     },
     {
       "playIndex": 9,
@@ -228,7 +246,9 @@
       "ballStateSha256": "afc444afd299f70a102bd7d6ae4b856b1a185e7353282826b6d34b4bcbb540fa",
       "ballStateSteps": 281,
       "responsibilitiesSha256": "32cfa15529e61a1f05a58beb32ea08987fd2314a7e829b7b16822b340d1cc29f",
-      "responsibilitiesSteps": 279
+      "responsibilitiesSteps": 279,
+      "congestionSha256": "d2c8af55a72825795cad7d3088f7683fd350677e31877596c0520ef58265a30f",
+      "congestionSteps": 279
     },
     {
       "playIndex": 10,
@@ -251,7 +271,9 @@
       "ballStateSha256": "3f79efaf8e55526fadf6528965286b022866222d60bbc55a17c121f84a7e60db",
       "ballStateSteps": 316,
       "responsibilitiesSha256": "c743a8509c7ccebc813e899569196f76d17f4355c66c560902c11fe1eada56e5",
-      "responsibilitiesSteps": 305
+      "responsibilitiesSteps": 305,
+      "congestionSha256": "cedfcc6703759311793ee0715132451dd3930da77d1b560b5925019d986745af",
+      "congestionSteps": 326
     },
     {
       "playIndex": 11,
@@ -274,7 +296,9 @@
       "ballStateSha256": "84e8085552bebffa1497642051761aa76736adbc3a149b6744ed8bb59ca391a5",
       "ballStateSteps": 366,
       "responsibilitiesSha256": "2ff611fb88420cf9416b989435134ffa3ac4d641568f9f7192e9bca4e33d21d4",
-      "responsibilitiesSteps": 398
+      "responsibilitiesSteps": 398,
+      "congestionSha256": "44d69f1ef5608a83161cacc8bdeef0343c333369062768ed8e0be60a53dc3034",
+      "congestionSteps": 327
     },
     {
       "playIndex": 12,
@@ -297,7 +321,9 @@
       "ballStateSha256": "9e8ef4fb4a68cc5c07060045c172a7ecefed46d488e58ab50c0266431e05a9a0",
       "ballStateSteps": 130,
       "responsibilitiesSha256": "7d051ab87c3e8569ff9fa099fe9393c49492890f2e387e437b936d650103a19a",
-      "responsibilitiesSteps": 130
+      "responsibilitiesSteps": 130,
+      "congestionSha256": "7d051ab87c3e8569ff9fa099fe9393c49492890f2e387e437b936d650103a19a",
+      "congestionSteps": 130
     },
     {
       "playIndex": 13,
@@ -320,7 +346,9 @@
       "ballStateSha256": "91faed6d00272f32c2cd805d06c3df4a6325ab539c8e3a1f208fd1843b4c9385",
       "ballStateSteps": 273,
       "responsibilitiesSha256": "db0f233338742363fd5689547ce90e6e409f0afae0aeb012e9b6a2e7822e0c9f",
-      "responsibilitiesSteps": 273
+      "responsibilitiesSteps": 273,
+      "congestionSha256": "0d73254d2234d4b52c4b63bef981da82ce7fccd758482eeb37d915b3606bc6c2",
+      "congestionSteps": 316
     },
     {
       "playIndex": 14,
@@ -343,7 +371,9 @@
       "ballStateSha256": "f21004bec03e53ff989f251ac9b270aca5d92d6863e13852ba5e0a8391b650a0",
       "ballStateSteps": 283,
       "responsibilitiesSha256": "052bea0d95a8f53d88c59c121ae1a16c8d89a1e9d756438e27c86a604d451142",
-      "responsibilitiesSteps": 283
+      "responsibilitiesSteps": 283,
+      "congestionSha256": "dbbfe95ae356f349b917f3545030e7bd42bfe3de7b1b269c855e333c1a32f790",
+      "congestionSteps": 287
     },
     {
       "playIndex": 15,
@@ -366,7 +396,9 @@
       "ballStateSha256": "f0b6f3fc3263a9070a6a0591c8670a3482cff34b2ee6789d2866565b8cfc29b9",
       "ballStateSteps": 249,
       "responsibilitiesSha256": "34ddf76ab1ae49e68e6228701f3b73d8338f4c16d75617693e7bba33457d1e31",
-      "responsibilitiesSteps": 249
+      "responsibilitiesSteps": 249,
+      "congestionSha256": "456622bbca97cc93acf1fe46f399baa7748867d6bb47d25a79d34e5e984bf944",
+      "congestionSteps": 249
     },
     {
       "playIndex": 16,
@@ -389,7 +421,9 @@
       "ballStateSha256": "2a9e75cb92177c269c25a5930cc19822765ec7b0dc87a49878b9f0e223fd5d78",
       "ballStateSteps": 331,
       "responsibilitiesSha256": "e5c79ed1ee94501d7f2e001d60e47fa485d8f2943d02b708c698f0c298e186f8",
-      "responsibilitiesSteps": 333
+      "responsibilitiesSteps": 333,
+      "congestionSha256": "d7a898f0149fdef34382b4589309c19477a58b01a039b68832ec832a95f7ecf5",
+      "congestionSteps": 339
     },
     {
       "playIndex": 17,
@@ -412,7 +446,9 @@
       "ballStateSha256": "d55c0e8b0cb29b58351494d530719c486b71d2c1470bf1c69234bcd61a0ac632",
       "ballStateSteps": 225,
       "responsibilitiesSha256": "fb0de4d2e6eb58255dfc9269edea0a095be5a6163004edfc657eaa651eb637aa",
-      "responsibilitiesSteps": 224
+      "responsibilitiesSteps": 224,
+      "congestionSha256": "fb0de4d2e6eb58255dfc9269edea0a095be5a6163004edfc657eaa651eb637aa",
+      "congestionSteps": 224
     },
     {
       "playIndex": 18,
@@ -435,7 +471,9 @@
       "ballStateSha256": "af670cfd18f609b3a7bac5fbd90882fe03e34cff6a5d89784e3bb15c0cdbd98e",
       "ballStateSteps": 145,
       "responsibilitiesSha256": "9a6123d4ad47301da3e6222833dc762418ef58cfc798ad8c2d5529788e2d3578",
-      "responsibilitiesSteps": 144
+      "responsibilitiesSteps": 144,
+      "congestionSha256": "99da8d60073579760c26674ba9b12588ba34f20f43beadaa554db9d91c430c74",
+      "congestionSteps": 139
     },
     {
       "playIndex": 19,
@@ -458,7 +496,9 @@
       "ballStateSha256": "52adbc1c1b7394331726f47ea4d88c016d946d8659f832533709e0146e21db28",
       "ballStateSteps": 339,
       "responsibilitiesSha256": "0449745de5934de30424899bd115c07ec55437b4a09fdb1e2e372d0f1c51158c",
-      "responsibilitiesSteps": 339
+      "responsibilitiesSteps": 339,
+      "congestionSha256": "006b3694371fc54165294836aa9fb460889e4506445007e36bbf91af666684b4",
+      "congestionSteps": 320
     },
     {
       "playIndex": 20,
@@ -481,7 +521,9 @@
       "ballStateSha256": "e20bdc24e786bacb5cb8c5c8ba6555c2c1329328ecff17b82e61893b534f60d0",
       "ballStateSteps": 294,
       "responsibilitiesSha256": "e23e1ebb85ce3a56d65b0327671d72e4a26e734ccd0da87b594d517877dca45b",
-      "responsibilitiesSteps": 304
+      "responsibilitiesSteps": 304,
+      "congestionSha256": "e23e1ebb85ce3a56d65b0327671d72e4a26e734ccd0da87b594d517877dca45b",
+      "congestionSteps": 304
     },
     {
       "playIndex": 21,
@@ -504,7 +546,9 @@
       "ballStateSha256": "19e13183090ae7bc287097484e7296350ec7edd05986e5ba911a03a294ae779a",
       "ballStateSteps": 361,
       "responsibilitiesSha256": "87cec03016b06271189921362bb3ee7b2389b5b2400a186c8a248eef12ddd898",
-      "responsibilitiesSteps": 361
+      "responsibilitiesSteps": 361,
+      "congestionSha256": "10b5bcbf442e745d7cf2be4e519891bc105a64f3d1d6eab98b5e7a7355071700",
+      "congestionSteps": 361
     },
     {
       "playIndex": 22,
@@ -527,7 +571,9 @@
       "ballStateSha256": "bc50b2e9ae63cd67a9a39fc0157f83d919bc8423cadd222c7e0b31df00d7b485",
       "ballStateSteps": 346,
       "responsibilitiesSha256": "433501c3d33a1409928b90093502623d02c3e7337b411b97a62ddfee46528729",
-      "responsibilitiesSteps": 345
+      "responsibilitiesSteps": 345,
+      "congestionSha256": "002d093811080b387706ae91b883e31948f3ea1dc1136623c79034758d1ec594",
+      "congestionSteps": 338
     },
     {
       "playIndex": 23,
@@ -550,7 +596,9 @@
       "ballStateSha256": "8df188223181a4562cff8457ba7fff30882cb468d78aa51c8caa19b9b9d19041",
       "ballStateSteps": 251,
       "responsibilitiesSha256": "14f5b21a0e2fb3296dcc739b5f2272032bf17ad640af2325bcb8e03f2c20d556",
-      "responsibilitiesSteps": 251
+      "responsibilitiesSteps": 251,
+      "congestionSha256": "f8ec29bcd7a2cb4dbc7a1e7f3f1822b96a8fd78009480ef79e4029bc33b78b81",
+      "congestionSteps": 251
     },
     {
       "playIndex": 0,
@@ -573,7 +621,9 @@
       "ballStateSha256": "41d2f807c7528aa06a1dc2ca90fedf52aaaa6862170d12c0cd9996e67028bf9a",
       "ballStateSteps": 276,
       "responsibilitiesSha256": "49426ddd30db26716b2407bf9b0dbdd7c4c48c565c833ba5d9ebe568ac060f5a",
-      "responsibilitiesSteps": 262
+      "responsibilitiesSteps": 262,
+      "congestionSha256": "131716cbb999983e9fb001ae1f349e5d9836bcf136ea7aad83e6b315ff60570e",
+      "congestionSteps": 292
     },
     {
       "playIndex": 1,
@@ -596,7 +646,9 @@
       "ballStateSha256": "294eab6d527f7ee5f6d9714b276b9a38fa6613949856d0fb146c1cf3a07b9381",
       "ballStateSteps": 262,
       "responsibilitiesSha256": "9fad67aa80aab4d6696c1475541415ca385929f4272dac2f47beee237900329c",
-      "responsibilitiesSteps": 281
+      "responsibilitiesSteps": 281,
+      "congestionSha256": "6399566f8075255b025d28152ca510c77d922ace3b32192986cb031b01d45c2f",
+      "congestionSteps": 328
     },
     {
       "playIndex": 2,
@@ -619,7 +671,9 @@
       "ballStateSha256": "da059d23fe3022753cc7b7c7304ed1d07bb1e4b072b6f64d86c7f009d45458b7",
       "ballStateSteps": 246,
       "responsibilitiesSha256": "3100b52c453059aca89c467c403a852b269b08515a7d0109d8c9a96c5b59bb76",
-      "responsibilitiesSteps": 244
+      "responsibilitiesSteps": 244,
+      "congestionSha256": "3100b52c453059aca89c467c403a852b269b08515a7d0109d8c9a96c5b59bb76",
+      "congestionSteps": 244
     },
     {
       "playIndex": 3,
@@ -642,7 +696,9 @@
       "ballStateSha256": "1aa2d0954d4b18d668d2bb15dbe622d9518d21945863c92bc051611e47fd18f2",
       "ballStateSteps": 288,
       "responsibilitiesSha256": "0d0a53355f2a2a0fc05bce7657372a7d5eff2a935f489b8a1fc66f49e022ecd8",
-      "responsibilitiesSteps": 288
+      "responsibilitiesSteps": 288,
+      "congestionSha256": "5c474838588dac0b70f68e3f13854c3245263949e49b466670f15e070d1b7c5e",
+      "congestionSteps": 288
     },
     {
       "playIndex": 4,
@@ -665,7 +721,9 @@
       "ballStateSha256": "38a656b8fb1508a9a6bb39bc3ebfdfc8de940a1d2ffc833332ff9d9feb97926b",
       "ballStateSteps": 316,
       "responsibilitiesSha256": "5689289925288db6489ded26bbaa2cc92b429654ec62f219af7a404e11cc3c74",
-      "responsibilitiesSteps": 359
+      "responsibilitiesSteps": 359,
+      "congestionSha256": "f512c0743abee54ac3ac984b59754ccf82a674945587acbeaaa31bbaed56ae5e",
+      "congestionSteps": 362
     },
     {
       "playIndex": 5,
@@ -688,7 +746,9 @@
       "ballStateSha256": "5336de57cf653b5e8f97d4add5b5ef6f8f608cdfff8c76cc5d28d8be1caffa81",
       "ballStateSteps": 262,
       "responsibilitiesSha256": "b1f9546d0e2932c177775fe37869cd73804d3ad90b4c6c01d5b3c7c67acc0c81",
-      "responsibilitiesSteps": 263
+      "responsibilitiesSteps": 263,
+      "congestionSha256": "0e5b6702a5400f33bdb8f5f02650ad0501c5d1618216f7b51371581257b02bc1",
+      "congestionSteps": 252
     },
     {
       "playIndex": 6,
@@ -711,7 +771,9 @@
       "ballStateSha256": "b4a6d33e0c828baee82fcc1f2f440e26e08e7c5cc76d39b568b942e98f00ddc1",
       "ballStateSteps": 275,
       "responsibilitiesSha256": "3db39f8add540a47f8600b4c7f1d109d91c5a0a8a6e97dacf10f4916fb058c50",
-      "responsibilitiesSteps": 259
+      "responsibilitiesSteps": 259,
+      "congestionSha256": "28583225acbb4d2e909394fd0ce7dc6de961b68b09a78a8db6fb7864bae00a4e",
+      "congestionSteps": 259
     },
     {
       "playIndex": 7,
@@ -734,7 +796,9 @@
       "ballStateSha256": "ddbd8857461c4269e5b16cf20072820fe0d621862a670366aedcce435b6603ef",
       "ballStateSteps": 309,
       "responsibilitiesSha256": "cfe660794a868b495081f3a07916518ade9c7d07af72fea339576ac9043ddc68",
-      "responsibilitiesSteps": 245
+      "responsibilitiesSteps": 245,
+      "congestionSha256": "9322f27bcf527355ce4a0968675b59a96db3bd0832fc44ddd5335353960204ca",
+      "congestionSteps": 295
     },
     {
       "playIndex": 8,
@@ -757,7 +821,9 @@
       "ballStateSha256": "cf081780ae5ec9cd2e0081a81cdd30b0102696da6d4f7e3023af011c1c3ac4e9",
       "ballStateSteps": 266,
       "responsibilitiesSha256": "898970fddad3554e3880ef5f796b7a64a978c81704620f298c8665c04c7b83f1",
-      "responsibilitiesSteps": 266
+      "responsibilitiesSteps": 266,
+      "congestionSha256": "3db061d6293310a5ebe358aa5ae6f8537c1037599dc3cc4bf235120e55ef65d2",
+      "congestionSteps": 266
     },
     {
       "playIndex": 9,
@@ -780,7 +846,9 @@
       "ballStateSha256": "9683e796e0314b64027f8bf76961eebd335fa3db96f0fa4cb28c6d66be56b776",
       "ballStateSteps": 287,
       "responsibilitiesSha256": "8ddfb0b9f1e4c54b030861b56d27ed3ff0c6b7c3af43fb6178d413626b90a37c",
-      "responsibilitiesSteps": 286
+      "responsibilitiesSteps": 286,
+      "congestionSha256": "2809a6c6df38d9cb2b556ed8263005a777f6cb673f0dbc8a28a9a749b03722a4",
+      "congestionSteps": 286
     },
     {
       "playIndex": 10,
@@ -803,7 +871,9 @@
       "ballStateSha256": "392d12d0baa7d9d1ec3f5b1fac7a058d3b18f7ff0d402ee2cf3d056c9a9807a2",
       "ballStateSteps": 279,
       "responsibilitiesSha256": "ecf29fc416da7b88b4c58db5efe28993297665b30b0bbdf8273ded603de6e54f",
-      "responsibilitiesSteps": 289
+      "responsibilitiesSteps": 289,
+      "congestionSha256": "25565a54567843143a9787e3f2daa22f9489e1cc98af4f7a57cea5533a5e2eb3",
+      "congestionSteps": 259
     },
     {
       "playIndex": 11,
@@ -826,7 +896,9 @@
       "ballStateSha256": "83b01375c1f62b8b41112ef4a31945a2d8f157a3af920081f2ffa936fe1a9609",
       "ballStateSteps": 262,
       "responsibilitiesSha256": "74453d9149208c07cd4046e8bdd4a27ca35feffea588adf8af29f84dd61fed2b",
-      "responsibilitiesSteps": 261
+      "responsibilitiesSteps": 261,
+      "congestionSha256": "27645075785870569632e5ef9166c30ac310c498cc7f37a3724ae94fa44f65b6",
+      "congestionSteps": 245
     },
     {
       "playIndex": 12,
@@ -849,7 +921,9 @@
       "ballStateSha256": "63d3e9f95d70ad748420a9e144171c8d4a17376d6b870f30aa30d1e90d24d122",
       "ballStateSteps": 207,
       "responsibilitiesSha256": "47c77fc2b89e2eb42a795d0943af18f675f4509a3b88dd09ae1d5a0be71b248e",
-      "responsibilitiesSteps": 128
+      "responsibilitiesSteps": 128,
+      "congestionSha256": "47c77fc2b89e2eb42a795d0943af18f675f4509a3b88dd09ae1d5a0be71b248e",
+      "congestionSteps": 128
     },
     {
       "playIndex": 13,
@@ -872,7 +946,9 @@
       "ballStateSha256": "27f62d8e5787d942adbc4cba5ff34f1348882080200c9d0a220c8d5a7f940601",
       "ballStateSteps": 330,
       "responsibilitiesSha256": "33822fc1796c0d5da863d07ea0fce809f6d226826a8d244368a4e46be8c20faa",
-      "responsibilitiesSteps": 330
+      "responsibilitiesSteps": 330,
+      "congestionSha256": "226b529e2aa752ea51a5d7c082dbf70b926fc631eff6bfe89257f04ea64b0be5",
+      "congestionSteps": 327
     },
     {
       "playIndex": 14,
@@ -895,7 +971,9 @@
       "ballStateSha256": "7f4e62b6216797fbd3ba9f7cb42676653d6bf291e626744af08135362ad56858",
       "ballStateSteps": 339,
       "responsibilitiesSha256": "5a64acd9be7c50df0d674c47aacd289a7dc4a50ceabb968f0eab5eb223966fe1",
-      "responsibilitiesSteps": 343
+      "responsibilitiesSteps": 343,
+      "congestionSha256": "5a64acd9be7c50df0d674c47aacd289a7dc4a50ceabb968f0eab5eb223966fe1",
+      "congestionSteps": 343
     },
     {
       "playIndex": 15,
@@ -918,7 +996,9 @@
       "ballStateSha256": "a948bc136c4081a9f9c75e488077f497f6fef7acbdfeae2d4da11cc721d8aeea",
       "ballStateSteps": 263,
       "responsibilitiesSha256": "93912b72693cbd97b200ee55106ea3b9fcfa4457fabb665d5909adfcde45487a",
-      "responsibilitiesSteps": 247
+      "responsibilitiesSteps": 247,
+      "congestionSha256": "95d0e1078a88c6f27c21daa2f29a4e6b70b41892053c35bfafed8fedbf8c3701",
+      "congestionSteps": 247
     },
     {
       "playIndex": 16,
@@ -941,7 +1021,9 @@
       "ballStateSha256": "3ffef651151177c56e2167854fbff2f004ce7b973c44e958e25f3475526797a2",
       "ballStateSteps": 274,
       "responsibilitiesSha256": "77a50fdadd7bbf75de09dc657c717a44928ec1e11b7d651aae2afc8008bc6c7c",
-      "responsibilitiesSteps": 280
+      "responsibilitiesSteps": 280,
+      "congestionSha256": "7594fa2dd12dc16ea310ae26303ed892f73dbe5c570ad8362b8a43995289b3ed",
+      "congestionSteps": 280
     },
     {
       "playIndex": 17,
@@ -964,7 +1046,9 @@
       "ballStateSha256": "943fa54a6b2585afd8ae70d74e01a8c3c651d528e7aa6fa9111c55e5107940e8",
       "ballStateSteps": 193,
       "responsibilitiesSha256": "28f92cff8fdd630fbb219cdd2319c001b7069acf158b752ca49834d908dc0617",
-      "responsibilitiesSteps": 193
+      "responsibilitiesSteps": 193,
+      "congestionSha256": "9c699a1b0d2c03024d587eaf0288cb692a6900fc0b7567e2609366c5350ce5c5",
+      "congestionSteps": 193
     },
     {
       "playIndex": 18,
@@ -987,7 +1071,9 @@
       "ballStateSha256": "dbab1715cb98445f20afce6aa35d22ee6bf05a3a5868f9ee1a16f01fb2ebfb3b",
       "ballStateSteps": 148,
       "responsibilitiesSha256": "6ce5656ab1185c00acc696461b029e5320c0500de0e92367134a96bceb071aad",
-      "responsibilitiesSteps": 161
+      "responsibilitiesSteps": 161,
+      "congestionSha256": "aacc415789cdf5e4c06f1493fc120d15f98879dd8c14a19453ea038aab71056e",
+      "congestionSteps": 161
     },
     {
       "playIndex": 19,
@@ -1010,7 +1096,9 @@
       "ballStateSha256": "27b601e360092c80b346bd1a01237f34627e1b0c468208de658002336bd9083e",
       "ballStateSteps": 339,
       "responsibilitiesSha256": "58d3435c54a5e09862d3cb62572ef11d4f00b2491c0bf83de1d04941c19c1a5f",
-      "responsibilitiesSteps": 339
+      "responsibilitiesSteps": 339,
+      "congestionSha256": "dc1a79ad5efca540f1c48f1e4f85ed891d0cfc229971cecfbc9b48f6b0f09eb2",
+      "congestionSteps": 339
     },
     {
       "playIndex": 20,
@@ -1033,7 +1121,9 @@
       "ballStateSha256": "06fcf85b1e1b9cbfcf341d660d546e3dd6858be52b1de9ecb0c4fb4154df9b35",
       "ballStateSteps": 286,
       "responsibilitiesSha256": "fcf3eba6361d53ef5b2426a24a529d4348406bd224f36cdfc52b5ede4b727dc0",
-      "responsibilitiesSteps": 291
+      "responsibilitiesSteps": 291,
+      "congestionSha256": "fcf3eba6361d53ef5b2426a24a529d4348406bd224f36cdfc52b5ede4b727dc0",
+      "congestionSteps": 291
     },
     {
       "playIndex": 21,
@@ -1056,7 +1146,9 @@
       "ballStateSha256": "8ca8a7533aedd25306a95e2d6c04abd27b7ce3cda8b710751095387c91ad02f7",
       "ballStateSteps": 354,
       "responsibilitiesSha256": "058a7ae420c3975e8c152617e9a6fd3f7f6070e1acd8db22c099de16eb12dcce",
-      "responsibilitiesSteps": 353
+      "responsibilitiesSteps": 353,
+      "congestionSha256": "0e0dff05c18cbf1dad98ff130ff7796bfeb7be0a93db3e5b5d6124b49716dcf2",
+      "congestionSteps": 355
     },
     {
       "playIndex": 22,
@@ -1079,7 +1171,9 @@
       "ballStateSha256": "67015e68a017e5856cdf285ffb7bb46c050bebc612e80412dc583a3cdfd3dad4",
       "ballStateSteps": 265,
       "responsibilitiesSha256": "6b59a1dd09b4a38eb083e27bb1b02c5f416f81b7fcd81823a5e84782cb10f454",
-      "responsibilitiesSteps": 265
+      "responsibilitiesSteps": 265,
+      "congestionSha256": "26f39c2bd42ab790b23a34436207dbc6c7f5eab24b0f07b067aa0e2641913d82",
+      "congestionSteps": 223
     },
     {
       "playIndex": 23,
@@ -1102,7 +1196,9 @@
       "ballStateSha256": "1d7c06a8a26bd021ac64c3b6253c8e239dcdc3be086c7ce2b81bc2715bd94c73",
       "ballStateSteps": 245,
       "responsibilitiesSha256": "f17e62abf66b74bf3fd678d141cc2fb3bba272055eddd519c20618234f6286b7",
-      "responsibilitiesSteps": 250
+      "responsibilitiesSteps": 250,
+      "congestionSha256": "2bed45af9a1628bd8631d5c7302e7f1de609ac58d66e164eb1c8fedbefb2752a",
+      "congestionSteps": 250
     },
     {
       "playIndex": 0,
@@ -1125,7 +1221,9 @@
       "ballStateSha256": "9c9d12a293fc1e90b4faf2c5b611fa7b7a1da5834de6fcf8e18aa7e000193e8c",
       "ballStateSteps": 317,
       "responsibilitiesSha256": "54e16a4d39e6bbb23590da975a041a71a585da8ffa5fa0ff57269592eab65034",
-      "responsibilitiesSteps": 262
+      "responsibilitiesSteps": 262,
+      "congestionSha256": "7cc127a9551a80a0df74eee47047e9ad31a5fbedec814e6f6611789b645c531a",
+      "congestionSteps": 319
     },
     {
       "playIndex": 1,
@@ -1148,7 +1246,9 @@
       "ballStateSha256": "a30eff9340ea3985f21e21405f354da4a3021944aa2ce8a310c0a4b4bc621afc",
       "ballStateSteps": 269,
       "responsibilitiesSha256": "52543183ec98c0823dcc4060fec74cf775c7d4350580cd70e862ee2a44765ee1",
-      "responsibilitiesSteps": 293
+      "responsibilitiesSteps": 293,
+      "congestionSha256": "6d97db254f4871cc3e1c45392736b38779b3afaca4fc03eedc65cc3afa10c310",
+      "congestionSteps": 290
     },
     {
       "playIndex": 2,
@@ -1172,7 +1272,9 @@
       "ballStateSha256": "3785c00bbf6c1931ed92029ff31946456fc406da415cf270825891b2c82d871f",
       "ballStateSteps": 103,
       "responsibilitiesSha256": "0cfe99b6378d02937739d166242edb0b60cb6fa719a552917e16db59e97ca84b",
-      "responsibilitiesSteps": 103
+      "responsibilitiesSteps": 103,
+      "congestionSha256": "0cfe99b6378d02937739d166242edb0b60cb6fa719a552917e16db59e97ca84b",
+      "congestionSteps": 103
     },
     {
       "playIndex": 3,
@@ -1196,7 +1298,9 @@
       "ballStateSha256": "1aa2d0954d4b18d668d2bb15dbe622d9518d21945863c92bc051611e47fd18f2",
       "ballStateSteps": 288,
       "responsibilitiesSha256": "0d0a53355f2a2a0fc05bce7657372a7d5eff2a935f489b8a1fc66f49e022ecd8",
-      "responsibilitiesSteps": 288
+      "responsibilitiesSteps": 288,
+      "congestionSha256": "5c474838588dac0b70f68e3f13854c3245263949e49b466670f15e070d1b7c5e",
+      "congestionSteps": 288
     }
   ]
 }

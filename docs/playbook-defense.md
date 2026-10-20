@@ -85,7 +85,8 @@ Display and Counter Lab replay frames contain independent responsibility snapsho
 Worker replay decoding validates known roles, participant identities, one duty per
 defender, exclusive primary/helper/rim roles, zone slots, timestamps, and release
 metadata. Older replay fixtures without this optional field remain compatible.
-Completed-trial cache version 5 prevents reuse of earlier engine results.
+Completed-trial cache version 6 also separates congestion-planner results from
+earlier engine results.
 
 From `frontend/`, run `npm run test:defensive-responsibilities` for explicit help
 exchanges, the 220-ms release boundary, inherited recovery, consecutive screens,

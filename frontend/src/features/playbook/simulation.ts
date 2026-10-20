@@ -3,6 +3,7 @@ import { ballController, isShotBall, isTransferBall, placedBall, transitionBall,
 import { coordinateDefensiveDuties, createDefensiveTeamState, defensiveDutySnapshot, resetDefensiveDuties, type DefensiveResponsibility, type DefensiveTeamState } from "./defensiveResponsibilities.ts";
 import { linearRoutePoint as lerpPoint, quadraticRoutePoint as quadraticPoint, perpendicularRouteControl } from "./routeGeometry.ts";
 import { coordinateMovement, createMovementBuffers, createMovementOrder, interpolatePosition, type MotionIntent, type MovementBuffers, type MovementOrder } from "./coordinatedMovement.ts";
+import { clearCongestionState } from "./congestionPlanning.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
 import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating as playerRating, preparedHasBadge as playerHasBadge, preparedHasBadge as defenderHasBadge, type SimulationAttributes } from "./simulationAttributes.ts";
@@ -43,13 +44,14 @@ export type SimulationFrame = {
 };
 
 export type ActionDiagnostic = {
+  congestion?: { status: "yielding" | "detouring" | "blocked"; playerId: number; blockers: string[]; sinceMs: number; reason: string };
   transfer?: TransferRecord;
   actionId: string; sequence: number; actorId: number | null; recipientId: number | null; partnerId: number | null;
   setAtMs?: number; usedAtMs?: number; releasedAtMs?: number;
   phase: "pending" | "approach" | "set" | "use" | "release" | "transfer" | "completed" | "obstructed" | "conflict" | "interrupted";
   startedAtMs: number | null; completedAtMs: number | null; progress: number; notice: string | null;
 };
-type ExecutionPath = { points: CourtPoint[]; lengths: number[]; length: number; progress: number; closest: CourtPoint };
+type ExecutionPath = { points: CourtPoint[]; feetPoints: CourtPoint[]; lengths: number[]; length: number; progress: number; closest: CourtPoint };
 type ActionRuntime = ActionDiagnostic & { paths: Map<number, ExecutionPath>; waitMs: number };
 type BoundAction = {
   plan?: PlannedAction;
@@ -1191,7 +1193,9 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
       defenders: run.frame.defenders.map(({ id, x, y }) => ({ id, x, y })),
       ball: run.frame.ball ? { ...run.frame.ball } : null,
       shotPhase: run.frame.shotPhase,
-      execution: run.frame.execution?.map((action) => ({ ...action, ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) })),
+      execution: run.frame.execution?.map((action) => ({ ...action,
+        ...(action.congestion ? { congestion: { ...action.congestion, blockers: [...action.congestion.blockers] } } : {}),
+        ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) })),
     },
   };
 }
@@ -1430,7 +1434,9 @@ function copyFrame(frame: SimulationFrame): SimulationFrame {
   return {
     ...frame,
     defensiveResponsibilities: frame.defensiveResponsibilities?.map(duty => ({ ...duty })),
-    execution: frame.execution?.map((action) => ({ ...action, ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) })),
+    execution: frame.execution?.map((action) => ({ ...action,
+      ...(action.congestion ? { congestion: { ...action.congestion, blockers: [...action.congestion.blockers] } } : {}),
+      ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) })),
     routes: frame.routes.map((route) => ({ ...route, start: { ...route.start }, end: { ...route.end }, control: route.control ? { ...route.control } : undefined, via: route.via ? { ...route.via } : undefined, points: route.points?.map((point) => ({ ...point })) })),
     players: frame.players.map((player) => ({ ...player })),
     defenders: frame.defenders.map((defender) => ({ ...defender })),
@@ -1742,6 +1748,7 @@ export function setSimulationRunSettings(run: SimulationRun, settings: Simulatio
   // Equivalent values retain both settings and frame; the run's defense scheme
   // remains fixed. Mutable caller objects are checked again on every entry.
   if (nextSettings === run.settings) return;
+  resetCongestionPlanning(run);
   const previousStrategy = run.settings.defenseStrategy;
   if (previousStrategy !== nextSettings.defenseStrategy) {
     resetDefensiveDuties(run.defense);
@@ -2554,7 +2561,7 @@ function integrateMarker(
     run.motionIntents.set(key, { key, point: toCourtFeet(marker), velocity: moved.velocity, previousVelocity: currentVelocity,
       speed: maxSpeed, acceleration, priority: kind === "defender" ? 2 : existing?.priority ?? 1,
       frozen: existing?.priority === 100 && Math.hypot(currentVelocity.x, currentVelocity.y) < .5,
-      corridor: existing?.corridor });
+      corridor: existing?.corridor, navigation: existing?.navigation, target: toCourtFeet(target) });
     return marker;
   }
   run.velocities.set(key, moved.velocity);
@@ -2600,8 +2607,9 @@ function transferFor(action: BoundAction): TransferRecord {
 }
 function actionDiagnostics(run: SimulationRun): ActionDiagnostic[] {
   return run.actions.filter((action) => action.execution).map((action) => {
-    const { actionId, sequence, actorId, recipientId, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs } = action.execution!;
-    return { actionId, sequence, actorId, recipientId, partnerId: action.partnerId ?? null, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs, ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) };
+    const { actionId, sequence, actorId, recipientId, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs, congestion } = action.execution!;
+    return { actionId, sequence, actorId, recipientId, partnerId: action.partnerId ?? null, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs,
+      ...(congestion ? { congestion: { ...congestion, blockers: [...congestion.blockers] } } : {}), ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) };
   });
 }
 function actionIsMoving(action: BoundAction) {
@@ -2714,7 +2722,7 @@ function startReadyActions(run: SimulationRun, atMs: number) {
 function executionPath(points: CourtPoint[]): ExecutionPath {
   const lengths = [0];
   for (let i = 1; i < points.length; i++) lengths.push(lengths[i - 1] + pointDistanceFeet(points[i - 1], points[i]));
-  return { points, lengths, length: lengths.at(-1) ?? 0, progress: 0, closest: points[0] };
+  return { points, feetPoints: points.map(toCourtFeet), lengths, length: lengths.at(-1) ?? 0, progress: 0, closest: points[0] };
 }
 function authoredPath(action: BoundAction, start: CourtPoint, end = action.arrow.end) {
   return Array.from({ length: 33 }, (_, index) => routePoint(action, start, index / 32, end));
@@ -2744,13 +2752,21 @@ function followPath(run: SimulationRun, action: BoundAction, player: PlaybookMar
   const target = pathPoint(path, Math.min(path.length, path.progress + lookAhead));
   const key = velocityKey("player", player.id);
   run.motionIntents?.set(key, { key, point: feet, previousVelocity: velocity, velocity, speed: OFFENSE_MAX_SPEED_FT_PER_SECOND,
-    acceleration: OFFENSE_ACCELERATION_FT_PER_SECOND, priority: pointDistanceFeet(player, path.points.at(-1)!) < .8 ? 8 : priority, corridor: { point: toCourtFeet(closest), radius: 3 } });
+    acceleration: OFFENSE_ACCELERATION_FT_PER_SECOND, priority: pointDistanceFeet(player, path.points.at(-1)!) < .8 ? 8 : priority, corridor: { point: toCourtFeet(closest), radius: 3 },
+    navigation: { id: `${action.arrow.id}:${action.sequence}:${player.id}:${state.phase}`, goal: path.feetPoints.at(-1)!, points: path.feetPoints, progress: path.progress, remaining: Math.max(0, path.length - path.progress) } });
   state.progress = Math.max(state.progress, path.length ? Math.min(1, path.progress / path.length) : 1);
   return target;
 }
-function routeSpeed(action: BoundAction, playerId: number, maximum: number) {
+function routeSpeed(run: SimulationRun, action: BoundAction, playerId: number, maximum: number) {
   const path = action.execution?.paths.get(playerId);
   if (!path) return maximum;
+  const waiting = run.movementBuffers.solver.congestion.decisions.get(velocityKey("player", playerId));
+  // A stalled route may still have a legal escape waypoint. Only cap an
+  // actual hold; slowing a detour can prevent the player clearing the traffic.
+  if (waiting && waiting.routeId === run.motionIntents?.get(velocityKey("player", playerId))?.navigation?.id && !waiting.waypoint) {
+    const velocity = run.velocities.get(velocityKey("player", playerId));
+    maximum = Math.min(maximum, Math.max(2, Math.hypot(velocity?.x ?? 0, velocity?.y ?? 0)));
+  }
   // Brake before deliberate corners rather than overshooting and reversing.
   for (let i = 1; i < path.points.length - 1; i++) {
     const remaining = path.lengths[i] - path.progress;
@@ -2845,14 +2861,14 @@ function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
         const intent = run.motionIntents?.get(velocityKey("player", player.id)); if (intent) intent.priority = 100;
       }
       maxSpeed = Math.min(OFFENSE_MAX_SPEED_FT_PER_SECOND, Math.max(5, (state.paths.get(player.id)?.length ?? 0) / Math.max(.5, (movement.arrow.timing ?? 1.2)) * 1.3));
-      maxSpeed = routeSpeed(movement, player.id, maxSpeed);
+      maxSpeed = routeSpeed(run, movement, player.id, maxSpeed);
       authoredTarget = true;
     } else if (screen) {
       const state = executionFor(screen), finish = screenUserFinish(screen, hoop);
       const start = screen.arrow.kind === "off-ball-screen" || screen.arrow.kind === "pin-down" ? screen.recipientStart ?? player : screen.partnerStart ?? player;
       const points = screenUserPoints(screen, start, finish);
       target = followPath(run, screen, player, state.phase === "approach" || state.phase === "set" ? [start, points[1]] : [player, ...points.slice(1)]);
-      maxSpeed = routeSpeed(screen, player.id, 10); authoredTarget = true;
+      maxSpeed = routeSpeed(run, screen, player.id, 10); authoredTarget = true;
     } else if (transfer?.recipientId === player.id || prep?.recipientId === player.id) {
       const action = transfer?.recipientId === player.id ? transfer : prep!;
       const override = run.recipientStartOverrides.get(action.arrow.id);
@@ -2874,12 +2890,30 @@ function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
   });
 }
 
+function resetCongestionPlanning(run: SimulationRun) {
+  clearCongestionState(run.movementBuffers.solver.congestion);
+  for (const action of run.actions) if (action.execution && actionIsExecuting(action)) delete action.execution.congestion;
+}
+
 function coordinateCourt(run: SimulationRun, dt: number) {
   const { intents, playerPositions, defenderPositions, solver } = run.movementBuffers;
   intents.length = 0;
   for (const intent of run.motionIntents?.values() ?? []) intents.push(intent);
   playerPositions.clear(); defenderPositions.clear();
   const resolved = coordinateMovement(intents, dt, courtBoundsFeet, run.movementOrder, solver);
+  for (const action of run.actions) if (actionIsExecuting(action)) {
+    const state = executionFor(action);
+    delete state.congestion;
+    for (const playerId of state.paths.keys()) {
+      const key = velocityKey("player", playerId), decision = solver.congestion.decisions.get(key);
+      const expectedRoute = `${action.arrow.id}:${action.sequence}:${playerId}:${state.phase}`;
+      if (!decision || decision.routeId !== expectedRoute || decision.routeId !== run.motionIntents?.get(key)?.navigation?.id) continue;
+      const rank = { detouring: 1, yielding: 2, blocked: 3 };
+      if (!state.congestion || rank[decision.status] > rank[state.congestion.status]) state.congestion = {
+        status: decision.status, playerId, blockers: [...decision.blockers], sinceMs: decision.sinceMs, reason: decision.reason,
+      };
+    }
+  }
   intents.forEach((intent, index) => {
     const point = Math.hypot(resolved[index].velocity.x, resolved[index].velocity.y) < 1e-10 ? null : fromCourtFeet(resolved[index].point), id = Number(intent.key.split(":")[1]);
     run.velocities.set(intent.key, resolved[index].velocity);
@@ -3271,7 +3305,8 @@ function finalizeCompletedMovement(run: SimulationRun, previousTime: number, nex
     else {
       state.phase = "obstructed"; state.completedAtMs = nextTime;
       const traffic = [actor, user].some((participant) => participant && [...run.players.filter((player) => player.id !== participant.id), ...run.defenders].some((other) => pointDistanceFeet(participant, other) < 2.5));
-      state.notice = traffic ? `Move ${action.sequence} was blocked by nearby player traffic.` : `Move ${action.sequence} did not finish within the allowed time.`;
+      state.notice = state.congestion?.status === "blocked" ? `Move ${action.sequence} could not make progress through the reserved player traffic.`
+        : traffic ? `Move ${action.sequence} was blocked by nearby player traffic.` : `Move ${action.sequence} did not finish within the allowed time.`;
     }
     if (actor) run.offBallAnchors.set(actor.id, { x: actor.x, y: actor.y });
     if (user) run.offBallAnchors.set(user.id, { x: user.x, y: user.y });
@@ -3418,6 +3453,7 @@ export function editPausedSimulationMarker(
   run.actions.forEach((action) => action.execution?.paths.clear());
   run.offBallDecisions?.clear();
   run.routeHistory = [];
+  resetCongestionPlanning(run);
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
   return getSimulationFrame(run);
@@ -3472,6 +3508,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
   run.actions.forEach((action) => action.execution?.paths.clear());
   run.offBallDecisions?.clear();
   run.routeHistory = [];
+  resetCongestionPlanning(run);
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
   return true;

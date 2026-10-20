@@ -1,15 +1,19 @@
+import { createCongestionState, planCongestion, type CongestionState, type NavigationRoute } from "./congestionPlanning.ts";
+
 /** Positions and velocities in this module are measured in court feet. */
 export type MotionPoint = { x: number; y: number };
 export type MotionIntent = {
   key: string; point: MotionPoint; velocity: MotionPoint; previousVelocity: MotionPoint;
   speed: number; acceleration: number; priority: number; frozen?: boolean;
   corridor?: { point: MotionPoint; radius: number };
+  target?: MotionPoint;
+  navigation?: NavigationRoute;
 };
 export type MovementOrder = { keys: string[]; inputKeys?: string[]; indices?: number[] };
 type CollisionPair = { ai: number; bi: number; r: MotionPoint; n: MotionPoint; distance: number; allowance: number; allowed: number };
-export type MovementBuffers = { pairs: CollisionPair[]; desired: MotionPoint[]; velocities: MotionPoint[]; bounded: MotionPoint };
+export type MovementBuffers = { pairs: CollisionPair[]; desired: MotionPoint[]; velocities: MotionPoint[]; bounded: MotionPoint; congestion: CongestionState };
 export function createMovementBuffers(): MovementBuffers {
-  return { pairs: [], desired: [], velocities: [], bounded: { x: 0, y: 0 } };
+  return { pairs: [], desired: [], velocities: [], bounded: { x: 0, y: 0 }, congestion: createCongestionState() };
 }
 export function createMovementOrder(keys: Iterable<string>): MovementOrder {
   return { keys: [...new Set(keys)].sort((a, b) => a.localeCompare(b)) };
@@ -75,6 +79,7 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
     const point = desired[index] ??= { x: 0, y: 0 };
     point.x = intent.frozen ? 0 : intent.velocity.x; point.y = intent.frozen ? 0 : intent.velocity.y;
   });
+  planCongestion(intents, desired, dt, bounds, buffers.congestion);
   for (const { ai, bi, r, distance, n } of pairs) {
     const A = intents[ai], B = intents[bi];
     const relative = { x: desired[ai].x - desired[bi].x, y: desired[ai].y - desired[bi].y };
@@ -87,7 +92,8 @@ export function coordinateMovement(intents: MotionIntent[], dt: number, bounds: 
     // A stable side choice prevents reciprocal left/right oscillation.
     const tangent = { x: -n.y, y: n.x };
     const pressure = Math.max(0, BODY_GAP + .05 - distance) * 3;
-    const side = closing > .5 && distance > BODY_GAP ? Math.min(4, closing * .45) : 0;
+    const planned = buffers.congestion.decisions.has(A.key) || buffers.congestion.decisions.has(B.key);
+    const side = !planned && closing > .5 && distance > BODY_GAP ? Math.min(4, closing * .45) : 0;
     const push = { x: -n.x * pressure + tangent.x * side, y: -n.y * pressure + tangent.y * side };
     desired[ai].x += push.x * aWeight / sum; desired[ai].y += push.y * aWeight / sum;
     desired[bi].x -= push.x * bWeight / sum; desired[bi].y -= push.y * bWeight / sum;

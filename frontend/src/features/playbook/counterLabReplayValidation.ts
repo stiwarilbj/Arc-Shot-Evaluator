@@ -102,6 +102,14 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
         check((action.setAtMs === undefined || clock(action.setAtMs)) && (action.usedAtMs === undefined || clock(action.usedAtMs))
           && (action.releasedAtMs === undefined || clock(action.releasedAtMs)));
         check(finite(action.progress) && (action.notice === null || typeof action.notice === "string"));
+        if (action.congestion !== undefined) {
+          const congestion = action.congestion;
+          const keys = new Set([...players].map(id => `player:${id}`).concat([...defenders].map(id => `defender:${id}`)));
+          check(record(congestion) && ["yielding", "detouring", "blocked"].includes(congestion.status as string) && player(congestion.playerId));
+          check(clock(congestion.sinceMs) && congestion.sinceMs <= previousTime + 1e-6 && text(congestion.reason));
+          check(Array.isArray(congestion.blockers) && congestion.blockers.length > 0 && new Set(congestion.blockers).size === congestion.blockers.length);
+          for (const key of congestion.blockers) check(typeof key === "string" && keys.has(key) && key !== `player:${congestion.playerId}`);
+        }
         if (action.transfer !== undefined) {
           const transfer = action.transfer;
           check(record(transfer) && text(transfer.actionKey) && ["pass", "handoff"].includes(transfer.kind as string));

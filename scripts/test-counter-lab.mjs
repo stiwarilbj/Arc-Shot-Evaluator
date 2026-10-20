@@ -10,6 +10,8 @@ import { counterLabTrialKey, createCompletedTrialCache } from '../frontend/src/f
 import { decodeReplayForPlayback } from '../frontend/src/features/playbook/counterLabReplayValidation.ts';
 import { packReplay, unpackReplay } from '../frontend/src/features/playbook/counterLabReplayArchive.ts';
 
+// Keep a genuine switch/opening-loss fixture with room for the screen user.
+// The former crowded setup cannot create that opening; test it separately.
 const switchSlipFixture = {
   id: 'switch-slip-fixture',
   version: 1,
@@ -18,16 +20,16 @@ const switchSlipFixture = {
   players: [
     { id: 1, x: 51.80839931126684, y: 57.520748605020344 },
     { id: 2, x: 46.11721276305616, y: 59.95294767897576 },
-    { id: 3, x: 52.65480529051274, y: 53.28355757519603 },
+    { id: 3, x: 20, y: 35 },
     { id: 4, x: 15.666752534452826, y: 55.878381822258234 },
     { id: 5, x: 72.6544732763432, y: 53.517179004848 },
   ],
   defenders: [],
   ball: { x: 51.80839931126684, y: 57.520748605020344 },
   arrows: [{
-    id: 'screen-one', kind: 'screen', sequence: 1, path: 'straight', timing: 3.591288176830858,
+    id: 'screen-one', kind: 'screen', sequence: 1, path: 'straight', timing: 3.6,
     start: { x: 46.11721276305616, y: 59.95294767897576 },
-    end: { x: 57.11684093112126, y: 47.20973610528745 },
+    end: { x: 52.11684093112126, y: 50.20973610528745 },
     screener_id: 2, handler_id: 1,
   }],
 };
@@ -125,6 +127,17 @@ recordingRun.frame.execution = undefined;
 const emptyRecording = observeCounterLabRun(recordingRun);
 assert.equal(emptyRecording.frame.ball, null, 'null balls remain null in recording snapshots');
 assert.equal(emptyRecording.frame.execution, undefined, 'missing execution diagnostics remain optional');
+
+const crowdedSwitchFixture = structuredClone(switchSlipFixture);
+crowdedSwitchFixture.players[2] = { id: 3, x: 52.65480529051274, y: 53.28355757519603 };
+crowdedSwitchFixture.arrows[0].end.x = 57.11684093112126;
+crowdedSwitchFixture.arrows[0].end.y = 47.20973610528745;
+crowdedSwitchFixture.arrows[0].timing = 3.591288176830858;
+const crowdedSwitchRun = runCounterLabTrial(crowdedSwitchFixture, switchProfile, 'adaptive');
+assert.equal(crowdedSwitchRun.createdAdvantage, false, 'the crowded screen cannot manufacture an eligible opening');
+assert.equal(crowdedSwitchRun.firstLostOpeningMs, null, 'an advantage that never existed cannot be lost');
+assert.equal(crowdedSwitchRun.firstBreakdown?.kind, 'obstructed-action', 'the blocked screen remains diagnosed rather than hidden');
+assert.equal(crowdedSwitchRun.actionDiagnostics[0].phase, 'obstructed');
 
 const brokenRun = runCounterLabTrial(switchSlipFixture, switchProfile, 'adaptive');
 const repeatedRun = runCounterLabTrial(switchSlipFixture, switchProfile, 'adaptive');

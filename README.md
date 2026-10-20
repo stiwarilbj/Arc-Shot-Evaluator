@@ -128,6 +128,14 @@ planned start. Conflicting ownership and circular dependencies are diagnosed bef
 execution; failed prerequisites explain why dependent moves cannot start. Saved
 plays remain version 1. See [action dependencies](docs/playbook-action-dependencies.md).
 
+Congested routes use short passage and destination reservations. Players can
+briefly yield or take a small detour while a teammate passes, then continue to
+their original destination. Circular waits get deterministic right-of-way;
+unresolved traffic uses the existing bounded obstruction result. Curves, body
+clearance, speed limits, and the three-foot route allowance remain in force.
+Both workspaces and build targets share this planner. See
+[movement congestion](docs/playbook-congestion.md) for its limits and regression evidence.
+
 Ball control uses one shared state machine. Released passes have no controller;
 handoffs remain with their giver until the exchange is confirmed. Transfers record
 release, arrival, and catch/failure evidence. Failed passes leave a recoverable
