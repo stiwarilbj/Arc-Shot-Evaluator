@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import math
 import os
@@ -31,6 +32,8 @@ SAVE_CONFLICT = "This play was changed by another tab or client. Your draft is s
 # Version-1 save precision; Python round uses binary float, nearest/ties-to-even.
 COORDINATE_DECIMAL_PLACES = 4
 TIMING_DECIMAL_PLACES = 2
+PLAYBOOK_LOCK_TIMEOUT_SECONDS = 2.0
+PLAYBOOK_LOCK_POLL_SECONDS = 0.025
 ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "slip-screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"}
 ALLOWED_ARROW_PATHS = {"straight", "curve"}
 ALLOWED_PLAYER_BADGES = {
@@ -266,13 +269,38 @@ def _playbook_lock(path: Path):
                     lock.write(b"\0")
                     lock.flush()
                 lock.seek(0)
-                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
             else:
                 import fcntl
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            deadline = time.monotonic() + PLAYBOOK_LOCK_TIMEOUT_SECONDS
+            while True:
+                if time.monotonic() >= deadline:
+                    raise HTTPException(503, "Playbook storage is busy or unavailable; retry")
+                try:
+                    if os.name == "nt":
+                        lock.seek(0)
+                        msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError as error:
+                    if error.errno == errno.EINTR:
+                        continue
+                    busy = {errno.EAGAIN, errno.EWOULDBLOCK}
+                    if os.name == "nt":
+                        busy.update({errno.EACCES, errno.EDEADLK})
+                    if error.errno not in busy:
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise
+                    time.sleep(min(PLAYBOOK_LOCK_POLL_SECONDS, remaining))
         except OSError as error:
             raise HTTPException(503, "Playbook storage is busy or unavailable; retry") from error
         try:
+            # A descheduled waiter may acquire an available lock after expiry.
+            # Release it without entering the transaction in that case.
+            if time.monotonic() >= deadline:
+                raise HTTPException(503, "Playbook storage is busy or unavailable; retry")
             yield
         finally:
             if os.name == "nt":

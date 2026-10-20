@@ -144,6 +144,9 @@ the healthy subset as the entire library.
 The downloaded app validates deletion acknowledgements; if a response is
 malformed or interrupted, it checks whether the play is gone before reporting
 success. An unconfirmed outcome asks you to refresh before retrying.
+Local requests wait at most two seconds to acquire a saved play's lock. A busy
+lock returns a retryable storage error before mutation; an expired waiter cannot
+apply an update later. Writes that already acquired the lock finish normally.
 
 ### Shared arrow visibility
 

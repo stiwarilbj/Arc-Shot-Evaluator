@@ -214,15 +214,28 @@ files live under `.locks` and intentionally remain after release to avoid
 splitting waiters across different inodes. No documents, routes or UI controls
 change. Library reads skip files deleted after directory enumeration.
 
+Lock acquisition uses nonblocking OS calls (`LOCK_NB` on POSIX and `LK_NBLCK`
+on Windows), with a two-second monotonic deadline and polling sleeps capped at
+25 ms or the remaining time. Contention retries only until that deadline;
+unrelated OS errors fail immediately. The deadline is checked before each attempt
+and again after acquisition, before any transaction code runs. A waiter that
+expires returns the existing HTTP 503 busy/unavailable error, closes its handle,
+and cannot perform a delayed update when the holder releases. The timeout bounds
+lock acquisition, not filesystem I/O or an already acquired transaction: reads,
+atomic writes and lock release finish normally once ownership begins. Each
+play's acquisition has its own deadline; a listing can still report partial
+results when a particular play is locked. No background retry is scheduled.
+
 These locks serialize storage transactions, not human editing sessions. Two
 clients explicitly saving different whole drawings to the same existing ID
-still use last-completed-save behavior; edits are not merged and stale drafts
-are not rejected. Older deployed tabs or tools writing storage directly must
+must also pass the saved-revision check described above; stale drafts are
+rejected rather than merged. Older deployed tabs or tools writing storage directly must
 be closed/reloaded because they do not participate in this lock protocol.
 
 Run `npm run test:playbook-cross-client` and the Python playbook tests for
 independent-client coordination, concurrent creates/updates/deletes, failure
-recovery, and separate-process lock exclusion. Native two-tab browser checks
+recovery, separate-process lock exclusion/expiry, and completion of an acquired
+write after its acquisition deadline. Native two-tab browser checks
 also verify waiting and release against the deployed persistence code.
 
 

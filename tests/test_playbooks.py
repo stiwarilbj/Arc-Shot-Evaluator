@@ -488,6 +488,100 @@ def _hold_playbook_lock(path, entered, release):
             raise TimeoutError("Lock test did not release")
 
 
+def _attempt_contended_playbook_update(directory, saved, outcome):
+    # A separate server interpreter must time out while the holder is still alive.
+    playbooks_module.PLAYBOOKS_DIR = directory
+    playbooks_module.PLAYBOOK_LOCK_TIMEOUT_SECONDS = 0.2
+    response = TestClient(app).put(f"/api/playbooks/{saved['id']}", json=_payload("Expired update"), headers={"If-Match": _match(saved)})
+    outcome.put({"status": response.status_code, "body": response.json()})
+
+
+def test_expired_lock_waiter_in_separate_server_process_never_updates_later(tmp_path, monkeypatch):
+    import multiprocessing
+
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    saved = playbooks_module.create_playbook(_payload("Original drawing"))
+    path = tmp_path / f"{saved['id']}.json"
+    before = path.read_bytes()
+    context = multiprocessing.get_context("spawn")
+    entered, release, outcome = context.Event(), context.Event(), context.Queue()
+    holder = context.Process(target=_hold_playbook_lock, args=(path, entered, release))
+    waiter = context.Process(target=_attempt_contended_playbook_update, args=(tmp_path, saved, outcome))
+    holder.start()
+    try:
+        assert entered.wait(10)
+        waiter.start()
+        result = outcome.get(timeout=8)
+        assert result["status"] == 503
+        assert result["body"]["detail"] == "Playbook storage is busy or unavailable; retry"
+        waiter.join(timeout=3)
+        assert waiter.exitcode == 0, "expired request finishes before the holder releases"
+        assert path.read_bytes() == before
+    finally:
+        release.set()
+        for process in (holder, waiter):
+            if process.pid is not None:
+                process.join(timeout=5)
+                if process.is_alive():
+                    process.terminate()
+                    process.join()
+        outcome.close()
+        outcome.join_thread()
+    assert holder.exitcode == 0
+    assert path.read_bytes() == before, "release cannot resurrect the expired update"
+    assert playbooks_module.get_playbook(saved["id"]) == saved
+    retried = playbooks_module.update_playbook(saved["id"], _payload("Explicit fresh retry"), _match(saved))
+    assert retried["name"] == "Explicit fresh retry"
+
+
+def test_lock_deadline_does_not_interrupt_an_acquired_write(tmp_path, monkeypatch):
+    import time
+
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    monkeypatch.setattr(playbooks_module, "PLAYBOOK_LOCK_TIMEOUT_SECONDS", 0.05)
+    saved = playbooks_module.create_playbook(_payload())
+    original_write = playbooks_module._write
+
+    def slow_write(path, value):
+        time.sleep(0.1)  # Only acquisition is bounded; an owned write completes.
+        original_write(path, value)
+
+    monkeypatch.setattr(playbooks_module, "_write", slow_write)
+    updated = playbooks_module.update_playbook(saved["id"], _payload("Completed write"), _match(saved))
+    assert updated["name"] == "Completed write"
+    assert playbooks_module.get_playbook(saved["id"]) == updated
+
+
+def test_lock_deadline_rechecks_after_acquisition_and_releases_expired_ownership(tmp_path, monkeypatch):
+    import os
+    import pytest
+    from fastapi import HTTPException
+    from types import SimpleNamespace
+
+    if os.name == "nt":
+        pytest.skip("POSIX acquisition boundary; separate-process coverage is cross-platform")
+    import fcntl
+    original_flock = fcntl.flock
+    calls = []
+    clock = iter([0.0, 0.0, 2.0])
+    monkeypatch.setattr(playbooks_module, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+
+    def recorded_flock(descriptor, operation):
+        calls.append(operation)
+        return original_flock(descriptor, operation)
+
+    monkeypatch.setattr(fcntl, "flock", recorded_flock)
+    with pytest.raises(HTTPException) as error:
+        with playbooks_module._playbook_lock(tmp_path / "play-expired.json"):
+            pytest.fail("Expired acquisition entered the transaction")
+    assert error.value.status_code == 503
+    assert calls == [fcntl.LOCK_EX | fcntl.LOCK_NB, fcntl.LOCK_UN]
+    # Closing/releasing expired ownership leaves the same lock inode usable.
+    monkeypatch.setattr(playbooks_module, "time", __import__("time"))
+    with playbooks_module._playbook_lock(tmp_path / "play-expired.json"):
+        pass
+
+
 def test_playbook_lock_coordinates_processes_and_independent_ids(tmp_path, monkeypatch):
     import multiprocessing
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
