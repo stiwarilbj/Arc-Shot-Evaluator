@@ -40,6 +40,17 @@ existing preserved-data error; invalid local files use the existing read error
 or library warning. Both Playbook saves and Counter Lab repair copies use the
 same persistence entry points.
 
+Local saved documents must have an internal ID equal to their JSON filename
+without the `.json` extension. A mismatch uses the existing read error; library
+listing skips the file and reports its name in `X-ARC-Playbook-Warnings`.
+Updates, deletes, and idempotent creation retries also reject mismatched files,
+including receipts retained under `.deleted`. Browser libraries require unique
+play IDs in both legacy arrays and version-1 envelopes, even when duplicate
+documents are identical. Creation receipts use their own ID namespace: a receipt
+may share its live play's ID or remain after deletion. Rejected files and browser
+storage remain unchanged for recovery; loading never renames, merges, or removes
+inconsistent records.
+
 Run `npm run test:playbook-document-validation` in `frontend` and
 `.venv/bin/python -m pytest tests/test_playbooks.py` from the repository root.
 

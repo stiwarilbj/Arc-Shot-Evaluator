@@ -45,6 +45,34 @@ for (const target of ['github-pages', 'local']) {
   content = JSON.stringify([saved]);
   const retryEvent = new Event('storage'); Object.defineProperty(retryEvent, 'key', { value: 'arc-playbooks-v1' }); window.dispatchEvent(retryEvent);
   assert.equal((await api.fetchPlaybooks())[0].id, saved.id);
+  if (target === 'github-pages') {
+    const invalidate = () => {
+      const event = new Event('storage'); Object.defineProperty(event, 'key', { value: 'arc-playbooks-v1' }); window.dispatchEvent(event);
+    };
+    // Both legacy arrays and current envelopes reject even identical duplicates.
+    for (const duplicate of [saved, { ...saved, name: 'Different drawing, same identity' }]) {
+      for (const library of [[saved, duplicate], { version: 1, plays: [saved, duplicate], creations: [] }]) {
+        content = JSON.stringify(library, null, 2); invalidate();
+        const before = { content, writes, calls };
+        await assert.rejects(api.fetchPlaybooks(), /preserved/);
+        await assert.rejects(api.updatePlaybook({ ...saved, name: 'Do not overwrite' }), /preserved/);
+        await assert.rejects(api.deletePlaybook(saved.id), /preserved/);
+        await assert.rejects(api.createPlaybook(play), /preserved/);
+        assert.deepEqual({ content, writes, calls }, before, 'duplicate identities leave raw storage untouched on every path');
+      }
+    }
+    content = JSON.stringify([saved]); invalidate();
+    assert.deepEqual(await api.fetchPlaybooks(), [saved], 'repairing storage explicitly makes it readable again');
+    // A receipt and its live play legitimately share an ID; deleted receipts
+    // also remain valid when the play is absent.
+    const created = await api.createPlaybook(play);
+    assert.ok(JSON.parse(content).creations.some((receipt) => receipt.id === created.id));
+    assert.ok((await api.fetchPlaybooks()).some((item) => item.id === created.id));
+    await api.deletePlaybook(created.id);
+    assert.ok(JSON.parse(content).creations.some((receipt) => receipt.id === created.id));
+    assert.deepEqual((await api.fetchPlaybooks()).map((item) => item.id), [saved.id]);
+    console.log('Hosted duplicate identities rejected without writes; matching live/deleted receipt identities remain valid');
+  }
   const precise = { ...structuredClone(play), id: 'draft-precision-api',
     players: [{ id: 1, x: 12.3456789, y: 99.99995 }, { id: 2, x: 35, y: 60 }],
     defenders: [{ id: 1, x: .00015, y: 1.23445 }], ball: { x: 1.23455, y: .00005 },

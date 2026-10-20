@@ -564,15 +564,56 @@ def test_library_order_is_stable_for_tied_timestamps(tmp_path, monkeypatch) -> N
     fixture = json.loads((Path(__file__).parent / "fixtures/playbook-order.json").read_text())
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     client = TestClient(app)
-    for index, entry in enumerate(reversed(fixture["entries"])):
+    for entry in reversed(fixture["entries"]):
         document = {"version": 1, **_payload(entry["id"]), **entry}
-        (tmp_path / f"play-{index}.json").write_text(json.dumps(document))
+        (tmp_path / f"{entry['id']}.json").write_text(json.dumps(document))
     before = {path.name: path.read_bytes() for path in tmp_path.glob("*.json")}
     for _ in range(3):
         response = client.get("/api/playbooks")
         assert response.status_code == 200
         assert [play["id"] for play in response.json()] == fixture["expected"]
     assert {path.name: path.read_bytes() for path in tmp_path.glob("*.json")} == before
+
+
+def test_mismatched_file_identity_rejects_reads_and_mutations_without_rewriting(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    healthy = client.post("/api/playbooks", json=_payload("Healthy")).json()
+    # Otherwise valid content must not alias the healthy document from another file.
+    path = tmp_path / "play-wrong-file.json"
+    path.write_text(json.dumps(healthy, indent=4) + "\n")
+    before = {file.name: file.read_bytes() for file in tmp_path.glob("*.json")}
+    response = client.get("/api/playbooks")
+    assert response.json() == [healthy]
+    assert response.headers["X-ARC-Playbook-Warnings"] == path.name
+    assert client.get("/api/playbooks/play-wrong-file").status_code == 500
+    assert client.put("/api/playbooks/play-wrong-file", json=_payload("Overwrite"), headers={"If-Match": _match(healthy)}).status_code == 500
+    assert client.delete("/api/playbooks/play-wrong-file").status_code == 500
+    assert client.get(f"/api/playbooks/{healthy['id']}").json() == healthy
+    assert {file.name: file.read_bytes() for file in tmp_path.glob("*.json")} == before
+    assert not (tmp_path / ".deleted").exists()
+
+
+def test_creation_retries_preserve_mismatched_live_and_deleted_documents(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    for deleted in (False, True):
+        identity = "play-" + ("b" if deleted else "a") * 32
+        headers = {"X-ARC-Create-ID": identity}
+        assert client.post("/api/playbooks", json=_payload(), headers=headers).status_code == 200
+        path = tmp_path / f"{identity}.json"
+        if deleted:
+            assert client.delete(f"/api/playbooks/{identity}").status_code == 200
+            path = tmp_path / ".deleted" / path.name
+        value = json.loads(path.read_text())
+        value["id"] = "play-other-identity"
+        path.write_text(json.dumps(value, indent=4) + "\n")
+        before = path.read_bytes()
+        assert client.post("/api/playbooks", json=_payload(), headers=headers).status_code == 500
+        assert path.read_bytes() == before
+        assert not (tmp_path / "play-other-identity.json").exists()
+        if deleted:
+            assert not (tmp_path / f"{identity}.json").exists()
 
 
 def test_save_revision_rejects_stale_clients_inside_transaction(tmp_path, monkeypatch):

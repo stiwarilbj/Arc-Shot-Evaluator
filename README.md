@@ -131,6 +131,9 @@ loaded: if another tab or local client saved first, your update is rejected and
 your draft stays in memory. Save a copy to keep that drawing, or reopen the latest
 saved play before editing it. Legacy version-1 plays gain a revision on their next
 save without changing their drawing format.
+Saved files with IDs that disagree with their filenames are excluded from the
+local library and rejected on direct access. Browser libraries with duplicate
+play IDs are rejected. Inconsistent records remain untouched for recovery.
 
 ### Shared arrow visibility
 

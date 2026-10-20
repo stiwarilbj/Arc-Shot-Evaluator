@@ -217,6 +217,8 @@ def _read(path: Path, *, include_creation: bool = False) -> dict:
     try:
         if not isinstance(value.get("id"), str) or not value["id"] or not isinstance(value.get("name"), str) or any(not isinstance(value.get(field), list) for field in ("players", "defenders", "arrows")):
             raise HTTPException(400, "Saved play is incomplete")
+        if value["id"] != path.stem:
+            raise HTTPException(400, "Saved play identity does not match its filename")
         _document(value, playbook_id=value["id"])
     except HTTPException as error:
         raise HTTPException(500, "Saved play is invalid") from error
