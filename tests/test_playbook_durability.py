@@ -50,8 +50,7 @@ def test_save_flushes_and_syncs_complete_json_before_replacing(client, tmp_path,
     monkeypatch.setattr(os, "fsync", sync)
     monkeypatch.setattr(os, "replace", replacing)
     monkeypatch.setattr(api, "_sync_directory", directory)
-    response = client.post("/api/playbooks", json=payload())
-    assert response.status_code == 200
+    api._write(tmp_path / "play-durable-file.json", payload())
     assert events == ["file", "replace", "directory"]
     assert not list(tmp_path.glob(".playbook-*"))
 
@@ -79,12 +78,19 @@ def test_file_sync_failure_preserves_previous_drawing_and_cleans_temporary(clien
 def test_failed_directory_sync_after_update_is_explicitly_uncertain(client, tmp_path, monkeypatch):
     saved = client.post("/api/playbooks", json=payload()).json()
 
-    def failed_sync(_):
-        raise OSError(errno.EIO, "Directory sync failed")
+    sync_directory = api._sync_directory
+    root = tmp_path / f"{saved['id']}.json"
+
+    def failed_sync(directory):
+        if directory == tmp_path and json.loads(root.read_text())["name"] == "Possibly saved":
+            raise OSError(errno.EIO, "Directory sync failed")
+        sync_directory(directory)
 
     monkeypatch.setattr(api, "_sync_directory", failed_sync)
     response = client.put(f"/api/playbooks/{saved['id']}", json=payload("Possibly saved"), headers={"If-Match": f'"{saved["revision"]}"'})
     assert_uncertain(response, "saved")
+    assert client.get(f"/api/playbooks/{saved['id']}").status_code == 503
+    monkeypatch.setattr(api, "_sync_directory", sync_directory)
     stored = client.get(f"/api/playbooks/{saved['id']}").json()
     assert stored["name"] == "Possibly saved"
     assert stored["revision"] != saved["revision"]
@@ -96,7 +102,11 @@ def test_replace_errors_preserve_uncertainty_even_if_replacement_completed(clien
     saved = client.post("/api/playbooks", json=payload()).json()
     replace = os.replace
 
+    root = tmp_path / f"{saved['id']}.json"
+
     def failed_replace(source, destination):
+        if destination != root:
+            return replace(source, destination)
         if moved:
             replace(source, destination)
         raise OSError(errno.EIO, "Ambiguous replace failure")
@@ -114,51 +124,49 @@ def test_delete_synchronizes_every_changed_directory(client, tmp_path, monkeypat
     saved = client.post("/api/playbooks", json=payload(), headers=headers).json()
     path = tmp_path / f"{saved['id']}.json"
     events = []
-    sync_file, sync_directory = api._sync_file, api._sync_directory
-
-    def file_sync(file):
-        assert file == path and file.is_file()
-        events.append("file")
-        sync_file(file)
+    sync_directory, delete_file = api._sync_directory, api._delete_file
 
     def directory_sync(directory):
-        assert not path.exists(), "directory barrier must follow deletion"
-        events.append(directory.name if directory != tmp_path else "root")
+        events.append(directory)
         sync_directory(directory)
 
-    monkeypatch.setattr(api, "_sync_file", file_sync)
+    def deleting(source, **options):
+        tombstone = tmp_path / ".deleted" / path.name
+        assert tombstone.is_file() and api._read(tombstone)["id"] == saved["id"]
+        assert tombstone.parent in events, "durable tombstone must precede cleanup"
+        return delete_file(source, **options)
+
     monkeypatch.setattr(api, "_sync_directory", directory_sync)
-    response = client.delete(f"/api/playbooks/{saved['id']}")
-    assert response.status_code == 200
-    assert events == (["file", ".deleted", "root"] if retained else ["root"])
-    assert (tmp_path / ".deleted" / path.name).is_file() == retained
+    monkeypatch.setattr(api, "_delete_file", deleting)
+    assert client.delete(f"/api/playbooks/{saved['id']}").status_code == 200
+    assert not path.exists()
+    assert (tmp_path / ".deleted") in events and events[-1] == tmp_path
+    assert (tmp_path / ".revisions" / saved["id"]) in events
+    assert api._read(tmp_path / ".deleted" / path.name, include_creation=True)["_history"]["deleted"] is True
 
 
-@pytest.mark.parametrize("stage", ["unlink", "destination", "source"])
+@pytest.mark.parametrize("stage", ["preparation", "tombstone", "cleanup"])
 def test_post_delete_sync_failure_is_uncertain_and_preserves_receipts(client, tmp_path, monkeypatch, stage):
-    headers = {"X-ARC-Create-ID": "play-" + "b" * 32} if stage != "unlink" else {}
+    headers = {"X-ARC-Create-ID": "play-" + "b" * 32}
     saved = client.post("/api/playbooks", json=payload(), headers=headers).json()
     path = tmp_path / f"{saved['id']}.json"
-    before = path.read_bytes()
     sync_directory = api._sync_directory
 
     def failing_sync(directory):
-        if stage == "destination" and directory.name != ".deleted":
-            return sync_directory(directory)
-        if stage == "source" and directory != tmp_path:
-            return sync_directory(directory)
-        raise OSError(errno.EIO, "Directory barrier failed")
+        fail = ((stage == "preparation" and directory.name == saved["id"])
+                or (stage == "tombstone" and directory.name == ".deleted")
+                or (stage == "cleanup" and directory == tmp_path and not path.exists()))
+        if fail:
+            raise OSError(errno.EIO, "Directory barrier failed")
+        sync_directory(directory)
 
     monkeypatch.setattr(api, "_sync_directory", failing_sync)
     assert_uncertain(client.delete(f"/api/playbooks/{saved['id']}"), "deleted")
-    assert not path.exists()
-    if stage != "unlink":
-        tombstone = tmp_path / ".deleted" / path.name
-        assert tombstone.read_bytes() == before
-        assert_uncertain(client.post("/api/playbooks", json=payload(), headers=headers), "saved")
-        monkeypatch.setattr(api, "_sync_directory", sync_directory)
-        assert client.post("/api/playbooks", json=payload(), headers=headers).json() == saved
-        assert tombstone.read_bytes() == before and not path.exists()
+    monkeypatch.setattr(api, "_sync_directory", sync_directory)
+    assert client.get(f"/api/playbooks/{saved['id']}").status_code == (200 if stage == "preparation" else 404)
+    assert client.post("/api/playbooks", json=payload(), headers=headers).json() == saved
+    if stage != "preparation":
+        assert client.get("/api/playbooks").json() == []
 
 
 def test_receipt_sync_failure_leaves_deletion_unstarted(client, tmp_path, monkeypatch):
@@ -182,8 +190,12 @@ def test_create_retry_rechecks_durability_without_duplicate_or_rewrite(client, t
     headers = {"X-ARC-Create-ID": "play-" + "c" * 32}
     sync_directory = api._sync_directory
 
-    def failed_sync(_):
-        raise OSError(errno.EIO, "Directory sync failed")
+    path = tmp_path / (headers["X-ARC-Create-ID"] + ".json")
+
+    def failed_sync(directory):
+        if directory == tmp_path and path.exists():
+            raise OSError(errno.EIO, "Directory sync failed")
+        sync_directory(directory)
 
     monkeypatch.setattr(api, "_sync_directory", failed_sync)
     assert_uncertain(client.post("/api/playbooks", json=payload(), headers=headers), "saved")

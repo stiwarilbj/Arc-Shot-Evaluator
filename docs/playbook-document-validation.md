@@ -289,10 +289,10 @@ rejected unknown fields, corrupt saved files, and recovery without draft loss.
 The downloaded app flushes the complete temporary JSON and calls `fsync` before
 closing it and atomically replacing the saved file. It then synchronizes the
 containing directory before acknowledging success. Temporary files are cleaned
-up on failure without masking the original error. Ordinary deletion synchronizes
-the parent directory after unlinking. Deletion of a play with a creation receipt
-first synchronizes the source file, moves it to `.deleted`, then synchronizes
-both the destination and source directories.
+up on failure without masking the original error. Revision data is written and synchronized before the current-head commit.
+Deletion publishes a synchronized tombstone in `.deleted` before removing the
+old current file; that tombstone has precedence even if cleanup is interrupted.
+See [transactional recovery](playbook-recovery.md) for the head and history format.
 
 Python's Windows file API cannot synchronize directories here. On other systems,
 explicit unsupported-operation errors are tolerated for directory barriers;
@@ -307,7 +307,8 @@ visible. The client preserves its error/retry path rather than interpreting a
 readable file as proof of durable storage. An idempotent creation retry validates
 the existing receipt and repeats file/directory synchronization before returning
 its original result, including receipts retained after deletion; it never
-rewrites or recreates the play. Hosted storage and version-1 documents are unchanged.
+rewrites or recreates the play. The public document format remains version 1;
+private history metadata and the hosted library envelope are versioned separately.
 
 Run `.venv/bin/python -m pytest tests/test_playbook_durability.py -q` for barrier
 ordering, complete flushed JSON, pre-replacement failures, ambiguous replacement,
@@ -382,9 +383,10 @@ the same identity returns 409. Legacy creates without a header remain separate
 server-generated plays. Old ID-bearing files without receipts cannot be safely
 replayed and return a conflict rather than guessing.
 
-Hosted storage reads the existing `arc-playbooks-v1` array format and writes an
-internal `{ version: 1, plays, creations }` envelope on the next mutation. The
-single `localStorage.setItem` atomically commits both plays and receipts while
+Hosted storage reads the existing `arc-playbooks-v1` array format and legacy
+version-1 envelopes. The current version-2 envelope adds checksummed history and
+tombstones on the next mutation, retaining a validated legacy snapshot. A
+single `localStorage.setItem` atomically commits plays, history, and receipts while
 the cross-tab lock is held. All subsequent writes preserve receipts, including
 deletes. Corrupt envelopes or receipts fail without overwriting stored data.
 Older deployed tabs must be reloaded; their array validator rejects the envelope

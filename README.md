@@ -234,8 +234,17 @@ directory changes too. If storage fails after a change was attempted, the app
 reports that the save or deletion may have completed and asks you to refresh
 before retrying. Creation retries recheck synchronization without duplicating
 the play. These safeguards improve shutdown recovery; durability still depends
-on the operating system, filesystem, and hardware. Hosted browser storage and
-the saved document format are unchanged.
+on the operating system, filesystem, and hardware. The exported drawing format
+remains version 1.
+Saved plays now retain eight recent, checksummed revisions with parent links and
+explicit deletion records. Browser saves commit the drawing, history, and receipts
+in one atomic transaction; the first change also retains the validated legacy
+library snapshot. Locally, immutable revision files precede an atomic current-head
+commit. Corrupt history blocks ordinary loading rather than silently rolling back.
+Explicit recovery makes a separate copy and preserves damaged records; it never
+revives a deleted identity. Recovery is a maintenance API, without changes to the
+editor controls. See [saved-play recovery](docs/playbook-recovery.md) for access,
+retention, migration, and storage limits.
 Playbook JSON intake rejects documents above 256 KiB before parsing; whole
 browser library reads have a separate 16 MiB budget. Both targets reject nesting
 deeper than 32 levels and retain the current draft on failed loads. The local

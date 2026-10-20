@@ -11,7 +11,7 @@
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
     "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
     "test:counter-lab": "node --experimental-strip-types ../scripts/test-counter-lab.mjs",
-    "test": "npm run test:navigation && npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:simulation-settings && npm run test:simulation-advancement && npm run test:simulation-sessions && npm run test:playbook-worker && npm run test:paused-transactions && npm run test:action-dependencies && npm run test:ball-state && npm run test:shot-release && npm run test:defensive-responsibilities && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:congestion-planning && npm run test:playbook-performance && npm run test:playbook-draft-save && npm run test:playbook-document-validation && npm run test:playbook-intake && npm run test:playbook-library-refresh && npm run test:playbook-precision && npm run test:playbook-save-results && npm run test:playbook-mutation-order && npm run test:playbook-cross-client && npm run test:playbook-deadlines && npm run test:playbook-idempotency && npm run test:playbook-order && npm run test:save-simulate && npm run test:jumper",
+    "test": "npm run test:navigation && npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:simulation-settings && npm run test:simulation-advancement && npm run test:simulation-sessions && npm run test:playbook-worker && npm run test:paused-transactions && npm run test:action-dependencies && npm run test:ball-state && npm run test:shot-release && npm run test:defensive-responsibilities && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:congestion-planning && npm run test:playbook-performance && npm run test:playbook-draft-save && npm run test:playbook-document-validation && npm run test:playbook-intake && npm run test:playbook-library-refresh && npm run test:playbook-precision && npm run test:playbook-save-results && npm run test:playbook-mutation-order && npm run test:playbook-cross-client && npm run test:playbook-deadlines && npm run test:playbook-idempotency && npm run test:playbook-history && npm run test:playbook-order && npm run test:save-simulate && npm run test:jumper",
     "test:playbook-draft-save": "node --experimental-strip-types ../scripts/test-playbook-draft-save.mjs",
     "test:playbook-performance": "node --experimental-strip-types ../scripts/test-playbook-performance.mjs",
     "test:congestion-planning": "node --experimental-strip-types ../scripts/test-congestion-planning.mjs",
@@ -40,7 +40,8 @@
     "test:defensive-responsibilities": "node --experimental-strip-types ../scripts/test-defensive-responsibilities.mjs",
     "test:simulation-sessions": "node --experimental-strip-types ../scripts/test-simulation-sessions.mjs",
     "test:playbook-worker": "node --experimental-strip-types ../scripts/test-playbook-worker.mjs",
-    "test:shot-release": "node --experimental-strip-types ../scripts/test-shot-release-context.mjs"
+    "test:shot-release": "node --experimental-strip-types ../scripts/test-shot-release-context.mjs",
+    "test:playbook-history": "node --experimental-strip-types ../scripts/test-playbook-history.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

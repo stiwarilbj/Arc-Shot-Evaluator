@@ -37,9 +37,9 @@ for(const target of ['local','github-pages']){
   const code=(Array.isArray(output)?output[0]:output).output[0].code;
   const api=await import(`data:text/javascript;base64,${Buffer.from(code+`\n// mutation order ${target}`).toString('base64')}`);
   const one=document('play-queue-one'),two=document('play-queue-two');let library=[one,two], events=[], mode='normal';
-  let gate=deferred(), bodyGate=deferred(), reads=0, revision=0;
+  let gate=deferred(), bodyGate=deferred(), reads=0, revision=0, storedRaw;
   const window=new EventTarget();globalThis.window=window;
-  window.localStorage={getItem:()=>JSON.stringify(library),setItem:(_key,value)=>{const parsed=JSON.parse(value),next=parsed.plays??parsed;const deleted=library.find(p=>!next.some(n=>n.id===p.id));events.push(deleted?`delete:${deleted.id}`:`save:${next[0].name}`);library=next;}};
+  window.localStorage={getItem:()=>storedRaw??JSON.stringify(library),setItem:(_key,value)=>{storedRaw=value;const parsed=JSON.parse(value),next=parsed.plays??parsed;const deleted=library.find(p=>!next.some(n=>n.id===p.id));events.push(deleted?`delete:${deleted.id}`:`save:${next[0].name}`);library=next;}};
   globalThis.fetch=async(url,options)=>{
     if(!options?.method){reads++;return Response.json(library);}
     const id=decodeURIComponent(url.split('/').pop());
@@ -89,7 +89,7 @@ for(const target of ['local','github-pages']){
     assert.deepEqual(events.filter(e=>e!=='save:Other play'),['save:First save',`delete:${one.id}`]);
     assert.equal((await pendingRead).some(p=>p.id===one.id),false);assert.equal(library.find(p=>p.id===two.id).name,'Other play');
     await assert.rejects(api.updatePlaybook({...one,name:'After deletion'}),/not found/);assert.ok(!library.some(p=>p.id===one.id));
-    library.push(document(one.id));
+    library.push(document(one.id)); storedRaw=JSON.stringify(library);
     const originalSet=window.localStorage.setItem;let fail=true;
     window.localStorage.setItem=(key,value)=>{if(fail){fail=false;throw new Error('quota');}originalSet(key,value);};
     const deletion=api.deletePlaybook(one.id),rename=api.updatePlaybook({...document(one.id),name:'Retained after failure'});

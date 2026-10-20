@@ -628,7 +628,7 @@ def test_concurrent_update_and_delete_cannot_recreate_play(tmp_path, monkeypatch
     original_write = playbooks_module._write
 
     def delayed_write(path, value):
-        if value["name"] == "Pending update":
+        if value.get("name") == "Pending update":
             entered.set()
             assert release.wait(5)
         return original_write(path, value)

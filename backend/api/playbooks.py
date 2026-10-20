@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import math
 import os
@@ -31,6 +32,8 @@ MAX_ARROWS = 30
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
 MAX_JSON_DEPTH = 32
+HISTORY_LIMIT = 8
+HISTORY_ERROR = "Saved-play history failed its integrity check. Stored records have been preserved; use explicit recovery to copy a verified revision."
 SAVE_CONFLICT = "This play was changed by another tab or client. Your draft is still in memory. Save a copy or reopen the latest saved play before updating it."
 # Version-1 save precision; Python round uses binary float, nearest/ties-to-even.
 COORDINATE_DECIMAL_PLACES = 4
@@ -254,7 +257,7 @@ async def _request_document(request: Request) -> dict:
     return value
 
 
-def _read(path: Path, *, include_creation: bool = False) -> dict:
+def _read_legacy(path: Path, *, include_creation: bool = False) -> dict:
     try:
         with path.open("rb") as stream:
             content = stream.read(MAX_SAVED_FILE_BYTES + 1)
@@ -279,6 +282,7 @@ def _read(path: Path, *, include_creation: bool = False) -> dict:
         raise HTTPException(500, "Saved play is invalid") from error
     if not include_creation:
         value.pop("_creation", None)
+        value.pop("_history", None)
     return value
 
 
@@ -311,12 +315,18 @@ def _uncertain_file_operation(operation: str) -> HTTPException:
 def _write(path: Path, value: dict) -> None:
     temporary: Path | None = None
     replacing = False
+    content = json.dumps(value, indent=2, allow_nan=False) + "\n"
+    if len(content.encode("utf-8")) > MAX_SAVED_FILE_BYTES:
+        raise HTTPException(413, "Saved-play history exceeds the file byte limit. Stored data has been preserved.")
+    try:
+        _check_json_depth(content)
+    except ValueError as error:
+        raise HTTPException(400, "Saved-play history exceeds the nesting limit. Stored data has been preserved.") from error
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=".playbook-", delete=False) as stream:
             temporary = Path(stream.name)
-            json.dump(value, stream, indent=2)
-            stream.write("\n")
+            stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
         replacing = True
@@ -352,6 +362,202 @@ def _delete_file(path: Path, *, retain_receipt: bool) -> None:
         if changing:
             raise _uncertain_file_operation("deleted") from error
         raise HTTPException(500, "Playbook could not be deleted") from error
+
+
+def _checksum(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("utf-8")).hexdigest()
+
+
+def _revision_path(playbook_id: str, revision: str) -> Path:
+    _path(playbook_id)
+    if not isinstance(revision, str) or not re.fullmatch(r"[a-f0-9]{32}", revision):
+        raise HTTPException(500, HISTORY_ERROR)
+    return PLAYBOOKS_DIR / ".revisions" / playbook_id / f"{revision}.json"
+
+
+def _raw_record(path: Path) -> dict:
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_SAVED_FILE_BYTES + 1)
+        if len(raw) > MAX_SAVED_FILE_BYTES:
+            raise ValueError("oversized history")
+        text = raw.decode("utf-8-sig")
+        _check_json_depth(text)
+        result = json.loads(text)
+        if not isinstance(result, dict):
+            raise ValueError("invalid record")
+        return result
+    except OSError as error:
+        raise HTTPException(503, "Playbook storage is temporarily unavailable; retry") from error
+    except (ValueError, TypeError) as error:
+        raise HTTPException(500, HISTORY_ERROR) from error
+
+
+def _ref(entry: dict) -> dict:
+    return {"revision": entry["revision"], "checksum": entry["checksum"]}
+
+
+def _validate_ref(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != {"revision", "checksum"} or not isinstance(value["revision"], str) or not re.fullmatch(r"[a-f0-9]{32}", value["revision"]) or not isinstance(value["checksum"], str) or not re.fullmatch(r"[a-f0-9]{64}", value["checksum"]):
+        raise HTTPException(500, HISTORY_ERROR)
+
+
+def _read_revision(playbook_id: str, reference: dict) -> dict:
+    _validate_ref(reference)
+    try:
+        value = _raw_record(_revision_path(playbook_id, reference["revision"]))
+    except HTTPException as error:
+        if isinstance(error.__cause__, FileNotFoundError):
+            raise HTTPException(500, HISTORY_ERROR) from error
+        raise
+    try:
+        if set(value) != {"version", "id", "revision", "parent", "kind", "document", "creation", "checksum"} or value["version"] != 1 or value["id"] != playbook_id or _ref(value) != reference or value["kind"] not in {"save", "delete"}:
+            raise ValueError()
+        if value["parent"] is not None:
+            _validate_ref(value["parent"])
+        if _checksum({key: item for key, item in value.items() if key != "checksum"}) != value["checksum"]:
+            raise ValueError()
+        if value["kind"] == "delete":
+            if value["document"] is not None:
+                raise ValueError()
+        else:
+            document = value["document"]
+            if not isinstance(document, dict) or document.get("id") != playbook_id or document.get("revision", value["revision"]) != value["revision"]:
+                raise ValueError()
+            _document(document, playbook_id=playbook_id)
+            if any(not isinstance(document.get(key), str) or not document[key] for key in ("created_at", "updated_at")):
+                raise ValueError()
+        if value["creation"] is not None:
+            receipt = value["creation"]
+            if not isinstance(receipt, dict) or not isinstance(receipt.get("result"), dict) or receipt["result"].get("id") != playbook_id or _creation_request(_document(receipt["result"], playbook_id=playbook_id)) != receipt.get("request"):
+                raise ValueError()
+    except (KeyError, TypeError, ValueError, HTTPException) as error:
+        raise HTTPException(500, HISTORY_ERROR) from error
+    return value
+
+
+def _head_payload(value: dict) -> dict:
+    return {key: item for key, item in value.items() if key != "_history"} | {"_history": {key: item for key, item in value["_history"].items() if key != "checksum"}}
+
+
+def _verify_head(value: dict, *, deleted: bool) -> list[dict]:
+    try:
+        history = value["_history"]
+        if set(history) != {"version", "entries", "anchor", "deleted", "checksum"} or history["version"] != 1 or history["deleted"] is not deleted or _checksum(_head_payload(value)) != history["checksum"]:
+            raise ValueError()
+        references = history["entries"]
+        if not isinstance(references, list) or not 1 <= len(references) <= HISTORY_LIMIT:
+            raise ValueError()
+        parent = history["anchor"]
+        if parent is not None:
+            _validate_ref(parent)
+        seen = {parent["revision"]} if parent else set()
+        entries = []
+        for reference in references:
+            entry = _read_revision(value["id"], reference)
+            if entry["parent"] != parent or entry["revision"] in seen:
+                raise ValueError()
+            seen.add(entry["revision"])
+            entries.append(entry)
+            parent = reference
+        tail = entries[-1]
+        public = {key: item for key, item in value.items() if key not in {"_creation", "_history"}}
+        if (tail["kind"] == "delete") != deleted or (not deleted and tail["document"] != public) or tail["creation"] != value.get("_creation"):
+            raise ValueError()
+        return entries
+    except (KeyError, ValueError, TypeError) as error:
+        raise HTTPException(500, HISTORY_ERROR) from error
+
+
+def _read(path: Path, *, include_creation: bool = False) -> dict:
+    value = _read_legacy(path, include_creation=True)
+    if "_history" in value:
+        _verify_head(value, deleted=path.parent.name == ".deleted")
+    if not include_creation:
+        value.pop("_creation", None)
+        value.pop("_history", None)
+    return value
+
+
+def _publish_revision(playbook_id: str, document: dict | None, creation: dict | None, parent: dict | None, revision: str | None = None) -> dict:
+    payload = {"version": 1, "id": playbook_id, "revision": revision or uuid.uuid4().hex, "parent": parent,
+               "kind": "delete" if document is None else "save", "document": document, "creation": creation}
+    value = {**payload, "checksum": _checksum(payload)}
+    path = _revision_path(playbook_id, value["revision"])
+    if path.exists():
+        if _read_revision(playbook_id, _ref(value)) != value:
+            raise HTTPException(500, HISTORY_ERROR)
+    else:
+        _write(path, value)
+        # Newly created directory entries also need barriers before a head may
+        # depend on their contents. Existing directories use the same barriers.
+        try:
+            _sync_directory(path.parent.parent)
+            _sync_directory(PLAYBOOKS_DIR)
+        except OSError as error:
+            raise _uncertain_file_operation("saved") from error
+    _read_revision(playbook_id, _ref(value))
+    return _ref(value)
+
+
+def _commit_revision(path: Path, stored: dict, current: dict | None = None, *, deleted: bool = False) -> None:
+    playbook_id = stored["id"]
+    entries, anchor = [], None
+    if current is not None:
+        if "_history" in current:
+            entries = list(current["_history"]["entries"])
+            anchor = current["_history"]["anchor"]
+        else:
+            document = {key: item for key, item in current.items() if key != "_creation"}
+            document = {**document, "version": 1, "defenders_visible": current.get("defenders_visible", False),
+                        "created_at": current.get("created_at", "1970-01-01T00:00:00+0000"), "updated_at": current.get("updated_at", "1970-01-01T00:00:00+0000")}
+            entries.append(_publish_revision(playbook_id, document, current.get("_creation"), None, current.get("revision")))
+    document = None if deleted else {key: item for key, item in stored.items() if key not in {"_creation", "_history"}}
+    entries.append(_publish_revision(playbook_id, document, stored.get("_creation"), entries[-1] if entries else None, None if deleted else document.get("revision")))
+    if len(entries) > HISTORY_LIMIT:
+        anchor = entries.pop(0)
+    head = {key: item for key, item in stored.items() if key != "_history"}
+    head["_history"] = {"version": 1, "entries": entries, "anchor": anchor, "deleted": deleted}
+    head["_history"]["checksum"] = _checksum(_head_payload(head))
+    _verify_head(head, deleted=deleted)
+    _write(path, head)  # This atomic, durable head replacement is the commit.
+    # Retention is after commit. Never remove unreadable or corrupt records, or
+    # allow a cleanup failure to turn an acknowledged commit into a failed save.
+    retained = {entry["revision"] for entry in entries}
+    try:
+        for candidate in (PLAYBOOKS_DIR / ".revisions" / playbook_id).glob("*.json"):
+            if candidate.stem in retained:
+                continue
+            try:
+                raw = _raw_record(candidate)
+                if raw.get("revision") != candidate.stem:
+                    continue
+                _read_revision(playbook_id, _ref(raw))
+                candidate.unlink()
+            except (HTTPException, OSError, KeyError):
+                pass
+    except OSError:
+        pass
+
+
+def _deleted_path(path: Path) -> Path:
+    return PLAYBOOKS_DIR / ".deleted" / path.name
+
+
+def _confirm_head(path: Path) -> dict:
+    value = _read(path, include_creation=True)
+    try:
+        if "_history" in value:
+            for reference in value["_history"]["entries"]:
+                _sync_file(_revision_path(value["id"], reference["revision"]))
+            _sync_directory(PLAYBOOKS_DIR / ".revisions" / value["id"])
+            _sync_directory(PLAYBOOKS_DIR / ".revisions")
+        _sync_file(path)
+        _sync_directory(path.parent)
+        _sync_directory(PLAYBOOKS_DIR)
+    except OSError as error:
+        raise _uncertain_file_operation("saved") from error
+    return {key: item for key, item in value.items() if key not in {"_creation", "_history"}}
 
 
 @contextmanager
@@ -453,7 +659,7 @@ def list_playbooks(response: Response) -> list[dict]:
             continue
         try:
             with _playbook_lock(path):
-                if not path.is_file():
+                if not path.is_file() or _deleted_path(path).exists():
                     continue  # A deletion completed after directory enumeration.
                 value = _read(path)
         except (HTTPException, OSError) as error:
@@ -490,13 +696,7 @@ def _replay_creation(path: Path, request: str) -> dict:
         raise HTTPException(500, "The creation receipt could not be read") from error
     # A retry must not bypass synchronization after an earlier ambiguous save
     # or tombstone move. Validate first; never rewrite the original receipt.
-    try:
-        _sync_file(path)
-        _sync_directory(path.parent)
-        if path.parent.name == ".deleted":
-            _sync_directory(path.parent.parent)
-    except OSError as error:
-        raise _uncertain_file_operation("saved") from error
+    _confirm_head(path)
     return result
 
 
@@ -512,12 +712,12 @@ def create_playbook(payload: Annotated[dict, Depends(_request_document)], create
         deleted = PLAYBOOKS_DIR / ".deleted" / path.name
         if path.exists() or deleted.exists():
             if create_id is not None:
-                return _replay_creation(path if path.exists() else deleted, request)
+                return _replay_creation(deleted if deleted.exists() else path, request)
             raise HTTPException(409, "This creation identity is already in use")
         # One atomic file replacement commits both the drawing and original
         # result. Keep the private receipt through edits and deletion.
         stored = {**value, "_creation": {"request": request, "result": value}} if create_id else value
-        _write(path, stored)
+        _commit_revision(path, stored)
     return value
 
 
@@ -525,16 +725,19 @@ def create_playbook(payload: Annotated[dict, Depends(_request_document)], create
 def get_playbook(playbook_id: str) -> dict:
     path = _path(playbook_id)
     with _playbook_lock(path):
+        if _deleted_path(path).exists():
+            _confirm_head(_deleted_path(path))
+            raise HTTPException(404, "Playbook not found")
         if not path.is_file():
             raise HTTPException(404, "Playbook not found")
-        return _read(path)
+        return _confirm_head(path)
 
 
 @router.put("/{playbook_id}")
 def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_document)], if_match: Annotated[str | None, Header(alias="If-Match")] = None) -> dict:
     path = _path(playbook_id)
     with _playbook_lock(path):
-        if not path.is_file():
+        if _deleted_path(path).exists() or not path.is_file():
             raise HTTPException(404, "Playbook not found")
         current = _read(path, include_creation=True)
         # Compare inside the same transaction as replacement. Legacy documents
@@ -547,7 +750,7 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(409, SAVE_CONFLICT)
         value = {**_document(payload, playbook_id=playbook_id, created_at=str(current.get("created_at", _now()))), "revision": uuid.uuid4().hex}
         stored = {**value, "_creation": current["_creation"]} if "_creation" in current else value
-        _write(path, stored)
+        _commit_revision(path, stored, current)
         return value
 
 
@@ -555,7 +758,102 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
 def delete_playbook(playbook_id: str) -> dict:
     path = _path(playbook_id)
     with _playbook_lock(path):
+        deleted = _deleted_path(path)
+        if deleted.exists():
+            _confirm_head(deleted)
+            return {"deleted": True, "id": playbook_id}
         if not path.is_file():
             raise HTTPException(404, "Playbook not found")
-        _delete_file(path, retain_receipt="_creation" in _read(path, include_creation=True))
+        current = _read(path, include_creation=True)
+        try:
+            _sync_file(path)
+        except OSError as error:
+            raise HTTPException(500, "Playbook could not be deleted") from error
+        # Publish the durable tombstone first. Even if cleanup is interrupted,
+        # every reader and writer gives this record priority over the old head.
+        try:
+            _commit_revision(deleted, current, current, deleted=True)
+        except HTTPException as error:
+            if error.headers and error.headers.get("X-ARC-Playbook-Outcome") == "uncertain":
+                raise _uncertain_file_operation("deleted") from error
+            raise
+        _delete_file(path, retain_receipt=False)
         return {"deleted": True, "id": playbook_id}
+
+
+@router.get("/{playbook_id}/history")
+def playbook_history(playbook_id: str) -> dict:
+    path = _path(playbook_id)
+    with _playbook_lock(path):
+        deleted = _deleted_path(path)
+        head = deleted if deleted.exists() else path
+        value = None
+        if head.exists():
+            try:
+                value = _raw_record(head)
+            except HTTPException as error:
+                if error.status_code == 503:
+                    raise  # Storage access failure is not proof of corruption.
+        directory = PLAYBOOKS_DIR / ".revisions" / playbook_id
+        if value is None and not directory.is_dir():
+            raise HTTPException(404, "Saved-play history not found")
+        # Legacy reads stay lossless and read-only. Their first accepted mutation
+        # publishes this baseline as an immutable revision in the transaction.
+        if value is not None and "_history" not in value:
+            document = _read(head)
+            revision = document.get("revision") or _checksum(document)[:32]
+            return {"id": playbook_id, "integrity": "verified", "deleted": head == deleted,
+                    "revisions": [{"revision": revision, "parent": None, "checksum": _checksum(document),
+                                   "kind": "save", "valid": True, "committed": True, "document": document}]}
+        verified, committed = False, set()
+        try:
+            _read(head)
+            verified = True
+        except HTTPException:
+            pass
+        references = []
+        if value and value.get("id") == playbook_id and isinstance(value.get("_history"), dict):
+            history = value["_history"]
+            if isinstance(history.get("entries"), list) and len(history["entries"]) <= HISTORY_LIMIT:
+                references = list(history["entries"])
+                try:
+                    if _checksum(_head_payload(value)) == history.get("checksum"):
+                        committed = {reference.get("revision") for reference in references if isinstance(reference, dict)}
+                except (ValueError, TypeError):
+                    pass
+        # Orphans are explicit diagnostic records, never automatic recovery or
+        # current documents. Even a malformed head can leave usable immutable
+        # evidence. Bound inspection without deleting any additional records.
+        known = {reference.get("revision") for reference in references if isinstance(reference, dict)}
+        try:
+            candidates = sorted(directory.glob("*.json"))
+        except OSError as error:
+            raise HTTPException(503, "Playbook storage is temporarily unavailable; retry") from error
+        if len(candidates) > HISTORY_LIMIT + 24:
+            raise HTTPException(500, "Too many abandoned revisions to inspect safely. Stored records have been preserved for manual recovery.")
+        for candidate in candidates:
+            if candidate.stem in known:
+                continue
+            try:
+                raw = _raw_record(candidate)
+                if raw.get("revision") != candidate.stem:
+                    raise KeyError("Mismatched revision filename")
+                references.append(_ref(raw))
+            except (HTTPException, KeyError):
+                references.append({"revision": candidate.stem, "checksum": ""})
+        revisions = []
+        for reference in references:
+            entry = None
+            try:
+                entry = _read_revision(playbook_id, reference)
+            except HTTPException:
+                pass
+            revision = reference.get("revision", "") if isinstance(reference, dict) else ""
+            revisions.append({"revision": revision,
+                              "checksum": reference.get("checksum", "") if isinstance(reference, dict) else "",
+                              "parent": entry["parent"]["revision"] if entry and entry["parent"] else None,
+                              "kind": entry["kind"] if entry else "save", "valid": entry is not None,
+                              "committed": True if revision in committed else (None if value is None else False),
+                              **({"document": entry["document"]} if entry and entry["document"] is not None else {})})
+        return {"id": playbook_id, "integrity": "verified" if verified else "damaged",
+                "deleted": head == deleted if verified else None, "revisions": revisions}
