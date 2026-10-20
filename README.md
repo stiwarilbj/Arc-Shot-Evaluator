@@ -147,6 +147,14 @@ success. An unconfirmed outcome asks you to refresh before retrying.
 Local requests wait at most two seconds to acquire a saved play's lock. A busy
 lock returns a retryable storage error before mutation; an expired waiter cannot
 apply an update later. Writes that already acquired the lock finish normally.
+Local saves flush and synchronize temporary JSON before atomic replacement,
+then synchronize the containing directory where supported. Deletions synchronize
+directory changes too. If storage fails after a change was attempted, the app
+reports that the save or deletion may have completed and asks you to refresh
+before retrying. Creation retries recheck synchronization without duplicating
+the play. These safeguards improve shutdown recovery; durability still depends
+on the operating system, filesystem, and hardware. Hosted browser storage and
+the saved document format are unchanged.
 
 ### Shared arrow visibility
 

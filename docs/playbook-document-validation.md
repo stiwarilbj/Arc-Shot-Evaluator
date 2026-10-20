@@ -186,7 +186,9 @@ publish an intermediate saved library while a later deletion is pending.
 
 Deletion never turns a subsequent update into a create: browser updates check
 existence inside the queue, and the local API rejects updates to missing IDs.
-A failed deletion leaves the play available for a later save or retry. The in-memory queue preserves invocation order within a page. Cross-client
+A deletion rejected before mutation leaves the play available for a later save
+or retry; failures after mutation can have an uncertain outcome as described
+below. The in-memory queue preserves invocation order within a page. Cross-client
 transaction locks provide the additional guarantees below. Storage events
 still invalidate cross-tab library reads.
 
@@ -238,6 +240,37 @@ recovery, separate-process lock exclusion/expiry, and completion of an acquired
 write after its acquisition deadline. Native two-tab browser checks
 also verify waiting and release against the deployed persistence code.
 
+
+## Local file durability
+
+The downloaded app flushes the complete temporary JSON and calls `fsync` before
+closing it and atomically replacing the saved file. It then synchronizes the
+containing directory before acknowledging success. Temporary files are cleaned
+up on failure without masking the original error. Ordinary deletion synchronizes
+the parent directory after unlinking. Deletion of a play with a creation receipt
+first synchronizes the source file, moves it to `.deleted`, then synchronizes
+both the destination and source directories.
+
+Python's Windows file API cannot synchronize directories here. On other systems,
+explicit unsupported-operation errors are tolerated for directory barriers;
+permission and I/O errors remain failures. These barriers strengthen recovery
+but cannot guarantee durability beyond the operating system and storage device.
+
+Failures before mutation retain the ordinary save/delete error. Once replacement
+or deletion has been attempted, failures return HTTP 503 with
+`X-ARC-Playbook-Outcome: uncertain` and an explicit “may have been saved/deleted”
+message. No rollback is claimed: the new drawing or deletion may already be
+visible. The client preserves its error/retry path rather than interpreting a
+readable file as proof of durable storage. An idempotent creation retry validates
+the existing receipt and repeats file/directory synchronization before returning
+its original result, including receipts retained after deletion; it never
+rewrites or recreates the play. Hosted storage and version-1 documents are unchanged.
+
+Run `.venv/bin/python -m pytest tests/test_playbook_durability.py -q` for barrier
+ordering, complete flushed JSON, pre-replacement failures, ambiguous replacement,
+post-mutation directory failures, retained receipts, safe creation retries, and
+unsupported-filesystem handling. These are injected failure regressions, not a
+physical power-loss guarantee.
 
 ## Persistence deadlines and uncertain writes
 

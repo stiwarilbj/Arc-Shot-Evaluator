@@ -233,19 +233,76 @@ def _read(path: Path, *, include_creation: bool = False) -> dict:
     return value
 
 
-def _write(path: Path, value: dict) -> None:
-    PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
+def _sync_directory(path: Path) -> None:
+    # Python's Windows file API cannot open directories for fsync. On other
+    # platforms, ignore only explicit lack of filesystem support, never I/O errors.
+    if os.name == "nt":
+        return
+    descriptor: int | None = None
     try:
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=PLAYBOOKS_DIR, prefix=".playbook-", delete=False) as stream:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        os.fsync(descriptor)
+    except OSError as error:
+        if error.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS}:
+            raise
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _sync_file(path: Path) -> None:
+    with path.open("rb") as stream:
+        os.fsync(stream.fileno())
+
+
+def _uncertain_file_operation(operation: str) -> HTTPException:
+    return HTTPException(503, f"The play may have been {operation}, but storage synchronization could not be confirmed. Refresh the saved library before retrying.", headers={"X-ARC-Playbook-Outcome": "uncertain"})
+
+
+def _write(path: Path, value: dict) -> None:
+    temporary: Path | None = None
+    replacing = False
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=".playbook-", delete=False) as stream:
+            temporary = Path(stream.name)
             json.dump(value, stream, indent=2)
             stream.write("\n")
-            temporary = Path(stream.name)
+            stream.flush()
+            os.fsync(stream.fileno())
+        replacing = True
         os.replace(temporary, path)
+        _sync_directory(path.parent)
     except OSError as error:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+        if replacing:
+            raise _uncertain_file_operation("saved") from error
         raise HTTPException(500, "Playbook could not be saved") from error
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass  # Never replace the operation's outcome with a cleanup error.
+
+
+def _delete_file(path: Path, *, retain_receipt: bool) -> None:
+    changing = False
+    try:
+        if retain_receipt:
+            _sync_file(path)
+            deleted = path.parent / ".deleted"
+            deleted.mkdir(parents=True, exist_ok=True)
+            changing = True
+            os.replace(path, deleted / path.name)
+            _sync_directory(deleted)
+        else:
+            changing = True
+            path.unlink()
+        _sync_directory(path.parent)
+    except OSError as error:
+        if changing:
+            raise _uncertain_file_operation("deleted") from error
+        raise HTTPException(500, "Playbook could not be deleted") from error
 
 
 @contextmanager
@@ -382,6 +439,15 @@ def _replay_creation(path: Path, request: str) -> dict:
             raise HTTPException(400, "Invalid receipt timestamps")
     except HTTPException as error:
         raise HTTPException(500, "The creation receipt could not be read") from error
+    # A retry must not bypass synchronization after an earlier ambiguous save
+    # or tombstone move. Validate first; never rewrite the original receipt.
+    try:
+        _sync_file(path)
+        _sync_directory(path.parent)
+        if path.parent.name == ".deleted":
+            _sync_directory(path.parent.parent)
+    except OSError as error:
+        raise _uncertain_file_operation("saved") from error
     return result
 
 
@@ -442,13 +508,5 @@ def delete_playbook(playbook_id: str) -> dict:
     with _playbook_lock(path):
         if not path.is_file():
             raise HTTPException(404, "Playbook not found")
-        try:
-            if "_creation" in _read(path, include_creation=True):
-                deleted = PLAYBOOKS_DIR / ".deleted"
-                deleted.mkdir(parents=True, exist_ok=True)
-                os.replace(path, deleted / path.name)
-            else:
-                path.unlink()
-        except OSError as error:
-            raise HTTPException(500, "Playbook could not be deleted") from error
+        _delete_file(path, retain_receipt="_creation" in _read(path, include_creation=True))
         return {"deleted": True, "id": playbook_id}
