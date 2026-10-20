@@ -590,13 +590,45 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
 }
 
 
-function normalizeSettings(settings: SimulationSettings): SimulationSettings {
+const OFF_BALL_STYLES = new Set(["off", "spacing", "cuts", "read-react"]);
+const DEFENSE_STRATEGIES = new Set(["off", "contain", "help", "switch", "trap-rotate", "fight-over", "go-under", "drop", "hedge", "deny-lanes", "protect-paint"]);
+const DEFENSE_SCHEMES = new Set<string>(["auto", ...DEFENSE_SCHEME_ORDER]);
+const AUTOMATIC_ACTION_FLAGS = ["screen", "handoff", "pickRoll", "offBallScreen"] as const;
+
+function validateSettings(value: unknown): asserts value is SimulationSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Simulation settings must be an object.");
+  const settings = value as Record<string, unknown>;
+  if (typeof settings.offenseOffBall !== "string" || !OFF_BALL_STYLES.has(settings.offenseOffBall)) throw new TypeError("Invalid simulation setting: offenseOffBall.");
+  if (typeof settings.defenseStrategy !== "string" || !DEFENSE_STRATEGIES.has(settings.defenseStrategy)) throw new TypeError("Invalid simulation setting: defenseStrategy.");
+  if (settings.defenseScheme !== undefined && (typeof settings.defenseScheme !== "string" || !DEFENSE_SCHEMES.has(settings.defenseScheme))) throw new TypeError("Invalid simulation setting: defenseScheme.");
+  if (settings.offenseMode !== undefined && settings.offenseMode !== "adaptive" && settings.offenseMode !== "scripted") throw new TypeError("Invalid simulation setting: offenseMode.");
+  if (typeof settings.offBallIntensity !== "number" || !Number.isFinite(settings.offBallIntensity)) throw new TypeError("Invalid simulation setting: offBallIntensity must be finite.");
+  const automatic = settings.automaticActions;
+  if (!automatic || typeof automatic !== "object" || Array.isArray(automatic)) throw new TypeError("Invalid simulation setting: automaticActions must contain boolean flags.");
+  for (const flag of AUTOMATIC_ACTION_FLAGS) {
+    if (typeof (automatic as Record<string, unknown>)[flag] !== "boolean") throw new TypeError(`Invalid simulation setting: automaticActions.${flag} must be boolean.`);
+  }
+}
+
+function normalizeSettings(settings: SimulationSettings, current?: SimulationSettings): SimulationSettings {
+  // Validate before scripted overrides or the no-change shortcut can hide bad
+  // input. This runs at engine boundaries, never inside a fixed-step loop.
+  validateSettings(settings);
+  const scripted = settings.offenseMode === "scripted";
+  if (current && current.offenseMode === (settings.offenseMode ?? "adaptive")
+    && current.offenseOffBall === (scripted ? "off" : settings.offenseOffBall)
+    && current.defenseStrategy === settings.defenseStrategy
+    && current.offBallIntensity === settings.offBallIntensity
+    && current.automaticActions.screen === (scripted ? false : settings.automaticActions.screen)
+    && current.automaticActions.handoff === (scripted ? false : settings.automaticActions.handoff)
+    && current.automaticActions.pickRoll === (scripted ? false : settings.automaticActions.pickRoll)
+    && current.automaticActions.offBallScreen === (scripted ? false : settings.automaticActions.offBallScreen)) return current;
   return {
-    offenseOffBall: settings.offenseMode === "scripted" ? "off" : settings.offenseOffBall,
-    defenseScheme: settings.defenseScheme ?? "auto",
+    offenseOffBall: scripted ? "off" : settings.offenseOffBall,
+    defenseScheme: current?.defenseScheme ?? settings.defenseScheme ?? "auto",
     defenseStrategy: settings.defenseStrategy,
     offBallIntensity: settings.offBallIntensity,
-    automaticActions: settings.offenseMode === "scripted" ? { screen: false, handoff: false, pickRoll: false, offBallScreen: false } : { ...settings.automaticActions },
+    automaticActions: scripted ? { screen: false, handoff: false, pickRoll: false, offBallScreen: false } : { ...settings.automaticActions },
     offenseMode: settings.offenseMode ?? "adaptive",
   };
 }
@@ -1480,7 +1512,8 @@ export function bindAuthoredActions(source: PlaybookDraft): BoundAction[] {
 }
 
 export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT): SimulationRun {
-  return initializeSimulationRun(structuredClone(source), settings, hoop);
+  const runSettings = normalizeSettings(settings);
+  return initializeSimulationRun(structuredClone(source), runSettings, hoop);
 }
 
 /** Bind authored actions once; keep the template private and clone mutable state per run. */
@@ -1489,6 +1522,7 @@ export function prepareSimulationRun(source: PlaybookDraft) {
   const authored = buildActions(sourceCopy);
   const arrowIndices = authored.actions.map((action) => sourceCopy.arrows.indexOf(action.arrow));
   return (settings: SimulationSettings, hoop = HOOP_POINT): SimulationRun => {
+    const runSettings = normalizeSettings(settings);
     const copy = structuredClone(sourceCopy);
     const manual = {
       ...authored,
@@ -1505,12 +1539,11 @@ export function prepareSimulationRun(source: PlaybookDraft) {
       })),
       finalPositions: authored.finalPositions.map((player, index) => ({ ...copy.players[index], x: player.x, y: player.y })),
     };
-    return initializeSimulationRun(copy, settings, hoop, manual);
+    return initializeSimulationRun(copy, runSettings, hoop, manual);
   };
 }
 
-function initializeSimulationRun(sourceCopy: PlaybookDraft, settings: SimulationSettings, hoop: CourtPoint, authored?: ReturnType<typeof buildActions>): SimulationRun {
-  const runSettings = normalizeSettings(settings);
+function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: SimulationSettings, hoop: CourtPoint, authored?: ReturnType<typeof buildActions>): SimulationRun {
   const players = sourceCopy.players.map((player) => ({ ...player }));
   const ephemeralDefenders = sourceCopy.defenders.length === 0;
   const defenders = createGoalSideDefenders(players, sourceCopy.defenders, hoop);
@@ -1688,26 +1721,16 @@ export function getSimulationFrame(run: SimulationRun) {
 }
 
 export function setSimulationRunSettings(run: SimulationRun, settings: SimulationSettings) {
+  const nextSettings = normalizeSettings(settings, run.settings);
   refreshSimulationAttributes(run.attributes, run.players, run.defenders);
-  const current = run.settings;
-  const scripted = settings.offenseMode === "scripted";
-  // Compare effective values before allocating normalized settings or rebuilding
-  // the frame. The defense scheme is fixed for the lifetime of this run.
-  if (current.offenseMode === (settings.offenseMode ?? "adaptive")
-    && current.offenseOffBall === (scripted ? "off" : settings.offenseOffBall)
-    && current.defenseStrategy === settings.defenseStrategy
-    && current.offBallIntensity === settings.offBallIntensity
-    && current.automaticActions.screen === (scripted ? false : settings.automaticActions.screen)
-    && current.automaticActions.handoff === (scripted ? false : settings.automaticActions.handoff)
-    && current.automaticActions.pickRoll === (scripted ? false : settings.automaticActions.pickRoll)
-    && current.automaticActions.offBallScreen === (scripted ? false : settings.automaticActions.offBallScreen)) return;
+  // Equivalent values retain both settings and frame; the run's defense scheme
+  // remains fixed. Mutable caller objects are checked again on every entry.
+  if (nextSettings === run.settings) return;
   const previousStrategy = run.settings.defenseStrategy;
-  const nextSettings = normalizeSettings(settings);
   if (previousStrategy === "switch" && nextSettings.defenseStrategy !== "switch") {
     run.assignments.clear();
     run.initialAssignments.forEach((playerId, defenderId) => run.assignments.set(defenderId, playerId));
   }
-  nextSettings.defenseScheme = run.settings.defenseScheme;
   invalidateRunRoutes(run);
   run.settings = nextSettings;
   run.frame = frameFor(run);

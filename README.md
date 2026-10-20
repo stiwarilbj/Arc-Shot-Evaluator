@@ -122,6 +122,12 @@ shared behaviors apply in both Playbook and Counter Lab; they remain basketball
 simulation approximations. Adaptive offense can continue with an available cut,
 roll, post action, drive, or pass; simulation decisions do not rewrite the saved
 drawing.
+Both workspaces validate simulation settings before execution: strategies and
+schemes must be supported, automatic-action switches must be booleans, and
+intensity must be finite. Invalid updates leave the active run intact. Omitted
+optional settings keep their existing defaults; valid movement behavior is
+unchanged. See [simulation settings](docs/simulation-settings.md) for the contract
+and regression command.
 
 Save plays, reopen or duplicate them, delete saved copies, or export a
 high-resolution PNG. Hosted plays stay in browser storage; downloaded-app plays
