@@ -137,6 +137,15 @@ const audit=(play,profile,mode,baseline)=>{
  for(let step=0;step<2400&&run.elapsedMs<run.durationMs;step++) {
   const time=run.elapsedMs;advanceSimulationRun(run,SIMULATION_STEP_MS,run.settings);const seconds=(run.elapsedMs-time)/1000;
   const markers=[...run.players,...run.defenders];
+  const duties = [...run.defense.duties.values()];
+  assert.equal(new Set(duties.map(d => d.defenderId)).size, duties.length, `${play.name} one movement duty per defender`);
+  for (const role of ['primary','helper','rim-protector']) assert.ok(duties.filter(d => d.role === role).length <= 1, `${play.name} one ${role}`);
+  for (const duty of duties) {
+   assert.ok(run.defenders.some(d => d.id === duty.defenderId) && (duty.playerId == null || run.players.some(p => p.id === duty.playerId)), `${play.name} live responsibility participants`);
+   assert.ok(duty.reason && duty.releaseOn && duty.sinceMs <= run.elapsedMs, `${play.name} explicit responsibility evidence`);
+  }
+  const claims = duties.filter(d => d.role !== 'helper' && d.playerId != null).map(d => d.playerId);
+  if(run.players.length >= run.defenders.length) assert.equal(new Set(claims).size, claims.length, `${play.name} / ${profile.id} / ${mode} / ${run.elapsedMs}: unique coverage claims ${JSON.stringify(duties)}`);
   markers.forEach((p,i)=>{assert.ok(Number.isFinite(p.x)&&Number.isFinite(p.y),`${play.name} finite positions`);assert.ok(pointDistanceFeet(p,previous[i])<=(i<run.players.length?19:15)*seconds+.003,`${play.name} speed bound`);});
   if(run.elapsedMs>=300&&run.elapsedMs<=run.actionDurationMs) for(let a=0;a<markers.length;a++)for(let b=a+1;b<markers.length;b++)min=Math.min(min,pointDistanceFeet(markers[a],markers[b]));
   for(let a=0;a<markers.length;a++)for(let b=a+1;b<markers.length;b++)if(pointDistanceFeet(previous[a],previous[b])>=2.0001)assert.ok(pointDistanceFeet(markers[a],markers[b])>=1.999,`${play.name} swept clearance`);

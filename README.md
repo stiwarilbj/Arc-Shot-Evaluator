@@ -135,6 +135,14 @@ loose ball, while released shots no longer count as player possession. Counter L
 uses the same evidence and keeps ordinary pass transit separate from a lost opening.
 These behaviors apply in both builds. See [ball state](docs/playbook-ball-state.md).
 
+Defense allocates primary, screen, help, rim-support, and recovery responsibilities
+as a team. When a defender helps, an explicit rotation assigns the vacated player
+or zone to a teammate and records the remaining exposure. Recovery follows that
+inherited duty, screen reservations persist through the interaction, and zone
+closeouts have distinct owners. Selected strategies and badges still determine
+coverage; partial rosters cannot manufacture extra defenders. Both workspaces and
+build targets share this behavior. See [defensive responsibilities](docs/playbook-defense.md).
+
 Both workspaces validate simulation settings before execution: strategies and
 schemes must be supported, automatic-action switches must be booleans, and
 intensity must be finite. Invalid updates leave the active run intact. Omitted

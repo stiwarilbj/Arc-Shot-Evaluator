@@ -1,4 +1,5 @@
 import { BALL_PHASES, type BallPhase } from "./ballState.ts";
+import { DEFENSIVE_ROLES, type DefensiveRole } from "./defensiveResponsibilities.ts";
 import type { CounterLabFrame } from "./counterLabTypes.ts";
 import { unpackReplay, type ReplayArchive } from "./counterLabReplayArchive.ts";
 
@@ -58,6 +59,24 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
     }
     check(Array.isArray(value.assignments) && Array.isArray(value.opportunities) && Array.isArray(value.involvedPlayerIds) && Array.isArray(value.activeRoutes));
     for (const assignment of value.assignments) check(record(assignment) && defenders.has(assignment.defenderId as number) && player(assignment.playerId));
+    if (value.defensiveResponsibilities !== undefined) {
+      check(Array.isArray(value.defensiveResponsibilities));
+      const owners = new Set<number>(), exclusive = new Set<string>();
+      for (const duty of value.defensiveResponsibilities) {
+        check(record(duty) && defenders.has(duty.defenderId as number) && !owners.has(duty.defenderId as number));
+        owners.add(duty.defenderId as number);
+        check(DEFENSIVE_ROLES.includes(duty.role as DefensiveRole) && participant(duty.playerId));
+        check(duty.zoneSlot === null || Number.isInteger(duty.zoneSlot) && (duty.zoneSlot as number) >= 0 && (duty.zoneSlot as number) < 5);
+        check(duty.actionId === null || text(duty.actionId));
+        check(duty.relatedDefenderId === null || defenders.has(duty.relatedDefenderId as number) && duty.relatedDefenderId !== duty.defenderId);
+        check(text(duty.reason) && text(duty.releaseOn) && clock(duty.sinceMs) && duty.sinceMs <= value.elapsedMs + 1e-6);
+        if (["primary", "helper", "rim-protector"].includes(duty.role as string)) {
+          check(!exclusive.has(duty.role as string)); exclusive.add(duty.role as string);
+        }
+        if (duty.role === "primary" || duty.role === "helper" || duty.role === "screen") check(player(duty.playerId));
+        if (duty.role === "screen") check(text(duty.actionId));
+      }
+    }
     for (const id of value.involvedPlayerIds) check(player(id));
     for (const opportunity of value.opportunities) {
       check(record(opportunity) && ["shot", "pass", "drive"].includes(opportunity.kind as string) && player(opportunity.playerId));

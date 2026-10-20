@@ -1,3 +1,4 @@
+import type { DefensiveResponsibility } from "./defensiveResponsibilities.ts";
 import type { BallPhase } from "./ballState.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { ReplayArchive } from "./counterLabReplayArchive.ts";
@@ -13,6 +14,7 @@ export type PassDiagnostic = {
 };
 export type CounterLabEvent = { kind: "opening-lost" | "failed-pass" | "obstructed-action" | "action-conflict"; atMs: number; sequence: number | null; actionId: string | null; playerId: number | null };
 export type CounterLabFrame = {
+  defensiveResponsibilities?: DefensiveResponsibility[];
   ballPhase?: BallPhase;
   elapsedMs: number; sequence: number | null; action: string | null; ballHandlerId: number | null;
   assignments: Array<{ defenderId: number; playerId: number }>;

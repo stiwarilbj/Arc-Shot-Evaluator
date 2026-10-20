@@ -523,7 +523,7 @@ const poorEarlyShotRun = createSimulationRun(poorEarlyShotDraft, { ...settings, 
 advance(poorEarlyShotRun, 600);
 assert.equal(poorEarlyShotRun.earlyReadInterrupted, false, 'a rating-1 shot does not interrupt the authored sequence');
 
-// A drive triggers a consistent helper; once the drive ends, that defender recovers to the original matchup.
+// A drive triggers a consistent helper; a teammate inherits the vacated duty and the helper recovers to the exchanged matchup.
 const driveDraft = makeDraft({
   players: [[50, 75], [29, 63], [71, 63]],
   ball: [50, 75],
@@ -548,7 +548,11 @@ assert.ok(pointDistanceFeet(helperDuring, helpSpot(handlerDuring)) < helpDistanc
 advanceUntil(driveRun, () => ['completed', 'obstructed', 'interrupted'].includes(driveRun.actions[0].execution?.phase), 12000);
 advanceUntil(driveRun, () => driveRun.helpDefenderId == null, 12000);
 assert.equal(driveRun.helpDefenderId, null, 'help assignment clears when the drive ends');
-assert.deepEqual(new Map(driveRun.assignments), stableAssignments, 'help and recovery preserve each defender’s original matchup');
+const rotation = driveRun.defense.rotations[0];
+assert.ok(rotation && rotation.helperId === helperId && rotation.replacementId != null, 'help records an explicit replacement');
+assert.equal(driveRun.assignments.get(rotation.replacementId), stableAssignments.get(helperId), 'the replacement inherits the helper’s vacated player');
+assert.equal(driveRun.assignments.get(helperId), stableAssignments.get(rotation.replacementId), 'the helper recovers to the exchanged player');
+assert.equal(new Set(driveRun.assignments.values()).size, stableAssignments.size, 'rotation preserves unique matchup ownership');
 
 const helpThreatDraft = makeDraft({
   players: [[50, 75], [25, 61], [75, 61]],
@@ -560,7 +564,7 @@ helpThreatDraft.players[1].ratings = { threePoint: 1, midrange: 3, finishing: 3 
 helpThreatDraft.players[2].ratings = { threePoint: 5, midrange: 3, finishing: 3 };
 const helpThreatRun = createSimulationRun(helpThreatDraft, settings);
 advance(helpThreatRun, 430);
-assert.equal(helpThreatRun.helpDefenderId, [...helpThreatRun.assignments].find(([, playerId]) => playerId === 2)?.[0], 'defense chooses to help from the lower-rated perimeter shooter');
+assert.equal(helpThreatRun.helpDefenderId, [...helpThreatRun.initialAssignments].find(([, playerId]) => playerId === 2)?.[0], 'defense chooses to help from the lower-rated perimeter shooter');
 
 const noSafeHelperDraft = structuredClone(driveDraft);
 noSafeHelperDraft.players[2].ratings = { threePoint: 5, midrange: 3, finishing: 3 };

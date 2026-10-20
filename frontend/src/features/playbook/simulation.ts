@@ -1,5 +1,6 @@
 import { compileActionDependencies, type PlannedAction } from "./actionDependencies.ts";
 import { ballController, isShotBall, isTransferBall, placedBall, transitionBall, caughtAt, failedTransfer, copyTransfer, type BallPhase, type BallState, type TransferRecord } from "./ballState.ts";
+import { coordinateDefensiveDuties, createDefensiveTeamState, defensiveDutySnapshot, resetDefensiveDuties, type DefensiveResponsibility, type DefensiveTeamState } from "./defensiveResponsibilities.ts";
 import { linearRoutePoint as lerpPoint, quadraticRoutePoint as quadraticPoint, perpendicularRouteControl } from "./routeGeometry.ts";
 import { coordinateMovement, createMovementBuffers, createMovementOrder, interpolatePosition, type MotionIntent, type MovementBuffers, type MovementOrder } from "./coordinatedMovement.ts";
 import type { CourtRoute } from "./arrowVisibility";
@@ -14,6 +15,7 @@ import {
 } from "./courtGeometry.ts";
 
 export type SimulationFrame = {
+  defensiveResponsibilities?: DefensiveResponsibility[];
   execution?: ActionDiagnostic[];
   ballHandlerId?: number | null;
   ballPhase?: BallPhase;
@@ -71,7 +73,7 @@ type BoundAction = {
 
 type Velocity = { x: number; y: number };
 type PositionOverride = { atMs: number; point: CourtPoint };
-type ScreenCoverageLock = { screenerDefenderId: number; screenedDefenderId: number } | null;
+type ScreenCoverageLock = { screenerDefenderId: number; screenedDefenderId: number; screenerId: number; screenedId: number } | null;
 
 export type SimulationRun = {
   routeRevision: number;
@@ -86,6 +88,7 @@ export type SimulationRun = {
   actionDurationMs: number;
   durationMs: number;
   readonly assignments: Map<number, number>;
+  readonly defense: DefensiveTeamState;
   readonly initialAssignments: Map<number, number>;
   readonly ephemeralDefenders: boolean;
   readonly activeDefenseScheme: Exclude<DefenseScheme, "auto">;
@@ -124,8 +127,7 @@ export type SimulationRun = {
   ballState: BallState;
   readonly ball: CourtPoint | null;
   readonly ballHandlerId: number | null;
-  helpDefenderId: number | null;
-  helpThreatEndedAtMs: number | null;
+  readonly helpDefenderId: number | null;
   defensiveDriveThreatUntilMs: number;
   defensiveDriveThreatHandlerId: number | null;
   elapsedMs: number;
@@ -144,7 +146,6 @@ export const DEFENDER_MAX_SPEED_FT_PER_SECOND = 15;
 const DEFENDER_ACCELERATION_FT_PER_SECOND = 28;
 const ZONE_BALL_MIN_HOLD_MS = 320;
 const ZONE_BALL_SWITCH_MARGIN_FEET = 4.5;
-const HELP_RELEASE_DELAY_MS = 220;
 const DEFENSIVE_DRIVE_GRACE_MS = 180;
 const DEFENDER_SOFT_SPACING_FEET = 2.2;
 const OFFENSE_MAX_SPEED_FT_PER_SECOND = 19;
@@ -1125,6 +1126,7 @@ function recordRouteHistory(run: SimulationRun) {
 }
 
 export type CounterLabObservation = {
+  defensiveResponsibilities: DefensiveResponsibility[];
   elapsedMs: number;
   sequence: number | null;
   action: string | null;
@@ -1162,6 +1164,7 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
   }
   const activeRoutes = getRunRoutes(run, hoop);
   return {
+    defensiveResponsibilities: defensiveDutySnapshot(run.defense),
     elapsedMs: run.elapsedMs,
     sequence: action?.sequence ?? null,
     action: activeActions.length ? [...new Set(activeActions.map(autoActionLabel))].join(" · ") : null,
@@ -1426,6 +1429,7 @@ function velocityKey(kind: "player" | "defender", id: number) {
 function copyFrame(frame: SimulationFrame): SimulationFrame {
   return {
     ...frame,
+    defensiveResponsibilities: frame.defensiveResponsibilities?.map(duty => ({ ...duty })),
     execution: frame.execution?.map((action) => ({ ...action, ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) })),
     routes: frame.routes.map((route) => ({ ...route, start: { ...route.start }, end: { ...route.end }, control: route.control ? { ...route.control } : undefined, via: route.via ? { ...route.via } : undefined, points: route.points?.map((point) => ({ ...point })) })),
     players: frame.players.map((player) => ({ ...player })),
@@ -1456,6 +1460,7 @@ function frameFor(run: SimulationRun): SimulationFrame {
   const shooter = markerForId(run.players, run.shotShooterId ?? run.ballHandlerId);
   const shotQuality = shooter ? run.shotQualityAtRelease || calculateShotQuality(run.players, run.defenders, shooter, 70) : 0;
   return {
+    defensiveResponsibilities: defensiveDutySnapshot(run.defense),
     execution: actionDiagnostics(run),
     ballHandlerId: run.ballHandlerId,
     ballPhase: run.ballState.kind,
@@ -1643,6 +1648,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     actionDurationMs,
     durationMs: actionDurationMs + SIMULATION_SHOT_MS,
     assignments,
+    defense: createDefensiveTeamState(),
     initialAssignments,
     ephemeralDefenders,
     activeDefenseScheme,
@@ -1673,8 +1679,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     get shotStart() { return isShotBall(this.ballState) ? this.ballState.start : null; },
     get shotShooterId() { return isShotBall(this.ballState) ? this.ballState.shooterId : null; },
     get shotQualityAtRelease() { return isShotBall(this.ballState) ? this.ballState.quality : 0; },
-    helpDefenderId: null,
-    helpThreatEndedAtMs: null,
+    get helpDefenderId() { return this.defense.helper?.defenderId ?? null; },
     defensiveDriveThreatUntilMs: 0,
     defensiveDriveThreatHandlerId: initialHandlerId,
     elapsedMs: 0,
@@ -1706,6 +1711,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
   run.actions.forEach((action) => action.execution?.paths.clear());
   run.offBallDecisions?.clear();
   run.routeHistory = [];
+  defensiveTargets(run, 0, hoop);
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
   return run;
@@ -1737,6 +1743,11 @@ export function setSimulationRunSettings(run: SimulationRun, settings: Simulatio
   // remains fixed. Mutable caller objects are checked again on every entry.
   if (nextSettings === run.settings) return;
   const previousStrategy = run.settings.defenseStrategy;
+  if (previousStrategy !== nextSettings.defenseStrategy) {
+    resetDefensiveDuties(run.defense);
+    run.screenCoverageLocks.clear();
+    run.switchedActions.clear();
+  }
   if (previousStrategy === "switch" && nextSettings.defenseStrategy !== "switch") {
     run.assignments.clear();
     run.initialAssignments.forEach((playerId, defenderId) => run.assignments.set(defenderId, playerId));
@@ -1784,12 +1795,15 @@ function moveToward(
 }
 
 function swapAssignments(run: SimulationRun, firstPlayerId: number | null, secondPlayerId: number | null) {
-  if (firstPlayerId == null || secondPlayerId == null || firstPlayerId === secondPlayerId) return;
+  if (firstPlayerId == null || secondPlayerId == null || firstPlayerId === secondPlayerId) return false;
   const firstDefender = run.defenders.find((defender) => run.assignments.get(defender.id) === firstPlayerId);
   const secondDefender = run.defenders.find((defender) => run.assignments.get(defender.id) === secondPlayerId);
-  if (!firstDefender || !secondDefender) return;
+  if (!firstDefender || !secondDefender || firstDefender.id === secondDefender.id) return false;
   run.assignments.set(firstDefender.id, secondPlayerId);
   run.assignments.set(secondDefender.id, firstPlayerId);
+  run.defense.recoveries.delete(firstDefender.id);
+  run.defense.recoveries.delete(secondDefender.id);
+  return true;
 }
 
 function processActionStart(run: SimulationRun, action: BoundAction) {
@@ -1819,8 +1833,7 @@ function switchAtInteraction(run: SimulationRun, action: BoundAction, screenedId
   if (!actor || !user || pointDistanceFeet(actor, user) > 4) return;
   const state = executionFor(action);
   if (action.arrow.kind !== "handoff" && state.phase !== "use" && state.phase !== "release") return;
-  swapAssignments(run, action.actorId, screenedId);
-  run.switchedActions.add(action.arrow.id);
+  if (swapAssignments(run, action.actorId, screenedId)) run.switchedActions.add(action.arrow.id);
 }
 
 function currentActionAt(run: SimulationRun, timeMs: number) {
@@ -1860,6 +1873,9 @@ function coverageDefenderIndex(run: SimulationRun, playerId: number, excluded = 
   }
   const chaser = [...run.zoneChaserAssignments.entries()].find(([, markedPlayerId]) => markedPlayerId === playerId)?.[0];
   if (chaser != null && !excluded.has(chaser)) return run.defenders.findIndex((defender) => defender.id === chaser);
+  const owner = [...run.defense.duties.values()].find(duty => duty.playerId === playerId && duty.role !== "helper"
+    && !excluded.has(duty.defenderId) && run.zoneAssignments.has(duty.defenderId));
+  if (owner) return run.defenders.findIndex(defender => defender.id === owner.defenderId);
   return run.defenders
     .filter((defender) => !excluded.has(defender.id) && run.zoneAssignments.has(defender.id))
     .sort((a, b) => {
@@ -1887,6 +1903,14 @@ function screenCoverageActionsAt(run: SimulationRun, timeMs: number) {
 
 function primeScreenCoverageLocks(run: SimulationRun, timeMs: number) {
   const activeScreens = screenCoverageActionsAt(run, timeMs);
+  const activeIds = new Set(activeScreens.map(action => action.arrow.id));
+  for (const [id, lock] of run.screenCoverageLocks) {
+    const action = activeScreens.find(a => a.arrow.id === id);
+    const screenedId = action?.arrow.kind === "off-ball-screen" || action?.arrow.kind === "pin-down" || action?.arrow.kind === "handoff"
+      ? action.recipientId : action?.partnerId ?? run.ballHandlerId;
+    if (!activeIds.has(id) || !lock || lock.screenerId !== action?.actorId || lock.screenedId !== screenedId || !run.defenders.some(d => d.id === lock.screenerDefenderId)
+      || !run.defenders.some(d => d.id === lock.screenedDefenderId)) run.screenCoverageLocks.delete(id);
+  }
   const usedPlayers = new Set<number>();
   const usedDefenders = new Set<number>();
 
@@ -1955,7 +1979,7 @@ function primeScreenCoverageLocks(run: SimulationRun, timeMs: number) {
       run.screenCoverageLocks.set(action.arrow.id, null);
       continue;
     }
-    run.screenCoverageLocks.set(action.arrow.id, { screenerDefenderId, screenedDefenderId });
+    run.screenCoverageLocks.set(action.arrow.id, { screenerDefenderId, screenedDefenderId, screenerId, screenedId });
     usedPlayers.add(screenerId);
     usedPlayers.add(screenedId);
     usedDefenders.add(screenerDefenderId);
@@ -2192,12 +2216,27 @@ function defensiveFocusPlayer(run: SimulationRun, timeMs: number) {
     ?? null;
 }
 
+function strategyForScreen(run: SimulationRun, action: BoundAction) {
+  return run.settings.defenseStrategy === "switch" && (isManScheme(run.activeDefenseScheme)
+    ? run.switchedActions.has(action.arrow.id) : action.arrow.kind === "handoff"
+      ? action.execution?.usedAtMs != null : ["use", "release"].includes(action.execution?.phase ?? ""));
+}
+
 function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
   const handler = defensiveFocusPlayer(run, timeMs);
   const activeAction = currentActionAt(run, timeMs);
   const isMan = isManScheme(run.activeDefenseScheme);
   const formation = zoneFormation(run.activeDefenseScheme);
-  const screenCoverages = run.settings.defenseStrategy === "switch" && isMan ? [] : screenCoveragesAt(run, timeMs);
+  const allScreenCoverages = screenCoveragesAt(run, timeMs);
+  const screenCoverages = run.settings.defenseStrategy === "switch" && isMan ? [] : allScreenCoverages;
+  const reservedScreens = screenCoverageActionsAt(run, timeMs).flatMap(action => {
+    const lock = run.screenCoverageLocks.get(action.arrow.id);
+    if (!lock) return [];
+    const switched = strategyForScreen(run, action);
+    return [{ defenderId: lock.screenerDefenderId, playerId: switched ? lock.screenedId : lock.screenerId, actionId: action.arrow.id },
+      { defenderId: lock.screenedDefenderId, playerId: switched ? lock.screenerId : lock.screenedId, actionId: action.arrow.id }];
+  });
+  const reservedScreenIds = new Set(reservedScreens.map(s => s.defenderId));
   const coverageByDefender = new Map<number, { coverage: ScreenCoverage; role: "screener" | "screened" }>();
   screenCoverages.forEach((coverage) => {
     coverageByDefender.set(run.defenders[coverage.screenerIndex].id, { coverage, role: "screener" });
@@ -2210,18 +2249,6 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
   const anchors = formation ? zoneAnchors(run.activeDefenseScheme, hoop) : [];
   const zoneShapeTargets = new Map<number, CourtPoint>();
   if (formation && handler) {
-    const ballPoint = run.ball ?? handler;
-    const ballFeet = toCourtFeet(ballPoint);
-    for (const [defenderId, slot] of run.zoneAssignments) {
-      const anchor = anchors[slot];
-      if (!anchor) continue;
-      const anchorFeet = toCourtFeet(anchor);
-      const slide = clamp((ballFeet.x - anchorFeet.x) * 0.28, -4.5, 4.5);
-      let target = addFeet(anchor, { x: slide, y: 0 });
-      const handlerDistanceToHoop = pointDistanceFeet(handler, hoop);
-      if (handlerDistanceToHoop < 18) target = pointToward(target, hoop, clamp((18 - handlerDistanceToHoop) * 0.15, 0, 2.5));
-      zoneShapeTargets.set(defenderId, target);
-    }
     const chaserForHandler = [...run.zoneChaserAssignments.entries()].find(([, playerId]) => playerId === handler.id)?.[0] ?? null;
     const nearestSlot = [...run.zoneAssignments.entries()]
       .sort((a, b) => pointDistanceFeet(anchors[a[1]], handler) - pointDistanceFeet(anchors[b[1]], handler) || a[0] - b[0])[0];
@@ -2246,86 +2273,79 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
   const zoneBallDefenderId = formation
     ? [...run.zoneChaserAssignments.entries()].find(([, playerId]) => playerId === handler?.id)?.[0] ?? run.zoneBallDefenderId
     : null;
-  const handlerDefenderIndex = handler
+  let handlerDefenderIndex = handler
     ? formation
       ? run.defenders.findIndex((defender) => defender.id === zoneBallDefenderId)
       : run.defenders.findIndex((defender) => run.assignments.get(defender.id) === handler.id)
     : -1;
-  let helperIndex = -1;
+  if (handler && handlerDefenderIndex < 0 && isMan && run.defenders.length) {
+    // A partial roster may have no original matchup for the ball threat. Give
+    // that responsibility to one available defender rather than disabling the team.
+    const available = run.defenders.filter(d => !reservedScreenIds.has(d.id));
+    const owner = (available.length ? available : run.defenders).slice().sort((a, b) =>
+      pointDistanceFeet(a, handler) - pointDistanceFeet(b, handler) || a.id - b.id)[0];
+    run.assignments.set(owner.id, handler.id);
+    handlerDefenderIndex = run.defenders.findIndex(d => d.id === owner.id);
+  }
+  if (handler && formation) {
+    const locked = reservedScreens.find(s => s.playerId === handler.id);
+    if (locked) handlerDefenderIndex = run.defenders.findIndex(d => d.id === locked.defenderId);
+  }
   const helpStyle = strategy === "help" || strategy === "trap-rotate" || strategy === "protect-paint";
-  const badgeHelpAvailable = run.defenders.some((defender) => defenderHasBadge(defender, "helper") || defenderHasBadge(defender, "paint-protector"));
   const finishingRating = handler ? helpFinishingRating(handler) : 3;
   const helpWeight = clamp(0.55 + finishingRating * 0.15, 0.7, 1.3);
   const helpSpot = handler ? helpSpotFor(handler, hoop, finishingRating) : hoop;
-  if (drive) run.helpThreatEndedAtMs = null;
-  else if (run.helpDefenderId != null) {
-    if (run.helpThreatEndedAtMs == null) run.helpThreatEndedAtMs = timeMs;
-    if (timeMs - run.helpThreatEndedAtMs >= HELP_RELEASE_DELAY_MS) {
-      run.helpDefenderId = null;
-      run.helpThreatEndedAtMs = null;
-    }
-  } else run.helpThreatEndedAtMs = null;
-  if (drive && !helpStyle && !badgeHelpAvailable) run.helpDefenderId = null;
-  if (drive && (helpStyle || badgeHelpAvailable)) {
-    const currentHelperIndex = run.defenders.findIndex((defender) => defender.id === run.helpDefenderId);
-    const currentHelperDefender = run.defenders[currentHelperIndex];
-    const currentHelperAssignment = currentHelperIndex < 0 ? null : run.assignments.get(currentHelperDefender.id);
-    const currentHelperIsChaser = currentHelperIndex >= 0 && run.zoneChaserAssignments.has(currentHelperDefender.id);
-    const currentHelperMatchup = currentHelperIndex < 0 ? null : markerForId(run.players, currentHelperAssignment ?? null);
-    const currentHelperProtectsThreat = currentHelperMatchup != null
-      && pointDistanceFeet(currentHelperMatchup, hoop) > 19
-      && pointDistanceFeet(currentHelperDefender, currentHelperMatchup) > 8
-      && (playerRating(currentHelperMatchup, "threePoint") >= 4
-        || playerHasBadge(currentHelperMatchup, "deep-range")
-        || playerHasBadge(currentHelperMatchup, "catch-and-shoot"));
-    const currentHelperUnavailable = currentHelperIndex < 0
-      || currentHelperIsChaser
-      || currentHelperIndex === handlerDefenderIndex
-      || coverageByDefender.has(currentHelperDefender?.id ?? -1)
-      || transfer?.recipientId === currentHelperAssignment
-      || (isMan && currentHelperAssignment === handler?.id)
-      || currentHelperProtectsThreat;
-    if (currentHelperUnavailable) {
-      run.helpDefenderId = null;
-      const helperCandidates: Array<{ index: number; defender: PlaybookMarker; distance: number; helpRange: number; score: number; protectsShooter: boolean }> = [];
-      run.defenders.forEach((defender, index) => {
-        if (index === handlerDefenderIndex) return;
-        if (formation && run.zoneChaserAssignments.has(defender.id)) return;
-        if (coverageByDefender.has(defender.id)) return;
-        const assignedPlayerId = run.assignments.get(defender.id);
-        if (transfer?.recipientId === assignedPlayerId) return;
-        const distance = pointDistanceFeet(defender, helpSpot);
-        const slotAnchor = zoneAnchorFor(run, defender.id, hoop);
-        const assignedPlayer = formation && slotAnchor
-          ? run.players.filter((player) => ![...run.zoneChaserAssignments.values()].includes(player.id))
-            .slice().sort((a, b) => pointDistanceFeet(slotAnchor, a) - pointDistanceFeet(slotAnchor, b) || a.id - b.id)[0]
-          : markerForId(run.players, assignedPlayerId ?? null);
-        const shootingThreat = assignedPlayer ? defensiveThreatRating(assignedPlayer, hoop) : 3;
-        const perimeterRisk = assignedPlayer
-          ? Math.max(0, playerRating(assignedPlayer, "threePoint") - 3) * 2
-            + Number(playerHasBadge(assignedPlayer, "deep-range") || playerHasBadge(assignedPlayer, "catch-and-shoot")) * 2
-          : 0;
-        const badgePriority = Number(defenderHasBadge(defender, "helper")) * 4
-          + Number(defenderHasBadge(defender, "paint-protector") && handler != null && pointDistanceFeet(handler, hoop) <= 18) * 2.5;
-        const score = distance + (shootingThreat - 3) * 1.15 + perimeterRisk - badgePriority;
-        const protectsShooter = assignedPlayer != null
-          && pointDistanceFeet(assignedPlayer, hoop) > 19
-          && pointDistanceFeet(defender, assignedPlayer) > 8
-          && (playerRating(assignedPlayer, "threePoint") >= 4
-            || playerHasBadge(assignedPlayer, "deep-range")
-            || playerHasBadge(assignedPlayer, "catch-and-shoot"));
-        const helpRange = defenderHasBadge(defender, "helper") ? 21
-          : defenderHasBadge(defender, "paint-protector") ? 19 : 18;
-        helperCandidates.push({ index, defender, distance, helpRange, score, protectsShooter });
-      });
-      const safeCandidates = helperCandidates.filter((candidate) => !candidate.protectsShooter && candidate.distance <= candidate.helpRange);
-      const selectedHelper = safeCandidates.sort((a, b) => a.score - b.score || a.defender.id - b.defender.id)[0];
-      helperIndex = selectedHelper?.index ?? -1;
-      run.helpDefenderId = selectedHelper?.defender.id ?? null;
-    } else {
-      helperIndex = currentHelperIndex;
-    }
-    if (run.helpDefenderId == null) helperIndex = -1;
+  // The locked screen defender already supplies the second trap participant.
+  // Release voluntary drive help immediately instead of committing a third body.
+  const screenTrapCommitted = strategy === "trap-rotate" && screenCoverages.some(coverage => coverage.screenedId === handler?.id);
+  const helperCandidates = screenTrapCommitted ? [] : run.defenders.flatMap((defender, index) => {
+    if (index === handlerDefenderIndex || run.zoneChaserAssignments.has(defender.id) || reservedScreenIds.has(defender.id)) return [];
+    if (!helpStyle && !defenderHasBadge(defender, "helper") && !defenderHasBadge(defender, "paint-protector")) return [];
+    const anchor = formation ? zoneAnchorFor(run, defender.id, hoop) : null;
+    const assignment = anchor
+      ? markerForId(run.players, run.defense.duties.get(defender.id)?.playerId ?? null)
+        ?? run.players.filter(p => ![...run.zoneChaserAssignments.values()].includes(p.id))
+          .sort((a, b) => pointDistanceFeet(anchor, a) - pointDistanceFeet(anchor, b) || a.id - b.id)[0]
+      : markerForId(run.players, run.assignments.get(defender.id) ?? null);
+    const protectsShooter = assignment && pointDistanceFeet(assignment, hoop) > 19 && pointDistanceFeet(defender, assignment) > 8
+      && (playerRating(assignment, "threePoint") >= 4 || playerHasBadge(assignment, "deep-range") || playerHasBadge(assignment, "catch-and-shoot"));
+    const committed = run.helpDefenderId === defender.id;
+    if ((!committed && protectsShooter) || (!formation && assignment?.id === handler?.id) || transfer?.recipientId === assignment?.id) return [];
+    const distance = pointDistanceFeet(defender, helpSpot);
+    const range = defenderHasBadge(defender, "helper") ? 21 : defenderHasBadge(defender, "paint-protector") ? 19 : 18;
+    if (distance > range && run.helpDefenderId !== defender.id) return [];
+    const threat = assignment ? defensiveThreatRating(assignment, hoop) : 3;
+    const perimeterRisk = assignment ? Math.max(0, playerRating(assignment, "threePoint") - 3) * 2
+      + Number(playerHasBadge(assignment, "deep-range") || playerHasBadge(assignment, "catch-and-shoot")) * 2 : 0;
+    const badgePriority = Number(defenderHasBadge(defender, "helper")) * 4
+      + Number(defenderHasBadge(defender, "paint-protector") && handler && pointDistanceFeet(handler, hoop) <= 18) * 2.5;
+    return [{ id: defender.id, score: distance + (threat - 3) * 1.15 + perimeterRisk - badgePriority }];
+  }).sort((a, b) => a.score - b.score || a.id - b.id).map(candidate => candidate.id);
+  const rimCandidates = run.defenders.slice().sort((a, b) => {
+    const cost = (d: PlaybookMarker) => pointDistanceFeet(zoneAnchorFor(run, d.id, hoop) ?? d, hoop)
+      - Number(defenderHasBadge(d, "paint-protector")) * 6
+      - (run.defense.duties.get(d.id)?.role === "rim-protector"
+        ? timeMs - run.defense.duties.get(d.id)!.sinceMs < 320 ? 1000 : 4 : 0);
+    return cost(a) - cost(b) || a.id - b.id;
+  }).map(d => d.id);
+  coordinateDefensiveDuties(run.defense, {
+    atMs: timeMs, strategy, zone: Boolean(formation), players: run.players, defenders: run.defenders,
+    assignments: run.assignments, zoneAssignments: run.zoneAssignments, chasers: run.zoneChaserAssignments,
+    primary: handlerDefenderIndex >= 0 && handler ? { defenderId: run.defenders[handlerDefenderIndex].id, playerId: handler.id } : null,
+    screens: reservedScreens,
+    drive, helperCandidates, rimCandidates, distance: pointDistanceFeet,
+    anchor: id => zoneAnchorFor(run, id, hoop), threat: player => defensiveThreatRating(player, hoop),
+  });
+  const helperIndex = run.defenders.findIndex(d => d.id === run.helpDefenderId);
+  // Rotations may exchange zone slots. Rebuild their shape targets in this same
+  // step so inherited duties never use the departing defender's old slot.
+  if (formation) for (const [id, slot] of run.zoneAssignments) {
+    const anchor = anchors[slot];
+    if (!anchor) continue;
+    const ballFeet = toCourtFeet(run.ball ?? handler ?? hoop), anchorFeet = toCourtFeet(anchor);
+    let target = addFeet(anchor, { x: clamp((ballFeet.x - anchorFeet.x) * .28, -4.5, 4.5), y: 0 });
+    if (handler && pointDistanceFeet(handler, hoop) < 18) target = pointToward(target, hoop, clamp((18 - pointDistanceFeet(handler, hoop)) * .15, 0, 2.5));
+    zoneShapeTargets.set(id, target);
   }
   const transferDefenderIndex = transfer?.recipientId == null
     ? -1
@@ -2333,12 +2353,16 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       ? coverageDefenderIndex(run, transfer.recipientId)
       : run.defenders.findIndex((defender) => run.assignments.get(defender.id) === transfer.recipientId);
   const targets = run.defenders.map((defender, index) => {
-    const assignmentId = run.assignments.get(defender.id);
+    const duty = run.defense.duties.get(defender.id);
+    const assignmentId = formation ? duty?.playerId : run.assignments.get(defender.id);
     const assignment = markerForId(run.players, assignmentId ?? null) ?? handler;
     if (!handler || !assignment || strategy === "off") return { ...defender };
     const isOnBall = index === handlerDefenderIndex;
-    const hasPriorityDuty = isOnBall || coverageByDefender.has(defender.id) || run.zoneChaserAssignments.has(defender.id);
+    if (!formation && duty?.playerId == null && !isOnBall) return { x: defender.x, y: defender.y };
+    const hasPriorityDuty = isOnBall || reservedScreenIds.has(defender.id) || run.zoneChaserAssignments.has(defender.id);
     const canRotateForHelp = !hasPriorityDuty;
+    const isHelper = duty?.role === "helper";
+    const isRimProtector = duty?.role === "rim-protector";
     let target: CourtPoint;
     if (formation) {
       const chaserId = run.zoneChaserAssignments.get(defender.id);
@@ -2352,19 +2376,13 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
           const goalSideGap = defenderGoalSideGapFor(defender, handler, hoop, strategy === "trap-rotate" ? 3.25 : 4.2);
           target = lerpPoint(target, defenderContainmentTarget(run, handler, hoop, goalSideGap, true), 0.82);
         } else {
-          const candidates = run.players
-            .filter((player) => ![...run.zoneChaserAssignments.values()].includes(player.id) && player.id !== handler.id)
-            .map((player) => {
-              const rating = defensiveThreatRating(player, hoop);
-              const distance = pointDistanceFeet(target, player);
-              return { player, distance, score: distance - (rating - 3) * 1.2 };
-            })
-            .sort((a, b) => a.score - b.score || a.player.id - b.player.id);
-          const closeout = candidates[0];
-          if (closeout && closeout.distance <= 15) {
-            const closeoutGap = defenderGoalSideGapFor(defender, closeout.player, hoop, closeout.score < 8 ? 4.5 : 6.5);
-            const closeoutPoint = defenderContainmentTarget(run, closeout.player, hoop, closeoutGap, false);
-            target = lerpPoint(target, closeoutPoint, clamp(0.58 - closeout.distance * 0.018, 0.28, 0.58));
+          const closeout = markerForId(run.players, duty?.playerId ?? null);
+          if (closeout) {
+            const distance = pointDistanceFeet(target, closeout);
+            const score = distance - (defensiveThreatRating(closeout, hoop) - 3) * 1.2;
+            const closeoutGap = defenderGoalSideGapFor(defender, closeout, hoop, score < 8 ? 4.5 : 6.5);
+            const closeoutPoint = defenderContainmentTarget(run, closeout, hoop, closeoutGap, false);
+            target = lerpPoint(target, closeoutPoint, clamp(0.58 - distance * 0.018, 0.28, 0.58));
           }
         }
       }
@@ -2379,7 +2397,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
         target = lerpPoint(target, sagSpot, clamp(0.22 + (3 - rating) * 0.1, 0.05, 0.48));
       }
     }
-    if (canRotateForHelp && defenderHasBadge(defender, "paint-protector")) {
+    if (canRotateForHelp && isRimProtector && defenderHasBadge(defender, "paint-protector")) {
       const assignmentDistance = pointDistanceFeet(assignment, hoop);
       const assignmentThreat = defensiveThreatRating(assignment, hoop);
       if (assignmentDistance > 12 && assignmentThreat < 5.2) {
@@ -2387,18 +2405,20 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
         target = lerpPoint(target, paintSpot, 0.18);
       }
     }
-    if (canRotateForHelp && defenderHasBadge(defender, "helper")) {
+    if (canRotateForHelp && isHelper && defenderHasBadge(defender, "helper")) {
       target = lerpPoint(target, helpSpot, drive ? 0.12 : 0.06);
     }
     if (canRotateForHelp && strategy === "help") {
-      if (drive && index === helperIndex) target = lerpPoint(target, helpSpot, clamp((formation ? 0.48 : 0.62) * helpWeight, 0.3, 0.84));
-      else if (drive) target = lerpPoint(target, helpSpot, (formation ? 0.12 : 0.08) * helpWeight);
+      if (isHelper) target = lerpPoint(target, helpSpot, clamp((formation ? 0.48 : 0.62) * helpWeight, 0.3, 0.84));
     }
     if (canRotateForHelp && strategy === "trap-rotate") {
-      if (drive && index === helperIndex) target = formation
+      if (isHelper) target = formation
         ? lerpPoint(target, pointToward(handler, hoop, 4.5), 0.68)
         : pointToward(handler, hoop, 4.5);
-      else if (drive) target = lerpPoint(target, helpSpot, (formation ? 0.14 : 0.2) * helpWeight);
+    }
+    if (canRotateForHelp && isRimProtector && drive && helpStyle && strategy !== "protect-paint") {
+      const rimSupport = pointToward(hoop, handler, Math.min(8, pointDistanceFeet(handler, hoop)));
+      target = pointToward(target, rimSupport, Math.min(2.5, pointDistanceFeet(target, rimSupport) * .18));
     }
     if (canRotateForHelp && strategy === "deny-lanes") {
       const ball = run.ball ?? handler;
@@ -2408,7 +2428,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
     if (canRotateForHelp && strategy === "protect-paint") {
       const paintAnchor = formation ? target : assignment;
       const paintSpot = pointToward(paintAnchor, hoop, Math.min(10, pointDistanceFeet(paintAnchor, hoop) * 0.4));
-      target = lerpPoint(target, paintSpot, clamp((drive && index === helperIndex ? 0.82 : formation ? 0.28 : 0.55) * helpWeight, 0.25, 0.95));
+      target = lerpPoint(target, paintSpot, clamp((isHelper ? 0.82 : formation ? 0.28 : 0.55) * helpWeight, 0.25, 0.95));
     }
     if (drive && handler && canRotateForHelp) {
       const handlerDistance = pointDistanceFeet(handler, hoop);
@@ -2417,22 +2437,19 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
         target = lerpPoint(target, helpSpot, helpStyle ? 0.28 : 0.56);
         target = lerpPoint(target, pressureSpot, 0.16);
       }
-      if (handlerDistance <= 16 && defenderHasBadge(defender, "paint-protector")) {
+      if (isRimProtector && handlerDistance <= 16 && defenderHasBadge(defender, "paint-protector")) {
         const rimSpot = pointToward(handler, hoop, 4.5);
         target = lerpPoint(target, rimSpot, 0.36);
       }
     }
     if (canRotateForHelp && handler && playerHasBadge(handler, "playmaker")) {
-      const likelyReceiver = formation
-        ? run.players.filter((player) => player.id !== handler.id && ![...run.zoneChaserAssignments.values()].includes(player.id))
-          .sort((a, b) => (defensiveThreatRating(b, hoop) - defensiveThreatRating(a, hoop)) || a.id - b.id)[0] ?? assignment
-        : assignment;
+      const likelyReceiver = assignment;
       if (likelyReceiver.id !== handler.id) {
         const laneTarget = lerpPoint(handler, likelyReceiver, 0.44);
         target = lerpPoint(target, laneTarget, formation ? 0.1 : 0.12);
       }
     }
-    if (canRotateForHelp && playerHasBadge(assignment, "post-scorer") && pointDistanceFeet(assignment, hoop) <= 19) {
+    if (canRotateForHelp && assignmentId != null && playerHasBadge(assignment, "post-scorer") && pointDistanceFeet(assignment, hoop) <= 19) {
       const postHelp = pointToward(assignment, hoop, Math.min(9.5, pointDistanceFeet(assignment, hoop) * 0.5));
       target = lerpPoint(target, postHelp, formation ? 0.12 : 0.16);
     }
@@ -2457,11 +2474,16 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       const progress = clamp((timeMs - activeAction.startTime) / activeAction.durationMs, 0, 1);
       target = lerpPoint(target, lerpPoint(start, end, progress), 0.12);
     }
+    if (duty?.role === "recovery") {
+      const inheritedPlayer = markerForId(run.players, duty.playerId);
+      if (formation) target = zoneShapeTargets.get(defender.id) ?? target;
+      else if (inheritedPlayer) target = defenderContainmentTarget(run, inheritedPlayer, hoop, defenderGoalSideGapFor(defender, inheritedPlayer, hoop, 3.75), false);
+    }
     const coverageRole = coverageByDefender.get(defender.id);
     if (coverageRole) {
       const { action, screenedId, screenerId } = coverageRole.coverage;
       if (action.arrow.kind === "handoff") {
-        if (strategy === "switch") {
+        if (strategyForScreen(run, action)) {
           const otherId = coverageRole.role === "screener" ? screenedId : screenerId;
           const other = markerForId(run.players, otherId);
           if (other) target = lerpPoint(target, defenderContainmentTarget(run, other, hoop, defenderGoalSideGapFor(defender, other, hoop, 4), other.id === handler.id), formation ? 0.62 : 0.85);
@@ -2482,7 +2504,7 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
       if (coverageRole.role === "screener" && coverageScreener && playerHasBadge(coverageScreener, "screen-setter")) {
         target = lerpPoint(target, defenderContainmentTarget(run, coverageScreener, hoop, defenderGoalSideGapFor(defender, coverageScreener, hoop, 3), false), formation ? 0.18 : 0.28);
       }
-      if (strategy === "switch" && formation) {
+      if (strategy === "switch" && formation && strategyForScreen(run, action)) {
         const otherId = coverageRole.role === "screener" ? screenedId : screenerId;
         const other = markerForId(run.players, otherId);
         if (other) target = lerpPoint(target, defenderContainmentTarget(run, other, hoop, defenderGoalSideGapFor(defender, other, hoop, 4), other.id === handler.id), 0.62);
@@ -2911,6 +2933,7 @@ function updateBall(run: SimulationRun, timeMs: number, dt: number) {
         ball.velocity = { x: 0, y: 0 };
         return;
       }
+      executionFor(transfer).usedAtMs ??= timeMs;
       switchAtInteraction(run, transfer, ball.transfer.receiverId);
     }
     const origin = ball.pathOverride ?? ball.transfer.release ?? { atMs: transfer.startTime, position: ball.position };
@@ -2942,7 +2965,6 @@ function updateBall(run: SimulationRun, timeMs: number, dt: number) {
 
 function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: CourtPoint) {
   const { targets } = defensiveTargets(run, timeMs, hoop);
-  const handler = defensiveFocusPlayer(run, timeMs);
   run.defenders = run.defenders.map((defender, index) => {
     const target = targets[index] ?? defender;
     if (run.settings.defenseStrategy === "off") {
@@ -2957,15 +2979,8 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
       return defender;
     }
     const isRecovering = pointDistanceFeet(defender, target) > 8;
-    const chaserId = run.zoneChaserAssignments.get(defender.id);
-    const zoneAnchor = zoneAnchorFor(run, defender.id, hoop);
-    const focusPlayer = chaserId != null
-      ? markerForId(run.players, chaserId)
-      : !isManScheme(run.activeDefenseScheme) && defender.id === run.zoneBallDefenderId
-        ? handler
-        : !isManScheme(run.activeDefenseScheme) && zoneAnchor
-          ? run.players.slice().sort((a, b) => pointDistanceFeet(zoneAnchor, a) - pointDistanceFeet(zoneAnchor, b) || a.id - b.id)[0]
-          : markerForId(run.players, run.assignments.get(defender.id) ?? null);
+    const duty = run.defense.duties.get(defender.id);
+    const focusPlayer = markerForId(run.players, duty?.playerId ?? null);
     const assignmentVelocity = focusPlayer
       ? run.velocities.get(velocityKey("player", focusPlayer.id)) ?? { x: 0, y: 0 }
       : { x: 0, y: 0 };
@@ -3035,7 +3050,8 @@ function calculateDefensiveQuality(run: SimulationRun, hoop = HOOP_POINT) {
   if (!handler || !defenders.length) return 0;
   if (!isManScheme(run.activeDefenseScheme)) {
     const chaserForHandler = [...run.zoneChaserAssignments.entries()].find(([, playerId]) => playerId === handler.id)?.[0];
-    const ballDefenderId = chaserForHandler ?? run.zoneBallDefenderId;
+    const ballDefenderId = [...run.defense.duties.values()].find(d => d.role === "primary")?.defenderId
+      ?? chaserForHandler ?? run.zoneBallDefenderId;
     const ballDefender = defenders.find((defender) => defender.id === ballDefenderId);
     const ballGap = ballDefender ? pointDistanceFeet(ballDefender, handler) : 40;
     const pressureDistance = 1 - Math.min(1, Math.abs(ballGap - 4.5) / 17);

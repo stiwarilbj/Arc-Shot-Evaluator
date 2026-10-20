@@ -155,6 +155,7 @@ function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMo
     }
     const frame = observation.frame;
     const sample: CounterLabFrame = { elapsedMs: run.elapsedMs, sequence: observation.sequence, action: observation.action, ballHandlerId: observation.ballHandlerId, ballPhase: observation.ballPhase,
+      defensiveResponsibilities: observation.defensiveResponsibilities,
       assignments: observation.assignments, opportunities: observation.opportunities, blockedPass: observation.blockedPass,
       involvedPlayerIds: observation.involvedPlayerIds, activeRoutes: observation.activeRoutes,
       players: frame.players, defenders: frame.defenders, ball: frame.ball, shotPhase: frame.shotPhase, execution: frame.execution };
