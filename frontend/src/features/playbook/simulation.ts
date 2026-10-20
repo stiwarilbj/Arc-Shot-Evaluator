@@ -1,3 +1,4 @@
+import { compileActionDependencies, type PlannedAction } from "./actionDependencies.ts";
 import { linearRoutePoint as lerpPoint, quadraticRoutePoint as quadraticPoint, perpendicularRouteControl } from "./routeGeometry.ts";
 import { coordinateMovement, createMovementBuffers, createMovementOrder, interpolatePosition, type MotionIntent, type MovementBuffers, type MovementOrder } from "./coordinatedMovement.ts";
 import type { CourtRoute } from "./arrowVisibility";
@@ -46,6 +47,7 @@ export type ActionDiagnostic = {
 type ExecutionPath = { points: CourtPoint[]; lengths: number[]; length: number; progress: number; closest: CourtPoint };
 type ActionRuntime = ActionDiagnostic & { paths: Map<number, ExecutionPath>; waitMs: number };
 type BoundAction = {
+  plan?: PlannedAction;
   execution?: ActionRuntime;
   onBall?: boolean;
   arrow: PlaybookArrow;
@@ -77,10 +79,10 @@ export type SimulationRun = {
   movementOrder: MovementOrder;
   attributes: SimulationAttributes;
   movementBuffers: { solver: MovementBuffers; intents: MotionIntent[]; intentMap: Map<string, MotionIntent>; playerPositions: Map<number, CourtPoint>; defenderPositions: Map<number, CourtPoint> };
-  phaseWaitMs?: Map<number, number>;
   offBallDecisions?: Map<number, { target: CourtPoint; sinceMs: number; cutting: boolean }>;
   routeHistory?: Array<{ atMs: number; players: PlaybookMarker[]; onBallIds: number[] }>;
   actions: BoundAction[];
+  actionGraph: Map<string, BoundAction>;
   actionDurationMs: number;
   durationMs: number;
   readonly assignments: Map<number, number>;
@@ -586,6 +588,7 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
     ballHandlerId = nextHandlerId;
     phaseStart = phaseEnd;
   }
+  attachActionPlans(actions, source.players[nearestPointIndex(source.players, source.ball ?? source.players[0] ?? HOOP_POINT)]?.id ?? null);
   return { actions, actionDurationMs: Math.max(MIN_PLAY_DURATION_MS, cursor), ballHandlerId, finalPositions: positions };
 }
 
@@ -925,6 +928,9 @@ function appendAdaptiveAction(
     adaptiveReadLabel: label.toLowerCase().startsWith("early read:") ? label : `Read: ${label.toLowerCase()}`,
   };
   run.actions.push(action);
+  const key = `${arrow.id}:${sequence}`;
+  action.plan = { key, nominalStartMs: action.startTime, dependencies: [], requiresPossessionId: handler.id };
+  run.actionGraph.set(key, action);
   run.actionDurationMs += durationMs;
   run.durationMs = run.actionDurationMs + run.shotDurationMs;
   run.adaptiveActionsTaken += 1;
@@ -1087,7 +1093,7 @@ function invalidateRunRoutes(run: SimulationRun) {
 function getRunRoutes(run: SimulationRun, hoop = HOOP_POINT): CourtRoute[] {
   const cached = runRouteCache.get(run);
   if (cached?.revision === run.routeRevision && cached.hoopX === hoop.x && cached.hoopY === hoop.y) return cached.routes;
-  const active = run.actions.filter((action) => actionIsMoving(action) && !action.transferFailed && run.elapsedMs + 1e-6 >= action.startTime && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
+  const active = run.actions.filter((action) => actionIsObservable(action, run) && !action.transferFailed && run.elapsedMs + 1e-6 >= action.startTime && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
   const routes = active.flatMap((action) => routesForAction(action, run, hoop));
   // Recorded recent movement exposes small receiving, spacing, and coasting
   // adjustments without introducing new actions or changing possession.
@@ -1140,7 +1146,7 @@ export type CounterLabObservation = {
 export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): CounterLabObservation {
   refreshSimulationAttributes(run.attributes, run.players, run.defenders);
   const { choices } = liveReadChoices(run, hoop);
-  const activeActions = run.actions.filter((candidate) => actionIsMoving(candidate) && !candidate.transferFailed
+  const activeActions = run.actions.filter((candidate) => actionIsObservable(candidate, run) && !candidate.transferFailed
     && run.elapsedMs >= candidate.startTime - 1e-6
     && run.elapsedMs < candidate.startTime + candidate.durationMs + 1e-6);
   const action = activeActions.find((candidate) => !candidate.automatic && !candidate.adaptiveReadLabel) ?? activeActions[0] ?? null;
@@ -1197,6 +1203,7 @@ function stopAuthoredActionsAt(run: SimulationRun, timeMs: number) {
     if (actionIsMoving(action)) { state.phase = "interrupted"; state.completedAtMs = timeMs; state.notice = "An adaptive read replaced the remaining action."; }
     return [{ ...action, durationMs: Math.max(0, timeMs - action.startTime) }];
   });
+  run.actionGraph = new Map(run.actions.filter((action) => action.plan).map((action) => [action.plan!.key, action]));
   run.offBallAnchors.clear();
   run.players.forEach((player) => run.offBallAnchors.set(player.id, { x: player.x, y: player.y }));
   run.actionDurationMs = timeMs;
@@ -1431,7 +1438,7 @@ function copyFrame(frame: SimulationFrame): SimulationFrame {
 }
 
 function frameFor(run: SimulationRun): SimulationFrame {
-  const activeActions = run.actions.filter((action) => actionIsMoving(action) && !action.transferFailed
+  const activeActions = run.actions.filter((action) => actionIsObservable(action, run) && !action.transferFailed
     && run.elapsedMs + 1e-6 >= action.startTime
     && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
   const activeAction = activeActions.find((action) => !action.automatic) ?? activeActions[0];
@@ -1528,6 +1535,8 @@ export function prepareSimulationRun(source: PlaybookDraft) {
       ...authored,
       actions: authored.actions.map((action, index) => ({
         ...action,
+        plan: action.plan ? structuredClone(action.plan) : undefined,
+        ...(action.execution ? { execution: structuredClone(action.execution) } : {}),
         arrow: copy.arrows[arrowIndices[index]],
         plannedStart: action.plannedStart ? { ...action.plannedStart } : null,
         recipientStart: action.recipientStart ? { ...action.recipientStart } : null,
@@ -1629,6 +1638,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     movementBuffers: { solver: createMovementBuffers(), intents: [], intentMap: new Map(), playerPositions: new Map(), defenderPositions: new Map() },
     movementOrder: createMovementOrder([...players.map((player) => velocityKey("player", player.id)), ...defenders.map((defender) => velocityKey("defender", defender.id))]),
     actions,
+    actionGraph: attachActionPlans(actions, ballHandlerId),
     actionDurationMs,
     durationMs: actionDurationMs + SIMULATION_SHOT_MS,
     assignments,
@@ -1684,6 +1694,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     adaptiveReadRoute: null,
     frame: createInitialFrame(),
   };
+  refreshActionSchedule(run);
   if (formation) {
     const initialHandler = markerForId(players, ballHandlerId);
     if (initialHandler) {
@@ -1811,13 +1822,14 @@ function switchAtInteraction(run: SimulationRun, action: BoundAction, screenedId
 }
 
 function currentActionAt(run: SimulationRun, timeMs: number) {
-  return run.actions.find((action) => actionIsMoving(action) && timeMs >= action.startTime - 1e-6 && timeMs < action.startTime + action.durationMs + 1e-6) ?? null;
+  return run.actions.find((action) => actionIsExecuting(action) && timeMs >= action.startTime - 1e-6 && timeMs < action.startTime + action.durationMs + 1e-6) ?? null;
 }
 
 function currentTransferAt(run: SimulationRun, timeMs: number) {
   return run.actions.find((action) =>
     (action.arrow.kind === "pass" || action.arrow.kind === "handoff")
     && action.recipientId != null
+    && actionIsExecuting(action)
     && !action.transferFailed
     && action.transferCompletedAtMs == null
     && timeMs >= action.startTime - 1e-6
@@ -1827,7 +1839,7 @@ function currentTransferAt(run: SimulationRun, timeMs: number) {
 
 function currentPrepAt(run: SimulationRun, timeMs: number) {
   return run.actions.find((action) => {
-    if (action.recipientId == null || action.transferFailed || (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff")) return false;
+    if (!actionIsMoving(action) || action.recipientId == null || action.transferFailed || (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff")) return false;
     const prepWindow = Math.min(PASS_PREP_MS, Math.max(180, action.durationMs * 0.42));
     return timeMs >= Math.max(0, action.startTime - prepWindow) && timeMs < action.startTime;
   }) ?? null;
@@ -1867,7 +1879,7 @@ function coverageDefenderIndex(run: SimulationRun, playerId: number, excluded = 
 function screenCoverageActionsAt(run: SimulationRun, timeMs: number) {
   return run.actions
     .filter((action) => {
-      if (action.transferFailed || !actionIsMoving(action)) return false;
+      if (action.transferFailed || !actionIsExecuting(action)) return false;
       const kind = action.arrow.kind;
       if (kind === "slip-screen") return false;
       if (kind === "handoff" && (isManScheme(run.activeDefenseScheme) || run.settings.defenseStrategy !== "switch")) return false;
@@ -2037,7 +2049,7 @@ function actionStartFor(run: SimulationRun, action: BoundAction) {
 
 function recordActionStarts(run: SimulationRun, timeMs: number) {
   run.actions.forEach((action) => {
-    if (timeMs < action.startTime || run.actionStarts.has(action.arrow.id)) return;
+    if (!actionIsExecuting(action) || timeMs < action.startTime || run.actionStarts.has(action.arrow.id)) return;
     const player = markerForId(run.players, action.actorId);
     if (player) run.actionStarts.set(action.arrow.id, { x: player.x, y: player.y });
   });
@@ -2581,6 +2593,104 @@ function actionDiagnostics(run: SimulationRun): ActionDiagnostic[] {
 function actionIsMoving(action: BoundAction) {
   return action.execution?.phase !== "interrupted" && action.execution?.phase !== "obstructed" && action.execution?.phase !== "conflict" && action.execution?.phase !== "completed";
 }
+function actionIsExecuting(action: BoundAction) {
+  return action.execution?.startedAtMs != null && actionIsMoving(action);
+}
+function actionIsObservable(action: BoundAction, run: SimulationRun) {
+  return actionIsExecuting(action) || run.elapsedMs === 0 && action.startTime === 0 && actionIsMoving(action) && !action.plan?.dependencies.length;
+}
+function attachActionPlans(actions: BoundAction[], initialHandlerId: number | null): Map<string, BoundAction> {
+  const plans = actions.every((action) => action.plan && !action.automatic)
+    ? null
+    : compileActionDependencies(actions.map((action) => ({ key: `${action.arrow.id}:${action.sequence}`,
+      sequence: action.sequence, startTime: action.startTime, kind: action.arrow.kind,
+      actorId: action.actorId, recipientId: action.recipientId, userId: screenUserId(action),
+      onBall: Boolean(action.onBall), automatic: Boolean(action.automatic || action.adaptiveReadLabel),
+      ...(isScreenAction(action) ? { userTarget: screenUserFinish(action, HOOP_POINT) } : {}) })), initialHandlerId);
+  const graph = new Map<string, BoundAction>();
+  for (const action of actions) {
+    if (plans) action.plan = plans.get(`${action.arrow.id}:${action.sequence}`)!;
+    if (action.plan!.failure) {
+      const state = executionFor(action), failure = action.plan!.failure!;
+      state.phase = failure.phase; state.notice = failure.notice; state.completedAtMs = 0;
+      if (action.arrow.kind === "pass" || action.arrow.kind === "handoff") {
+        action.transferFailed = true; action.transferFailedAtMs = 0;
+      }
+    }
+    graph.set(action.plan!.key, action);
+  }
+  return graph;
+}
+function blockAction(run: SimulationRun, action: BoundAction, phase: "conflict" | "obstructed", notice: string, atMs: number) {
+  const state = executionFor(action);
+  state.phase = phase; state.notice = notice; state.completedAtMs = atMs;
+  if (action.arrow.kind === "pass" || action.arrow.kind === "handoff") {
+    action.transferFailed = true; action.transferFailedAtMs = atMs;
+  }
+  invalidateRunRoutes(run);
+}
+/** Move only unstarted descendants; independent authored start times stay intact. */
+function refreshActionSchedule(run: SimulationRun) {
+  // Same-sequence catch edges need not follow array order. Cycles are rejected
+  // during compilation; bounded relaxation settles every valid prediction.
+  for (let pass = 0; pass < run.actions.length; pass++) {
+    let changed = false;
+    for (const action of run.actions) {
+      if (!action.plan || action.execution?.startedAtMs != null || !actionIsMoving(action)) continue;
+      let start = action.plan.nominalStartMs;
+      for (const edge of action.plan.dependencies) {
+        const prior = run.actionGraph.get(edge.key);
+        if (prior) start = Math.max(start, edge.milestone === "catch"
+          ? prior.transferCompletedAtMs ?? prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs
+          : prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs);
+      }
+      start = Math.max(start, action.execution?.notice ? run.elapsedMs : 0);
+      if (Math.abs(action.startTime - start) > 1e-6) { action.startTime = start; changed = true; }
+    }
+    if (!changed) break;
+  }
+  run.actionDurationMs = Math.max(MIN_PLAY_DURATION_MS, ...run.actions.map((action) => action.startTime + action.durationMs));
+  if (run.adaptiveContinuationStartedAtMs == null) run.plannedActionDurationMs = run.actionDurationMs;
+  run.durationMs = run.actionDurationMs + run.shotDurationMs;
+}
+function startReadyActions(run: SimulationRun, atMs: number) {
+  if (run.shotStart) return;
+  refreshActionSchedule(run);
+  for (const action of run.actions) {
+    if (!actionIsMoving(action) || action.execution?.startedAtMs != null) continue;
+    let waiting: BoundAction | null = null;
+    for (const edge of action.plan?.dependencies ?? []) {
+      const prior = run.actionGraph.get(edge.key);
+      if (!prior || !actionIsMoving(prior) && prior.execution?.phase !== "completed") {
+        blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: prerequisite ${prior ? `move ${prior.sequence}` : edge.key} did not complete.`, atMs);
+        break;
+      }
+      if (edge.milestone === "catch" ? prior.transferCompletedAtMs == null : prior.execution?.phase !== "completed") waiting ??= prior;
+    }
+    if (action.startTime > atMs + 1e-6) {
+      if (waiting && action.plan!.nominalStartMs <= atMs + 1e-6 && actionIsMoving(action)) {
+        executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}.`;
+      }
+      continue;
+    }
+    if (!actionIsMoving(action)) continue;
+    if (waiting) {
+      executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}.`;
+      action.startTime = atMs + SIMULATION_FIXED_STEP_MS;
+      continue;
+    }
+    const holder = action.plan?.requiresPossessionId;
+    if (holder != null && holder !== run.ballHandlerId) {
+      blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: player ${holder} does not hold the ball.`, atMs);
+      continue;
+    }
+    action.startTime = Math.max(action.startTime, atMs);
+    executionFor(action).notice = null;
+    processActionStart(run, action);
+  }
+  refreshActionSchedule(run);
+}
+
 function executionPath(points: CourtPoint[]): ExecutionPath {
   const lengths = [0];
   for (let i = 1; i < points.length; i++) lengths.push(lengths[i - 1] + pointDistanceFeet(points[i - 1], points[i]));
@@ -2659,7 +2769,11 @@ function screenUserFinish(action: BoundAction, hoop: CourtPoint) {
 }
 function prepareScreen(run: SimulationRun, action: BoundAction, timeMs: number, hoop: CourtPoint) {
   const state = executionFor(action), actor = markerForId(run.players, action.actorId), user = markerForId(run.players, screenUserId(action));
-  if (!actor || !actionIsMoving(action)) return;
+  if (!actionIsMoving(action)) return;
+  if (!actor || !user) {
+    blockAction(run, action, "obstructed", `Move ${action.sequence} lost an available screen participant.`, timeMs);
+    return;
+  }
   if (action.arrow.kind === "slip-screen") { state.phase = "release"; return; }
   const velocity = run.velocities.get(velocityKey("player", actor.id)) ?? { x: 0, y: 0 };
   if (state.phase === "approach" && pointDistanceFeet(actor, action.arrow.end) <= .45 && Math.hypot(velocity.x, velocity.y) <= 1.5) {
@@ -2689,7 +2803,7 @@ function movementPoints(run: SimulationRun, action: BoundAction, player: Playboo
 
 function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: CourtPoint) {
   const transfer = currentTransferAt(run, timeMs), prep = currentPrepAt(run, timeMs);
-  const activeActions = run.actions.filter((action) => actionIsMoving(action) && timeMs >= action.startTime && timeMs < action.startTime + action.durationMs);
+  const activeActions = run.actions.filter((action) => actionIsExecuting(action) && timeMs >= action.startTime && timeMs < action.startTime + action.durationMs);
   activeActions.forEach((action) => { if (isScreenAction(action)) prepareScreen(run, action, timeMs, hoop); });
   const handler = markerForId(run.players, run.ballHandlerId), ball = run.ball ?? handler ?? HOOP_POINT, drive = driveThreat(run, hoop);
   const owners = new Map<number, BoundAction>();
@@ -3069,6 +3183,7 @@ function transferBallToRecipient(run: SimulationRun, previousTime: number, nextT
   const transfer = run.actions.find((action) =>
     (action.arrow.kind === "pass" || action.arrow.kind === "handoff")
     && action.recipientId != null
+    && actionIsExecuting(action)
     && !action.transferFailed
     && action.transferCompletedAtMs == null
     && previousTime < action.startTime + action.durationMs
@@ -3107,23 +3222,18 @@ function transferBallToRecipient(run: SimulationRun, previousTime: number, nextT
 }
 
 function extendPhase(run: SimulationRun, action: BoundAction, delta: number) {
-  const waits = run.phaseWaitMs ??= new Map(), waited = waits.get(action.sequence) ?? 0;
-  if (waited + delta > MAX_TRANSFER_WAIT_MS + 1e-6) return false;
+  const state = executionFor(action);
+  if (state.waitMs + delta > MAX_TRANSFER_WAIT_MS + 1e-6) return false;
   if (run.adaptiveContinuationStartedAtMs != null && (action.adaptiveReadLabel || action.automatic) && run.actionDurationMs + delta - run.adaptiveContinuationStartedAtMs > MAX_ADAPTIVE_WINDOW_MS) return false;
-  waits.set(action.sequence, waited + delta);
-  const phase = run.actions.filter((candidate) => candidate.sequence === action.sequence);
-  const end = Math.max(...phase.map((candidate) => candidate.startTime + candidate.durationMs));
-  phase.forEach((candidate) => { candidate.durationMs += delta; if (candidate.execution) candidate.execution.waitMs = waited + delta; });
-  run.actions.forEach((candidate) => { if (candidate.sequence > action.sequence && candidate.startTime >= end - 1e-6) candidate.startTime += delta; });
-  run.actionDurationMs += delta;
-  if (end <= run.plannedActionDurationMs + 1e-6) run.plannedActionDurationMs += delta;
-  run.durationMs += delta;
+  state.waitMs += delta;
+  action.durationMs += delta;
+  refreshActionSchedule(run);
   return true;
 }
 
 function finalizeCompletedMovement(run: SimulationRun, previousTime: number, nextTime: number) {
   for (const action of run.actions) {
-    if (action.arrow.kind === "pass" || action.arrow.kind === "handoff" || !actionIsMoving(action)) continue;
+    if (action.arrow.kind === "pass" || action.arrow.kind === "handoff" || !actionIsExecuting(action)) continue;
     const end = action.startTime + action.durationMs;
     if (previousTime >= end || nextTime < end - 1e-6) continue;
     const state = executionFor(action), actor = markerForId(run.players, action.actorId);
@@ -3149,10 +3259,8 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   const startTime = run.elapsedMs;
   const endTime = Math.min(run.durationMs, startTime + stepMs);
   const dt = (endTime - startTime) / 1000;
+  startReadyActions(run, startTime);
   primeScreenCoverageLocks(run, startTime);
-  run.actions.forEach((action) => {
-    if (action.startTime >= startTime - 1e-6 && action.startTime < endTime - 1e-6) processActionStart(run, action);
-  });
   recordActionStarts(run, startTime);
   const sampleTime = Math.max(startTime, endTime - 0.001);
   run.movementBuffers.intentMap.clear();
@@ -3177,8 +3285,9 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
     updateShot(run, sampleTime, dt, hoop);
   }
   run.elapsedMs = endTime;
+  startReadyActions(run, endTime);
   if (run.settings.offenseMode !== "scripted" && !run.shotStart && run.elapsedMs + 1e-6 >= run.nextEarlyReadMs) {
-    if (!run.actions.some((action) => !action.automatic && action.startTime <= run.elapsedMs && action.startTime + action.durationMs > run.elapsedMs && isScreenAction(action) && action.execution?.phase !== "release")) startEarlyRead(run, hoop);
+    if (!run.actions.some((action) => !action.automatic && actionIsExecuting(action) && action.startTime <= run.elapsedMs && action.startTime + action.durationMs > run.elapsedMs && isScreenAction(action) && action.execution?.phase !== "release")) startEarlyRead(run, hoop);
     if (!run.earlyReadInterrupted) run.nextEarlyReadMs += EARLY_READ_INTERVAL_MS;
   }
   const authoredActionsEnded = run.elapsedMs + 1e-6 >= run.plannedActionDurationMs

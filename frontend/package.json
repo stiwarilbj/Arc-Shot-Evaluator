@@ -11,7 +11,7 @@
     "test:playbook-geometry": "node --experimental-strip-types ../scripts/test-playbook-geometry.mjs",
     "test:playbook-simulation": "node --experimental-strip-types ../scripts/test-playbook-simulation.mjs",
     "test:counter-lab": "node --experimental-strip-types ../scripts/test-counter-lab.mjs",
-    "test": "npm run test:navigation && npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:simulation-settings && npm run test:simulation-advancement && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:playbook-performance && npm run test:playbook-draft-save && npm run test:playbook-document-validation && npm run test:playbook-intake && npm run test:playbook-library-refresh && npm run test:playbook-precision && npm run test:playbook-save-results && npm run test:playbook-mutation-order && npm run test:playbook-cross-client && npm run test:playbook-deadlines && npm run test:playbook-idempotency && npm run test:playbook-order && npm run test:save-simulate && npm run test:jumper",
+    "test": "npm run test:navigation && npm run test:analysis-modes && npm run test:playbook-geometry && npm run test:playbook-simulation && npm run test:simulation-settings && npm run test:simulation-advancement && npm run test:action-dependencies && npm run test:counter-lab && npm run test:counter-lab-requests && npm run test:counter-lab-boundaries && npm run test:counter-lab-replay-validation && npm run test:coordinated-movement && npm run test:playbook-performance && npm run test:playbook-draft-save && npm run test:playbook-document-validation && npm run test:playbook-intake && npm run test:playbook-library-refresh && npm run test:playbook-precision && npm run test:playbook-save-results && npm run test:playbook-mutation-order && npm run test:playbook-cross-client && npm run test:playbook-deadlines && npm run test:playbook-idempotency && npm run test:playbook-order && npm run test:save-simulate && npm run test:jumper",
     "test:playbook-draft-save": "node --experimental-strip-types ../scripts/test-playbook-draft-save.mjs",
     "test:playbook-performance": "node --experimental-strip-types ../scripts/test-playbook-performance.mjs",
     "test:coordinated-movement": "node --experimental-strip-types ../scripts/test-coordinated-movement.mjs",
@@ -32,7 +32,8 @@
     "test:navigation": "node --experimental-strip-types ../scripts/test-workspace-navigation.mjs",
     "test:playbook-intake": "node --experimental-strip-types ../scripts/test-playbook-intake.mjs",
     "test:simulation-settings": "node --experimental-strip-types ../scripts/test-simulation-settings.mjs",
-    "test:simulation-advancement": "node --experimental-strip-types ../scripts/test-simulation-advancement.mjs"
+    "test:simulation-advancement": "node --experimental-strip-types ../scripts/test-simulation-advancement.mjs",
+    "test:action-dependencies": "node --experimental-strip-types ../scripts/test-action-dependencies.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

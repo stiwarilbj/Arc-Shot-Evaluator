@@ -951,7 +951,8 @@ const overlappingScreenRun = createSimulationRun(overlappingScreenDraft, { ...se
 advance(overlappingScreenRun, SIMULATION_STEP_MS);
 const priorityScreenLock = overlappingScreenRun.screenCoverageLocks.get('priority-screen');
 assert.ok(priorityScreenLock, 'the first drawn screen holds its defensive participants');
-assert.equal(overlappingScreenRun.screenCoverageLocks.get('conflicting-screen'), null, 'a conflicting simultaneous screen cannot steal defenders from the first drawn action');
+assert.equal(overlappingScreenRun.screenCoverageLocks.has('conflicting-screen'), false, 'a screen rejected at compilation never claims defensive coverage');
+assert.equal(overlappingScreenRun.actions[1].execution.phase, 'conflict');
 for (let frame = 0; frame < 24; frame += 1) advance(overlappingScreenRun, SIMULATION_STEP_MS);
 assert.deepEqual(overlappingScreenRun.screenCoverageLocks.get('priority-screen'), priorityScreenLock, 'screen coverage participants remain fixed throughout the action');
 

@@ -121,7 +121,13 @@ order, and recover from screens using the actual screen-release timing. These
 shared behaviors apply in both Playbook and Counter Lab; they remain basketball
 simulation approximations. Adaptive offense can continue with an available cut,
 roll, post action, drive, or pass; simulation decisions do not rewrite the saved
-drawing.
+drawing. Both hosted and downloaded builds compile an internal action-dependency
+graph: catches gate the receiver's next on-ball action, screen use gates rolls,
+and a delayed action holds its dependents while unrelated movement retains its
+planned start. Conflicting ownership and circular dependencies are diagnosed before
+execution; failed prerequisites explain why dependent moves cannot start. Saved
+plays remain version 1. See [action dependencies](docs/playbook-action-dependencies.md).
+
 Both workspaces validate simulation settings before execution: strategies and
 schemes must be supported, automatic-action switches must be booleans, and
 intensity must be finite. Invalid updates leave the active run intact. Omitted

@@ -99,7 +99,7 @@ const distant=structuredClone(handoff);distant.players[0].x=10;distant.players[1
 const distantRun=finish(createSimulationRun(distant,settings));
 assert.equal(distantRun.actions[0].execution.phase,'obstructed','unreachable handoffs report obstruction');
 assert.equal(distantRun.ballHandlerId,1,'failed handoffs leave the ball with the giver');
-assert.ok([...distantRun.phaseWaitMs.values()].every(wait=>wait<=1200+1e-6),'phase waiting stays bounded');
+assert.ok(distantRun.actions.every(action=>(action.execution?.waitMs??0)<=1200+1e-6),'each action has its own bounded waiting allowance');
 const cadence=[];
 for(const hz of [30,60,120]) {
  const run=createSimulationRun(curved,settings);
