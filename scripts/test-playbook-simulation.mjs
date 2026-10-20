@@ -1,3 +1,4 @@
+import { caughtAt, failedTransfer, placedBall } from "../frontend/src/features/playbook/ballState.ts";
 import assert from 'node:assert/strict';
 import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating, preparedHasBadge } from '../frontend/src/features/playbook/simulationAttributes.ts';
 import { ARROW_VISIBILITY_OPTIONS, routeVisible } from '../frontend/src/features/playbook/arrowVisibility.ts';
@@ -351,7 +352,7 @@ advance(orderedRun, SIMULATION_STEP_MS * 3);
 orderedRun.players.forEach((player, index) => {
   assert.ok(pointDistanceFeet(playersBeforePassEnd[index], player) < 3, 'players remain continuous as possession changes');
 });
-advanceUntil(orderedRun, () => orderedRun.actions[1].transferCompletedAtMs != null, 1600);
+advanceUntil(orderedRun, () => caughtAt(orderedRun.actions[1].transfer) != null, 1600);
 assert.equal(orderedRun.ballHandlerId, 2, 'possession transfers after the recorded catch, including a bounded timing delay');
 assert.deepEqual(new Map(orderedRun.assignments), orderedAssignments, 'help defense does not recalculate defensive assignments');
 
@@ -359,8 +360,8 @@ const impossibleTransferRun = createSimulationRun(orderedDraft, settings);
 const impossiblePass = impossibleTransferRun.actions.find((action) => action.arrow.kind === 'pass');
 impossiblePass.recipientId = 99;
 impossibleTransferRun.nextEarlyReadMs = Number.POSITIVE_INFINITY;
-advanceUntil(impossibleTransferRun, () => impossiblePass.transferFailed === true);
-assert.equal(impossibleTransferRun.ballHandlerId, null, 'an impossible pass does not grant possession to a missing player');
+advanceUntil(impossibleTransferRun, () => failedTransfer(impossiblePass.transfer));
+assert.equal(impossibleTransferRun.ballHandlerId, 1, 'rejecting an unavailable receiver before release preserves the actual giver and never grants phantom possession');
 assert.ok(Number.isFinite(impossibleTransferRun.ball.x) && Number.isFinite(impossibleTransferRun.ball.y), 'a failed pass leaves a recoverable ball at a finite live position');
 assert.deepEqual(orderedDraft.arrows, orderedRun.source.arrows, 'simulation transfer failures do not alter the saved diagram');
 
@@ -697,8 +698,14 @@ assert.equal(openRollRun.frame.adaptiveReadRoute.kind, 'pass', 'the live frame e
 const initialOpenRollReadLabel = openRollRun.adaptiveReadLabel;
 const initialOpenRollReadRoute = structuredClone(openRollRun.adaptiveReadRoute);
 assert.deepEqual(openRollReadDraft, openRollSnapshot, 'adaptive actions never enter the saved diagram');
-advance(openRollRun, openRollRun.actions.at(-1).durationMs + SIMULATION_STEP_MS);
-assert.equal(openRollRun.ballHandlerId, 2, 'an adaptive pass transfers possession at its completion boundary');
+const openRollPass = openRollRun.actions.at(-1);
+advanceUntil(openRollRun, () => caughtAt(openRollPass.transfer) != null, 5000);
+assert.equal(openRollPass.transfer.outcome.kind, 'caught', 'an adaptive pass records a confirmed catch');
+assert.equal(openRollPass.transfer.receiverId, 2);
+if (openRollRun.ballState.kind === 'pass-in-flight') {
+  assert.equal(openRollRun.ballState.transfer.giverId, 2, 'a subsequent adaptive pass may only release after the roller controlled the ball');
+  assert.equal(openRollRun.ballHandlerId, null);
+} else assert.equal(openRollRun.ballHandlerId, 2);
 assert.equal(openRollRun.frame.shotPhase, 'idle', 'the offense reevaluates its next option after the catch');
 advanceUntil(openRollRun, () => openRollRun.frame.shotPhase === 'setup');
 assert.equal(openRollRun.frame.shotPhase, 'setup', 'the shot starts after the adaptive pass arrives');
@@ -1514,12 +1521,12 @@ const pressureRun = createSimulationRun(passPressureDraft, pressureSettings);
 advance(pressureRun, 200);
 assert.equal(pressureRun.actions[0].execution.phase, 'transfer');
 assert.equal(pressureRun.zoneBallHandlerId, 3, 'zone pressure anticipates the actual pass recipient');
-assert.equal(pressureRun.ballHandlerId, 2, 'defensive anticipation never fabricates a completed catch');
+assert.equal(pressureRun.ballHandlerId, null, 'defensive anticipation never fabricates a completed catch');
 assert.equal(pressureRun.defensiveDriveThreatHandlerId, null, 'a pass is not treated as a controlled drive');
 const looseRuns = [passPressureDraft, { ...passPressureDraft, players: [...passPressureDraft.players].reverse() }]
   .map((draft) => createSimulationRun({ ...draft, arrows: [] }, pressureSettings));
 for (const run of looseRuns) {
-  run.ballHandlerId = null; run.ball = { x: 80, y: 75 };
+  run.ballState = placedBall({ x: 80, y: 75 }, null);
   advance(run, SIMULATION_STEP_MS);
   assert.equal(run.zoneBallHandlerId, 2, 'loose-ball defense follows ball evidence rather than roster position');
 }

@@ -128,6 +128,13 @@ planned start. Conflicting ownership and circular dependencies are diagnosed bef
 execution; failed prerequisites explain why dependent moves cannot start. Saved
 plays remain version 1. See [action dependencies](docs/playbook-action-dependencies.md).
 
+Ball control uses one shared state machine. Released passes have no controller;
+handoffs remain with their giver until the exchange is confirmed. Transfers record
+release, arrival, and catch/failure evidence. Failed passes leave a recoverable
+loose ball, while released shots no longer count as player possession. Counter Lab
+uses the same evidence and keeps ordinary pass transit separate from a lost opening.
+These behaviors apply in both builds. See [ball state](docs/playbook-ball-state.md).
+
 Both workspaces validate simulation settings before execution: strategies and
 schemes must be supported, automatic-action switches must be booleans, and
 intensity must be finite. Invalid updates leave the active run intact. Omitted

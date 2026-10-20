@@ -1,3 +1,4 @@
+import { caughtAt, failedTransfer } from "./ballState.ts";
 import type { PlaybookDraft, SimulationSettings } from "./types.ts";
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from "./types.ts";
 import { advanceSimulationState, createSimulationRun, observeCounterLabRun, pointDistanceFeet, prepareSimulationRun, SIMULATION_STEP_MS } from "./simulation.ts";
@@ -15,6 +16,9 @@ export function diagnoseOpenings(trace: CounterLabFrame[]) {
   let lost: number | null = null;
   for (const frame of trace) {
     if (frame.shotPhase === "air" || frame.shotPhase === "result") break;
+    // A released pass has no controller and therefore no actionable shot read.
+    // Transit alone is not evidence that an opening has been lost.
+    if (frame.ballPhase === "pass-in-flight") { pending = null; continue; }
     const best = Math.max(0, ...frame.opportunities.map((option) => option.quality));
     if (best >= 55) { peak = Math.max(peak, best); pending = null; }
     else if (peak >= 55 && best <= peak - 15) {
@@ -129,15 +133,15 @@ function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMo
         const previous = passes.get(action.arrow.id);
         passes.set(action.arrow.id, {
           actionId: action.arrow.id, sequence: action.sequence, actorId: action.actorId, playerId: action.recipientId,
-          status: action.transferCompletedAtMs != null ? "delivered" : action.transferFailed ? "failed" : "interrupted",
-          atMs: action.transferCompletedAtMs ?? action.transferFailedAtMs ?? action.startTime,
+          status: caughtAt(action.transfer) != null ? "delivered" : failedTransfer(action.transfer) ? "failed" : "interrupted",
+          atMs: caughtAt(action.transfer) ?? (action.transfer?.outcome.kind !== "pending" ? action.transfer?.outcome.atMs : undefined) ?? action.startTime,
           unsafeAtMs: previous?.unsafeAtMs ?? null, receiverGap: previous?.receiverGap ?? 0, laneGap: previous?.laneGap ?? 0,
         });
       }
-      if (action.adaptiveReadLabel && !action.transferFailed && !successfulReads.has(action.arrow.id)) {
+      if (action.adaptiveReadLabel && !failedTransfer(action.transfer) && !successfulReads.has(action.arrow.id)) {
         const actor = run.players.find((player) => player.id === action.actorId);
-        const success = action.transferCompletedAtMs != null || (action.arrow.kind === "movement" && action.execution?.phase === "completed" && actor && pointDistanceFeet(actor, action.arrow.end) <= .6);
-        if (success) successfulReads.set(action.arrow.id, action.transferCompletedAtMs ?? run.elapsedMs);
+        const success = caughtAt(action.transfer) != null || (action.arrow.kind === "movement" && action.execution?.phase === "completed" && actor && pointDistanceFeet(actor, action.arrow.end) <= .6);
+        if (success) successfulReads.set(action.arrow.id, caughtAt(action.transfer) ?? run.elapsedMs);
       }
     }
   }
@@ -150,7 +154,7 @@ function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMo
       if (pass && pass.unsafeAtMs == null) Object.assign(pass, { unsafeAtMs: run.elapsedMs, receiverGap: unsafe.receiverGap, laneGap: unsafe.laneGap });
     }
     const frame = observation.frame;
-    const sample: CounterLabFrame = { elapsedMs: run.elapsedMs, sequence: observation.sequence, action: observation.action, ballHandlerId: observation.ballHandlerId,
+    const sample: CounterLabFrame = { elapsedMs: run.elapsedMs, sequence: observation.sequence, action: observation.action, ballHandlerId: observation.ballHandlerId, ballPhase: observation.ballPhase,
       assignments: observation.assignments, opportunities: observation.opportunities, blockedPass: observation.blockedPass,
       involvedPlayerIds: observation.involvedPlayerIds, activeRoutes: observation.activeRoutes,
       players: frame.players, defenders: frame.defenders, ball: frame.ball, shotPhase: frame.shotPhase, execution: frame.execution };

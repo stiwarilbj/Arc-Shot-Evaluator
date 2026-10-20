@@ -1,3 +1,4 @@
+import { caughtAt } from "../frontend/src/features/playbook/ballState.ts";
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { coordinateMovement, createMovementBuffers, createMovementOrder, PLAYER_BODY_RADIUS_FEET } from '../frontend/src/features/playbook/coordinatedMovement.ts';
@@ -92,13 +93,17 @@ const handoff=draft([{id:1,x:40,y:60},{id:2,x:45,y:60}],[{id:'handoff',kind:'han
 const handoffRun=createSimulationRun(handoff,settings);let caught=false;
 for(let i=0;i<500&&handoffRun.elapsedMs<handoffRun.durationMs;i++) {
   advanceSimulationRun(handoffRun,SIMULATION_STEP_MS,handoffRun.settings);
-  if(handoffRun.actions[0].transferCompletedAtMs!=null&&!caught){caught=true;assert.equal(handoffRun.ballHandlerId,2);assert.ok(pointDistanceFeet(...handoffRun.players)<=2.8+1e-5,'handoff requires close participants');assert.ok(pointDistanceFeet(handoffRun.ball,handoffRun.players[1])<=1.1+1e-5,'handoff requires an actual catch');}
+  if(caughtAt(handoffRun.actions[0].transfer)!=null&&!caught){caught=true;assert.equal(handoffRun.ballHandlerId,2);assert.ok(pointDistanceFeet(...handoffRun.players)<=2.8+1e-5,'handoff requires close participants');assert.ok(pointDistanceFeet(handoffRun.ball,handoffRun.players[1])<=1.1+1e-5,'handoff requires an actual catch');}
 }
 assert.ok(caught,'reachable handoff completes');
 const distant=structuredClone(handoff);distant.players[0].x=10;distant.players[1].x=90;distant.ball.x=10;distant.arrows[0].start.x=10;distant.arrows[0].end.x=90;
-const distantRun=finish(createSimulationRun(distant,settings));
+const distantRun=createSimulationRun(distant,settings);
+for(let i=0;i<2000&&distantRun.actions[0].execution?.phase!=='obstructed';i++) advanceSimulationRun(distantRun,SIMULATION_STEP_MS,distantRun.settings);
 assert.equal(distantRun.actions[0].execution.phase,'obstructed','unreachable handoffs report obstruction');
 assert.equal(distantRun.ballHandlerId,1,'failed handoffs leave the ball with the giver');
+finish(distantRun);
+assert.equal(distantRun.frame.shooterId,1,'the actual giver may shoot after the failed handoff');
+assert.equal(distantRun.ballHandlerId,null,'a released shot is no longer possessed by its shooter');
 assert.ok(distantRun.actions.every(action=>(action.execution?.waitMs??0)<=1200+1e-6),'each action has its own bounded waiting allowance');
 const cadence=[];
 for(const hz of [30,60,120]) {

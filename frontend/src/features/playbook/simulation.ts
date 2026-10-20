@@ -1,4 +1,5 @@
 import { compileActionDependencies, type PlannedAction } from "./actionDependencies.ts";
+import { ballController, isShotBall, isTransferBall, placedBall, transitionBall, caughtAt, failedTransfer, copyTransfer, type BallPhase, type BallState, type TransferRecord } from "./ballState.ts";
 import { linearRoutePoint as lerpPoint, quadraticRoutePoint as quadraticPoint, perpendicularRouteControl } from "./routeGeometry.ts";
 import { coordinateMovement, createMovementBuffers, createMovementOrder, interpolatePosition, type MotionIntent, type MovementBuffers, type MovementOrder } from "./coordinatedMovement.ts";
 import type { CourtRoute } from "./arrowVisibility";
@@ -15,6 +16,7 @@ import {
 export type SimulationFrame = {
   execution?: ActionDiagnostic[];
   ballHandlerId?: number | null;
+  ballPhase?: BallPhase;
   routes: CourtRoute[];
   players: PlaybookMarker[];
   defenders: PlaybookMarker[];
@@ -39,6 +41,7 @@ export type SimulationFrame = {
 };
 
 export type ActionDiagnostic = {
+  transfer?: TransferRecord;
   actionId: string; sequence: number; actorId: number | null; recipientId: number | null; partnerId: number | null;
   setAtMs?: number; usedAtMs?: number; releasedAtMs?: number;
   phase: "pending" | "approach" | "set" | "use" | "release" | "transfer" | "completed" | "obstructed" | "conflict" | "interrupted";
@@ -63,10 +66,7 @@ type BoundAction = {
   adaptiveReadLabel?: string;
   partnerId?: number | null;
   partnerStart?: CourtPoint | null;
-  transferWaitMs?: number;
-  transferFailed?: boolean;
-  transferCompletedAtMs?: number;
-  transferFailedAtMs?: number;
+  transfer?: TransferRecord;
 };
 
 type Velocity = { x: number; y: number };
@@ -100,7 +100,6 @@ export type SimulationRun = {
   readonly switchedActions: Set<string>;
   readonly actionStarts: Map<string, CourtPoint>;
   readonly actionStartOverrides: Map<string, PositionOverride>;
-  readonly transferStarts: Map<string, CourtPoint>;
   readonly offBallAnchors: Map<number, CourtPoint>;
   readonly targetFilters: Map<string, CourtPoint>;
   readonly velocities: Map<string, Velocity>;
@@ -122,19 +121,18 @@ export type SimulationRun = {
   settings: SimulationSettings;
   players: PlaybookMarker[];
   defenders: PlaybookMarker[];
-  ball: CourtPoint | null;
-  ballHandlerId: number | null;
+  ballState: BallState;
+  readonly ball: CourtPoint | null;
+  readonly ballHandlerId: number | null;
   helpDefenderId: number | null;
   helpThreatEndedAtMs: number | null;
   defensiveDriveThreatUntilMs: number;
   defensiveDriveThreatHandlerId: number | null;
   elapsedMs: number;
   accumulatorMs: number;
-  ballVelocity: Velocity;
-  shotStart: CourtPoint | null;
-  shotPathOverride: PositionOverride | null;
-  shotShooterId: number | null;
-  shotQualityAtRelease: number;
+  readonly shotStart: CourtPoint | null;
+  readonly shotShooterId: number | null;
+  readonly shotQualityAtRelease: number;
   previousFrame: SimulationFrame;
   frame: SimulationFrame;
 };
@@ -1093,7 +1091,7 @@ function invalidateRunRoutes(run: SimulationRun) {
 function getRunRoutes(run: SimulationRun, hoop = HOOP_POINT): CourtRoute[] {
   const cached = runRouteCache.get(run);
   if (cached?.revision === run.routeRevision && cached.hoopX === hoop.x && cached.hoopY === hoop.y) return cached.routes;
-  const active = run.actions.filter((action) => actionIsObservable(action, run) && !action.transferFailed && run.elapsedMs + 1e-6 >= action.startTime && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
+  const active = run.actions.filter((action) => actionIsObservable(action, run) && !failedTransfer(action.transfer) && run.elapsedMs + 1e-6 >= action.startTime && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
   const routes = active.flatMap((action) => routesForAction(action, run, hoop));
   // Recorded recent movement exposes small receiving, spacing, and coasting
   // adjustments without introducing new actions or changing possession.
@@ -1120,7 +1118,7 @@ function getRunRoutes(run: SimulationRun, hoop = HOOP_POINT): CourtRoute[] {
   return routes;
 }
 function recordRouteHistory(run: SimulationRun) {
-  const supports = run.actions.filter((action) => !action.transferFailed && run.elapsedMs >= action.startTime - PASS_PREP_MS && run.elapsedMs < action.startTime + action.durationMs)
+  const supports = run.actions.filter((action) => !failedTransfer(action.transfer) && run.elapsedMs >= action.startTime - PASS_PREP_MS && run.elapsedMs < action.startTime + action.durationMs)
     .flatMap((action) => [action.partnerId, ...((action.onBall || (action.partnerId != null && action.partnerId === run.ballHandlerId)) ? [action.actorId] : []), ...(action.arrow.kind === "pass" || action.arrow.kind === "handoff" ? [action.actorId, action.recipientId] : [])]);
   const onBallIds = [...new Set([run.ballHandlerId, ...supports].filter((id): id is number => id != null))];
   run.routeHistory = [...(run.routeHistory ?? []).filter((sample) => run.elapsedMs - sample.atMs <= 300).slice(-23), { atMs: run.elapsedMs, players: run.players.map((p) => ({ ...p })), onBallIds }];
@@ -1131,6 +1129,7 @@ export type CounterLabObservation = {
   sequence: number | null;
   action: string | null;
   ballHandlerId: number | null;
+  ballPhase: BallPhase;
   assignments: Array<{ defenderId: number; playerId: number }>;
   opportunities: Array<{ kind: LiveReadChoice["kind"]; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number }>;
   blockedPass: { actionId: string; sequence: number; playerId: number; receiverGap: number; laneGap: number } | null;
@@ -1146,7 +1145,7 @@ export type CounterLabObservation = {
 export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): CounterLabObservation {
   refreshSimulationAttributes(run.attributes, run.players, run.defenders);
   const { choices } = liveReadChoices(run, hoop);
-  const activeActions = run.actions.filter((candidate) => actionIsObservable(candidate, run) && !candidate.transferFailed
+  const activeActions = run.actions.filter((candidate) => actionIsObservable(candidate, run) && !failedTransfer(candidate.transfer)
     && run.elapsedMs >= candidate.startTime - 1e-6
     && run.elapsedMs < candidate.startTime + candidate.durationMs + 1e-6);
   const action = activeActions.find((candidate) => !candidate.automatic && !candidate.adaptiveReadLabel) ?? activeActions[0] ?? null;
@@ -1167,6 +1166,7 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
     sequence: action?.sequence ?? null,
     action: activeActions.length ? [...new Set(activeActions.map(autoActionLabel))].join(" · ") : null,
     ballHandlerId: run.ballHandlerId,
+    ballPhase: run.ballState.kind,
     assignments: [...run.assignments].map(([defenderId, playerId]) => ({ defenderId, playerId })),
     opportunities: choices.map((choice) => ({
       kind: choice.kind,
@@ -1188,13 +1188,18 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
       defenders: run.frame.defenders.map(({ id, x, y }) => ({ id, x, y })),
       ball: run.frame.ball ? { ...run.frame.ball } : null,
       shotPhase: run.frame.shotPhase,
-      execution: run.frame.execution?.map((action) => ({ ...action })),
+      execution: run.frame.execution?.map((action) => ({ ...action, ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) })),
     },
   };
 }
 
 function stopAuthoredActionsAt(run: SimulationRun, timeMs: number) {
   const hasContinuation = run.adaptiveContinuationStartedAtMs != null;
+  const ball = run.ballState;
+  if (isTransferBall(ball)) {
+    run.ballState = transitionBall(ball, { kind: "interrupt", atMs: timeMs,
+      reason: "An adaptive read interrupted the transfer.", giverPosition: markerForId(run.players, ball.transfer.giverId) ?? undefined });
+  }
   run.actions = run.actions.flatMap((action) => {
     if (action.startTime >= timeMs - 1e-6) return [];
     const endTime = action.startTime + action.durationMs;
@@ -1217,15 +1222,14 @@ function stopAuthoredActionsAt(run: SimulationRun, timeMs: number) {
   run.nextEarlyReadMs = timeMs + EARLY_READ_INTERVAL_MS;
 }
 
-function beginShot(run: SimulationRun, player: PlaybookMarker, hoop: CourtPoint) {
-  run.actionDurationMs = run.elapsedMs;
-  run.durationMs = run.actionDurationMs + run.shotDurationMs;
-  run.ballHandlerId = player.id;
-  run.ball = { x: player.x, y: player.y };
-  run.shotStart = { x: player.x, y: player.y };
-  run.shotShooterId = player.id;
-  const offBall = calculateOffBallQuality(run.players, run.shotStart, run.settings, run.defenders, player.id);
-  run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, player, offBall, hoop, badgeShotContext(run, player, run.elapsedMs));
+function beginShot(run: SimulationRun, player: PlaybookMarker, hoop: CourtPoint, atMs = run.elapsedMs) {
+  if (run.ballState.kind !== "held" || run.ballHandlerId !== player.id) return false;
+  const offBall = calculateOffBallQuality(run.players, run.ball, run.settings, run.defenders, player.id);
+  const quality = calculateShotQuality(run.players, run.defenders, player, offBall, hoop, badgeShotContext(run, player, atMs));
+  run.ballState = transitionBall(run.ballState, { kind: "shot", shooterId: player.id, atMs, durationMs: run.shotDurationMs, quality });
+  run.actionDurationMs = atMs;
+  run.durationMs = atMs + run.shotDurationMs;
+  return true;
 }
 
 function readReason(choice: LiveReadChoice, handler: PlaybookMarker, hoop: CourtPoint) {
@@ -1422,7 +1426,7 @@ function velocityKey(kind: "player" | "defender", id: number) {
 function copyFrame(frame: SimulationFrame): SimulationFrame {
   return {
     ...frame,
-    execution: frame.execution?.map((action) => ({ ...action })),
+    execution: frame.execution?.map((action) => ({ ...action, ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) })),
     routes: frame.routes.map((route) => ({ ...route, start: { ...route.start }, end: { ...route.end }, control: route.control ? { ...route.control } : undefined, via: route.via ? { ...route.via } : undefined, points: route.points?.map((point) => ({ ...point })) })),
     players: frame.players.map((player) => ({ ...player })),
     defenders: frame.defenders.map((defender) => ({ ...defender })),
@@ -1438,7 +1442,7 @@ function copyFrame(frame: SimulationFrame): SimulationFrame {
 }
 
 function frameFor(run: SimulationRun): SimulationFrame {
-  const activeActions = run.actions.filter((action) => actionIsObservable(action, run) && !action.transferFailed
+  const activeActions = run.actions.filter((action) => actionIsObservable(action, run) && !failedTransfer(action.transfer)
     && run.elapsedMs + 1e-6 >= action.startTime
     && run.elapsedMs < action.startTime + action.durationMs - 1e-6);
   const activeAction = activeActions.find((action) => !action.automatic) ?? activeActions[0];
@@ -1447,18 +1451,14 @@ function frameFor(run: SimulationRun): SimulationFrame {
   const shotProgress = run.shotStart
     ? clamp(shotElapsed / run.shotDurationMs, 0, 1)
     : 0;
-  const shotPhase: SimulationFrame["shotPhase"] = !run.shotStart
-    ? "idle"
-    : shotProgress < 0.18
-      ? "setup"
-      : shotProgress < 0.84
-        ? "air"
-        : "result";
+  const shotPhase: SimulationFrame["shotPhase"] = run.ballState.kind === "shot-setup" ? "setup"
+    : run.ballState.kind === "shot-in-flight" ? "air" : run.ballState.kind === "shot-result" ? "result" : "idle";
   const shooter = markerForId(run.players, run.shotShooterId ?? run.ballHandlerId);
   const shotQuality = shooter ? run.shotQualityAtRelease || calculateShotQuality(run.players, run.defenders, shooter, 70) : 0;
   return {
     execution: actionDiagnostics(run),
     ballHandlerId: run.ballHandlerId,
+    ballPhase: run.ballState.kind,
     players: run.players.map((player) => ({ ...player })),
     defenders: run.defenders.map((defender) => ({ ...defender })),
     ball: run.ball ? { ...run.ball } : null,
@@ -1537,6 +1537,7 @@ export function prepareSimulationRun(source: PlaybookDraft) {
         ...action,
         plan: action.plan ? structuredClone(action.plan) : undefined,
         ...(action.execution ? { execution: structuredClone(action.execution) } : {}),
+        ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}),
         arrow: copy.arrows[arrowIndices[index]],
         plannedStart: action.plannedStart ? { ...action.plannedStart } : null,
         recipientStart: action.recipientStart ? { ...action.recipientStart } : null,
@@ -1656,7 +1657,6 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     switchedActions: new Set(),
     actionStarts: new Map(),
     actionStartOverrides: new Map(),
-    transferStarts: new Map(),
     offBallAnchors: new Map(players.map((player) => [player.id, { x: player.x, y: player.y }])),
     targetFilters: new Map(),
     velocities: new Map(),
@@ -1667,19 +1667,18 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     settings: runSettings,
     players,
     defenders,
-    ball,
-    ballHandlerId,
+    ballState: placedBall(ball, ballHandlerId),
+    get ball() { return this.ballState.position; },
+    get ballHandlerId() { return ballController(this.ballState); },
+    get shotStart() { return isShotBall(this.ballState) ? this.ballState.start : null; },
+    get shotShooterId() { return isShotBall(this.ballState) ? this.ballState.shooterId : null; },
+    get shotQualityAtRelease() { return isShotBall(this.ballState) ? this.ballState.quality : 0; },
     helpDefenderId: null,
     helpThreatEndedAtMs: null,
     defensiveDriveThreatUntilMs: 0,
     defensiveDriveThreatHandlerId: initialHandlerId,
     elapsedMs: 0,
     accumulatorMs: 0,
-    ballVelocity: { x: 0, y: 0 },
-    shotStart: null,
-    shotPathOverride: null,
-    shotShooterId: null,
-    shotQualityAtRelease: 0,
     previousFrame: createInitialFrame(),
     shotDurationMs: SIMULATION_SHOT_MS,
     plannedActionDurationMs: actionDurationMs,
@@ -1718,7 +1717,7 @@ export function getSimulationFrame(run: SimulationRun) {
   const previousPlayers = new Map(run.previousFrame.players.map((player) => [player.id, player]));
   const previousDefenders = new Map(run.previousFrame.defenders.map((defender) => [defender.id, defender]));
   const current = copyFrame(run.frame);
-  if (run.previousFrame.activeSequence !== current.activeSequence || run.previousFrame.activeActionLabel !== current.activeActionLabel || run.previousFrame.ballHandlerId !== current.ballHandlerId) return current;
+  if (run.previousFrame.activeSequence !== current.activeSequence || run.previousFrame.activeActionLabel !== current.activeActionLabel || run.previousFrame.ballHandlerId !== current.ballHandlerId || run.previousFrame.ballPhase !== current.ballPhase) return current;
   current.players = current.players.map((player) => {
     const previous = previousPlayers.get(player.id);
     return previous ? { ...player, ...interpolatePosition(previous, player, progress) } : player;
@@ -1798,11 +1797,14 @@ function processActionStart(run: SimulationRun, action: BoundAction) {
   const state = executionFor(action);
   state.startedAtMs = run.elapsedMs;
   state.phase = action.arrow.kind === "pass" || action.arrow.kind === "handoff" ? "transfer" : "approach";
-  // Legacy transfers were bound once during ingestion of the diagram. Check
-  // actual possession instead of granting the expected player a phantom ball.
-  if ((action.arrow.kind === "pass" || action.arrow.kind === "handoff") && (action.actorId !== run.ballHandlerId || action.actorId == null || action.actorId === action.recipientId)) {
-    state.phase = "obstructed"; state.notice = action.actorId === action.recipientId ? "A transfer needs a different receiver." : "The intended passer does not hold the ball.";
-    state.completedAtMs = run.elapsedMs; action.transferFailed = true; action.transferFailedAtMs = run.elapsedMs;
+  if (action.arrow.kind === "pass" || action.arrow.kind === "handoff") {
+    if (run.ballState.kind !== "held" || action.actorId !== run.ballHandlerId || action.actorId == null
+      || action.actorId === action.recipientId || action.recipientId == null || !markerForId(run.players, action.recipientId)) {
+      blockAction(run, action, "obstructed", "The intended passer cannot transfer the ball in its current state.", run.elapsedMs);
+      return;
+    }
+    const record = transferFor(action);
+    run.ballState = transitionBall(run.ballState, { kind: "transfer", record, atMs: run.elapsedMs });
   }
   if (action.partnerId != null && action.partnerId !== run.ballHandlerId) {
     action.partnerId = run.ballHandlerId;
@@ -1825,21 +1827,14 @@ function currentActionAt(run: SimulationRun, timeMs: number) {
   return run.actions.find((action) => actionIsExecuting(action) && timeMs >= action.startTime - 1e-6 && timeMs < action.startTime + action.durationMs + 1e-6) ?? null;
 }
 
-function currentTransferAt(run: SimulationRun, timeMs: number) {
-  return run.actions.find((action) =>
-    (action.arrow.kind === "pass" || action.arrow.kind === "handoff")
-    && action.recipientId != null
-    && actionIsExecuting(action)
-    && !action.transferFailed
-    && action.transferCompletedAtMs == null
-    && timeMs >= action.startTime - 1e-6
-    && timeMs < action.startTime + action.durationMs + 1e-6,
-  ) ?? null;
+function currentTransferAt(run: SimulationRun, _timeMs: number) {
+  const state = run.ballState;
+  return isTransferBall(state) ? run.actionGraph.get(state.transfer.actionKey) ?? null : null;
 }
 
 function currentPrepAt(run: SimulationRun, timeMs: number) {
   return run.actions.find((action) => {
-    if (!actionIsMoving(action) || action.recipientId == null || action.transferFailed || (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff")) return false;
+    if (!actionIsMoving(action) || action.recipientId == null || failedTransfer(action.transfer) || (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff")) return false;
     const prepWindow = Math.min(PASS_PREP_MS, Math.max(180, action.durationMs * 0.42));
     return timeMs >= Math.max(0, action.startTime - prepWindow) && timeMs < action.startTime;
   }) ?? null;
@@ -1879,7 +1874,7 @@ function coverageDefenderIndex(run: SimulationRun, playerId: number, excluded = 
 function screenCoverageActionsAt(run: SimulationRun, timeMs: number) {
   return run.actions
     .filter((action) => {
-      if (action.transferFailed || !actionIsExecuting(action)) return false;
+      if (failedTransfer(action.transfer) || !actionIsExecuting(action)) return false;
       const kind = action.arrow.kind;
       if (kind === "slip-screen") return false;
       if (kind === "handoff" && (isManScheme(run.activeDefenseScheme) || run.settings.defenseStrategy !== "switch")) return false;
@@ -2055,15 +2050,6 @@ function recordActionStarts(run: SimulationRun, timeMs: number) {
   });
 }
 
-function activeTransferStart(run: SimulationRun, action: BoundAction) {
-  const override = run.actionStartOverrides.get("ball:" + action.arrow.id);
-  if (override) return override.point;
-  const existing = run.transferStarts.get(action.arrow.id);
-  if (existing) return existing;
-  const start = run.ball ? { ...run.ball } : action.arrow.start;
-  run.transferStarts.set(action.arrow.id, start);
-  return start;
-}
 
 function offBallTarget(run: SimulationRun, player: PlaybookMarker, ball: CourtPoint, timeMs: number, driveThreat: boolean, hoop: CourtPoint) {
   const anchor = run.offBallAnchors.get(player.id) ?? player;
@@ -2574,9 +2560,9 @@ function coastMarker(run: SimulationRun, kind: "player" | "defender", marker: Pl
 
 function integrateBall(run: SimulationRun, target: CourtPoint, dt: number) {
   const current = run.ball ?? target;
-  const moved = moveToward(current, target, run.ballVelocity, BALL_MAX_SPEED_FT_PER_SECOND, BALL_ACCELERATION_FT_PER_SECOND, dt);
-  run.ball = moved.point;
-  run.ballVelocity = moved.velocity;
+  const moved = moveToward(current, target, run.ballState.velocity, BALL_MAX_SPEED_FT_PER_SECOND, BALL_ACCELERATION_FT_PER_SECOND, dt);
+  run.ballState.position = moved.point;
+  run.ballState.velocity = moved.velocity;
 }
 
 function executionFor(action: BoundAction): ActionRuntime {
@@ -2584,10 +2570,16 @@ function executionFor(action: BoundAction): ActionRuntime {
     recipientId: action.recipientId, partnerId: action.partnerId ?? null,
     phase: "pending", startedAtMs: null, completedAtMs: null, progress: 0, notice: null, paths: new Map(), waitMs: 0 };
 }
+function transferFor(action: BoundAction): TransferRecord {
+  if (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") throw new Error("Only transfers have ball evidence.");
+  return action.transfer ??= { actionKey: action.plan?.key ?? `${action.arrow.id}:${action.sequence}`,
+    kind: action.arrow.kind, giverId: action.actorId, receiverId: action.recipientId,
+    release: null, arrival: null, outcome: { kind: "pending" } };
+}
 function actionDiagnostics(run: SimulationRun): ActionDiagnostic[] {
   return run.actions.filter((action) => action.execution).map((action) => {
     const { actionId, sequence, actorId, recipientId, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs } = action.execution!;
-    return { actionId, sequence, actorId, recipientId, partnerId: action.partnerId ?? null, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs };
+    return { actionId, sequence, actorId, recipientId, partnerId: action.partnerId ?? null, phase, startedAtMs, completedAtMs, progress, notice, setAtMs, usedAtMs, releasedAtMs, ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) };
   });
 }
 function actionIsMoving(action: BoundAction) {
@@ -2614,7 +2606,7 @@ function attachActionPlans(actions: BoundAction[], initialHandlerId: number | nu
       const state = executionFor(action), failure = action.plan!.failure!;
       state.phase = failure.phase; state.notice = failure.notice; state.completedAtMs = 0;
       if (action.arrow.kind === "pass" || action.arrow.kind === "handoff") {
-        action.transferFailed = true; action.transferFailedAtMs = 0;
+        transferFor(action).outcome = { kind: "failed", atMs: 0, reason: failure.notice };
       }
     }
     graph.set(action.plan!.key, action);
@@ -2625,7 +2617,13 @@ function blockAction(run: SimulationRun, action: BoundAction, phase: "conflict" 
   const state = executionFor(action);
   state.phase = phase; state.notice = notice; state.completedAtMs = atMs;
   if (action.arrow.kind === "pass" || action.arrow.kind === "handoff") {
-    action.transferFailed = true; action.transferFailedAtMs = atMs;
+    const ball = run.ballState;
+    if (isTransferBall(ball) && ball.transfer.actionKey === action.plan?.key) {
+      run.ballState = transitionBall(ball, { kind: "fail", atMs, reason: notice,
+        giverPosition: markerForId(run.players, ball.transfer.giverId) ?? undefined });
+    } else if (transferFor(action).outcome.kind === "pending") {
+      transferFor(action).outcome = { kind: "failed", atMs, reason: notice };
+    }
   }
   invalidateRunRoutes(run);
 }
@@ -2641,7 +2639,7 @@ function refreshActionSchedule(run: SimulationRun) {
       for (const edge of action.plan.dependencies) {
         const prior = run.actionGraph.get(edge.key);
         if (prior) start = Math.max(start, edge.milestone === "catch"
-          ? prior.transferCompletedAtMs ?? prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs
+          ? caughtAt(prior.transfer) ?? prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs
           : prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs);
       }
       start = Math.max(start, action.execution?.notice ? run.elapsedMs : 0);
@@ -2665,7 +2663,7 @@ function startReadyActions(run: SimulationRun, atMs: number) {
         blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: prerequisite ${prior ? `move ${prior.sequence}` : edge.key} did not complete.`, atMs);
         break;
       }
-      if (edge.milestone === "catch" ? prior.transferCompletedAtMs == null : prior.execution?.phase !== "completed") waiting ??= prior;
+      if (edge.milestone === "catch" ? caughtAt(prior.transfer) == null : prior.execution?.phase !== "completed") waiting ??= prior;
     }
     if (action.startTime > atMs + 1e-6) {
       if (waiting && action.plan!.nominalStartMs <= atMs + 1e-6 && actionIsMoving(action)) {
@@ -2844,7 +2842,7 @@ function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
       if (receiver) target = pointToward(receiver, player, 2.2);
       maxSpeed = OFF_BALL_MAX_SPEED_FT_PER_SECOND; authoredTarget = true;
     } else if (run.ballHandlerId !== player.id) {
-      const recoveringId = run.ballHandlerId == null && run.settings.offenseMode !== "scripted" && run.ball ? run.players.slice().sort((a, b) => pointDistanceFeet(a, ball) - pointDistanceFeet(b, ball) || a.id - b.id)[0]?.id : null;
+      const recoveringId = run.ballState.kind === "loose" && run.settings.offenseMode !== "scripted" && run.ball ? run.players.slice().sort((a, b) => pointDistanceFeet(a, ball) - pointDistanceFeet(b, ball) || a.id - b.id)[0]?.id : null;
       target = recoveringId === player.id ? ball : offBallTarget(run, player, ball, timeMs, drive, hoop);
     }
     if (!target) { run.targetFilters.delete(velocityKey("player", player.id)); return coastMarker(run, "player", player, dt, OFFENSE_ACCELERATION_FT_PER_SECOND); }
@@ -2880,48 +2878,64 @@ function coordinateCourt(run: SimulationRun, dt: number) {
   run.motionIntents = undefined;
 }
 
+/** Reconcile external edits/missing participants before any new action claims possession. */
+function reconcileBall(run: SimulationRun, atMs: number) {
+  const ball = run.ballState;
+  if ((ball.kind === "held" || ball.kind === "shot-setup") && !markerForId(run.players, ballController(ball))) {
+    run.ballState = transitionBall(ball, { kind: "drop", atMs });
+  } else if (isTransferBall(ball)) {
+    const action = run.actionGraph.get(ball.transfer.actionKey);
+    const giver = markerForId(run.players, ball.transfer.giverId);
+    const receiver = markerForId(run.players, ball.transfer.receiverId);
+    if (!action || !actionIsExecuting(action)) {
+      run.ballState = transitionBall(ball, { kind: "interrupt", atMs, reason: "The active transfer was interrupted.", giverPosition: giver ?? undefined });
+      if (action) {
+        const execution = executionFor(action);
+        execution.phase = "interrupted"; execution.completedAtMs = atMs;
+        execution.notice = "The active transfer was interrupted.";
+      }
+    } else if (!receiver || ball.kind === "handoff-pending" && !giver) {
+      blockAction(run, action, "obstructed", !receiver ? "The selected receiver is unavailable." : "The handoff giver is unavailable.", atMs);
+    }
+  }
+}
+
 function updateBall(run: SimulationRun, timeMs: number, dt: number) {
-  const transfer = currentTransferAt(run, timeMs);
-  if (transfer) {
-    if (transfer.arrow.kind === "handoff") {
-      const giver = markerForId(run.players, transfer.actorId), receiver = markerForId(run.players, transfer.recipientId);
+  const ball = run.ballState;
+  if (isTransferBall(ball)) {
+    const transfer = currentTransferAt(run, timeMs)!;
+    const giver = markerForId(run.players, ball.transfer.giverId), receiver = markerForId(run.players, ball.transfer.receiverId);
+    if (ball.kind === "handoff-pending") {
       if (!giver || !receiver || pointDistanceFeet(giver, receiver) > 2.8) {
-        if (giver) run.ball = { x: giver.x, y: giver.y };
-        run.ballVelocity = { x: 0, y: 0 };
+        if (giver) ball.position = { x: giver.x, y: giver.y };
+        ball.velocity = { x: 0, y: 0 };
         return;
       }
-      switchAtInteraction(run, transfer, transfer.recipientId);
+      switchAtInteraction(run, transfer, ball.transfer.receiverId);
     }
-    const start = activeTransferStart(run, transfer);
-    const startOverride = run.actionStartOverrides.get("ball:" + transfer.arrow.id);
-    const startTime = startOverride?.atMs ?? transfer.startTime;
-    const progress = clamp((timeMs - startTime) / (transfer.startTime + transfer.durationMs - startTime), 0, 1);
-    const pathAction = { ...transfer, plannedStart: start, controlOffset: transfer.controlOffset };
-    const receiver = markerForId(run.players, transfer.recipientId);
-    const target = routePoint(pathAction, start, easeInOut(progress), receiver ?? transfer.arrow.end);
-    integrateBall(run, target, dt);
+    const origin = ball.pathOverride ?? ball.transfer.release ?? { atMs: transfer.startTime, position: ball.position };
+    const progress = clamp((timeMs - origin.atMs) / Math.max(1, transfer.startTime + transfer.durationMs - origin.atMs), 0, 1);
+    const pathAction = { ...transfer, plannedStart: origin.position, controlOffset: transfer.controlOffset };
+    integrateBall(run, routePoint(pathAction, origin.position, easeInOut(progress), receiver ?? transfer.arrow.end), dt);
     return;
   }
-  const handler = markerForId(run.players, run.ballHandlerId);
-  if (handler) {
-    run.ball = { x: handler.x, y: handler.y };
-    run.ballVelocity = { x: 0, y: 0 };
+  if (ball.kind === "held") {
+    const handler = markerForId(run.players, ball.holderId);
+    if (handler) ball.position = { x: handler.x, y: handler.y };
+    ball.velocity = { x: 0, y: 0 };
     return;
   }
-  const looseBall = run.ball;
-  if (!looseBall || !run.players.length) return;
-  const recovery = run.players
-    .map((player) => ({ player, gap: pointDistanceFeet(looseBall, player) }))
+  if (ball.kind !== "loose" || !ball.position) return;
+  const recovery = run.players.map((player) => ({ player, gap: pointDistanceFeet(ball.position!, player) }))
     .sort((a, b) => a.gap - b.gap || a.player.id - b.player.id)[0];
-  if (recovery.gap <= LOOSE_BALL_CATCH_RADIUS_FEET) {
-    run.ballHandlerId = recovery.player.id;
+  if (recovery && run.elapsedMs > ball.sinceMs + 1e-6 && recovery.gap <= LOOSE_BALL_CATCH_RADIUS_FEET) {
+    run.ballState = transitionBall(ball, { kind: "recover", playerId: recovery.player.id, position: recovery.player });
     run.offBallAnchors.set(recovery.player.id, { x: recovery.player.x, y: recovery.player.y });
-    run.ballVelocity = { x: 0, y: 0 };
   } else {
-    const speed = Math.hypot(run.ballVelocity.x, run.ballVelocity.y), nextSpeed = Math.max(0, speed - BALL_ACCELERATION_FT_PER_SECOND * dt);
+    const speed = Math.hypot(ball.velocity.x, ball.velocity.y), nextSpeed = Math.max(0, speed - BALL_ACCELERATION_FT_PER_SECOND * dt);
     if (speed > .01) {
-      run.ball = addFeet(looseBall, { x: run.ballVelocity.x / speed * nextSpeed * dt, y: run.ballVelocity.y / speed * nextSpeed * dt });
-      run.ballVelocity = { x: run.ballVelocity.x / speed * nextSpeed, y: run.ballVelocity.y / speed * nextSpeed };
+      ball.position = addFeet(ball.position, { x: ball.velocity.x / speed * nextSpeed * dt, y: ball.velocity.y / speed * nextSpeed * dt });
+      ball.velocity = { x: ball.velocity.x / speed * nextSpeed, y: ball.velocity.y / speed * nextSpeed };
     }
   }
 }
@@ -3138,25 +3152,30 @@ function parabolicPoint(start: CourtPoint, end: CourtPoint, amount: number) {
   }));
 }
 
-function updateShot(run: SimulationRun, timeMs: number, dt: number, hoop: CourtPoint) {
-  if (!run.shotStart) {
+function updateShot(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
+  if (!isShotBall(run.ballState)) {
     const shooter = markerForId(run.players, run.ballHandlerId);
-    if (!shooter) {
+    if (!shooter || !beginShot(run, shooter, hoop, timeMs)) {
       run.adaptiveReadLabel = "No controlled shot";
       run.adaptiveReadReason = "No player controlled the ball when the possession ended.";
       return;
     }
-    run.shotStart = run.ball ? { ...run.ball } : { x: shooter.x, y: shooter.y };
-    run.shotShooterId = shooter.id;
-    const offBall = calculateOffBallQuality(run.players, run.shotStart, run.settings, run.defenders, shooter.id);
-    run.shotQualityAtRelease = calculateShotQuality(run.players, run.defenders, shooter, offBall, hoop, badgeShotContext(run, shooter, timeMs));
   }
-  const path = run.shotPathOverride;
-  const pathStartTime = path ? Math.max(run.actionDurationMs, path.atMs) : run.actionDurationMs;
-  const pathStart = path?.point ?? run.shotStart;
-  const shotProgress = clamp((timeMs - pathStartTime) / Math.max(1, run.actionDurationMs + run.shotDurationMs - pathStartTime), 0, 1);
-  run.ball = parabolicPoint(pathStart, hoop, shotProgress);
-
+  let ball = run.ballState;
+  if (!isShotBall(ball)) return;
+  if (ball.kind === "shot-setup") {
+    const shooter = markerForId(run.players, ball.shooterId);
+    if (shooter && !ball.pathOverride) ball.position = { x: shooter.x, y: shooter.y };
+    if (timeMs + 1e-6 < ball.releaseAtMs) return;
+    ball = run.ballState = transitionBall(ball, { kind: "release-shot", atMs: timeMs });
+  }
+  if (!isShotBall(ball)) return;
+  if (ball.kind === "shot-in-flight") {
+    const origin = ball.pathOverride ? { ...ball.pathOverride, atMs: Math.max(ball.releaseAtMs, ball.pathOverride.atMs) } : { atMs: ball.releaseAtMs, position: ball.start };
+    const progress = clamp((timeMs - origin.atMs) / Math.max(1, ball.resultAtMs - origin.atMs), 0, 1);
+    ball.position = parabolicPoint(origin.position, hoop, progress);
+    if (timeMs + 1e-6 >= ball.resultAtMs) run.ballState = transitionBall(ball, { kind: "finish-shot", atMs: timeMs });
+  }
 }
 
 function nextTimeBoundary(run: SimulationRun, stepEnd: number) {
@@ -3166,6 +3185,11 @@ function nextTimeBoundary(run: SimulationRun, stepEnd: number) {
     const endTime = action.startTime + action.durationMs;
     if (action.startTime > afterElapsed) nextActionBoundary = Math.min(nextActionBoundary, action.startTime);
     if (endTime > afterElapsed) nextActionBoundary = Math.min(nextActionBoundary, endTime);
+  }
+  const ball = run.ballState;
+  if (isShotBall(ball)) {
+    const boundary = ball.kind === "shot-setup" ? ball.releaseAtMs : ball.kind === "shot-in-flight" ? ball.resultAtMs : Infinity;
+    if (boundary > afterElapsed) nextActionBoundary = Math.min(nextActionBoundary, boundary);
   }
   const nextEarlyRead = !run.shotStart && run.nextEarlyReadMs > run.elapsedMs + 1e-6
     ? run.nextEarlyReadMs
@@ -3179,46 +3203,30 @@ function nextTimeBoundary(run: SimulationRun, stepEnd: number) {
   );
 }
 
-function transferBallToRecipient(run: SimulationRun, previousTime: number, nextTime: number, stepMs: number) {
-  const transfer = run.actions.find((action) =>
-    (action.arrow.kind === "pass" || action.arrow.kind === "handoff")
-    && action.recipientId != null
-    && actionIsExecuting(action)
-    && !action.transferFailed
-    && action.transferCompletedAtMs == null
-    && previousTime < action.startTime + action.durationMs
-    && nextTime >= action.startTime + action.durationMs - 1e-6,
-  );
-  if (!transfer?.recipientId) return;
-  const receiver = markerForId(run.players, transfer.recipientId);
-  if (!receiver) {
-    transfer.transferFailed = true;
-    transfer.transferFailedAtMs = nextTime;
-    const state = executionFor(transfer); state.phase = "obstructed"; state.completedAtMs = nextTime; state.notice = "The selected receiver is unavailable.";
-    if (transfer.arrow.kind !== "handoff") run.ballHandlerId = null;
+function transferBallToRecipient(run: SimulationRun, nextTime: number, stepMs: number) {
+  const ball = run.ballState;
+  if (!isTransferBall(ball)) return;
+  const transfer = currentTransferAt(run, nextTime)!;
+  const receiver = markerForId(run.players, ball.transfer.receiverId);
+  const giver = markerForId(run.players, ball.transfer.giverId);
+  if (!receiver || ball.kind === "handoff-pending" && !giver) {
+    blockAction(run, transfer, "obstructed", !receiver ? "The selected receiver is unavailable." : "The handoff giver is unavailable.", nextTime);
     return;
   }
-  const giver = markerForId(run.players, transfer.actorId);
-  const handoffReady = transfer.arrow.kind !== "handoff" || Boolean(giver && pointDistanceFeet(giver, receiver) <= 2.8);
-  if (handoffReady && run.ball && pointDistanceFeet(run.ball, receiver) <= TRANSFER_CATCH_RADIUS_FEET) {
-    transfer.transferCompletedAtMs = nextTime;
+  const ready = (ball.kind !== "handoff-pending" || giver && pointDistanceFeet(giver, receiver) <= 2.8)
+    && pointDistanceFeet(ball.position, receiver) <= TRANSFER_CATCH_RADIUS_FEET;
+  if (ready && ball.kind === "pass-in-flight") ball.transfer.arrival ??= { atMs: nextTime, position: { ...ball.position } };
+  if (nextTime < transfer.startTime + transfer.durationMs - 1e-6) return;
+  if (ready) {
+    run.ballState = transitionBall(ball, { kind: "catch", receiverId: receiver.id, atMs: nextTime,
+      position: receiver, giverPosition: giver ?? undefined });
     const state = executionFor(transfer); state.phase = "completed"; state.progress = 1; state.completedAtMs = nextTime;
-    run.ballHandlerId = receiver.id;
-    // Finish the catch at the receiver's live position. The bounded catch
-    // radius prevents a long snap while keeping the ball attached next tick.
-    run.ball = { x: receiver.x, y: receiver.y };
-    run.ballVelocity = { x: 0, y: 0 };
     run.lastReceiveAtMs.set(receiver.id, nextTime);
     run.offBallAnchors.set(receiver.id, { x: receiver.x, y: receiver.y });
     return;
   }
-
-  transfer.transferWaitMs = (transfer.transferWaitMs ?? 0) + stepMs;
   if (extendPhase(run, transfer, stepMs)) return;
-  transfer.transferFailed = true; transfer.transferFailedAtMs = nextTime;
-  const state = executionFor(transfer); state.phase = "obstructed"; state.completedAtMs = nextTime;
-  state.notice = transfer.arrow.kind === "handoff" ? "The players could not meet for the handoff." : "The receiver could not complete the catch.";
-  if (transfer.arrow.kind !== "handoff") run.ballHandlerId = null;
+  blockAction(run, transfer, "obstructed", ball.kind === "handoff-pending" ? "The players could not meet for the handoff." : "The receiver could not complete the catch.", nextTime);
 }
 
 function extendPhase(run: SimulationRun, action: BoundAction, delta: number) {
@@ -3259,6 +3267,7 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   const startTime = run.elapsedMs;
   const endTime = Math.min(run.durationMs, startTime + stepMs);
   const dt = (endTime - startTime) / 1000;
+  reconcileBall(run, startTime);
   startReadyActions(run, startTime);
   primeScreenCoverageLocks(run, startTime);
   recordActionStarts(run, startTime);
@@ -3269,20 +3278,16 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
     updateOffense(run, sampleTime, dt, hoop);
     updateDefense(run, sampleTime, dt, hoop);
     coordinateCourt(run, dt);
-    // Extend an uncaught transfer before sampling the ball path at the action
-    // boundary. Otherwise currentTransferAt sees the old end time and briefly
-    // snaps the ball back to its former handler while the pass waits to be caught.
-    // Event boundaries can split a fixed frame into a tiny slice. A missed
-    // pass must still advance its bounded retry window by at least one fixed
-    // frame, or each retry moves the boundary by a few microseconds forever.
-    transferBallToRecipient(run, startTime, endTime, Math.max(endTime - startTime, SIMULATION_FIXED_STEP_MS));
-    updateBall(run, sampleTime, dt);
+    // Motion first, then actual catch/failure, then dependent action starts.
+    updateBall(run, endTime, dt);
+    transferBallToRecipient(run, endTime, Math.max(endTime - startTime, SIMULATION_FIXED_STEP_MS));
     finalizeCompletedMovement(run, startTime, endTime);
   } else {
     run.players.forEach((player) => coastMarker(run, "player", player, dt, OFFENSE_ACCELERATION_FT_PER_SECOND));
     updateDefense(run, sampleTime, dt, hoop);
     coordinateCourt(run, dt);
-    updateShot(run, sampleTime, dt, hoop);
+    if (!isShotBall(run.ballState)) updateBall(run, endTime, dt);
+    updateShot(run, endTime, hoop);
   }
   run.elapsedMs = endTime;
   startReadyActions(run, endTime);
@@ -3339,6 +3344,19 @@ export function advanceSimulationRun(run: SimulationRun, deltaMs: number, settin
   return getSimulationFrame(run);
 }
 
+/** Paused relocation preserves active transfer/shot identity. A free placement
+ * only grants possession within the same catch radius used for loose balls. */
+function relocatePausedBall(run: SimulationRun, point: CourtPoint) {
+  const ball = run.ballState;
+  if (isTransferBall(ball) || isShotBall(ball)) {
+    ball.position = { ...point }; ball.velocity = { x: 0, y: 0 };
+    ball.pathOverride = { atMs: run.elapsedMs, position: { ...point } };
+  } else {
+    const nearest = run.players.slice().sort((a, b) => pointDistanceFeet(a, point) - pointDistanceFeet(b, point) || a.id - b.id)[0];
+    run.ballState = placedBall(point, nearest && pointDistanceFeet(nearest, point) <= LOOSE_BALL_CATCH_RADIUS_FEET ? nearest.id : null, run.elapsedMs);
+  }
+}
+
 export function editPausedSimulationMarker(
   run: SimulationRun,
   type: "player" | "defender" | "ball",
@@ -3362,9 +3380,9 @@ export function editPausedSimulationMarker(
     if (transfer?.recipientId === playerId) {
       run.recipientStartOverrides.set(transfer.arrow.id, { atMs: run.elapsedMs, point: { ...nextPoint } });
     }
-    if (run.ballHandlerId === playerId && !currentTransferAt(run, run.elapsedMs)) {
-      run.ball = { ...nextPoint };
-      run.ballVelocity = { x: 0, y: 0 };
+    if (run.ballState.kind === "held" && run.ballHandlerId === playerId) {
+      run.ballState.position = { ...nextPoint };
+      run.ballState.velocity = { x: 0, y: 0 };
     }
   } else if (type === "defender") {
     const defenderId = Number(id);
@@ -3372,15 +3390,7 @@ export function editPausedSimulationMarker(
     run.targetFilters.delete(velocityKey("defender", defenderId));
     run.velocities.set(velocityKey("defender", defenderId), { x: 0, y: 0 });
   } else {
-    run.ball = { ...nextPoint };
-    run.ballVelocity = { x: 0, y: 0 };
-    const handlerIndex = nearestPointIndex(run.players, nextPoint);
-    run.ballHandlerId = run.players[handlerIndex]?.id ?? null;
-    const transfer = currentTransferAt(run, run.elapsedMs);
-    if (transfer) run.actionStartOverrides.set("ball:" + transfer.arrow.id, { atMs: run.elapsedMs, point: { ...nextPoint } });
-    if (run.shotStart && run.elapsedMs >= run.actionDurationMs) {
-      run.shotPathOverride = { atMs: run.elapsedMs, point: { ...nextPoint } };
-    }
+    relocatePausedBall(run, nextPoint);
   }
   if (type === "player") {
     run.source.players = run.source.players.map((player) => player.id === Number(id) ? { ...player, ...nextPoint } : player);
@@ -3422,7 +3432,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
       if (receiverAction?.recipientId === player.id) {
         run.recipientStartOverrides.set(receiverAction.arrow.id, { atMs: run.elapsedMs, point: { x: edited.x, y: edited.y } });
       }
-      if (run.ballHandlerId === player.id && !currentTransferAt(run, run.elapsedMs)) run.ball = { x: edited.x, y: edited.y };
+      if (run.ballState.kind === "held" && run.ballHandlerId === player.id) run.ballState.position = { x: edited.x, y: edited.y };
       return { ...edited };
     }
     return player;
@@ -3439,14 +3449,7 @@ export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft,
     return defender;
   });
   if (ballChanged && draft.ball) {
-    run.ball = { ...draft.ball };
-    run.ballVelocity = { x: 0, y: 0 };
-    run.ballHandlerId = run.players[nearestPointIndex(run.players, draft.ball)]?.id ?? run.ballHandlerId;
-    const transfer = currentTransferAt(run, run.elapsedMs);
-    if (transfer) run.actionStartOverrides.set("ball:" + transfer.arrow.id, { atMs: run.elapsedMs, point: { ...draft.ball } });
-    if (run.shotStart && run.elapsedMs >= run.actionDurationMs) {
-      run.shotPathOverride = { atMs: run.elapsedMs, point: { ...draft.ball } };
-    }
+    relocatePausedBall(run, draft.ball);
   }
   run.source = structuredClone(draft);
   refreshSimulationAttributes(run.attributes, run.players, run.defenders);

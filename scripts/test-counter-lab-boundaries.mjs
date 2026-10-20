@@ -16,7 +16,7 @@ const simulation = mock.module(new URL('../frontend/src/features/playbook/simula
     players: structuredClone(draft.players), frame: { shotQuality: 50, execution: [] },
     actions: (scenario.passes ?? []).map((pass) => ({
       arrow: { id: pass.id, kind: 'pass' }, actorId: 1, recipientId: 2,
-      sequence: pass.sequence, startTime: 0, transferFailed: false,
+      sequence: pass.sequence, startTime: 0,
     })),
   }),
   advanceSimulationState: (run, step) => {
@@ -24,8 +24,7 @@ const simulation = mock.module(new URL('../frontend/src/features/playbook/simula
     for (const [i, action] of run.actions.entries()) {
       const pass = scenario.passes[i];
       if (run.elapsedMs >= pass.atMs) {
-        if (pass.delivered) action.transferCompletedAtMs = pass.atMs;
-        else { action.transferFailed = true; action.transferFailedAtMs = pass.atMs; }
+        action.transfer = { outcome: pass.delivered ? { kind: "caught", atMs: pass.atMs } : { kind: "failed", atMs: pass.atMs } };
       }
     }
     run.frame.execution = (scenario.execution ?? []).filter((action) => action.completedAtMs <= run.elapsedMs);

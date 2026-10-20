@@ -1,3 +1,4 @@
+import { BALL_PHASES, type BallPhase } from "./ballState.ts";
 import type { CounterLabFrame } from "./counterLabTypes.ts";
 import { unpackReplay, type ReplayArchive } from "./counterLabReplayArchive.ts";
 
@@ -47,6 +48,14 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
     const player = (id: unknown) => typeof id === "number" && players.has(id);
     const participant = (id: unknown) => id === null || player(id);
     check(participant(value.ballHandlerId));
+    if (value.ballPhase !== undefined) {
+      check(BALL_PHASES.includes(value.ballPhase as BallPhase));
+      const controlled = value.ballPhase === "held" || value.ballPhase === "handoff-pending" || value.ballPhase === "shot-setup";
+      check(controlled ? player(value.ballHandlerId) : value.ballHandlerId === null);
+      if (value.ballPhase !== "loose") check(point(value.ball));
+      const shotPhase = value.ballPhase === "shot-setup" ? "setup" : value.ballPhase === "shot-in-flight" ? "air" : value.ballPhase === "shot-result" ? "result" : "idle";
+      check(value.shotPhase === shotPhase);
+    }
     check(Array.isArray(value.assignments) && Array.isArray(value.opportunities) && Array.isArray(value.involvedPlayerIds) && Array.isArray(value.activeRoutes));
     for (const assignment of value.assignments) check(record(assignment) && defenders.has(assignment.defenderId as number) && player(assignment.playerId));
     for (const id of value.involvedPlayerIds) check(player(id));
@@ -74,6 +83,21 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
         check((action.setAtMs === undefined || clock(action.setAtMs)) && (action.usedAtMs === undefined || clock(action.usedAtMs))
           && (action.releasedAtMs === undefined || clock(action.releasedAtMs)));
         check(finite(action.progress) && (action.notice === null || typeof action.notice === "string"));
+        if (action.transfer !== undefined) {
+          const transfer = action.transfer;
+          check(record(transfer) && text(transfer.actionKey) && ["pass", "handoff"].includes(transfer.kind as string));
+          check(participant(transfer.giverId) && participant(transfer.receiverId));
+          const sample = (value: unknown) => record(value) && clock(value.atMs) && value.atMs <= previousTime + 1e-6 && point(value.position);
+          check(transfer.release === null || sample(transfer.release));
+          check(transfer.arrival === null || sample(transfer.arrival));
+          const outcome = transfer.outcome;
+          check(record(outcome) && ["pending", "caught", "failed", "interrupted"].includes(outcome.kind as string));
+          if (outcome.kind === "caught") {
+            check(sample(outcome) && record(transfer.release) && record(transfer.arrival));
+            check((transfer.release.atMs as number) <= (transfer.arrival.atMs as number) + 1e-6 && (transfer.arrival.atMs as number) <= (outcome.atMs as number) + 1e-6);
+            check(action.phase === "completed" && player(transfer.giverId) && player(transfer.receiverId) && transfer.giverId !== transfer.receiverId);
+          } else if (outcome.kind !== "pending") check(clock(outcome.atMs) && outcome.atMs <= previousTime + 1e-6 && text(outcome.reason));
+        }
       }
     }
   }

@@ -183,8 +183,12 @@ try {
       const baseline = simulate(normalizePlaybookPrecision(fixture.document), settings);
       const label = `${fixture.document.name}/${defenseStrategy}/${offenseMode}`;
       if (fixture.document.name === 'handoff-possession' && offenseMode === 'scripted') {
-        assert.equal(baseline.final.ballHandlerId, 8, 'the handoff fixture genuinely transfers possession');
-        assert.equal(baseline.final.execution.find(action => action.actionId === 'handoff')?.phase, 'completed');
+        const handoff = baseline.final.execution.find(action => action.actionId === 'handoff');
+        assert.equal(handoff?.phase, 'completed');
+        assert.equal(handoff.transfer.receiverId, 8, 'the handoff targets the recorded recipient');
+        assert.equal(handoff.transfer.outcome.kind, 'caught', 'the handoff fixture genuinely confirms a catch');
+        assert.equal(baseline.final.shotPhase, 'result');
+        assert.equal(baseline.final.ballHandlerId, null, 'a released shot no longer has a controller');
       }
       const first = simulate(hosted, settings);
       compareTrials(first, baseline, `${label}: hosted vs normalized source`);

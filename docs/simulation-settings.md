@@ -41,15 +41,17 @@ Run `npm run test:simulation-settings` from `frontend/`. The regression rejects
 malformed objects, enums, missing/non-boolean flags, and nonfinite intensity
 across direct/prepared/update/advance boundaries, including scripted overrides.
 It checks unchanged state on errors, retrying corrected inputs, caller isolation,
-defaults, and the unchanged-settings fast path. The dependency-engine fixture
+defaults, and the unchanged-settings fast path. The ball-state-engine fixture
 compares exact hashes of every recorded display/diagnostic sample through
 completion in 52 scenarios across all 24 starters, covering every
 strategy, scheme, off-ball style, flag combination, and representative intensities.
 The tests hold the random input for `auto` scheme selection fixed; ordinary
 automatic selection retains its existing randomness. Historical pre-validation
-hashes are retained alongside the dependency-engine hashes for before/after audits;
-the scheduler intentionally changes timing and failed-prerequisite outcomes.
-See [action dependencies](playbook-action-dependencies.md).
+hashes and dependency-engine hashes are retained for before/after audits.
+Dependency scheduling and authoritative ball control intentionally change timing,
+possession diagnostics, and some outcomes. See
+[action dependencies](playbook-action-dependencies.md) and
+[ball state](playbook-ball-state.md).
 
 ## Elapsed-time advancement
 

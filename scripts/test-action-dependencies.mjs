@@ -1,3 +1,4 @@
+import { caughtAt } from "../frontend/src/features/playbook/ballState.ts";
 import assert from 'node:assert/strict';
 import { compileActionDependencies, cyclicActionKeys } from '../frontend/src/features/playbook/actionDependencies.ts';
 import { createSimulationRun, prepareSimulationRun, advanceSimulationState, editPausedSimulationMarker, observeCounterLabRun } from '../frontend/src/features/playbook/simulation.ts';
@@ -35,9 +36,9 @@ assert.ok(handoff.durationMs > 1000, 'The fixture produces an actual delayed han
 assert.ok(Math.abs(independent.execution.startedAtMs - cutStart) < 1e-6, 'Unrelated cut retains its authored start despite the handoff delay');
 assert.equal(drive.execution?.startedAtMs ?? null, null, 'Recipient cannot drive before catching');
 assert.ok(drive.startTime > driveStart);
-until(run, () => handoff.transferCompletedAtMs != null);
+until(run, () => caughtAt(handoff.transfer) != null);
 until(run, () => drive.execution?.startedAtMs != null);
-assert.ok(drive.execution.startedAtMs >= handoff.transferCompletedAtMs);
+assert.ok(drive.execution.startedAtMs >= caughtAt(handoff.transfer));
 assert.equal(run.ballHandlerId, 2);
 assert.deepEqual(fixture, original, 'Runtime schedules never alter saved version-1 arrows');
 
@@ -98,15 +99,15 @@ const chain = createSimulationRun(play([
   arrow('finish', 'movement', 3, undefined, 3, { x: 60, y: 70 }, { x: 63, y: 62 }),
 ], [{ id: 1, x: 40, y: 70 }, { id: 2, x: 50, y: 70 }, { id: 3, x: 60, y: 70 }]), settings);
 until(chain, () => chain.actions[2].execution?.startedAtMs != null);
-assert.ok(chain.actions[1].execution.startedAtMs >= chain.actions[0].transferCompletedAtMs);
-assert.ok(chain.actions[2].execution.startedAtMs >= chain.actions[1].transferCompletedAtMs);
+assert.ok(chain.actions[1].execution.startedAtMs >= caughtAt(chain.actions[0].transfer));
+assert.ok(chain.actions[2].execution.startedAtMs >= caughtAt(chain.actions[1].transfer));
 
 const movingReceiver = createSimulationRun(play([
   arrow('pass', 'pass', 1, 2, 1, { x: 40, y: 70 }, { x: 54, y: 65 }, { timing: 2 }),
   arrow('receive-cut', 'movement', 2, undefined, 1, { x: 48, y: 70 }, { x: 54, y: 65 }, { timing: 2 }),
 ]), settings);
 assert.ok(movingReceiver.actions.every(action => !action.plan.failure), 'A simultaneous receiver route remains compatible with its pass');
-until(movingReceiver, () => movingReceiver.actions[0].transferCompletedAtMs != null);
+until(movingReceiver, () => caughtAt(movingReceiver.actions[0].transfer) != null);
 assert.equal(movingReceiver.actions[0].execution.startedAtMs, movingReceiver.actions[1].execution.startedAtMs);
 
 const screenPlay = play([

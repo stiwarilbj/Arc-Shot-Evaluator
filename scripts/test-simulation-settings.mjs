@@ -70,7 +70,7 @@ const scripted = createSimulationRun(source, { ...settings(), offenseMode: 'scri
 assert.equal(scripted.settings.offenseOffBall, 'off');
 assert.deepEqual(scripted.settings.automaticActions, { screen: false, handoff: false, pickRoll: false, offBallScreen: false });
 
-// Dependency-scheduler snapshots include every display/diagnostic sample.
+// Ball-state snapshots include every display/diagnostic sample.
 // Historical pre-validation hashes remain in the fixture for before/after audits.
 const baselineFile = JSON.parse(readFileSync(new URL('../tests/fixtures/simulation-settings-baseline.json', import.meta.url)));
 assert.equal(Math.random(), baselineFile.randomSample);
@@ -86,11 +86,11 @@ for (const fixture of baseline) {
   while (current.elapsedMs < current.durationMs) {
     advanceSimulationState(current, 50);
     hash.update(JSON.stringify([current.elapsedMs, current.durationMs, getSimulationFrame(current), observeCounterLabRun(current)]));
-    assert.ok(++steps <= fixture.dependenciesSteps);
+    assert.ok(++steps <= fixture.ballStateSteps);
   }
-  assert.equal(hash.digest('hex'), fixture.dependenciesSha256, `Exact dependency-engine replay/diagnostic equality: ${JSON.stringify(input)}`);
-  assert.equal(steps, fixture.dependenciesSteps);
+  assert.equal(hash.digest('hex'), fixture.ballStateSha256, `Exact ball-state-engine replay/diagnostic equality: ${JSON.stringify(input)}`);
+  assert.equal(steps, fixture.ballStateSteps);
   assert.deepEqual(input, fixture.settings);
 }
 Math.random = originalRandom;
-console.log(`Simulation settings passed: ${invalid.length} malformed inputs across direct/prepared/update/advance boundaries; unchanged state on failure, defaults, mutable caller inputs, scripted overrides and ${baseline.length} exact dependency-engine deterministic trials across all ${STARTER_PLAYS.length} starters`);
+console.log(`Simulation settings passed: ${invalid.length} malformed inputs across direct/prepared/update/advance boundaries; unchanged state on failure, defaults, mutable caller inputs, scripted overrides and ${baseline.length} exact ball-state-engine deterministic trials across all ${STARTER_PLAYS.length} starters`);

@@ -1,3 +1,4 @@
+import type { BallPhase } from "./ballState.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { ReplayArchive } from "./counterLabReplayArchive.ts";
 import type { CourtPoint, DefenseScheme, DefenseStrategy, PlaybookDraft } from "./types";
@@ -12,6 +13,7 @@ export type PassDiagnostic = {
 };
 export type CounterLabEvent = { kind: "opening-lost" | "failed-pass" | "obstructed-action" | "action-conflict"; atMs: number; sequence: number | null; actionId: string | null; playerId: number | null };
 export type CounterLabFrame = {
+  ballPhase?: BallPhase;
   elapsedMs: number; sequence: number | null; action: string | null; ballHandlerId: number | null;
   assignments: Array<{ defenderId: number; playerId: number }>;
   opportunities: Array<{ kind: "shot" | "pass" | "drive"; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number }>;
