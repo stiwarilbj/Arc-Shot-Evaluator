@@ -1,3 +1,4 @@
+import { validatePlaybookDocument } from "./documentValidation.ts";
 import { compareSavedPlaybooks } from "./playbookOrder";
 import { CreationAttemptError } from "./creationAttempt.ts";
 import { ArrowVisibilityControl, useArrowVisibility } from "./ArrowVisibilityControl";
@@ -468,43 +469,51 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setError(null);
   }
 
-  function commit(next: PlaybookDraft, previous = draft, options: { preserveSimulation?: boolean } = {}) {
-    if (isSameDraft(next, previous)) return;
-    const timelineChanged = JSON.stringify(previous.arrows) !== JSON.stringify(next.arrows);
-    const preserveSimulation = options.preserveSimulation ?? (simulationRunRef.current !== null && !simulationPlaying && !timelineChanged);
-    if (!preserveSimulation) resetSimulation();
-    else if (simulationRunRef.current) {
-      const rebased = rebasePausedSimulation(simulationRunRef.current, next, HOOP_POINT);
-      if (rebased) setSimulationFrameState(getSimulationFrame(simulationRunRef.current));
+  // Prepare a valid drawing/run pair before changing draft history or editor
+  // state. A failed simulation transaction leaves both workspaces untouched.
+  function handoffDraft(next: PlaybookDraft, preserveSimulation: boolean) {
+    try {
+      validatePlaybookDocument(next);
+      const run = simulationRunRef.current;
+      if (preserveSimulation && run && rebasePausedSimulation(run, next, HOOP_POINT)) setSimulationFrameState(getSimulationFrame(run));
       else resetSimulation();
+      setDraft(next);
+      setStatus("idle");
+      setError(null);
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The paused edit could not be applied. Your previous drawing is intact.");
+      return false;
     }
-    setHistory((current) => [...current.slice(-39), clonePlaybook(previous)]);
+  }
+
+  function commit(next: PlaybookDraft, previous = draft) {
+    if (isSameDraft(next, previous)) return;
+    const before = clonePlaybook(previous);
+    const preserveSimulation = simulationRunRef.current !== null && !simulationPlaying;
+    if (!handoffDraft(next, preserveSimulation)) return;
+    setHistory((current) => [...current.slice(-39), before]);
     setFuture([]);
-    setDraft(next);
-    setStatus("idle");
-    setError(null);
   }
 
   function undo() {
     const previous = history.at(-1);
     if (!previous) return;
+    const before = clonePlaybook(draft);
+    if (!handoffDraft(previous, simulationRunRef.current !== null && !simulationPlaying)) return;
     setHistory((current) => current.slice(0, -1));
-    setFuture((current) => [clonePlaybook(draft), ...current]);
-    setDraft(previous);
-    resetSimulation();
+    setFuture((current) => [before, ...current]);
     setSelected(null);
-    setStatus("idle");
   }
 
   function redo() {
     const next = future[0];
     if (!next) return;
+    const before = clonePlaybook(draft);
+    if (!handoffDraft(next, simulationRunRef.current !== null && !simulationPlaying)) return;
     setFuture((current) => current.slice(1));
-    setHistory((current) => [...current, clonePlaybook(draft)]);
-    setDraft(next);
-    resetSimulation();
+    setHistory((current) => [...current, before]);
     setSelected(null);
-    setStatus("idle");
   }
 
   function chooseTool(next: PlaybookTool) {
@@ -576,7 +585,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     next.players = next.players.map((player) => player.id === playerId
       ? { ...player, ratings: { threePoint: 3, midrange: 3, finishing: 3, ...player.ratings, [key]: Math.max(1, Math.min(5, Math.round(value))) } }
       : player);
-    commit(next, draft, { preserveSimulation: false });
+    commit(next, draft);
   }
 
   function togglePlayerBadge(playerId: number, badge: OffensiveBadge) {
@@ -591,7 +600,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           : OFFENSIVE_BADGE_ORDER.filter((current) => current === badge || badges.includes(current)),
       };
     });
-    commit(next, draft, { preserveSimulation: false });
+    commit(next, draft);
   }
 
   function toggleDefenderBadge(defenderId: number, badge: DefensiveBadge) {
@@ -606,7 +615,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           : DEFENSIVE_BADGE_ORDER.filter((current) => current === badge || badges.includes(current)),
       };
     });
-    commit(next, draft, { preserveSimulation: false });
+    commit(next, draft);
   }
 
   function adjustTeamRating(key: keyof PlayerSkillRatings, amount: -1 | 1) {
@@ -616,7 +625,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       const ratings = { threePoint: 3, midrange: 3, finishing: 3, ...player.ratings };
       return { ...player, ratings: { ...ratings, [key]: Math.max(1, Math.min(5, ratings[key] + amount)) } };
     });
-    commit(next, draft, { preserveSimulation: false });
+    commit(next, draft);
   }
 
   function startSimulation() {
@@ -854,22 +863,27 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     }
     const drag = dragRef.current;
     if (!drag) return;
-    const editingTimeline = drag.type === "arrow-start" || drag.type === "arrow-end" || drag.type === "arrow-exit" || drag.type === "arrow-control";
-    if (editingTimeline && simulationActive) {
-      resetSimulation();
-    } else if (simulationRunRef.current && (simulationPaused || simulationPlaying)) {
-      if (simulationPlaying) {
-        setSimulationPlaying(false);
-        setSimulationFrameState(getSimulationFrame(simulationRunRef.current));
+    // Construct the drawing before the run changes; the engine validates and
+    // commits this same draft together with the marker's live relocation.
+    const next = editPlaybookPoint(drag.before, drag, point);
+    try {
+      validatePlaybookDocument(next);
+      const editingTimeline = drag.type === "arrow-start" || drag.type === "arrow-end" || drag.type === "arrow-exit" || drag.type === "arrow-control";
+      const run = simulationRunRef.current;
+      if (editingTimeline && simulationActive) resetSimulation();
+      else if (run && (simulationPaused || simulationPlaying)) {
+        if (drag.type === "ball" || drag.type === "player" || drag.type === "defender") {
+          const frame = editPausedSimulationMarker(run, drag.type, drag.id, point, next);
+          setSimulationPlaying(false);
+          setSimulationFrameState(frame);
+        }
       }
-      if (drag.type === "ball") {
-        setSimulationFrameState(editPausedSimulationMarker(simulationRunRef.current, "ball", "ball", point));
-      } else if (drag.type === "player" || drag.type === "defender") {
-        setSimulationFrameState(editPausedSimulationMarker(simulationRunRef.current, drag.type, drag.id, point));
-      }
+      setDraft(next);
+      setStatus("idle");
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The paused marker could not be moved.");
     }
-    setDraft(editPlaybookPoint(drag.before, drag, point));
-    setStatus("idle");
   }
 
   function onPointerUp(event: ReactPointerEvent<SVGSVGElement>) {
@@ -1192,7 +1206,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                   </button>;
                 })}
               </div>
-              <small>Badges guide assignments and reactions in the next simulation run.</small>
+              <small>Badges guide assignments and reactions. Paused edits apply when you resume.</small>
             </> : null}
           </div> : null}
           <button type="button" className={`preset-button ${defenseSchemesOpen ? "is-active" : ""}`} aria-expanded={defenseSchemesOpen} aria-controls="defense-schemes-panel" onClick={() => setDefenseSchemesOpen((open) => !open)}>
@@ -1273,7 +1287,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                     </button>;
                   })}
                 </div>
-                <small>Badges shape the next simulation run. Any combination can be assigned.</small>
+                <small>Badges shape simulation decisions. Paused edits apply when you resume.</small>
               </> : <p className="ratings-empty">Add an offensive player to assign badges.</p>}
             </div>}
           </div> : null}

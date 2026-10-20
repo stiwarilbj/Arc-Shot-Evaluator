@@ -1,3 +1,4 @@
+import { validatePlaybookDocument } from "./documentValidation.ts";
 import { compileActionDependencies, type PlannedAction } from "./actionDependencies.ts";
 import { ballController, isShotBall, isTransferBall, placedBall, transitionBall, caughtAt, failedTransfer, copyTransfer, type BallPhase, type BallState, type TransferRecord } from "./ballState.ts";
 import { coordinateDefensiveDuties, createDefensiveTeamState, defensiveDutySnapshot, resetDefensiveDuties, type DefensiveResponsibility, type DefensiveTeamState } from "./defensiveResponsibilities.ts";
@@ -3408,109 +3409,208 @@ function relocatePausedBall(run: SimulationRun, point: CourtPoint) {
   }
 }
 
-export function editPausedSimulationMarker(
-  run: SimulationRun,
-  type: "player" | "defender" | "ball",
-  id: number | string,
-  point: CourtPoint,
-) {
-  refreshSimulationAttributes(run.attributes, run.players, run.defenders);
-  invalidateRunRoutes(run);
-  const nextPoint = clampCourt(point);
-  if (type === "player") {
-    run.players = run.players.map((player) => player.id === id ? { ...player, ...nextPoint } : player);
-    const playerId = Number(id);
-    run.offBallAnchors.set(playerId, { ...nextPoint });
-    run.targetFilters.delete(velocityKey("player", playerId));
-    run.velocities.set(velocityKey("player", playerId), { x: 0, y: 0 });
-    const action = currentActionAt(run, run.elapsedMs);
-    if (action?.actorId === playerId && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") {
-      run.actionStartOverrides.set(action.arrow.id, { atMs: run.elapsedMs, point: { ...nextPoint } });
+type PausedRelocation = { type: "player" | "defender" | "ball"; id: number | string; point: CourtPoint };
+
+/** Clone the entire data graph together: actionGraph and ball transfers must
+ * still reference their corresponding actions/evidence. Keep the live getters,
+ * which derive possession and shot evidence from the candidate's ball state. */
+function stagePausedRun(run: SimulationRun): SimulationRun {
+  const descriptors = Object.getOwnPropertyDescriptors(run);
+  const data: Record<string, unknown> = {};
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if ("value" in descriptor) {
+      if (!descriptor.writable) throw new Error("The paused simulation cannot accept edits.");
+      data[key] = descriptor.value;
     }
-    const transfer = currentTransferAt(run, run.elapsedMs);
-    if (transfer?.recipientId === playerId) {
-      run.recipientStartOverrides.set(transfer.arrow.id, { atMs: run.elapsedMs, point: { ...nextPoint } });
-    }
-    if (run.ballState.kind === "held" && run.ballHandlerId === playerId) {
-      run.ballState.position = { ...nextPoint };
-      run.ballState.velocity = { x: 0, y: 0 };
-    }
-  } else if (type === "defender") {
-    const defenderId = Number(id);
-    run.defenders = run.defenders.map((defender) => defender.id === defenderId ? { ...defender, ...nextPoint } : defender);
-    run.targetFilters.delete(velocityKey("defender", defenderId));
-    run.velocities.set(velocityKey("defender", defenderId), { x: 0, y: 0 });
-  } else {
-    relocatePausedBall(run, nextPoint);
   }
-  if (type === "player") {
-    run.source.players = run.source.players.map((player) => player.id === Number(id) ? { ...player, ...nextPoint } : player);
-  } else if (type === "defender") {
-    run.source.defenders = run.source.defenders.map((defender) => defender.id === Number(id) ? { ...defender, ...nextPoint } : defender);
-  } else {
-    run.source.ball = { ...nextPoint };
+  for (const action of run.actions) for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(action))) {
+    if (!("value" in descriptor) || !descriptor.writable || !Object.isExtensible(action)) throw new Error("The paused action cannot accept edits.");
   }
-  run.actions.forEach((action) => action.execution?.paths.clear());
-  run.offBallDecisions?.clear();
-  run.routeHistory = [];
-  resetCongestionPlanning(run);
-  run.frame = frameFor(run);
-  run.previousFrame = run.frame;
-  return getSimulationFrame(run);
+  const candidate = structuredClone(data);
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if (!("value" in descriptor)) Object.defineProperty(candidate, key, descriptor);
+  }
+  return candidate as SimulationRun;
+}
+
+function validatePausedRun(run: SimulationRun) {
+  const finite = (value: number) => { if (!Number.isFinite(value)) throw new Error("The paused edit produced invalid simulation state."); };
+  const point = (value: CourtPoint) => { finite(value.x); finite(value.y); };
+  for (const value of [run.elapsedMs, run.accumulatorMs, run.durationMs, run.routeRevision]) finite(value);
+  for (const marker of [...run.players, ...run.defenders]) point(marker);
+  if (run.ball) point(run.ball);
+  point(run.ballState.velocity);
+  for (const value of run.velocities.values()) point(value);
+  for (const value of [...run.actionStartOverrides.values(), ...run.recipientStartOverrides.values()]) { finite(value.atMs); point(value.point); }
+  for (const action of run.actions) {
+    if (run.actionGraph.get(`${action.arrow.id}:${action.sequence}`) !== action) throw new Error("Paused action dependencies are inconsistent.");
+    finite(action.startTime); finite(action.durationMs);
+    if (action.execution) {
+      finite(action.execution.progress); finite(action.execution.waitMs);
+      for (const path of action.execution.paths.values()) { finite(path.progress); finite(path.length); path.points.forEach(point); }
+    }
+  }
+  if (isTransferBall(run.ballState)) {
+    const transfer = run.ballState.transfer;
+    if (run.actionGraph.get(transfer.actionKey)?.transfer !== transfer || transfer.outcome.kind !== "pending"
+      || !run.players.some(player => player.id === transfer.receiverId)) throw new Error("The pending catch is inconsistent.");
+  }
+  if (isShotBall(run.ballState)) { point(run.ballState.start); finite(run.ballState.quality); finite(run.ballState.releaseAtMs); }
+  for (const marker of [...run.frame.players, ...run.frame.defenders]) point(marker);
+  if (run.frame.ball) point(run.frame.ball);
+  for (const value of [run.frame.shotQuality, run.frame.defensiveQuality, run.frame.offBallQuality]) finite(value);
+}
+
+/** Prepare and validate off to the side. No live field, cached frame, source
+ * drawing or execution evidence is changed until the whole update is ready. */
+function transactPausedSimulation(run: SimulationRun, draft: PlaybookDraft, hoop: CourtPoint, relocation?: PausedRelocation) {
+  validatePlaybookDocument(draft);
+  const next = stagePausedRun(run), source = run.source;
+  next.source = structuredClone(draft);
+  const movedPlayers = new Set<number>(), movedDefenders = new Set<number>();
+  const changedPlayers = new Set<number>(), changedDefenders = new Set<number>();
+  const attributes = ({ x: _x, y: _y, ...rest }: PlaybookMarker) => JSON.stringify(rest);
+  const updateRoster = (live: PlaybookMarker[], before: PlaybookMarker[], edited: PlaybookMarker[], moved: Set<number>, changed: Set<number>, type: "player" | "defender") => live.map(marker => {
+    const old = before.find(p => p.id === marker.id), replacement = edited.find(p => p.id === marker.id);
+    const forced = relocation?.type === type && Number(relocation.id) === marker.id ? relocation.point : null;
+    const positionChanged = forced || old && replacement && (old.x !== replacement.x || old.y !== replacement.y);
+    const attributesChanged = old && replacement && attributes(old) !== attributes(replacement);
+    if (positionChanged) moved.add(marker.id);
+    if (positionChanged || attributesChanged) changed.add(marker.id);
+    return { ...(attributesChanged ? replacement! : marker), ...(positionChanged ? forced ?? replacement! : { x: marker.x, y: marker.y }) };
+  });
+  next.players = updateRoster(next.players, source.players, next.source.players, movedPlayers, changedPlayers, "player");
+  next.defenders = updateRoster(next.defenders, source.defenders, next.source.defenders, movedDefenders, changedDefenders, "defender");
+  const ballPoint = relocation?.type === "ball" ? relocation.point : draft.ball && (source.ball?.x !== draft.ball.x || source.ball?.y !== draft.ball.y) ? draft.ball : null;
+  if (relocation?.type === "player") next.source.players = next.source.players.map(p => p.id === Number(relocation.id) ? { ...p, ...relocation.point } : p);
+  if (relocation?.type === "defender") next.source.defenders = next.source.defenders.map(p => p.id === Number(relocation.id) ? { ...p, ...relocation.point } : p);
+  if (ballPoint) { next.source.ball = { ...ballPoint }; relocatePausedBall(next, ballPoint); }
+
+  const affectedKeys = new Set<string>();
+  for (const player of next.players) if (changedPlayers.has(player.id)) {
+    const key = velocityKey("player", player.id); affectedKeys.add(key);
+    next.targetFilters.delete(key); next.offBallDecisions?.delete(player.id);
+    if (movedPlayers.has(player.id)) {
+      next.offBallAnchors.set(player.id, { x: player.x, y: player.y });
+      next.velocities.set(key, { x: 0, y: 0 });
+      if (next.ballState.kind === "held" && next.ballHandlerId === player.id) {
+        next.ballState.position = { x: player.x, y: player.y }; next.ballState.velocity = { x: 0, y: 0 };
+      }
+    }
+  }
+  for (const defender of next.defenders) if (changedDefenders.has(defender.id)) {
+    const key = velocityKey("defender", defender.id); affectedKeys.add(key); next.targetFilters.delete(key);
+    if (movedDefenders.has(defender.id)) next.velocities.set(key, { x: 0, y: 0 });
+  }
+  refreshSimulationAttributes(next.attributes, next.players, next.defenders);
+  for (const player of next.players) if (changedPlayers.has(player.id)) next.offBallTargetSkills.set(player.id, offBallTargetSkill(player, hoop));
+
+  const affectedScreens = new Set<string>();
+  for (const action of next.actions) {
+    if (!actionIsMoving(action)) continue; // Completed evidence is historical.
+    const state = action.execution;
+    const participants = [action.actorId, action.recipientId, action.partnerId];
+    const moved = participants.some(id => id != null && movedPlayers.has(id));
+    if (state && moved) {
+      if (isScreenAction(action)) {
+        state.paths.clear(); affectedScreens.add(action.arrow.id);
+        // An unused screen moved away from its set point must approach again.
+        if (movedPlayers.has(action.actorId!) && state.usedAtMs == null && (state.phase === "set" || state.phase === "use")) {
+          state.phase = "approach"; delete state.setAtMs;
+        }
+        const userId = screenUserId(action), user = markerForId(next.players, userId);
+        if (user && movedPlayers.has(user.id)) {
+          if (action.recipientId === userId) action.recipientStart = { x: user.x, y: user.y };
+          else action.partnerStart = { x: user.x, y: user.y };
+        }
+        for (const id of participants) if (id != null) affectedKeys.add(velocityKey("player", id));
+      } else for (const id of movedPlayers) state.paths.delete(id);
+      if (action.actorId != null && movedPlayers.has(action.actorId) && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff" && actionIsExecuting(action)) {
+        const actor = markerForId(next.players, action.actorId)!;
+        next.actionStartOverrides.set(action.arrow.id, { atMs: next.elapsedMs, point: { x: actor.x, y: actor.y } });
+      }
+      if (action.recipientId != null && movedPlayers.has(action.recipientId) && (action.arrow.kind === "pass" || action.arrow.kind === "handoff")) {
+        const receiver = markerForId(next.players, action.recipientId)!;
+        next.recipientStartOverrides.set(action.arrow.id, { atMs: next.elapsedMs, point: { x: receiver.x, y: receiver.y } });
+      }
+    }
+  }
+  // Preserve assignment rotations and already-performed switches; only geometry
+  // and coverage claims depending on the edited participants need rebuilding.
+  for (const [id, lock] of next.screenCoverageLocks) if (affectedScreens.has(id) || lock && (changedPlayers.has(lock.screenerId) || changedPlayers.has(lock.screenedId)
+    || changedDefenders.has(lock.screenerDefenderId) || changedDefenders.has(lock.screenedDefenderId))) {
+    next.screenCoverageLocks.delete(id); affectedScreens.add(id);
+    if (lock) for (const defenderId of [lock.screenerDefenderId, lock.screenedDefenderId]) { next.targetFilters.delete(velocityKey("defender", defenderId)); affectedKeys.add(velocityKey("defender", defenderId)); }
+  }
+  for (const [id, duty] of next.defense.duties) if (ballPoint || changedDefenders.has(id) || duty.playerId != null && changedPlayers.has(duty.playerId) || duty.actionId != null && affectedScreens.has(duty.actionId)) {
+    next.defense.duties.delete(id); next.targetFilters.delete(velocityKey("defender", id)); affectedKeys.add(velocityKey("defender", id));
+  }
+  if (ballPoint) {
+    next.offBallDecisions?.clear();
+    for (const marker of [...next.players, ...next.defenders]) affectedKeys.add(velocityKey(next.players.includes(marker) ? "player" : "defender", marker.id));
+  }
+  const congestion = next.movementBuffers.solver.congestion;
+  for (const key of affectedKeys) { congestion.agents.delete(key); congestion.decisions.delete(key); next.motionIntents?.delete(key); }
+  for (const [key, decision] of congestion.decisions) if (decision.blockers.some(id => affectedKeys.has(id))) congestion.decisions.delete(key);
+  for (const key of congestion.passages.keys()) if ((JSON.parse(key) as string[]).some(id => affectedKeys.has(id))) congestion.passages.delete(key);
+  congestion.destinations = congestion.destinations.filter(reservation => !affectedKeys.has(reservation.owner));
+  if (affectedKeys.size) congestion.nextPlanMs = 0;
+  for (const action of next.actions) if (action.execution?.congestion && (affectedKeys.has(velocityKey("player", action.execution.congestion.playerId)) || action.execution.congestion.blockers.some(id => affectedKeys.has(id)))) delete action.execution.congestion;
+  next.routeHistory = ballPoint ? [] : next.routeHistory?.map(sample => ({ ...sample, players: sample.players.filter(p => !movedPlayers.has(p.id)) }));
+  invalidateRunRoutes(next);
+  const beforeFrame = next.frame, previous = next.previousFrame;
+  next.frame = frameFor(next);
+  const samePlaybackPhase = (a: SimulationFrame, b: SimulationFrame) => a.activeSequence === b.activeSequence
+    && a.activeActionLabel === b.activeActionLabel && a.ballHandlerId === b.ballHandlerId && a.ballPhase === b.ballPhase;
+  // Preserve the fractional display step for untouched markers. Snapping every
+  // previous position to the new frame would move them on an attribute-only edit.
+  if (samePlaybackPhase(previous, beforeFrame) && samePlaybackPhase(beforeFrame, next.frame)) {
+    const previousPosition = (marker: PlaybookMarker, roster: PlaybookMarker[], moved: Set<number>) => {
+      const old = moved.has(marker.id) ? null : roster.find(p => p.id === marker.id);
+      return old ? { ...marker, x: old.x, y: old.y } : marker;
+    };
+    next.previousFrame = { ...next.frame,
+      players: next.players.map(marker => previousPosition(marker, previous.players, movedPlayers)),
+      defenders: next.defenders.map(marker => previousPosition(marker, previous.defenders, movedDefenders)),
+      ball: ballPoint || next.ballState.kind === "held" && movedPlayers.has(next.ballState.holderId) ? next.frame.ball : previous.ball,
+    };
+  } else next.previousFrame = next.frame;
+  validatePausedRun(next);
+  const display = getSimulationFrame(next); // Prepare even the returned copy before commit.
+  // Prepare the commit lists before touching live state. Keep action identities
+  // stable for observers holding a bound action through pause/edit/resume.
+  const actionUpdates = next.actions.map((action, index) => ({ target: run.actions[index], value: action }));
+  next.actions = run.actions;
+  next.actionGraph = new Map(next.actions.map(action => [`${action.arrow.id}:${action.sequence}`, action]));
+  const fields = Object.entries(Object.getOwnPropertyDescriptors(next)).filter(([, descriptor]) => "value" in descriptor);
+  const routes = runRouteCache.get(next);
+  // All targets are plain writable data properties (checked above). JavaScript
+  // cannot run movement or observers between these synchronous assignments.
+  for (const { target, value } of actionUpdates) Object.assign(target, value);
+  for (const [key, descriptor] of fields) Reflect.set(run, key, descriptor.value);
+  if (routes) runRouteCache.set(run, routes);
+  return display;
+}
+
+export function editPausedSimulationMarker(run: SimulationRun, type: "player" | "defender" | "ball", id: number | string, point: CourtPoint, draft: PlaybookDraft = run.source) {
+  validatePlaybookDocument(draft);
+  if (!pausedDraftIsCompatible(run.source, draft)) throw new Error("The paused drawing changed its actions or participants. Restart playback to apply it.");
+  if (!["player", "defender", "ball"].includes(type) || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Choose a valid paused marker and court position.");
+  if (type !== "ball" && !(type === "player" ? run.players : run.defenders).some(marker => marker.id === Number(id))) throw new Error("The paused marker is no longer on the court.");
+  return transactPausedSimulation(run, draft, HOOP_POINT, { type, id, point: clampCourt(point) });
+}
+
+function pausedDraftIsCompatible(source: PlaybookDraft, draft: PlaybookDraft) {
+  return JSON.stringify(source.arrows) === JSON.stringify(draft.arrows)
+    && JSON.stringify(source.players.map(p => p.id)) === JSON.stringify(draft.players.map(p => p.id))
+    && JSON.stringify(source.defenders.map(p => p.id)) === JSON.stringify(draft.defenders.map(p => p.id))
+    && Boolean(source.ball) === Boolean(draft.ball);
 }
 
 export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft, hoop = HOOP_POINT) {
-  const sourceBeforeEdit = run.source;
-  const timelineChanged = JSON.stringify(sourceBeforeEdit.arrows) !== JSON.stringify(draft.arrows);
-  const playerIdsChanged = JSON.stringify(sourceBeforeEdit.players.map((player) => player.id)) !== JSON.stringify(draft.players.map((player) => player.id));
-  const defenderIdsChanged = JSON.stringify(sourceBeforeEdit.defenders.map((defender) => defender.id)) !== JSON.stringify(draft.defenders.map((defender) => defender.id));
-  const ballPresenceChanged = Boolean(sourceBeforeEdit.ball) !== Boolean(draft.ball);
-  if (timelineChanged || playerIdsChanged || defenderIdsChanged || ballPresenceChanged) return false;
-  invalidateRunRoutes(run);
-  const ballChanged = draft.ball != null && (sourceBeforeEdit.ball?.x !== draft.ball.x || sourceBeforeEdit.ball?.y !== draft.ball.y);
-  run.players = run.players.map((player) => {
-    const edited = draft.players.find((candidate) => candidate.id === player.id);
-    if (!edited) return player;
-    const previousDraftPosition = sourceBeforeEdit.players.find((candidate) => candidate.id === player.id);
-    if (previousDraftPosition && (edited.x !== previousDraftPosition.x || edited.y !== previousDraftPosition.y)) {
-      run.offBallAnchors.set(player.id, { x: edited.x, y: edited.y });
-      run.targetFilters.delete(velocityKey("player", player.id));
-      run.velocities.set(velocityKey("player", player.id), { x: 0, y: 0 });
-      const action = currentActionAt(run, run.elapsedMs);
-      if (action?.actorId === player.id && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") {
-        run.actionStartOverrides.set(action.arrow.id, { atMs: run.elapsedMs, point: { x: edited.x, y: edited.y } });
-      }
-      const receiverAction = currentTransferAt(run, run.elapsedMs) ?? currentPrepAt(run, run.elapsedMs);
-      if (receiverAction?.recipientId === player.id) {
-        run.recipientStartOverrides.set(receiverAction.arrow.id, { atMs: run.elapsedMs, point: { x: edited.x, y: edited.y } });
-      }
-      if (run.ballState.kind === "held" && run.ballHandlerId === player.id) run.ballState.position = { x: edited.x, y: edited.y };
-      return { ...edited };
-    }
-    return player;
-  });
-  run.defenders = run.defenders.map((defender) => {
-    const edited = draft.defenders.find((candidate) => candidate.id === defender.id);
-    if (!edited) return defender;
-    const previousDraftPosition = sourceBeforeEdit.defenders.find((candidate) => candidate.id === defender.id);
-    if (previousDraftPosition && (edited.x !== previousDraftPosition.x || edited.y !== previousDraftPosition.y)) {
-      run.targetFilters.delete(velocityKey("defender", defender.id));
-      run.velocities.set(velocityKey("defender", defender.id), { x: 0, y: 0 });
-      return { ...edited };
-    }
-    return defender;
-  });
-  if (ballChanged && draft.ball) {
-    relocatePausedBall(run, draft.ball);
-  }
-  run.source = structuredClone(draft);
-  refreshSimulationAttributes(run.attributes, run.players, run.defenders);
-  run.actions.forEach((action) => action.execution?.paths.clear());
-  run.offBallDecisions?.clear();
-  run.routeHistory = [];
-  resetCongestionPlanning(run);
-  run.frame = frameFor(run);
-  run.previousFrame = run.frame;
+  validatePlaybookDocument(draft);
+  if (!pausedDraftIsCompatible(run.source, draft)) return false;
+  transactPausedSimulation(run, draft, hoop);
   return true;
 }
 

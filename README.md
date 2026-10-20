@@ -136,6 +136,13 @@ clearance, speed limits, and the three-foot route allowance remain in force.
 Both workspaces and build targets share this planner. See
 [movement congestion](docs/playbook-congestion.md) for its limits and regression evidence.
 
+Paused marker, rating, and badge edits are applied as one validated simulation
+transaction in both builds. Compatible undo/redo retains the paused clock;
+unrelated actions keep their progress, moved screens refresh their approach and
+coverage, and released passes/shots keep their recorded evidence. Invalid edits
+leave the drawing and active run intact. Changing actions or the roster still
+restarts playback. See [paused editing](docs/playbook-paused-editing.md).
+
 Ball control uses one shared state machine. Released passes have no controller;
 handoffs remain with their giver until the exchange is confirmed. Transfers record
 release, arrival, and catch/failure evidence. Failed passes leave a recoverable
