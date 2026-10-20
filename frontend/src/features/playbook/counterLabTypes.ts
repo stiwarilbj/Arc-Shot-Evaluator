@@ -1,5 +1,6 @@
 import type { DefensiveResponsibility } from "./defensiveResponsibilities.ts";
 import type { BallPhase } from "./ballState.ts";
+import type { ShotReleaseContext } from "./shotReleaseContext.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { ReplayArchive } from "./counterLabReplayArchive.ts";
 import type { CourtPoint, DefenseScheme, DefenseStrategy, PlaybookDraft } from "./types";
@@ -28,6 +29,7 @@ export type CounterLabFrame = {
   ball: CourtPoint | null; shotPhase: "idle" | "setup" | "air" | "result";
 };
 export type CounterLabResult = {
+  shotRelease?: ShotReleaseContext | null;
   key: string; profile: CounterLabProfile; mode: CounterLabMode; score: number; finalShotQuality: number;
   createdAdvantage: boolean; outcome: string; firstLostOpeningMs: number | null;
   firstBlockedPass: (PassDiagnostic & { playerId: number }) | null;

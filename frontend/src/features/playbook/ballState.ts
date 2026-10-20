@@ -1,4 +1,5 @@
 import type { CourtPoint } from "./types.ts";
+import { freezeShotRelease, validateShotRelease, type ShotReleaseContext } from "./shotReleaseContext.ts";
 
 export type BallSample = { atMs: number; position: CourtPoint };
 export type TransferOutcome = { kind: "pending" } | ({ kind: "caught" } & BallSample)
@@ -13,6 +14,7 @@ type MovingBall = { position: CourtPoint; velocity: CourtPoint };
 type Shot = MovingBall & {
   shooterId: number; start: CourtPoint; setupAtMs: number; releaseAtMs: number; resultAtMs: number;
   quality: number; pathOverride: BallSample | null;
+  releaseContext: ShotReleaseContext | null;
 };
 export type BallState =
   | (MovingBall & { kind: "held"; holderId: number })
@@ -46,7 +48,8 @@ type BallEvent =
   | { kind: "fail" | "interrupt"; atMs: number; reason: string; giverPosition?: CourtPoint }
   | { kind: "recover"; playerId: number; position: CourtPoint }
   | { kind: "shot"; shooterId: number; atMs: number; durationMs: number; quality: number }
-  | { kind: "release-shot" | "finish-shot"; atMs: number }
+  | { kind: "release-shot"; atMs: number; releaseContext?: ShotReleaseContext }
+  | { kind: "finish-shot"; atMs: number }
   | { kind: "drop"; atMs: number };
 
 /** All possession transitions pass through here. Illegal events fail before any
@@ -87,10 +90,16 @@ export function transitionBall(state: BallState, event: BallEvent): BallState {
       if (state.kind !== "held" || state.holderId !== event.shooterId || !Number.isFinite(event.durationMs) || event.durationMs <= 0 || !Number.isFinite(event.quality)) return illegal();
       return { kind: "shot-setup", position: point(state.position), velocity: zero(), shooterId: event.shooterId,
         start: point(state.position), setupAtMs: event.atMs, releaseAtMs: event.atMs + event.durationMs * .18,
-        resultAtMs: event.atMs + event.durationMs * .84, quality: event.quality, pathOverride: null };
+        resultAtMs: event.atMs + event.durationMs * .84, quality: event.quality, releaseContext: null, pathOverride: null };
     case "release-shot":
       if (state.kind !== "shot-setup" || event.atMs + 1e-6 < state.releaseAtMs) return illegal();
-      return { ...state, kind: "shot-in-flight", start: point(state.position) };
+      if (event.releaseContext) {
+        validateShotRelease(event.releaseContext);
+        if (event.releaseContext.shooter.id !== state.shooterId || event.releaseContext.atMs !== event.atMs) return illegal();
+      }
+      return { ...state, kind: "shot-in-flight", start: point(state.position),
+        quality: event.releaseContext?.quality ?? state.quality,
+        releaseContext: event.releaseContext ? freezeShotRelease(structuredClone(event.releaseContext)) : null };
     case "finish-shot":
       if (state.kind !== "shot-in-flight" || event.atMs + 1e-6 < state.resultAtMs) return illegal();
       return { ...state, kind: "shot-result" };

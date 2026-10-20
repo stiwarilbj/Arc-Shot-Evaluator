@@ -1,4 +1,5 @@
 import { validatePlaybookDocument } from "./documentValidation.ts";
+import { freezeShotRelease, validateShotRelease, type ShotReleaseContext, type ShotMotionEvidence, type ShotCatchEvidence } from "./shotReleaseContext.ts";
 import { compileActionDependencies, type PlannedAction } from "./actionDependencies.ts";
 import { ballController, isShotBall, isTransferBall, placedBall, transitionBall, caughtAt, failedTransfer, copyTransfer, type BallPhase, type BallState, type TransferRecord } from "./ballState.ts";
 import { coordinateDefensiveDuties, createDefensiveTeamState, defensiveDutySnapshot, resetDefensiveDuties, type DefensiveResponsibility, type DefensiveTeamState } from "./defensiveResponsibilities.ts";
@@ -40,6 +41,7 @@ export type SimulationFrame = {
   shotProgress: number;
   shotResult: "pending" | "made" | "missed";
   shotQuality: number;
+  shotRelease: ShotReleaseContext | null;
   shooterId: number | null;
   shotStart: CourtPoint | null;
   shotTarget: CourtPoint | null;
@@ -113,6 +115,7 @@ export type SimulationRun = {
   readonly recipientStartOverrides: Map<string, PositionOverride>;
   readonly offBallTargetSkills: Map<number, OffBallTargetSkill | null>;
   readonly lastReceiveAtMs: Map<number, number>;
+  readonly lastCatchEvidence: Map<number, ShotCatchEvidence>;
   readonly shotDurationMs: number;
   plannedActionDurationMs: number;
   nextEarlyReadMs: number;
@@ -971,20 +974,20 @@ function badgePassValue(handler: PlaybookMarker, receiver: PlaybookMarker, role:
   return Math.min(0.16, bonus);
 }
 
-function recentlyMovedWithBall(run: SimulationRun, playerId: number, timeMs: number) {
-  const velocity = run.velocities.get(velocityKey("player", playerId)) ?? { x: 0, y: 0 };
-  if (Math.hypot(velocity.x, velocity.y) >= 2.5) return true;
-  return run.actions.some((action) => action.actorId === playerId
-    && ["movement", "pick-roll", "pick-pop", "backdoor-cut"].includes(action.arrow.kind)
-    && action.startTime <= timeMs
-    && timeMs - action.startTime <= 1800);
-}
-
-function badgeShotContext(run: SimulationRun, player: PlaybookMarker, timeMs: number) {
-  const receivedAt = run.lastReceiveAtMs.get(player.id) ?? Number.NEGATIVE_INFINITY;
+function badgeShotContext(run: SimulationRun, player: PlaybookMarker, timeMs: number): ShotMotionEvidence {
   return {
-    recentCatch: timeMs - receivedAt >= 0 && timeMs - receivedAt <= 1150,
-    recentMovement: recentlyMovedWithBall(run, player.id, timeMs),
+    atMs: timeMs,
+    shooterVelocityFtPerSecond: { ...run.velocities.get(velocityKey("player", player.id)) ?? { x: 0, y: 0 } },
+    defenderVelocities: run.defenders.map(defender => ({ id: defender.id, velocityFtPerSecond: { ...run.velocities.get(velocityKey("defender", defender.id)) ?? { x: 0, y: 0 } } })),
+    catch: run.lastCatchEvidence.get(player.id) ?? null,
+    recentActions: run.actions.flatMap(action => {
+      const state = action.execution;
+      if (action.actorId !== player.id || !["movement", "pick-roll", "pick-pop", "backdoor-cut", "slip-screen"].includes(action.arrow.kind)
+        || !state || state.startedAtMs === null || state.startedAtMs > timeMs
+        || ["pending", "obstructed", "conflict"].includes(state.phase)
+        || timeMs - (state.completedAtMs ?? state.startedAtMs) > 1800) return [];
+      return [{ actionId: action.arrow.id, sequence: action.sequence, kind: action.arrow.kind, startedAtMs: state.startedAtMs, completedAtMs: state.completedAtMs }];
+    }),
   };
 }
 
@@ -1466,7 +1469,9 @@ function frameFor(run: SimulationRun): SimulationFrame {
   const shotPhase: SimulationFrame["shotPhase"] = run.ballState.kind === "shot-setup" ? "setup"
     : run.ballState.kind === "shot-in-flight" ? "air" : run.ballState.kind === "shot-result" ? "result" : "idle";
   const shooter = markerForId(run.players, run.shotShooterId ?? run.ballHandlerId);
-  const shotQuality = shooter ? run.shotQualityAtRelease || calculateShotQuality(run.players, run.defenders, shooter, 70) : 0;
+  const shotQuality = isShotBall(run.ballState) ? run.ballState.quality
+    : shooter ? calculateShotQuality(run.players, run.defenders, shooter,
+      calculateOffBallQuality(run.players, run.ball, run.settings, run.defenders, shooter.id), HOOP_POINT, badgeShotContext(run, shooter, run.elapsedMs)) : 0;
   return {
     defensiveResponsibilities: defensiveDutySnapshot(run.defense),
     execution: actionDiagnostics(run),
@@ -1494,6 +1499,7 @@ function frameFor(run: SimulationRun): SimulationFrame {
     shotProgress,
     shotResult: shotPhase === "result" ? (shotQuality >= 68 ? "made" : "missed") : "pending",
     shotQuality,
+    shotRelease: isShotBall(run.ballState) ? run.ballState.releaseContext : null,
     shooterId: run.shotShooterId,
     shotStart: run.shotStart ? { ...run.shotStart } : null,
     shotTarget: run.shotStart ? { ...HOOP_POINT } : null,
@@ -1520,6 +1526,7 @@ function createInitialFrame(): SimulationFrame {
     shotProgress: 0,
     shotResult: "pending",
     shotQuality: 0,
+    shotRelease: null,
     shooterId: null,
     shotStart: null,
     shotTarget: null,
@@ -1680,6 +1687,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     recipientStartOverrides: new Map(),
     offBallTargetSkills: new Map(players.map((player) => [player.id, offBallTargetSkill(player, hoop)])),
     lastReceiveAtMs: new Map(),
+    lastCatchEvidence: new Map(),
     source: sourceCopy,
     settings: runSettings,
     players,
@@ -1689,7 +1697,7 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     get ballHandlerId() { return ballController(this.ballState); },
     get shotStart() { return isShotBall(this.ballState) ? this.ballState.start : null; },
     get shotShooterId() { return isShotBall(this.ballState) ? this.ballState.shooterId : null; },
-    get shotQualityAtRelease() { return isShotBall(this.ballState) ? this.ballState.quality : 0; },
+    get shotQualityAtRelease() { return isShotBall(this.ballState) ? this.ballState.releaseContext?.quality ?? 0 : 0; },
     get helpDefenderId() { return this.defense.helper?.defenderId ?? null; },
     defensiveDriveThreatUntilMs: 0,
     defensiveDriveThreatHandlerId: initialHandlerId,
@@ -3152,49 +3160,112 @@ function calculateDefensiveQuality(run: SimulationRun, hoop = HOOP_POINT) {
 }
 
 function calculateShotQuality(
-  players: PlaybookMarker[],
+  players: PlaybookMarker[], defenders: PlaybookMarker[], shooter: PlaybookMarker,
+  offBallQuality: number, hoop = HOOP_POINT, context?: ShotMotionEvidence,
+) {
+  return scoreShot(players, defenders, shooter, offBallQuality, hoop, context, false);
+}
+
+/** Prospective reads share the release rules but never establish possession or
+ * create a released record. All evidence is copied from this evaluation time. */
+export function evaluateShotContext(
+  players: PlaybookMarker[], defenders: PlaybookMarker[], shooter: PlaybookMarker,
+  offBallQuality: number, hoop = HOOP_POINT, context?: ShotMotionEvidence,
+): ShotReleaseContext {
+  return scoreShot(players, defenders, shooter, offBallQuality, hoop, context, true);
+}
+
+function scoreShot(players: PlaybookMarker[], defenders: PlaybookMarker[], shooter: PlaybookMarker, offBallQuality: number, hoop: CourtPoint, context: ShotMotionEvidence | undefined, captureEvidence: true): ShotReleaseContext;
+function scoreShot(players: PlaybookMarker[], defenders: PlaybookMarker[], shooter: PlaybookMarker, offBallQuality: number, hoop: CourtPoint, context: ShotMotionEvidence | undefined, captureEvidence: false): number;
+function scoreShot(
+  _players: PlaybookMarker[],
   defenders: PlaybookMarker[],
   shooter: PlaybookMarker,
   offBallQuality: number,
   hoop = HOOP_POINT,
-  context: { recentCatch?: boolean; recentMovement?: boolean } = {},
-) {
+  context: ShotMotionEvidence | undefined,
+  captureEvidence: boolean,
+): ShotReleaseContext | number {
+  const atMs = context?.atMs ?? 0;
+  const velocity = { ...context?.shooterVelocityFtPerSecond ?? { x: 0, y: 0 } };
+  const speed = Math.hypot(velocity.x, velocity.y);
+  const received = context?.catch && context.catch.atMs <= atMs ? {
+    ...context.catch, position: { ...context.catch.position }, receiverVelocityFtPerSecond: { ...context.catch.receiverVelocityFtPerSecond },
+    elapsedMs: atMs - context.catch.atMs, settled: atMs - context.catch.atMs >= 150 && speed <= 2.5,
+  } : null;
+  const recentCatch = !!received && received.elapsedMs <= 1150;
+  const recentActions = context?.recentActions.map(action => ({ ...action })) ?? [];
+  const recentMovement = speed >= 2.5 || recentActions.length > 0;
+  const skill = shotSkillFor(shooter, hoop), rating = playerRating(shooter, skill);
+  const distance = pointDistanceFeet(shooter, hoop), shooterFeet = toCourtFeet(shooter);
+  const defendersEvidence = defenders.map(defender => {
+    const gap = pointDistanceFeet(defender, shooter), feet = toCourtFeet(defender);
+    const direction = gap > 1e-9 ? { x: (shooterFeet.x - feet.x) / gap, y: (shooterFeet.y - feet.y) / gap } : { x: 0, y: 0 };
+    const dv = { ...context?.defenderVelocities.find(item => item.id === defender.id)?.velocityFtPerSecond ?? { x: 0, y: 0 } };
+    const front = (defenderIsGoalSide(defender, shooter, hoop) + 1) / 2;
+    const proximity = gap > 10 ? 0 : clamp((10 - gap) / 5, 0, 1);
+    const pressure = Math.min(.22, (defenderHasBadge(defender, "lockdown") ? .16 * front * proximity : 0)
+      + (defenderHasBadge(defender, "paint-protector") && skill === "finishing" ? .2 * front * proximity : 0)
+      + (defenderHasBadge(defender, "helper") ? .08 * front * proximity : 0));
+    return { id: defender.id, position: { x: defender.x, y: defender.y }, velocityFtPerSecond: dv, distanceFeet: gap,
+      directionToShooter: direction, approachSpeedFtPerSecond: dv.x * direction.x + dv.y * direction.y,
+      relativeClosingSpeedFtPerSecond: (dv.x - velocity.x) * direction.x + (dv.y - velocity.y) * direction.y,
+      goalSide: front, badgePressure: pressure, badges: [...defender.badges ?? []] as DefensiveBadge[] };
+  }).sort((a, b) => a.id - b.id);
   const rangeScore = 1 - Math.min(1, pointDistanceFeet(shooter, hoop) / 37);
   const closestDefenderGap = defenders.length
     ? Math.min(...defenders.map((defender) => pointDistanceFeet(defender, shooter)))
     : 19;
-  const badgeContest = defenders.reduce((best, defender) => {
-    const gap = pointDistanceFeet(defender, shooter);
-    if (gap > 10) return best;
-    const front = (defenderIsGoalSide(defender, shooter, hoop) + 1) / 2;
-    const proximity = clamp((10 - gap) / 5, 0, 1);
-    const lockdown = defenderHasBadge(defender, "lockdown") ? 0.16 * front * proximity : 0;
-    const paintProtection = defenderHasBadge(defender, "paint-protector") && shotSkillFor(shooter, hoop) === "finishing"
-      ? 0.2 * front * proximity
-      : 0;
-    const helperPressure = defenderHasBadge(defender, "helper") ? 0.08 * front * proximity : 0;
-    return Math.max(best, Math.min(0.22, lockdown + paintProtection + helperPressure));
-  }, 0);
+  const badgeContest = Math.max(0, ...defendersEvidence.map(defender => defender.badgePressure));
   const contestScore = clamp(Math.min(1, closestDefenderGap / 19) - badgeContest, 0, 1);
   const baseQuality = (rangeScore * 0.52 + contestScore * 0.28 + (offBallQuality / 100) * 0.2) * 100;
-  const skill = shotSkillFor(shooter, hoop);
-  const rating = playerRating(shooter, skill);
-  const distance = pointDistanceFeet(shooter, hoop);
+  const modifiers: Array<{ key: string; points: number; evidence: Record<string, string | number | boolean | null> }> = [];
+  const add = (key: string, points: number, evidence: Record<string, string | number | boolean | null>) => {
+    if (captureEvidence) modifiers.push({ key, points, evidence });
+  };
+  add("range", rangeScore * 52, { distanceFeet: distance, rangeScaleFeet: 37 });
+  add("defender-space", Math.min(1, closestDefenderGap / 19) * 28, { closestDefenderGapFeet: closestDefenderGap, noDefenders: defenders.length === 0 });
+  add("defender-badges", (contestScore - Math.min(1, closestDefenderGap / 19)) * 28, { badgeContest });
+  add("spacing", offBallQuality * .2, { offBallQuality });
+  add("shot-rating", (rating - 3) * 8, { skill, rating });
   let badgeBonus = 0;
   if (rating >= 2) {
     if (skill === "threePoint" && playerHasBadge(shooter, "deep-range") && distance > NBA_COURT_GEOMETRY.threePoint.radiusFeet + 0.5) {
-      badgeBonus += clamp(2 + (distance - NBA_COURT_GEOMETRY.threePoint.radiusFeet) * 1.1, 0, 7);
+      const bonus = clamp(2 + (distance - NBA_COURT_GEOMETRY.threePoint.radiusFeet) * 1.1, 0, 7);
+      badgeBonus += bonus; add("deep-range", bonus, { distanceFeet: distance });
     }
-    if (context.recentCatch && skill !== "finishing" && playerHasBadge(shooter, "catch-and-shoot")) badgeBonus += 6;
-    if (context.recentMovement && playerHasBadge(shooter, "off-dribble-creator")) badgeBonus += 5;
-    if (skill === "finishing" && playerHasBadge(shooter, "rim-finisher")) badgeBonus += 7;
-    if (skill === "finishing" && playerHasBadge(shooter, "slasher")) badgeBonus += 3;
-    if (skill === "finishing" && context.recentMovement && playerHasBadge(shooter, "cutter")) badgeBonus += 3;
-    if (skill === "finishing" && context.recentMovement && playerHasBadge(shooter, "roll-threat")) badgeBonus += 4;
-    if (skill === "midrange" && distance <= 14 && playerHasBadge(shooter, "post-scorer")) badgeBonus += 4;
+    const badge = (name: OffensiveBadge, bonus: number, eligible: boolean, evidence: Record<string, string | number | boolean | null>) => {
+      if (playerHasBadge(shooter, name)) { const awarded = eligible ? bonus : 0; badgeBonus += awarded; add(name, awarded, { eligible, ...evidence }); }
+    };
+    badge("catch-and-shoot", 6, recentCatch && !!received?.settled && skill !== "finishing", { catchAgeMs: received?.elapsedMs ?? null, settled: received?.settled ?? false });
+    badge("off-dribble-creator", 5, recentMovement, { speedFtPerSecond: speed, executedMovementCount: recentActions.length });
+    badge("rim-finisher", 7, skill === "finishing", { skill });
+    badge("slasher", 3, skill === "finishing", { skill });
+    badge("cutter", 3, skill === "finishing" && recentMovement, { skill, recentMovement });
+    badge("roll-threat", 4, skill === "finishing" && recentMovement, { skill, recentMovement });
+    badge("post-scorer", 4, skill === "midrange" && distance <= 14, { skill, distanceFeet: distance });
   }
-  const adjustedQuality = baseQuality + (rating - 3) * 8 + Math.min(10, badgeBonus);
-  return Math.round(clamp(rating === 1 ? Math.min(adjustedQuality, 40) : adjustedQuality, 0, 100));
+  add("offensive-badge-cap", Math.min(10, badgeBonus) - badgeBonus, { uncappedBonus: badgeBonus, cap: 10 });
+  // Bounded heuristics: lateral/retreating movement adds no closeout pressure.
+  const closeout = defendersEvidence.map(d => ({ id: d.id, pressure: clamp(d.approachSpeedFtPerSecond / 15, 0, 1) * clamp((12 - d.distanceFeet) / 10, 0, 1) * 6 }))
+    .sort((a, b) => b.pressure - a.pressure || a.id - b.id)[0];
+  const closeoutPenalty = closeout?.pressure ?? 0;
+  const movementPenalty = clamp((speed - 2.5) / 16.5, 0, 1) * (skill === "finishing" ? 2 : 4);
+  const catchPenalty = recentCatch && !received?.settled ? 2 : 0;
+  add("closeout-motion", -closeoutPenalty, { defenderId: closeout?.id ?? null, maxPenalty: 6 });
+  add("shooter-motion", -movementPenalty, { speedFtPerSecond: speed, settledSpeedFeet: 2.5 });
+  add("catch-settling", -catchPenalty, { catchAgeMs: received?.elapsedMs ?? null, settled: received?.settled ?? false, settlingMs: 150 });
+  const adjustedQuality = baseQuality + (rating - 3) * 8 + Math.min(10, badgeBonus) - closeoutPenalty - movementPenalty - catchPenalty;
+  const capped = rating === 1 ? Math.min(adjustedQuality, 40) : adjustedQuality;
+  const quality = Math.round(clamp(capped, 0, 100));
+  if (!captureEvidence) return quality;
+  add("rating-cap", capped - adjustedQuality, { rating, cap: rating === 1 ? 40 : 100 });
+  add("clamp-and-round", quality - capped, { min: 0, max: 100 });
+  return freezeShotRelease({ version: 1, scale: "simulation-score", atMs,
+    shooter: { id: shooter.id, position: { x: shooter.x, y: shooter.y }, velocityFtPerSecond: velocity,
+      speedFtPerSecond: speed, skill, rating, badges: [...shooter.badges ?? []] as OffensiveBadge[] },
+    hoop: { ...hoop }, distanceFeet: distance, offBallQuality, catch: received, recentActions,
+    defenders: defendersEvidence, modifiers, unclampedQuality: adjustedQuality, quality });
 }
 
 function parabolicPoint(start: CourtPoint, end: CourtPoint, amount: number) {
@@ -3223,7 +3294,10 @@ function updateShot(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
     const shooter = markerForId(run.players, ball.shooterId);
     if (shooter && !ball.pathOverride) ball.position = { x: shooter.x, y: shooter.y };
     if (timeMs + 1e-6 < ball.releaseAtMs) return;
-    ball = run.ballState = transitionBall(ball, { kind: "release-shot", atMs: timeMs });
+    if (!shooter) throw new Error("The shooter is unavailable at release.");
+    const offBall = calculateOffBallQuality(run.players, run.ball, run.settings, run.defenders, shooter.id);
+    const releaseContext = evaluateShotContext(run.players, run.defenders, shooter, offBall, hoop, badgeShotContext(run, shooter, timeMs));
+    ball = run.ballState = transitionBall(ball, { kind: "release-shot", atMs: timeMs, releaseContext });
   }
   if (!isShotBall(ball)) return;
   if (ball.kind === "shot-in-flight") {
@@ -3278,6 +3352,11 @@ function transferBallToRecipient(run: SimulationRun, nextTime: number, stepMs: n
       position: receiver, giverPosition: giver ?? undefined });
     const state = executionFor(transfer); state.phase = "completed"; state.progress = 1; state.completedAtMs = nextTime;
     run.lastReceiveAtMs.set(receiver.id, nextTime);
+    run.lastCatchEvidence.set(receiver.id, freezeShotRelease({ atMs: nextTime, actionId: transfer.arrow.id,
+      sequence: transfer.sequence, giverId: giver?.id ?? null, kind: ball.transfer.kind,
+      position: { x: receiver.x, y: receiver.y },
+      receiverVelocityFtPerSecond: { ...run.velocities.get(velocityKey("player", receiver.id)) ?? { x: 0, y: 0 } },
+      nearestDefenderGapFeet: run.defenders.length ? Math.min(...run.defenders.map(defender => pointDistanceFeet(defender, receiver))) : null }));
     run.offBallAnchors.set(receiver.id, { x: receiver.x, y: receiver.y });
     return;
   }
@@ -3434,7 +3513,10 @@ function stagePausedRun(run: SimulationRun): SimulationRun {
   for (const action of run.actions) for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(action))) {
     if (!("value" in descriptor) || !descriptor.writable || !Object.isExtensible(action)) throw new Error("The paused action cannot accept edits.");
   }
-  const candidate = structuredClone(data);
+  const candidate = structuredClone(data) as SimulationRun;
+  if (isShotBall(candidate.ballState)) freezeShotRelease(candidate.ballState.releaseContext);
+  freezeShotRelease(candidate.frame.shotRelease);
+  freezeShotRelease(candidate.previousFrame.shotRelease);
   for (const [key, descriptor] of Object.entries(descriptors)) {
     if (!("value" in descriptor)) Object.defineProperty(candidate, key, descriptor);
   }
@@ -3486,7 +3568,13 @@ function validatePausedRun(run: SimulationRun) {
     if (run.actionGraph.get(transfer.actionKey)?.transfer !== transfer || transfer.outcome.kind !== "pending"
       || !run.players.some(player => player.id === transfer.receiverId)) throw new Error("The pending catch is inconsistent.");
   }
-  if (isShotBall(run.ballState)) { point(run.ballState.start); finite(run.ballState.quality); finite(run.ballState.releaseAtMs); }
+  if (isShotBall(run.ballState)) {
+    point(run.ballState.start); finite(run.ballState.quality); finite(run.ballState.releaseAtMs);
+    if (run.ballState.releaseContext) {
+      validateShotRelease(run.ballState.releaseContext);
+      if (run.ballState.quality !== run.ballState.releaseContext.quality) throw new Error("The released shot evaluation is inconsistent.");
+    }
+  }
   for (const marker of [...run.frame.players, ...run.frame.defenders]) point(marker);
   if (run.frame.ball) point(run.frame.ball);
   for (const value of [run.frame.shotQuality, run.frame.defensiveQuality, run.frame.offBallQuality]) finite(value);

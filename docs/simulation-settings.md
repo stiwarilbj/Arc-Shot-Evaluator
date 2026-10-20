@@ -41,7 +41,7 @@ Run `npm run test:simulation-settings` from `frontend/`. The regression rejects
 malformed objects, enums, missing/non-boolean flags, and nonfinite intensity
 across direct/prepared/update/advance boundaries, including scripted overrides.
 It checks unchanged state on errors, retrying corrected inputs, caller isolation,
-defaults, and the unchanged-settings fast path. The congestion-planning fixture
+defaults, and the unchanged-settings fast path. The release-context fixture
 compares exact hashes of every recorded display/diagnostic sample through
 completion in 52 scenarios across all 24 starters, covering every
 strategy, scheme, off-ball style, flag combination, and representative intensities.
@@ -49,12 +49,14 @@ The tests hold the random input for `auto` scheme selection fixed; ordinary
 automatic selection retains its existing randomness. Historical pre-validation
 hashes, dependency-engine hashes, ball-state-engine hashes, and coordinated-defense
 hashes are retained for before/after audits. Dependency scheduling, authoritative
-ball control, coordinated defensive duties, and congestion planning intentionally
-change timing, possession diagnostics, and some outcomes. See
+ball control, coordinated defensive duties, congestion planning, and release-time
+shot evaluation intentionally change timing, possession diagnostics, and some
+outcomes. See
 [action dependencies](playbook-action-dependencies.md),
 [ball state](playbook-ball-state.md),
-[defensive responsibilities](playbook-defense.md), and
-[movement congestion](playbook-congestion.md).
+[defensive responsibilities](playbook-defense.md),
+[movement congestion](playbook-congestion.md), and
+[shot release evaluation](playbook-shot-evaluation.md).
 
 ## Elapsed-time advancement
 

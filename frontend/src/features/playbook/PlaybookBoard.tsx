@@ -243,6 +243,7 @@ const EMPTY_SIMULATION_FRAME: SimulationFrame = {
   shotProgress: 0,
   shotResult: "pending",
   shotQuality: 0,
+  shotRelease: null,
   shooterId: null,
   shotStart: null,
   shotTarget: null,

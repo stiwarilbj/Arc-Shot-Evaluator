@@ -3,6 +3,7 @@ import { validateSettings, DEFENSE_SCHEME_LABELS, type SimulationFrame } from ".
 import { getSimulationSessionInfo } from "./simulationSession.ts";
 import { SIMULATION_ENGINE_VERSION } from "./simulationVersion.ts";
 import { BALL_PHASES } from "./ballState.ts";
+import { freezeShotRelease, validateShotRelease } from "./shotReleaseContext.ts";
 import type { CourtPoint, PlaybookDraft, SimulationSettings } from "./types.ts";
 
 export type SimulationSessionInfo = NonNullable<ReturnType<typeof getSimulationSessionInfo>>;
@@ -83,6 +84,12 @@ export function parseSimulationResponse(value: unknown): SimulationResponse {
   check(BALL_PHASES.includes(f.ballPhase as typeof BALL_PHASES[number]), "ball phase");
   for (const key of ["ball", "shotStart", "shotTarget"]) check(f[key] === null || point(f[key]), key);
   for (const key of ["defensiveQuality", "offBallQuality", "shotProgress", "shotQuality"]) check(finite(f[key]), key);
+  if (f.shotRelease !== null) {
+    validateShotRelease(f.shotRelease);
+    check(f.shotRelease.quality === f.shotQuality && f.shotRelease.shooter.id === f.shooterId
+      && f.shotRelease.atMs <= (s.positionMs as number) + 1e-6 && ["air", "result"].includes(f.shotPhase as string), "released evaluation");
+    freezeShotRelease(f.shotRelease);
+  } else check(f.shotPhase !== "air" && f.shotPhase !== "result", "missing released evaluation");
   for (const key of ["activeActionLabel", "adaptiveReadLabel", "adaptiveReadReason", "defenseSchemeNotice"]) check(f[key] === null || typeof f[key] === "string", key);
   check(f.activeSequence === null || identity(f.activeSequence), "active sequence");
   check(f.activeDefenseScheme === null || typeof f.activeDefenseScheme === "string" && Object.hasOwn(DEFENSE_SCHEME_LABELS, f.activeDefenseScheme), "frame defense");

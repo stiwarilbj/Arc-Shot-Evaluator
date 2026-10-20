@@ -176,6 +176,16 @@ loose ball, while released shots no longer count as player possession. Counter L
 uses the same evidence and keeps ordinary pass transit separate from a lost opening.
 These behaviors apply in both builds. See [ball state](docs/playbook-ball-state.md).
 
+Shot quality is evaluated at the actual release, with a recorded snapshot of
+shooter speed, confirmed catch timing, defender approach direction/speed,
+spacing, ratings, badges, and each scoring modifier. A fast closeout and a
+retreating defender at the same distance can produce different scores, as can a
+settled catch and a hard cut. Once released, the evaluation stays fixed through
+later position or attribute edits, playback, and seeking; a valid score of zero
+stays zero. Both Playbook and Counter Lab use these rules on both build targets.
+These are simulation scores, not real shooting probabilities. See
+[shot release evaluation](docs/playbook-shot-evaluation.md) for rules and tests.
+
 Defense allocates primary, screen, help, rim-support, and recovery responsibilities
 as a team. When a defender helps, an explicit rotation assigns the vacated player
 or zone to a teammate and records the remaining exposure. Recovery follows that

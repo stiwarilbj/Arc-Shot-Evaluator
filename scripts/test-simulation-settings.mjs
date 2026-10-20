@@ -70,7 +70,7 @@ const scripted = createSimulationRun(source, { ...settings(), offenseMode: 'scri
 assert.equal(scripted.settings.offenseOffBall, 'off');
 assert.deepEqual(scripted.settings.automaticActions, { screen: false, handoff: false, pickRoll: false, offBallScreen: false });
 
-// Congestion-planning snapshots include every display/diagnostic sample.
+// Release-context snapshots include every display/diagnostic sample.
 // Historical pre-validation hashes remain in the fixture for before/after audits.
 const baselineFile = JSON.parse(readFileSync(new URL('../tests/fixtures/simulation-settings-baseline.json', import.meta.url)));
 assert.equal(Math.random(), baselineFile.randomSample);
@@ -86,11 +86,11 @@ for (const fixture of baseline) {
   while (current.elapsedMs < current.durationMs) {
     advanceSimulationState(current, 50);
     hash.update(JSON.stringify([current.elapsedMs, current.durationMs, getSimulationFrame(current), observeCounterLabRun(current)]));
-    assert.ok(++steps <= fixture.congestionSteps);
+    assert.ok(++steps <= fixture.releaseContextSteps);
   }
-  assert.equal(hash.digest('hex'), fixture.congestionSha256, `Exact congestion-planning replay/diagnostic equality: ${JSON.stringify(input)}`);
-  assert.equal(steps, fixture.congestionSteps);
+  assert.equal(hash.digest('hex'), fixture.releaseContextSha256, `Exact release-context replay/diagnostic equality: ${JSON.stringify(input)}`);
+  assert.equal(steps, fixture.releaseContextSteps);
   assert.deepEqual(input, fixture.settings);
 }
 Math.random = originalRandom;
-console.log(`Simulation settings passed: ${invalid.length} malformed inputs across direct/prepared/update/advance boundaries; unchanged state on failure, defaults, mutable caller inputs, scripted overrides and ${baseline.length} exact congestion-planning deterministic trials across all ${STARTER_PLAYS.length} starters`);
+console.log(`Simulation settings passed: ${invalid.length} malformed inputs across direct/prepared/update/advance boundaries; unchanged state on failure, defaults, mutable caller inputs, scripted overrides and ${baseline.length} exact release-context deterministic trials across all ${STARTER_PLAYS.length} starters`);

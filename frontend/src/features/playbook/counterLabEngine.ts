@@ -205,7 +205,7 @@ function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMo
     : run.adaptiveActionsTaken ? `${run.adaptiveActionsTaken} adaptive attempt${run.adaptiveActionsTaken === 1 ? "" : "s"}; ${firstBreakdown ? "no verified recovery" : "no breakdown required recovery"}.`
     : "No adaptive actions were attempted.";
   const actions = [...new Set(run.actions.filter((action) => !action.automatic && !action.adaptiveReadLabel).map((action) => action.arrow.kind.replaceAll("-", " ")))];
-  return { key: `${profile.id}:${mode}`, profile, mode, score: Math.round(run.frame.shotQuality), finalShotQuality: run.frame.shotQuality, createdAdvantage, outcome,
+  return { key: `${profile.id}:${mode}`, profile, mode, shotRelease: run.frame.shotRelease, score: Math.round(run.frame.shotQuality), finalShotQuality: run.frame.shotQuality, createdAdvantage, outcome,
     firstLostOpeningMs, firstBlockedPass, firstUnsafePass, passDiagnostics, firstBreakdown, releasedAtMs, adaptiveAttempts: run.adaptiveActionsTaken, adaptiveSuccesses: successfulReads.size, recoveredAtMs,
     actionDiagnostics, actions, notice: lossFrame?.action ? `The opening closed during ${lossFrame.action}.` : null, trace };
 }
