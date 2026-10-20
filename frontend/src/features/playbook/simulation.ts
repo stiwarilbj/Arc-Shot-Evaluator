@@ -601,7 +601,7 @@ const DEFENSE_STRATEGIES = new Set(["off", "contain", "help", "switch", "trap-ro
 const DEFENSE_SCHEMES = new Set<string>(["auto", ...DEFENSE_SCHEME_ORDER]);
 const AUTOMATIC_ACTION_FLAGS = ["screen", "handoff", "pickRoll", "offBallScreen"] as const;
 
-function validateSettings(value: unknown): asserts value is SimulationSettings {
+export function validateSettings(value: unknown): asserts value is SimulationSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Simulation settings must be an object.");
   const settings = value as Record<string, unknown>;
   if (typeof settings.offenseOffBall !== "string" || !OFF_BALL_STYLES.has(settings.offenseOffBall)) throw new TypeError("Invalid simulation setting: offenseOffBall.");
@@ -3635,7 +3635,7 @@ export function editPausedSimulationMarker(run: SimulationRun, type: "player" | 
   return frame;
 }
 
-function pausedDraftIsCompatible(source: PlaybookDraft, draft: PlaybookDraft) {
+export function pausedDraftIsCompatible(source: PlaybookDraft, draft: PlaybookDraft) {
   return JSON.stringify(source.arrows) === JSON.stringify(draft.arrows)
     && JSON.stringify(source.players.map(p => p.id)) === JSON.stringify(draft.players.map(p => p.id))
     && JSON.stringify(source.defenders.map(p => p.id)) === JSON.stringify(draft.defenders.map(p => p.id))

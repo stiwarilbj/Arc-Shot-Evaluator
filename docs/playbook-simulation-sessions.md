@@ -1,6 +1,7 @@
 # Reproducible Playbook simulation sessions
 
-Both builds use the same browser engine. Playbook starts
+Both builds use the same browser engine in Playbook's lazily loaded dedicated
+worker (see [execution transport](playbook-worker.md)). The worker starts
 `createSimulationRun(drawing, settings, hoop, { recordSession: true })`. A session
 retains an independent starting drawing and normalized settings, engine version,
 unsigned 32-bit seed, hoop, and resolved defense scheme. Seeded automatic defense

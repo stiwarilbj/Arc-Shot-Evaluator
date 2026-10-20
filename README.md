@@ -140,7 +140,9 @@ Paused marker, rating, and badge edits are applied as one validated simulation
 transaction in both builds. Compatible undo/redo retains the paused clock;
 unrelated actions keep their progress, moved screens refresh their approach and
 coverage, and released passes/shots keep their recorded evidence. Invalid edits
-leave the drawing and active run intact. Changing actions or the roster still
+are rejected before changing the drawing. If asynchronous execution fails, the
+worker pauses with the current draft and last acknowledged frame intact; **Play**
+restarts from the drawing. Changing actions or the roster still
 restarts playback. See [paused editing](docs/playbook-paused-editing.md).
 
 Playbook's **Replay** scrubber seeks within the portion already played and pauses
@@ -155,6 +157,17 @@ at most 24 checkpoints and a 16 MiB accounting budget per session. Sessions stay
 in memory and are cleared by reloading or starting another play. Exact recovery
 is supported within the same engine version and runtime; saved version-1 plays
 remain unchanged. See [simulation sessions](docs/playbook-simulation-sessions.md).
+
+Playbook execution runs in a dedicated browser worker, loaded on the first
+**Play**, on both the hosted and downloaded builds. Drawing, input, and layout
+remain on the page. Session/revision checks reject stale frames after paused
+edits, settings changes, seeking, or loading another play. The transport allows
+one outstanding request and caps pending advancement at 100 ms (50 ms per engine
+call), so a slow device does not accumulate a long playback backlog. Hidden
+browser tabs and other workspaces pause playback; resuming is explicit. A worker
+error or ten-second response timeout preserves the draft, undo history, and last
+valid court frame; **Play** creates a fresh session. No server or paid service is
+used. See [Playbook worker execution](docs/playbook-worker.md).
 
 Ball control uses one shared state machine. Released passes have no controller;
 handoffs remain with their giver until the exchange is confirmed. Transfers record

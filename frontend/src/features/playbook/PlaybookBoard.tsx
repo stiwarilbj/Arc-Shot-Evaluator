@@ -52,21 +52,17 @@ import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, Def
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
-  advanceSimulationRun,
   bindAuthoredActions,
-  createSimulationRun,
-  editPausedSimulationMarker,
-  getSimulationFrame,
+  pausedDraftIsCompatible,
   placeDefendersGoalSide,
-  rebasePausedSimulation,
-  setSimulationRunSettings,
   SIMULATION_SHOT_MS,
   DEFENSE_SCHEME_DESCRIPTIONS,
   DEFENSE_SCHEME_LABELS,
   simulationTimelineDuration,
 } from "./simulation";
-import type { SimulationFrame, SimulationRun } from "./simulation";
-import { getSimulationSessionInfo, seekSimulationSession } from "./simulationSession";
+import type { SimulationFrame } from "./simulation";
+import { createPlaybookSimulationClient, type PlaybookSimulationClient } from "./playbookSimulationClient";
+import type { SimulationView } from "./playbookSimulationProtocol";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
 type PointerSample = { clientX: number; clientY: number; pointerId: number };
@@ -306,7 +302,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [arrowFields, setArrowFields] = useState({ id: "", sequence: "", timing: "" });
   const simulationFrameRef = useRef<number | null>(null);
-  const simulationRunRef = useRef<SimulationRun | null>(null);
+  const simulationClientRef = useRef<PlaybookSimulationClient | null>(null);
+  const [simulationView, setSimulationView] = useState<SimulationView | null>(null);
+  const lastSimulationViewRef = useRef<SimulationView | null>(null);
+  const simulationDrawingRef = useRef<PlaybookDraft | null>(null);
   applyPointerRef.current = applyPointerPosition;
 
   const interruptPointerRef = useRef(() => {});
@@ -354,11 +353,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     });
   }, [starterCategory, starterSearch]);
   const simulationFrame = simulationFrameState ?? EMPTY_SIMULATION_FRAME;
-  const simulationDuration = simulationRunRef.current?.durationMs ?? simulationTimelineDuration(draft.arrows) + SIMULATION_SHOT_MS;
-  const simulationActive = simulationRunRef.current !== null;
-  const simulationSession = simulationRunRef.current ? getSimulationSessionInfo(simulationRunRef.current) : null;
+  const draftDuration = useMemo(() => simulationTimelineDuration(draft.arrows) + SIMULATION_SHOT_MS, [draft.arrows]);
+  const simulationDuration = simulationView?.durationMs ?? draftDuration;
+  const simulationActive = simulationFrameState !== null;
+  const simulationInterrupted = simulationActive && simulationClientRef.current === null;
+  const simulationSession = simulationView?.session ?? null;
   const simulationComplete = simulationElapsed >= simulationDuration && simulationElapsed > 0;
-  const simulationPaused = simulationActive && !simulationPlaying && !simulationComplete;
+  const simulationPaused = simulationClientRef.current !== null && !simulationPlaying && !simulationComplete;
   const offBallQualityDisplay = draft.players.length === 0
     ? "—"
     : simulationActive
@@ -373,55 +374,35 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   useEffect(() => {
     if (!simulationPlaying) return;
     let previousTime = performance.now();
-    const resetClock = () => {
-      previousTime = performance.now();
-    };
     const tick = (now: number) => {
-      const run = simulationRunRef.current;
-      if (!run) {
+      const client = simulationClientRef.current;
+      if (!client) {
         setSimulationPlaying(false);
         return;
       }
       if (document.hidden) {
-        previousTime = now;
-        simulationFrameRef.current = window.requestAnimationFrame(tick);
+        pauseSimulation();
         return;
       }
       const delta = Math.max(0, Math.min(50, now - previousTime));
       previousTime = now;
-      const before = getSimulationSessionInfo(run)?.positionMs ?? run.elapsedMs;
-      let frame: SimulationFrame;
-      try {
-        frame = advanceSimulationRun(run, delta);
-      } catch (cause) {
-        setSimulationPlaying(false);
-        setError(cause instanceof Error ? cause.message : "Playback was interrupted. Seek to a recorded position to recover.");
-        return;
-      }
-      if (simulationSettingsRef.current !== run.settings) {
-        simulationSettingsRef.current = run.settings;
-        setSimulationSettings(run.settings);
-      }
-      const position = getSimulationSessionInfo(run)?.positionMs ?? run.elapsedMs;
-      if (position !== before) {
-        setSimulationElapsed(position);
-        setSimulationFrameState(frame);
-      }
-      if (run.elapsedMs >= run.durationMs) {
-        setSimulationPlaying(false);
-        simulationFrameRef.current = null;
-        return;
-      }
+      // Clock and transport only. All execution and interpolation happen in
+      // the worker, with one outstanding request and bounded clock debt.
+      client.advance(delta);
       simulationFrameRef.current = window.requestAnimationFrame(tick);
     };
-    document.addEventListener("visibilitychange", resetClock);
     simulationFrameRef.current = window.requestAnimationFrame(tick);
     return () => {
-      document.removeEventListener("visibilitychange", resetClock);
       if (simulationFrameRef.current != null) window.cancelAnimationFrame(simulationFrameRef.current);
       simulationFrameRef.current = null;
     };
   }, [simulationPlaying]);
+
+  useEffect(() => {
+    const hidden = () => { if (document.hidden) pauseSimulation(); };
+    document.addEventListener("visibilitychange", hidden);
+    return () => { document.removeEventListener("visibilitychange", hidden); simulationClientRef.current?.dispose(); simulationClientRef.current = null; };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -445,10 +426,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }, [requestedPlay?.requestId]);
 
   useEffect(() => {
-    if (!active && simulationPlaying) {
-      setSimulationPlaying(false);
-      if (simulationRunRef.current) setSimulationFrameState(getSimulationFrame(simulationRunRef.current));
-    }
+    if (!active && simulationPlaying) pauseSimulation();
   }, [active, simulationPlaying]);
 
   useEffect(() => {
@@ -466,47 +444,45 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function resetSimulation() {
+    simulationClientRef.current?.dispose();
+    simulationClientRef.current = null;
+    simulationDrawingRef.current = null;
+    lastSimulationViewRef.current = null;
+    setSimulationView(null);
     setSimulationPlaying(false);
     setSimulationElapsed(0);
     setSimulationFrameState(null);
-    simulationRunRef.current = null;
+  }
+
+  function pauseSimulation() {
+    simulationClientRef.current?.playback(false);
+    setSimulationPlaying(false);
   }
 
   function changeSimulationSetting<Key extends keyof SimulationSettings>(key: Key, value: SimulationSettings[Key]) {
     const next = { ...simulationSettingsRef.current, [key]: value };
     simulationSettingsRef.current = next;
     setSimulationSettings(next);
-    if (simulationRunRef.current) {
-      setSimulationRunSettings(simulationRunRef.current, next);
-      setSimulationFrameState(getSimulationFrame(simulationRunRef.current));
-    }
+    simulationClientRef.current?.settings(next);
     setError(null);
   }
 
   function seekSimulation(timeMs: number) {
-    const run = simulationRunRef.current;
-    if (!run) return;
-    try {
-      const frame = seekSimulationSession(run, timeMs);
-      setSimulationPlaying(false);
-      setSimulationFrameState(frame);
-      setSimulationElapsed(getSimulationSessionInfo(run)!.positionMs);
-      simulationSettingsRef.current = run.settings;
-      setSimulationSettings(run.settings);
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "This replay position could not be restored.");
-    }
+    if (!simulationClientRef.current) return;
+    simulationClientRef.current.seek(timeMs);
+    setSimulationPlaying(false);
+    setError(null);
   }
 
-  // Prepare a valid drawing/run pair before changing draft history or editor
-  // state. A failed simulation transaction leaves both workspaces untouched.
+  // Validate the drawing synchronously. The worker stages compatible execution
+  // edits atomically; transport failures preserve the user's editable draft.
   function handoffDraft(next: PlaybookDraft, preserveSimulation: boolean) {
     try {
       validatePlaybookDocument(next);
-      const run = simulationRunRef.current;
-      if (preserveSimulation && run && rebasePausedSimulation(run, next, HOOP_POINT)) setSimulationFrameState(getSimulationFrame(run));
-      else resetSimulation();
+      if (preserveSimulation && simulationClientRef.current && simulationDrawingRef.current && pausedDraftIsCompatible(simulationDrawingRef.current, next)) {
+        simulationClientRef.current.edit(next);
+        simulationDrawingRef.current = next;
+      } else resetSimulation();
       setDraft(next);
       setStatus("idle");
       setError(null);
@@ -520,7 +496,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   function commit(next: PlaybookDraft, previous = draft) {
     if (isSameDraft(next, previous)) return;
     const before = clonePlaybook(previous);
-    const preserveSimulation = simulationRunRef.current !== null && !simulationPlaying;
+    const preserveSimulation = simulationClientRef.current !== null && !simulationPlaying;
     if (!handoffDraft(next, preserveSimulation)) return;
     setHistory((current) => [...current.slice(-39), before]);
     setFuture([]);
@@ -530,7 +506,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     const previous = history.at(-1);
     if (!previous) return;
     const before = clonePlaybook(draft);
-    if (!handoffDraft(previous, simulationRunRef.current !== null && !simulationPlaying)) return;
+    if (!handoffDraft(previous, simulationClientRef.current !== null && !simulationPlaying)) return;
     setHistory((current) => current.slice(0, -1));
     setFuture((current) => [before, ...current]);
     setSelected(null);
@@ -540,7 +516,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     const next = future[0];
     if (!next) return;
     const before = clonePlaybook(draft);
-    if (!handoffDraft(next, simulationRunRef.current !== null && !simulationPlaying)) return;
+    if (!handoffDraft(next, simulationClientRef.current !== null && !simulationPlaying)) return;
     setFuture((current) => current.slice(1));
     setHistory((current) => [...current, before]);
     setSelected(null);
@@ -663,18 +639,46 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setError("Add at least one offensive player before running a simulation.");
       return;
     }
-    if (simulationPaused && simulationRunRef.current) {
+    if (simulationPaused && simulationClientRef.current) {
+      simulationClientRef.current.playback(true);
       setSimulationPlaying(true);
       setError(null);
       focusBoard();
       return;
     }
-    const run = createSimulationRun(draft, simulationSettingsRef.current, HOOP_POINT, { recordSession: true });
-    simulationRunRef.current = run;
-    setSimulationFrameState(getSimulationFrame(run));
-    setSimulationElapsed(0);
-    setSimulationPlaying(true);
-    setError(null);
+    // Keep the last acknowledged court while a replacement worker starts. A
+    // startup failure must not discard the last successful display either.
+    simulationClientRef.current?.dispose();
+    simulationClientRef.current = null;
+    try {
+      const client = createPlaybookSimulationClient({ sessionId: crypto.randomUUID(),
+        onState: (view) => {
+          if (simulationClientRef.current !== client) return;
+          lastSimulationViewRef.current = view;
+          setSimulationView(view);
+          setSimulationFrameState(view.frame);
+          setSimulationElapsed(view.session.positionMs);
+          setSimulationPlaying(view.playing);
+          simulationSettingsRef.current = view.settings;
+          setSimulationSettings(view.settings);
+        },
+        onFailure: (message) => {
+          if (simulationClientRef.current !== client) return;
+          simulationClientRef.current = null;
+          setSimulationPlaying(false);
+          setSimulationFrameState(lastSimulationViewRef.current?.frame ?? null);
+          setError(message);
+        },
+      });
+      simulationClientRef.current = client;
+      simulationDrawingRef.current = draft;
+      client.start(draft, simulationSettingsRef.current);
+      setSimulationPlaying(true);
+      setError(null);
+    } catch {
+      setSimulationPlaying(false);
+      setError("Playback worker could not start. Your drawing is intact. Press Play to retry.");
+    }
     focusBoard();
   }
 
@@ -899,13 +903,18 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     try {
       validatePlaybookDocument(next);
       const editingTimeline = drag.type === "arrow-start" || drag.type === "arrow-end" || drag.type === "arrow-exit" || drag.type === "arrow-control";
-      const run = simulationRunRef.current;
+      const client = simulationClientRef.current;
       if (editingTimeline && simulationActive) resetSimulation();
-      else if (run && (simulationPaused || simulationPlaying)) {
+      else if (client) {
         if (drag.type === "ball" || drag.type === "player" || drag.type === "defender") {
-          const frame = editPausedSimulationMarker(run, drag.type, drag.id, point, next);
+          client.edit(next, { type: drag.type, id: drag.id, point });
+          simulationDrawingRef.current = next;
           setSimulationPlaying(false);
-          setSimulationFrameState(frame);
+          // Immediate drag feedback only; the acknowledged worker snapshot
+          // replaces it. Never use this optimistic view as executable state.
+          setSimulationFrameState((frame) => frame ? { ...frame,
+            ...(drag.type === "ball" ? { ball: point } : { [drag.type === "player" ? "players" : "defenders"]: frame[drag.type === "player" ? "players" : "defenders"].map(marker => marker.id === drag.id ? { ...marker, ...point } : marker) }),
+          } : frame);
         }
       }
       setDraft(next);
@@ -944,7 +953,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             handler_id: currentDraft.ball ? nearestPlayerId(currentDraft.players, currentDraft.ball, nearestPlayerId(currentDraft.players, start)) ?? undefined : undefined,
           } : {}),
         };
-        const binding = createSimulationRun({ ...currentDraft, arrows: [...currentDraft.arrows, newArrow] }, { ...simulationSettings, offenseMode: "scripted" }).actions.find((action) => action.arrow.id === newArrow.id);
+        const binding = bindAuthoredActions({ ...currentDraft, arrows: [...currentDraft.arrows, newArrow] }).find((action) => action.arrow.id === newArrow.id);
         if (binding?.actorId != null) newArrow.actor_id = binding.actorId;
         if ((kind === "pass" || kind === "handoff") && binding?.recipientId != null) newArrow.recipient_id = binding.recipientId;
         next.arrows = [...next.arrows, newArrow];
@@ -1341,7 +1350,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="toolbar-spacer" />
             <ToolButton icon={<BrainCircuit size={15} />} label="AI defense" title="Apply ARCade Hoops defensive AI" onClick={applyAIDefense} />
             <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : simulationPaused ? "Resume" : "Play"} title={!draft.players.length ? "Add at least one offensive player before simulating" : simulationPlaying ? "Pause play simulation" : simulationPaused ? "Resume play simulation" : "Play simulation with defensive AI"} disabled={!draft.players.length && !simulationActive} onClick={() => {
-              if (simulationPlaying) setSimulationPlaying(false);
+              if (simulationPlaying) pauseSimulation();
               else startSimulation();
             }} />
             <ToolButton active={tool === "delete"} icon={<Eraser size={15} />} label="Delete" title={TOOL_LABELS.delete} onClick={() => chooseTool("delete")} />
@@ -1352,13 +1361,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <ArrowVisibilityControl />
             <span className="simulation-ai-label"><ShieldCheck size={14} /> ARCade Hoops defensive AI</span>
             {simulationActive && simulationFrame.activeDefenseScheme ? <span className="simulation-scheme-label" role="status"><ShieldCheck size={13} />{currentDefenseSchemeLabel}</span> : null}
-            <span className="simulation-copy">{simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeActionLabel ? `${simulationFrame.activeActionLabel} in progress` : simulationFrame.adaptiveReadLabel ? `Read: ${simulationFrame.adaptiveReadLabel}` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
+            <span className="simulation-copy">{simulationInterrupted ? "Playback interrupted · press Play to restart" : simulationPaused ? "Paused · edit the board, then resume" : simulationActive ? (simulationFrame.shotPhase === "setup" ? "Shot setup" : simulationFrame.shotPhase === "air" ? `Shot in air · ${Math.round(simulationFrame.shotProgress * 100)}%` : simulationFrame.shotPhase === "result" ? `${simulationFrame.shotResult === "made" ? "Made shot" : "Missed shot"} · ${simulationFrame.shotQuality}% quality` : simulationFrame.activeActionLabel ? `${simulationFrame.activeActionLabel} in progress` : simulationFrame.adaptiveReadLabel ? `Read: ${simulationFrame.adaptiveReadLabel}` : simulationFrame.activeSequence ? `Move ${simulationFrame.activeSequence} in progress` : "Defensive setup") : "Play to preview the sequence"}</span>
             {simulationActive && simulationFrame.adaptiveReadReason ? <span className="simulation-read-copy" role="status">{simulationFrame.adaptiveReadReason}</span> : null}
             {simulationActive && simulationFrame.defenseSchemeNotice ? <span className="simulation-scheme-notice" role="status">{simulationFrame.defenseSchemeNotice}</span> : null}
             <span className="simulation-quality" role="status">Off-ball quality <strong>{offBallQualityDisplay}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
-            {simulationSession ? <label className="simulation-replay-control"><span>Replay</span><input aria-label="Playbook replay time" type="range" min={0} max={simulationSession.recordedUntilMs || 1} step="any" disabled={simulationSession.recordedUntilMs === 0} value={simulationSession.positionMs} aria-valuetext={`${(simulationSession.positionMs / 1000).toFixed(2)} seconds of ${(simulationSession.recordedUntilMs / 1000).toFixed(2)} recorded`} onChange={(event) => seekSimulation(Number(event.currentTarget.value))} onKeyDown={(event) => {
+            {simulationSession ? <label className="simulation-replay-control"><span>Replay</span><input aria-label="Playbook replay time" type="range" min={0} max={simulationSession.recordedUntilMs || 1} step="any" disabled={simulationSession.recordedUntilMs === 0 || simulationInterrupted} value={simulationSession.positionMs} aria-valuetext={`${(simulationSession.positionMs / 1000).toFixed(2)} seconds of ${(simulationSession.recordedUntilMs / 1000).toFixed(2)} recorded`} onChange={(event) => seekSimulation(Number(event.currentTarget.value))} onKeyDown={(event) => {
               const offsets: Record<string, number> = { ArrowLeft: -1000 / 30, ArrowDown: -1000 / 30, ArrowRight: 1000 / 30, ArrowUp: 1000 / 30, PageDown: -1000, PageUp: 1000 };
               if (!(event.key in offsets) && event.key !== "Home" && event.key !== "End") return;
               event.preventDefault(); event.stopPropagation();
