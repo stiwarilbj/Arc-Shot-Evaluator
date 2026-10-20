@@ -47,3 +47,17 @@ sample through completion in 52 scenarios across all 24 starters, covering every
 strategy, scheme, off-ball style, flag combination, and representative intensities.
 The tests hold the random input for `auto` scheme selection fixed; ordinary
 automatic selection retains its existing randomness.
+
+## Elapsed-time advancement
+
+`advanceSimulationState` and `advanceSimulationRun` reject nonfinite elapsed
+milliseconds with a `TypeError` before inspecting completion or changing settings,
+attributes, frames, or the fixed-step accumulator. This includes `NaN` and both
+infinities, even on completed runs. Runtime non-number values are not coerced.
+The caller can resume with valid input against the unchanged run.
+
+Finite zero and negative deltas remain no-ops. Positive deltas still contribute
+at most 50 ms per call, and tiny fractional deltas accumulate with the existing
+fixed-step tolerance. Run `npm run test:simulation-advancement` from `frontend/`
+to check rejection, frame preservation, resumption, fractional accumulation,
+completed runs, and the unchanged positive-delta cap through both entry points.

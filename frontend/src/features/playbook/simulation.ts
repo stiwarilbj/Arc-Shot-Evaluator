@@ -3194,6 +3194,7 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
 
 /** Advance execution and recorded state without copying an interpolated display frame. */
 export function advanceSimulationState(run: SimulationRun, deltaMs: number, settings: SimulationSettings = run.settings, hoop = HOOP_POINT): void {
+  if (!Number.isFinite(deltaMs)) throw new TypeError("Simulation elapsed time must be finite.");
   if (run.elapsedMs >= run.durationMs || deltaMs <= 0) return;
   setSimulationRunSettings(run, settings);
   run.accumulatorMs += Math.min(deltaMs, MAX_SIMULATION_DELTA_MS);

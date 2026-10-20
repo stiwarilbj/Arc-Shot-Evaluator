@@ -127,7 +127,10 @@ schemes must be supported, automatic-action switches must be booleans, and
 intensity must be finite. Invalid updates leave the active run intact. Omitted
 optional settings keep their existing defaults; valid movement behavior is
 unchanged. See [simulation settings](docs/simulation-settings.md) for the contract
-and regression command.
+and regression command. Both builds also reject nonfinite advancement times before
+changing the accumulator, settings, or last valid frame; normal playback can resume
+after rejection. Zero/negative times remain no-ops and positive times retain the
+existing per-call cap.
 
 Save plays, reopen or duplicate them, delete saved copies, or export a
 high-resolution PNG. Hosted plays stay in browser storage; downloaded-app plays
