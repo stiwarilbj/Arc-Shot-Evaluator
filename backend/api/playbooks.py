@@ -210,7 +210,9 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
 def _read(path: Path, *, include_creation: bool = False) -> dict:
     try:
         value = json.loads(path.read_text())
-    except (OSError, ValueError, TypeError) as error:
+    except OSError as error:
+        raise HTTPException(503, "Playbook storage is temporarily unavailable; retry") from error
+    except (ValueError, TypeError) as error:
         raise HTTPException(500, "Saved play could not be read") from error
     if not isinstance(value, dict):
         raise HTTPException(500, "Saved play is invalid")
@@ -281,21 +283,30 @@ def _playbook_lock(path: Path):
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
-    PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
+        paths = sorted(PLAYBOOKS_DIR.iterdir())
+    except OSError as error:
+        raise HTTPException(503, "Playbook storage is temporarily unavailable; retry") from error
     result: list[dict] = []
-    warnings: list[str] = []
-    for path in PLAYBOOKS_DIR.glob("*.json"):
+    issues: list[dict[str, str]] = []
+    for path in paths:
+        if not path.name.endswith(".json"):
+            continue
         try:
             with _playbook_lock(path):
                 if not path.is_file():
-                    continue  # A deletion completed after globbing.
+                    continue  # A deletion completed after directory enumeration.
                 value = _read(path)
-        except HTTPException:
-            warnings.append(path.name)
+        except (HTTPException, OSError) as error:
+            kind = "unavailable" if isinstance(error, OSError) or error.status_code == 503 else "invalid"
+            issues.append({"file": path.name, "kind": kind})
             continue
         result.append(value)
-    if warnings:
-        response.headers["X-ARC-Playbook-Warnings"] = ", ".join(sorted(warnings))
+    response.headers["X-ARC-Playbook-Status"] = "partial" if issues else "complete"
+    if issues:
+        response.headers["X-ARC-Playbook-Warnings"] = ", ".join(issue["file"] for issue in issues)
+        response.headers["X-ARC-Playbook-Issues"] = json.dumps(issues, separators=(",", ":"))
     # Stable sorts keep IDs ascending within descending timestamp groups.
     result.sort(key=lambda item: item["id"])
     result.sort(key=lambda item: item["updated_at"] if isinstance(item.get("updated_at"), str) else "", reverse=True)

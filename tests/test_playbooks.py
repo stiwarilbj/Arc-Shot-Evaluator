@@ -306,6 +306,91 @@ def test_corrupt_saved_play_is_skipped_from_library(tmp_path, monkeypatch) -> No
     assert response.json() == []
 
 
+def test_partial_library_classifies_invalid_and_unavailable_files_and_recovers(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    saved = [client.post("/api/playbooks", json=_payload(f"Play {index}")).json() for index in range(4)]
+    complete = client.get("/api/playbooks")
+    assert complete.headers["X-ARC-Playbook-Status"] == "complete"
+    assert "X-ARC-Playbook-Warnings" not in complete.headers
+    bad = tmp_path / f"{saved[-1]['id']}.json"
+    original = bad.read_bytes()
+    read_text = Path.read_text
+    for problem in ("invalid-json", "invalid-document", "invalid-encoding", "unavailable"):
+        bad.write_bytes(original)
+        if problem == "invalid-json":
+            bad.write_text("{broken JSON")
+        elif problem == "invalid-document":
+            bad.write_text(json.dumps({**saved[-1], "players": "invalid roster"}))
+        elif problem == "invalid-encoding":
+            bad.write_bytes(b"\xff\xfeinvalid")
+        before = {path.name: path.read_bytes() for path in tmp_path.glob("*.json")}
+        with monkeypatch.context() as patch:
+            if problem == "unavailable":
+                def unavailable(path, *args, **kwargs):
+                    if path == bad:
+                        raise PermissionError("Temporarily unavailable")
+                    return read_text(path, *args, **kwargs)
+                patch.setattr(Path, "read_text", unavailable)
+            response = client.get("/api/playbooks")
+            assert response.status_code == 200
+            assert {play["id"] for play in response.json()} == {play["id"] for play in saved[:-1]}
+            assert response.headers["X-ARC-Playbook-Status"] == "partial"
+            assert response.headers["X-ARC-Playbook-Warnings"] == bad.name
+            assert json.loads(response.headers["X-ARC-Playbook-Issues"]) == [{
+                "file": bad.name, "kind": "unavailable" if problem == "unavailable" else "invalid",
+            }]
+            assert client.get(f"/api/playbooks/{saved[-1]['id']}").status_code == (503 if problem == "unavailable" else 500)
+        assert {path.name: path.read_bytes() for path in tmp_path.glob("*.json")} == before
+    bad.write_bytes(original)
+    recovered = client.get("/api/playbooks")
+    assert recovered.headers["X-ARC-Playbook-Status"] == "complete"
+    assert "X-ARC-Playbook-Issues" not in recovered.headers
+    assert recovered.json() == complete.json()
+
+
+def test_library_storage_failures_never_look_like_an_empty_complete_library(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    from pathlib import Path
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    saved = [client.post("/api/playbooks", json=_payload(f"Play {index}")).json() for index in range(3)]
+    before = {path.name: path.read_bytes() for path in tmp_path.glob("*.json")}
+    original_lock = playbooks_module._playbook_lock
+
+    @contextmanager
+    def failing_lock(path):
+        if path.stem == saved[-1]["id"]:
+            raise HTTPException(503, "Storage busy")
+        with original_lock(path):
+            yield
+
+    with monkeypatch.context() as patch:
+        patch.setattr(playbooks_module, "_playbook_lock", failing_lock)
+        response = client.get("/api/playbooks")
+        assert response.headers["X-ARC-Playbook-Status"] == "partial"
+        assert len(response.json()) == 2
+        assert json.loads(response.headers["X-ARC-Playbook-Issues"])[0]["kind"] == "unavailable"
+
+    original_iterdir = Path.iterdir
+
+    def unavailable_directory(path):
+        if path == tmp_path:
+            raise OSError("Storage disconnected")
+        return original_iterdir(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "iterdir", unavailable_directory)
+        response = client.get("/api/playbooks")
+        assert response.status_code == 503
+        assert "temporarily unavailable" in response.json()["detail"]
+    assert {path.name: path.read_bytes() for path in tmp_path.glob("*.json")} == before
+
+
 def test_explicit_action_participants_round_trip_without_version_migration(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     client = TestClient(app)

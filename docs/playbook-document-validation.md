@@ -51,6 +51,34 @@ may share its live play's ID or remain after deletion. Rejected files and browse
 storage remain unchanged for recovery; loading never renames, merges, or removes
 inconsistent records.
 
+### Complete versus partial library reads
+
+Local listings retain the array response for compatibility and include
+`X-ARC-Playbook-Status: complete` or `partial`. Partial responses keep the legacy
+`X-ARC-Playbook-Warnings` filename list and add `X-ARC-Playbook-Issues`, a JSON
+array of `{ file, kind }` records. `invalid` means malformed JSON/encoding,
+invalid document content, or mismatched identity. `unavailable` means a file
+read, stat, or lock failed because storage could not be accessed. Direct file
+reads use 500 for malformed content and 503 for storage access failures. Failure
+to enumerate the storage directory returns 503 rather than an empty library.
+Files deleted before their locked read are still skipped normally.
+
+The client checks listing headers on every response, including when the body
+matches its last parsed JSON. An incomplete response rejects with
+`IncompletePlaybookLibraryError`, carrying `complete: false`, independent
+`availablePlays` and `issues` snapshots. Existing workspace error handlers keep
+their previously loaded library and display the reason; the healthy subset is
+never returned as an ordinary successful refresh. An initial partial load
+reports an error rather than implying that missing records were deleted.
+Legacy warning-only responses retain an `unknown` reason. Malformed or
+contradictory warning metadata also fails closed as incomplete. No files are
+rewritten, no mutation is announced, and the next refresh can recover normally.
+A genuinely complete empty listing still clears the displayed library.
+
+Run `npm run test:playbook-library-refresh` and the Python Playbook tests for
+mixed healthy/damaged libraries, temporary file/lock/directory failures,
+preserved views, warning compatibility, concurrent readers and recovery.
+
 Run `npm run test:playbook-document-validation` in `frontend` and
 `.venv/bin/python -m pytest tests/test_playbooks.py` from the repository root.
 

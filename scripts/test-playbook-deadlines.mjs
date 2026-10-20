@@ -35,7 +35,7 @@ try {
   globalThis.fetch = async (_url, options) => {
    calls++; signal = options.signal;
    if (!body) return new Promise(resolve => resolveLate = resolve);
-   return { ok: true, text: () => new Promise(resolve => resolveLate = resolve) };
+   return { ok: true, headers: new Headers(), text: () => new Promise(resolve => resolveLate = resolve) };
   };
   const first = api.fetchPlaybooks(), second = api.fetchPlaybooks();
   const failures = [assert.rejects(first, /timed out/), assert.rejects(second, /timed out/)];

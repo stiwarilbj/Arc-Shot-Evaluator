@@ -10,6 +10,8 @@ import type { PlaybookDocument, PlaybookDraft } from "./types";
 import { IS_GITHUB_PAGES } from "../../runtime";
 import { createSharedLibraryRead } from "./sharedLibraryRead.ts";
 import { createParsedLibraryCache } from "./parsedLibraryCache.ts";
+import { IncompletePlaybookLibraryError, readLibraryIssues } from "./libraryReadStatus.ts";
+export { IncompletePlaybookLibraryError } from "./libraryReadStatus.ts";
 
 const LOCAL_STORAGE_KEY = "arc-playbooks-v1";
 const SAVE_CONFLICT = "This play was changed by another tab or client. Your draft is still in memory. Save a copy or reopen the latest saved play before updating it.";
@@ -57,7 +59,10 @@ async function readRemotePlaybooks(): Promise<PlaybookDocument[]> {
   return withPersistenceDeadline(async (signal) => {
     const response = await fetch("/api/playbooks", { signal, cache: "no-store" });
     if (!response.ok) await parse<never>(response);
-    return parseLibrary(await response.text());
+    const plays = parseLibrary(await response.text());
+    const issues = readLibraryIssues(response.headers);
+    if (issues !== null) throw new IncompletePlaybookLibraryError(structuredClone([...plays].sort(compareSavedPlaybooks)), issues);
+    return plays;
   });
 }
 const UNCERTAIN_SAVE = "The save response was interrupted and its outcome could not be confirmed. Your draft is still in memory. Retry when the server is available.";
@@ -175,7 +180,14 @@ function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identity: Pla
 }
 
 export async function fetchPlaybooks() {
-  return libraryReads.read();
+  try { return await libraryReads.read(); }
+  catch (error) {
+    if (error instanceof IncompletePlaybookLibraryError) {
+      // Shared in-flight reads must not share mutable warning snapshots.
+      throw new IncompletePlaybookLibraryError(structuredClone(error.availablePlays), structuredClone(error.issues));
+    }
+    throw error;
+  }
 }
 export async function createPlaybook(playbook: PlaybookDraft, creationId = newCreationId()) {
   validatePlaybookDocument(playbook);

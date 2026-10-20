@@ -134,6 +134,11 @@ save without changing their drawing format.
 Saved files with IDs that disagree with their filenames are excluded from the
 local library and rejected on direct access. Browser libraries with duplicate
 play IDs are rejected. Inconsistent records remain untouched for recovery.
+If the downloaded app cannot read every saved play, it reports an incomplete
+refresh and keeps the previously loaded library. The message distinguishes
+invalid documents from temporarily unavailable storage; retry after resolving
+the problem. A first incomplete load reports the problem instead of presenting
+the healthy subset as the entire library.
 The downloaded app validates deletion acknowledgements; if a response is
 malformed or interrupted, it checks whether the play is gone before reporting
 success. An unconfirmed outcome asks you to refresh before retrying.
