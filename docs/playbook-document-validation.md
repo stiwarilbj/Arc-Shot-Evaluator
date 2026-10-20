@@ -314,8 +314,21 @@ independent clients, content conflicts, concurrent requests, storage failures,
 receipt corruption and replays after edits/deletion. Existing deadline tests
 continue to assert that no writes are retried automatically.
 
-Saved libraries use descending `updated_at` timestamp text, with ascending document
-ID as the tie-breaker. Both targets compare Unicode code points, independent of
-locale; absent/non-string legacy timestamps use an empty key and appear last.
-Playbook's immediate save update uses the same order. Sorting read views never
-rewrites stored documents, receipts, or timestamps.
+Saved libraries sort `updated_at` by descending UTC instant, with ascending
+document ID as the tie-breaker. Both targets support ISO `YYYY-MM-DD` dates
+(midnight UTC) and `YYYY-MM-DDTHH:mm:ss` date-times with an explicit `Z`,
+`±HHMM`, or `±HH:MM` zone. Optional 1–9 fractional-second digits are compared
+exactly using integer nanoseconds on both targets, without floating-point rounding.
+Equivalent instants tie even when their timestamp text differs. Calendar dates,
+clock fields and offsets are validated rather than normalized into another day.
+Years 0001–9999 are supported; zone-less date-times and other ambiguous legacy
+formats are unsupported, so browser/server timezone never changes their order.
+
+Missing, non-string, invalid, and unsupported timestamps share one fallback
+after every valid instant, including pre-1970 dates. IDs compare Unicode code
+points independently of locale. Playbook's immediate save update uses the same
+order. Sorting read views never rewrites drawings, receipts, or timestamps.
+`tests/fixtures/playbook-order.json` is shared by the native listing and both
+browser persistence targets. Run `npm run test:playbook-order` and the Python
+Playbook tests for mixed offsets, milliseconds, equivalent instants, DST,
+calendar validity, fallback ties and unchanged storage.

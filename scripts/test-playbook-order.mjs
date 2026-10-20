@@ -6,6 +6,13 @@ const { entries, expected } = JSON.parse(readFileSync(new URL('../tests/fixtures
 const original = structuredClone(entries);
 assert.deepEqual([...entries].sort(compareSavedPlaybooks).map(play => play.id), expected);
 assert.deepEqual(entries, original);
+// A comparator must remain antisymmetric and transitive even when both dates
+// fall back, or equivalent instants use different textual representations.
+for (const a of entries) for (const b of entries) {
+  assert.equal(Math.sign(compareSavedPlaybooks(a, b)) + Math.sign(compareSavedPlaybooks(b, a)), 0);
+}
+const ordered = [...entries].sort(compareSavedPlaybooks);
+for (let index = 1; index < ordered.length; index++) assert.ok(compareSavedPlaybooks(ordered[index - 1], ordered[index]) < 0);
 const documents = entries.map(entry => ({ version: 1, name: entry.id, players: [], defenders: [], arrows: [], ball: null, defenders_visible: false, ...entry }));
 for (const target of ['local', 'github-pages']) {
   const result = await build({ configFile: false, logLevel: 'silent', define: { 'import.meta.env.VITE_DEPLOY_TARGET': JSON.stringify(target) }, build: { write: false, lib: { entry: new URL('../frontend/src/features/playbook/api.ts', import.meta.url).pathname, formats: ['es'], fileName: 'api' }, minify: false } });
@@ -30,5 +37,5 @@ for (const target of ['local', 'github-pages']) {
     }
   }
   assert.equal(writes, 0);
-  console.log(`${target}: stable ties, timestamp priority, legacy timestamps, Unicode IDs, reordered refreshes, independent consumers, unchanged storage passed`);
+  console.log(`${target}: actual instants, mixed offsets, milliseconds, DST, date-only UTC, invalid legacy fallback, Unicode ties, reordered refreshes, independent consumers and unchanged storage passed`);
 }

@@ -126,7 +126,9 @@ drawing.
 Save plays, reopen or duplicate them, delete saved copies, or export a
 high-resolution PNG. Hosted plays stay in browser storage; downloaded-app plays
 live in `playbooks/`. Saves protect newer edits, and opening a different play uses
-the existing unsaved-draft protection. Updates also check the revision originally
+the existing unsaved-draft protection. Saved plays sort newest first by actual
+update time across UTC and timezone-offset formats, then by ID for ties;
+missing or invalid legacy dates appear last. Updates also check the revision originally
 loaded: if another tab or local client saved first, your update is rejected and
 your draft stays in memory. Save a copy to keep that drawing, or reopen the latest
 saved play before editing it. Legacy version-1 plays gain a revision on their next

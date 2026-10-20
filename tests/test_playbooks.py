@@ -643,7 +643,7 @@ def test_corrupt_creation_receipt_is_preserved_instead_of_replayed(tmp_path, mon
     assert len(list(tmp_path.glob("*.json"))) == 1
 
 
-def test_library_order_is_stable_for_tied_timestamps(tmp_path, monkeypatch) -> None:
+def test_library_order_uses_instants_with_stable_ties_and_invalid_fallback(tmp_path, monkeypatch) -> None:
     from pathlib import Path
 
     fixture = json.loads((Path(__file__).parent / "fixtures/playbook-order.json").read_text())

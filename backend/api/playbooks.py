@@ -10,6 +10,7 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -281,6 +282,29 @@ def _playbook_lock(path: Path):
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
+def _saved_play_instant(value: object) -> int | float:
+    """UTC nanoseconds, matching the browser's supported ISO timestamp forms."""
+    if not isinstance(value, str):
+        return -math.inf
+    match = re.fullmatch(r"([0-9]{4})-([0-9]{2})-([0-9]{2})(?:T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|[+-][0-9]{2}:?[0-9]{2}))?", value)
+    if not match:
+        return -math.inf
+    year, month, day, hour, minute, second, fraction, zone = match.groups()
+    try:
+        date = datetime(int(year), int(month), int(day), int(hour or 0), int(minute or 0), int(second or 0))
+        delta = date - datetime(1970, 1, 1)
+        nanoseconds = (delta.days * 86400 + delta.seconds) * 1_000_000_000 + int((fraction or "").ljust(9, "0"))
+        if zone and zone != "Z":
+            digits = zone[1:].replace(":", "")
+            hours, minutes = int(digits[:2]), int(digits[2:])
+            if hours > 23 or minutes > 59:
+                return -math.inf
+            nanoseconds -= (hours * 60 + minutes) * (1 if zone[0] == "+" else -1) * 60_000_000_000
+        return nanoseconds
+    except ValueError:
+        return -math.inf
+
+
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
     try:
@@ -307,9 +331,7 @@ def list_playbooks(response: Response) -> list[dict]:
     if issues:
         response.headers["X-ARC-Playbook-Warnings"] = ", ".join(issue["file"] for issue in issues)
         response.headers["X-ARC-Playbook-Issues"] = json.dumps(issues, separators=(",", ":"))
-    # Stable sorts keep IDs ascending within descending timestamp groups.
-    result.sort(key=lambda item: item["id"])
-    result.sort(key=lambda item: item["updated_at"] if isinstance(item.get("updated_at"), str) else "", reverse=True)
+    result.sort(key=lambda item: (-_saved_play_instant(item.get("updated_at")), item["id"]))
     return result
 
 
