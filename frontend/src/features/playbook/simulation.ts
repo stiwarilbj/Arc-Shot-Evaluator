@@ -5,6 +5,7 @@ import { coordinateDefensiveDuties, createDefensiveTeamState, defensiveDutySnaps
 import { linearRoutePoint as lerpPoint, quadraticRoutePoint as quadraticPoint, perpendicularRouteControl } from "./routeGeometry.ts";
 import { coordinateMovement, createMovementBuffers, createMovementOrder, interpolatePosition, type MotionIntent, type MovementBuffers, type MovementOrder } from "./coordinatedMovement.ts";
 import { clearCongestionState } from "./congestionPlanning.ts";
+import { beginSimulationSession, simulationSeed, seededSimulationRandom, assertSimulationSessionHoop, recordSimulationSettings, recordSimulationEdit, recordSimulationAdvance, advanceRecordedSimulation } from "./simulationSession.ts";
 import type { CourtRoute } from "./arrowVisibility";
 import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
 import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating as playerRating, preparedHasBadge as playerHasBadge, preparedHasBadge as defenderHasBadge, type SimulationAttributes } from "./simulationAttributes.ts";
@@ -1530,9 +1531,12 @@ export function bindAuthoredActions(source: PlaybookDraft): BoundAction[] {
   return buildActions(structuredClone(source)).actions;
 }
 
-export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT): SimulationRun {
+export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT, options: { recordSession?: boolean; seed?: number } = {}): SimulationRun {
   const runSettings = normalizeSettings(settings);
-  return initializeSimulationRun(structuredClone(source), runSettings, hoop);
+  const seed = options.recordSession || options.seed !== undefined ? simulationSeed(options.seed) : undefined;
+  const run = initializeSimulationRun(structuredClone(source), runSettings, hoop, undefined, seed === undefined ? Math.random : seededSimulationRandom(seed));
+  if (options.recordSession) beginSimulationSession(run, hoop, seed!);
+  return run;
 }
 
 /** Bind authored actions once; keep the template private and clone mutable state per run. */
@@ -1565,13 +1569,13 @@ export function prepareSimulationRun(source: PlaybookDraft) {
   };
 }
 
-function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: SimulationSettings, hoop: CourtPoint, authored?: ReturnType<typeof buildActions>): SimulationRun {
+function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: SimulationSettings, hoop: CourtPoint, authored?: ReturnType<typeof buildActions>, random = Math.random): SimulationRun {
   const players = sourceCopy.players.map((player) => ({ ...player }));
   const ephemeralDefenders = sourceCopy.defenders.length === 0;
   const defenders = createGoalSideDefenders(players, sourceCopy.defenders, hoop);
   const attributes = createSimulationAttributes();
   refreshSimulationAttributes(attributes, players, defenders);
-  const defenseSchemeResolution = chooseDefenseScheme(runSettings.defenseScheme, defenders.length, players.length);
+  const defenseSchemeResolution = chooseDefenseScheme(runSettings.defenseScheme, defenders.length, players.length, random);
   const activeDefenseScheme = defenseSchemeResolution.scheme;
   const formation = zoneFormation(activeDefenseScheme);
   const initialBall = sourceCopy.ball ?? players[0] ?? null;
@@ -1763,6 +1767,7 @@ export function setSimulationRunSettings(run: SimulationRun, settings: Simulatio
   invalidateRunRoutes(run);
   run.settings = nextSettings;
   run.frame = frameFor(run);
+  recordSimulationSettings(run);
 }
 
 function moveToward(
@@ -3362,7 +3367,9 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
 export function advanceSimulationState(run: SimulationRun, deltaMs: number, settings: SimulationSettings = run.settings, hoop = HOOP_POINT): void {
   if (!Number.isFinite(deltaMs)) throw new TypeError("Simulation elapsed time must be finite.");
   if (run.elapsedMs >= run.durationMs || deltaMs <= 0) return;
+  assertSimulationSessionHoop(run, hoop);
   setSimulationRunSettings(run, settings);
+  if (advanceRecordedSimulation(run, Math.min(deltaMs, MAX_SIMULATION_DELTA_MS))) return;
   run.accumulatorMs += Math.min(deltaMs, MAX_SIMULATION_DELTA_MS);
   while (run.elapsedMs < run.durationMs) {
     const stepMs = Math.min(SIMULATION_FIXED_STEP_MS, run.durationMs - run.elapsedMs);
@@ -3389,6 +3396,7 @@ export function advanceSimulationState(run: SimulationRun, deltaMs: number, sett
     run.accumulatorMs = 0;
     run.frame = frameFor(run);
   }
+  recordSimulationAdvance(run, Math.min(deltaMs, MAX_SIMULATION_DELTA_MS));
 }
 
 export function advanceSimulationRun(run: SimulationRun, deltaMs: number, settings: SimulationSettings = run.settings, hoop = HOOP_POINT) {
@@ -3431,6 +3439,29 @@ function stagePausedRun(run: SimulationRun): SimulationRun {
     if (!("value" in descriptor)) Object.defineProperty(candidate, key, descriptor);
   }
   return candidate as SimulationRun;
+}
+
+/** Copy executable state as one graph, preserving Maps, action references and
+ * pending-transfer aliases. Register cloned attributes with the rating caches. */
+export function cloneSimulationExecution(run: SimulationRun): SimulationRun {
+  const candidate = stagePausedRun(run);
+  refreshSimulationAttributes(candidate.attributes, candidate.players, candidate.defenders);
+  return candidate;
+}
+
+export function restoreSimulationExecution(run: SimulationRun, candidate: SimulationRun) {
+  validatePausedRun(candidate);
+  const fields = Object.entries(Object.getOwnPropertyDescriptors(candidate)).filter(([, descriptor]) => "value" in descriptor);
+  const fieldNames = new Set(fields.map(([key]) => key));
+  const removed = Object.entries(Object.getOwnPropertyDescriptors(run)).filter(([key, descriptor]) => "value" in descriptor && !fieldNames.has(key));
+  for (const [key] of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(run, key);
+    if (descriptor ? !descriptor.writable : !Object.isExtensible(run)) throw new Error("The simulation cannot accept restored state.");
+  }
+  if (removed.some(([, descriptor]) => !descriptor.configurable)) throw new Error("The simulation cannot accept restored state.");
+  for (const [key] of removed) Reflect.deleteProperty(run, key);
+  for (const [key, descriptor] of fields) Reflect.set(run, key, descriptor.value);
+  runRouteCache.delete(run);
 }
 
 function validatePausedRun(run: SimulationRun) {
@@ -3597,7 +3628,11 @@ export function editPausedSimulationMarker(run: SimulationRun, type: "player" | 
   if (!pausedDraftIsCompatible(run.source, draft)) throw new Error("The paused drawing changed its actions or participants. Restart playback to apply it.");
   if (!["player", "defender", "ball"].includes(type) || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Choose a valid paused marker and court position.");
   if (type !== "ball" && !(type === "player" ? run.players : run.defenders).some(marker => marker.id === Number(id))) throw new Error("The paused marker is no longer on the court.");
-  return transactPausedSimulation(run, draft, HOOP_POINT, { type, id, point: clampCourt(point) });
+  assertSimulationSessionHoop(run, HOOP_POINT);
+  const relocation = { type, id, point: clampCourt(point) };
+  const frame = transactPausedSimulation(run, draft, HOOP_POINT, relocation);
+  recordSimulationEdit(run, relocation);
+  return frame;
 }
 
 function pausedDraftIsCompatible(source: PlaybookDraft, draft: PlaybookDraft) {
@@ -3610,7 +3645,9 @@ function pausedDraftIsCompatible(source: PlaybookDraft, draft: PlaybookDraft) {
 export function rebasePausedSimulation(run: SimulationRun, draft: PlaybookDraft, hoop = HOOP_POINT) {
   validatePlaybookDocument(draft);
   if (!pausedDraftIsCompatible(run.source, draft)) return false;
+  assertSimulationSessionHoop(run, hoop);
   transactPausedSimulation(run, draft, hoop);
+  recordSimulationEdit(run);
   return true;
 }
 

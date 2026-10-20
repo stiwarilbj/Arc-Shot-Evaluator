@@ -915,6 +915,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .simulation-quality strong { color: var(--make); font-size: 13px; }
 .simulation-settings-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 27px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 650; white-space: nowrap; }
 .simulation-settings-toggle:hover, .simulation-settings-toggle.is-open { border-color: var(--orange); color: var(--orange); }
+.simulation-replay-control { display: flex; align-items: center; gap: 7px; flex: 1 1 260px; min-width: 0; min-height: 32px; }
+.simulation-replay-control input { flex: 1; min-width: 55px; width: 100%; min-height: 30px; accent-color: var(--orange); cursor: pointer; }
+.simulation-replay-control output { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .simulation-settings-panel { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line); border-top: 0; background: var(--surface); color: var(--muted); font-size: 10px; }
 .simulation-setting { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .simulation-setting > span { color: var(--dim); }

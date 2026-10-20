@@ -66,6 +66,7 @@ import {
   simulationTimelineDuration,
 } from "./simulation";
 import type { SimulationFrame, SimulationRun } from "./simulation";
+import { getSimulationSessionInfo, seekSimulationSession } from "./simulationSession";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
 type PointerSample = { clientX: number; clientY: number; pointerId: number };
@@ -355,6 +356,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const simulationFrame = simulationFrameState ?? EMPTY_SIMULATION_FRAME;
   const simulationDuration = simulationRunRef.current?.durationMs ?? simulationTimelineDuration(draft.arrows) + SIMULATION_SHOT_MS;
   const simulationActive = simulationRunRef.current !== null;
+  const simulationSession = simulationRunRef.current ? getSimulationSessionInfo(simulationRunRef.current) : null;
   const simulationComplete = simulationElapsed >= simulationDuration && simulationElapsed > 0;
   const simulationPaused = simulationActive && !simulationPlaying && !simulationComplete;
   const offBallQualityDisplay = draft.players.length === 0
@@ -387,10 +389,22 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       }
       const delta = Math.max(0, Math.min(50, now - previousTime));
       previousTime = now;
-      const before = run.elapsedMs;
-      const frame = advanceSimulationRun(run, delta, simulationSettingsRef.current, HOOP_POINT);
-      if (run.elapsedMs !== before) {
-        setSimulationElapsed(run.elapsedMs);
+      const before = getSimulationSessionInfo(run)?.positionMs ?? run.elapsedMs;
+      let frame: SimulationFrame;
+      try {
+        frame = advanceSimulationRun(run, delta);
+      } catch (cause) {
+        setSimulationPlaying(false);
+        setError(cause instanceof Error ? cause.message : "Playback was interrupted. Seek to a recorded position to recover.");
+        return;
+      }
+      if (simulationSettingsRef.current !== run.settings) {
+        simulationSettingsRef.current = run.settings;
+        setSimulationSettings(run.settings);
+      }
+      const position = getSimulationSessionInfo(run)?.positionMs ?? run.elapsedMs;
+      if (position !== before) {
+        setSimulationElapsed(position);
         setSimulationFrameState(frame);
       }
       if (run.elapsedMs >= run.durationMs) {
@@ -467,6 +481,22 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setSimulationFrameState(getSimulationFrame(simulationRunRef.current));
     }
     setError(null);
+  }
+
+  function seekSimulation(timeMs: number) {
+    const run = simulationRunRef.current;
+    if (!run) return;
+    try {
+      const frame = seekSimulationSession(run, timeMs);
+      setSimulationPlaying(false);
+      setSimulationFrameState(frame);
+      setSimulationElapsed(getSimulationSessionInfo(run)!.positionMs);
+      simulationSettingsRef.current = run.settings;
+      setSimulationSettings(run.settings);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "This replay position could not be restored.");
+    }
   }
 
   // Prepare a valid drawing/run pair before changing draft history or editor
@@ -639,7 +669,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       focusBoard();
       return;
     }
-    const run = createSimulationRun(draft, simulationSettingsRef.current, HOOP_POINT);
+    const run = createSimulationRun(draft, simulationSettingsRef.current, HOOP_POINT, { recordSession: true });
     simulationRunRef.current = run;
     setSimulationFrameState(getSimulationFrame(run));
     setSimulationElapsed(0);
@@ -1328,6 +1358,12 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="simulation-quality" role="status">Off-ball quality <strong>{offBallQualityDisplay}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
+            {simulationSession ? <label className="simulation-replay-control"><span>Replay</span><input aria-label="Playbook replay time" type="range" min={0} max={simulationSession.recordedUntilMs || 1} step="any" disabled={simulationSession.recordedUntilMs === 0} value={simulationSession.positionMs} aria-valuetext={`${(simulationSession.positionMs / 1000).toFixed(2)} seconds of ${(simulationSession.recordedUntilMs / 1000).toFixed(2)} recorded`} onChange={(event) => seekSimulation(Number(event.currentTarget.value))} onKeyDown={(event) => {
+              const offsets: Record<string, number> = { ArrowLeft: -1000 / 30, ArrowDown: -1000 / 30, ArrowRight: 1000 / 30, ArrowUp: 1000 / 30, PageDown: -1000, PageUp: 1000 };
+              if (!(event.key in offsets) && event.key !== "Home" && event.key !== "End") return;
+              event.preventDefault(); event.stopPropagation();
+              seekSimulation(event.key === "Home" ? 0 : event.key === "End" ? simulationSession.recordedUntilMs : Math.max(0, Math.min(simulationSession.recordedUntilMs, simulationSession.positionMs + offsets[event.key])));
+            }} /><output>{(simulationSession.positionMs / 1000).toFixed(2)} / {(simulationSession.recordedUntilMs / 1000).toFixed(2)}s</output></label> : null}
             {selectedArrow ? <>
               <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>Same number runs together</small></label>
               {["movement", "backdoor-cut", "pass", "handoff"].includes(selectedArrow.kind) ? <div className="sequence-editor"><span>{selectedArrow.kind === "pass" || selectedArrow.kind === "handoff" ? "Passer" : "Player"}</span><ArcSelect ariaLabel="Action player" className="arc-select--compact playbook-path-select" value={String(selectedArrow.actor_id ?? "auto")} options={[...(selectedArrow.kind === "backdoor-cut" ? [] : [{ value: "auto", label: `Auto · Player ${selectedParticipants?.actorId ?? "?"}` }]), ...draft.players.map((player) => ({ value: String(player.id), label: `Player ${player.id}` }))]} onValueChange={(value) => changeArrowParticipant(selectedArrow.id, "actor_id", value)} /></div> : null}

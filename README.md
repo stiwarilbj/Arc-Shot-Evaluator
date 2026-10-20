@@ -143,6 +143,19 @@ coverage, and released passes/shots keep their recorded evidence. Invalid edits
 leave the drawing and active run intact. Changing actions or the roster still
 restarts playback. See [paused editing](docs/playbook-paused-editing.md).
 
+Playbook's **Replay** scrubber seeks within the portion already played and pauses
+at the selected time. Arrow keys seek 1/30 second,
+Page Up/Down seek one second, and Home/End select the recorded beginning/end.
+Resuming follows that session's original automatic defense, settings changes,
+and paused edits at their recorded times. Editing or changing settings after
+seeking starts a new future; seeking alone preserves the recorded future and
+does not change the saved drawing or undo history. Executable checkpoints retain
+possession, pending catches, movement, action phases and defensive duties, with
+at most 24 checkpoints and a 16 MiB accounting budget per session. Sessions stay
+in memory and are cleared by reloading or starting another play. Exact recovery
+is supported within the same engine version and runtime; saved version-1 plays
+remain unchanged. See [simulation sessions](docs/playbook-simulation-sessions.md).
+
 Ball control uses one shared state machine. Released passes have no controller;
 handoffs remain with their giver until the exchange is confirmed. Transfers record
 release, arrival, and catch/failure evidence. Failed passes leave a recoverable
