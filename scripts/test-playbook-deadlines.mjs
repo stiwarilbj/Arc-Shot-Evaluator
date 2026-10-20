@@ -104,6 +104,57 @@ try {
  const deletion = api.deletePlaybook('play-deadline01'); await flush(); await tick(PERSISTENCE_TIMEOUT_MS);
  assert.deepEqual(await deletion, { deleted: true, id: 'play-deadline01' }); assert.equal(writes, 1);
 
+ // A 2xx DELETE is only an acknowledgement with true and the exact requested ID.
+ // Malformed/interrupted responses verify the outcome once, without another write.
+ const id = 'play-deadline01';
+ const malformedDeletes = [
+  () => new Response('', { status: 200 }),
+  () => new Response(null, { status: 204 }),
+  () => new Response('{invalid JSON'),
+  ...[null, [], false, 'deleted', {}, { id }, { deleted: true },
+   { deleted: false, id }, { deleted: 'true', id }, { deleted: 1, id },
+   { deleted: true, id: 'play-other01' }, { deleted: true, id: null }].map(value => () => Response.json(value)),
+  () => ({ ok: true, json: async () => { throw new TypeError('Response body interrupted'); } }),
+  () => { throw new TypeError('Connection interrupted after deletion'); },
+ ];
+ for (const response of malformedDeletes) for (const outcome of ['absent', 'present', 'unavailable', 'invalid']) {
+  let writes = 0, checks = 0;
+  const before = notifications;
+  globalThis.fetch = async (url, options) => {
+   assert.equal(url, `/api/playbooks/${id}`);
+   if (options.method) { assert.equal(options.method, 'DELETE'); writes++; return response(); }
+   checks++; assert.equal(options.cache, 'no-store');
+   if (outcome === 'absent') return new Response(null, { status: 404 });
+   if (outcome === 'unavailable') throw new TypeError('Verification unavailable');
+   return Response.json(outcome === 'invalid' ? {} : saved());
+  };
+  if (outcome === 'absent') {
+   assert.deepEqual(await api.deletePlaybook(id), { deleted: true, id });
+   assert.equal(notifications, before + 1, 'announce only the confirmed deletion');
+  } else {
+   await assert.rejects(api.deletePlaybook(id), /delete response.*outcome could not be confirmed/);
+   assert.equal(notifications, before, 'no success notification for uncertain deletion');
+  }
+  assert.equal(writes, 1); assert.equal(checks, 1); assert.equal(timers.size, 0);
+ }
+ // Valid acknowledgements need no extra read; explicit server errors stay errors.
+ for (const status of [200, 403, 404, 503]) {
+  let calls = 0; const before = notifications;
+  globalThis.fetch = async (_url, options) => {
+   calls++; assert.equal(options.method, 'DELETE');
+   return Response.json(status === 200 ? { deleted: true, id } : { detail: 'Deletion rejected' }, { status });
+  };
+  if (status === 200) {
+   assert.deepEqual(await api.deletePlaybook(id), { deleted: true, id });
+   assert.equal(notifications, before + 1);
+  } else {
+   await assert.rejects(api.deletePlaybook(id), /Deletion rejected/);
+   assert.equal(notifications, before);
+  }
+  assert.equal(calls, 1); assert.equal(timers.size, 0);
+ }
+ console.log('Deletion acknowledgements passed: empty/invalid JSON, incorrect IDs/types, interrupted responses, exact-ID outcome checks and exactly-once notifications');
+
 
  for (const verification of ['present', 'stalled']) {
   writes = 0;

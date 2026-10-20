@@ -227,6 +227,16 @@ retry controls become available again. Uncertain creates now retain their attemp
 so an explicit retry returns the original result without another copy. An aborted HTTP request may
 still finish on the server after verification; cancellation is not a rollback.
 
+A successful DELETE response must decode to an object containing `deleted: true`
+and the exact requested play ID. Empty responses (including 204), invalid JSON,
+wrong IDs, and other malformed acknowledgements use the same bounded read-only
+outcome check as an interrupted response. Only a 404 for that requested ID
+confirms deletion when the acknowledgement is unusable. An existing play or a
+failed/invalid verification preserves uncertainty and sends no library-change
+notification. A valid acknowledgement needs no extra read; explicit non-2xx
+server errors retain their normal error handling. The client never resends the
+DELETE automatically.
+
 Run `npm run test:playbook-deadlines` for exact deadline boundaries, stalled
 headers/bodies, late results, write verification, bounded uncertainty, cleanup,
 retry and hosted lock waits. The Python playbook tests also cover create-ID

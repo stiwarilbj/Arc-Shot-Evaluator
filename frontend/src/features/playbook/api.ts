@@ -26,6 +26,7 @@ function withLibraryWrite<T>(write: () => T): Promise<T> {
 }
 
 class PersistenceResponseError extends Error { constructor(message: string, readonly status: number) { super(message); } }
+class InvalidDeletionAcknowledgement extends Error {}
 
 async function parse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -99,10 +100,19 @@ async function deleteRemotePlay(id: string) {
   try {
     return await withPersistenceDeadline(async (signal) => {
       const response = await fetch(`/api/playbooks/${encodeURIComponent(id)}`, { method: "DELETE", signal });
-      return parse<{ deleted: boolean; id: string }>(response);
+      if (!response.ok) return parse<never>(response);
+      let acknowledgement: unknown;
+      try { acknowledgement = await response.json(); }
+      catch { throw new InvalidDeletionAcknowledgement(); }
+      if (!acknowledgement || typeof acknowledgement !== "object" || Array.isArray(acknowledgement)
+        || !("deleted" in acknowledgement) || acknowledgement.deleted !== true
+        || !("id" in acknowledgement) || acknowledgement.id !== id) {
+        throw new InvalidDeletionAcknowledgement();
+      }
+      return { deleted: true, id };
     });
   } catch (error) {
-    if (!(error instanceof PersistenceDeadlineError || error instanceof TypeError)) throw error;
+    if (!(error instanceof PersistenceDeadlineError || error instanceof TypeError || error instanceof InvalidDeletionAcknowledgement)) throw error;
     try { if (await checkRemotePlay(id) === null) return { deleted: true, id }; }
     catch { /* Preserve uncertainty when the read also fails or times out. */ }
     throw new Error(UNCERTAIN_DELETE);

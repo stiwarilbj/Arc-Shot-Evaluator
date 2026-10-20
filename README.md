@@ -134,6 +134,9 @@ save without changing their drawing format.
 Saved files with IDs that disagree with their filenames are excluded from the
 local library and rejected on direct access. Browser libraries with duplicate
 play IDs are rejected. Inconsistent records remain untouched for recovery.
+The downloaded app validates deletion acknowledgements; if a response is
+malformed or interrupted, it checks whether the play is gone before reporting
+success. An unconfirmed outcome asks you to refresh before retrying.
 
 ### Shared arrow visibility
 
