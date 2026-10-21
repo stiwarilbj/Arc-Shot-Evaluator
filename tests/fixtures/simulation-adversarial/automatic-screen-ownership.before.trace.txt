@@ -1,0 +1,232 @@
+Adversarial simulation audit v1; engine 8; seed 20261685; overlap
+Failure: movement-ownership / auto-offball-5:5: Two executable routes own the same actor simultaneously.
+Reduction: 69 runs, deletion-and-step-1-minimal
+0 ms | ball=held, holder=1 | 
+0 ms | command 0: {"kind":"advance","steps":240,"deltaMs":16.666666666666668}
+16.667 ms | ball=held, holder=1 | action-0:1=approach; auto-offball-5:5=approach
+4000 ms | ball=held, holder=1 | action-0:1=completed; action-6:4=approach; auto-offball-5:5=approach
+4000 ms | FAIL Two executable routes own the same actor simultaneously.
+Failed execution snapshot:
+{
+  "elapsedMs": 3999.9999999999827,
+  "durationMs": 9179.753026505896,
+  "accumulatorMs": 16.666666666685025,
+  "defenseScheme": "man-to-man",
+  "ball": {
+    "kind": "held",
+    "holderId": 1,
+    "position": {
+      "x": 0,
+      "y": 0
+    },
+    "velocity": {
+      "x": 0,
+      "y": 0
+    }
+  },
+  "controllerId": 1,
+  "frame": {
+    "controllerId": 1,
+    "ballPhase": "held",
+    "ball": {
+      "x": 0,
+      "y": 0
+    }
+  },
+  "markers": [
+    {
+      "id": 1,
+      "x": 0,
+      "y": 0,
+      "team": "player",
+      "velocity": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "x": 3.8812594903244135,
+      "y": 0,
+      "team": "player",
+      "velocity": {
+        "x": -0.00018338209405944356,
+        "y": 0
+      }
+    },
+    {
+      "id": 4,
+      "x": 54.538146934579316,
+      "y": 97.61651946713273,
+      "team": "player",
+      "velocity": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 1,
+      "x": 6.9648060830714895,
+      "y": 2.423617802713627,
+      "team": "defender",
+      "velocity": {
+        "x": -0.028268873463116503,
+        "y": -0.021046113231085878
+      }
+    },
+    {
+      "id": 2,
+      "x": 11.095873576916478,
+      "y": 2.4371605577369486,
+      "team": "defender",
+      "velocity": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 3,
+      "x": 54.09544266076234,
+      "y": 90.04484927050142,
+      "team": "defender",
+      "velocity": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "actions": [
+    {
+      "key": "action-0:1",
+      "kind": "movement",
+      "actorId": 1,
+      "recipientId": null,
+      "userId": null,
+      "automatic": false,
+      "startTime": 0,
+      "durationMs": 4000,
+      "execution": {
+        "actionId": "action-0",
+        "sequence": 1,
+        "actorId": 1,
+        "recipientId": null,
+        "partnerId": null,
+        "phase": "completed",
+        "startedAtMs": 0,
+        "completedAtMs": 3999.9999999999827,
+        "progress": 1,
+        "notice": null,
+        "waitMs": 0,
+        "congestion": {
+          "status": "blocked",
+          "playerId": 1,
+          "blockers": [
+            "player:2"
+          ],
+          "sinceMs": 1300.0000000000002,
+          "reason": "Route progress stalled during the bounded planning window."
+        }
+      },
+      "transfer": null,
+      "dependencies": [],
+      "target": {
+        "x": 0,
+        "y": 0
+      },
+      "userTarget": null,
+      "paths": [
+        {
+          "playerId": 1,
+          "progress": 0,
+          "length": 1.7299702653073377
+        }
+      ]
+    },
+    {
+      "key": "action-6:4",
+      "kind": "movement",
+      "actorId": 2,
+      "recipientId": null,
+      "userId": null,
+      "automatic": false,
+      "startTime": 4000,
+      "durationMs": 3679.7530265058967,
+      "execution": {
+        "actionId": "action-6",
+        "sequence": 4,
+        "actorId": 2,
+        "recipientId": null,
+        "partnerId": null,
+        "phase": "approach",
+        "startedAtMs": 3999.9999999999827,
+        "completedAtMs": null,
+        "progress": 0,
+        "notice": null,
+        "waitMs": 0
+      },
+      "transfer": null,
+      "dependencies": [],
+      "target": {
+        "x": 50,
+        "y": 78
+      },
+      "userTarget": null,
+      "paths": []
+    },
+    {
+      "key": "auto-offball-5:5",
+      "kind": "off-ball-screen",
+      "actorId": 2,
+      "recipientId": 4,
+      "userId": 4,
+      "automatic": true,
+      "startTime": 0,
+      "durationMs": 4004.7514005602184,
+      "execution": {
+        "actionId": "auto-offball-5",
+        "sequence": 5,
+        "actorId": 2,
+        "recipientId": 4,
+        "partnerId": null,
+        "phase": "approach",
+        "startedAtMs": 0,
+        "completedAtMs": null,
+        "progress": 0.9931168886947019,
+        "notice": null,
+        "waitMs": 583.3333333333334,
+        "congestion": {
+          "status": "blocked",
+          "playerId": 2,
+          "blockers": [
+            "defender:1",
+            "player:1"
+          ],
+          "sinceMs": 2399.9999999999973,
+          "reason": "Route progress stalled during the bounded planning window."
+        }
+      },
+      "transfer": null,
+      "dependencies": [],
+      "target": {
+        "x": 50,
+        "y": 93.41702127659573
+      },
+      "userTarget": {
+        "x": 50,
+        "y": 77.2127659574468
+      },
+      "paths": [
+        {
+          "playerId": 2,
+          "progress": 1.0086614235404938,
+          "length": 53.07207577633016
+        },
+        {
+          "playerId": 4,
+          "progress": 2.6581281909317944,
+          "length": 2.676551190691653
+        }
+      ]
+    }
+  ]
+}

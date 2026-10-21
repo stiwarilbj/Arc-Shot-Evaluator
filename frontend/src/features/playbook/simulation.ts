@@ -2626,11 +2626,61 @@ function actionDiagnostics(run: SimulationRun): ActionDiagnostic[] {
       ...(congestion ? { congestion: { ...congestion, blockers: [...congestion.blockers] } } : {}), ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) };
   });
 }
+
+/** Opt-in local verification only. No snapshots are allocated by normal runs.
+ * Observe every executed slice, including slices at catch/action boundaries. */
+const executionAuditors = new WeakMap<SimulationRun, (snapshot: SimulationExecutionSnapshot) => void>();
+export type SimulationExecutionSnapshot = ReturnType<typeof inspectSimulationExecution>;
+export function watchSimulationExecution(run: SimulationRun, audit: (snapshot: SimulationExecutionSnapshot) => void) {
+  if (executionAuditors.has(run)) throw new Error("This run already has an execution auditor.");
+  executionAuditors.set(run, audit);
+  return () => { if (executionAuditors.get(run) === audit) executionAuditors.delete(run); };
+}
+
+/** Independent diagnostic copies; never return live paths, transfers or Maps.
+ * Completion geometry is sampled at execution time, before later moves/edits. */
+export function inspectSimulationExecution(run: SimulationRun) {
+  return {
+    elapsedMs: run.elapsedMs, durationMs: run.durationMs, accumulatorMs: run.accumulatorMs,
+    defenseScheme: run.activeDefenseScheme,
+    ball: structuredClone(run.ballState), controllerId: run.ballHandlerId,
+    frame: { controllerId: run.frame.ballHandlerId, ballPhase: run.frame.ballPhase, ball: run.frame.ball ? { ...run.frame.ball } : null },
+    markers: [...run.players.map(p => ({ ...p, team: "player" as const })), ...run.defenders.map(p => ({ ...p, team: "defender" as const }))]
+      .map(p => ({ id: p.id, x: p.x, y: p.y, team: p.team, velocity: { ...run.velocities.get(velocityKey(p.team, p.id)) ?? { x: 0, y: 0 } } })),
+    actions: run.actions.map(action => {
+      const screen = isScreenAction(action), userId = screen ? screenUserId(action) : null;
+      return {
+        key: `${action.arrow.id}:${action.sequence}`, kind: action.arrow.kind,
+        actorId: action.actorId, recipientId: action.recipientId, userId,
+        automatic: Boolean(action.automatic || action.adaptiveReadLabel),
+        startTime: action.startTime, durationMs: action.durationMs,
+        execution: action.execution ? structuredClone({ ...action.execution, paths: undefined }) : null,
+        transfer: action.transfer ? copyTransfer(action.transfer) : null,
+        dependencies: action.plan?.dependencies.map(edge => ({ ...edge })) ?? [],
+        target: { ...(screen && ["pick-roll", "pick-pop", "slip-screen"].includes(action.arrow.kind) ? screenFinish(action, HOOP_POINT) : action.arrow.end) },
+        userTarget: screen ? { ...screenUserFinish(action, HOOP_POINT) } : null,
+        paths: [...action.execution?.paths ?? []].map(([playerId, path]) => ({ playerId, progress: path.progress, length: path.length })),
+      };
+    }),
+  };
+}
 function actionIsMoving(action: BoundAction) {
   return action.execution?.phase !== "interrupted" && action.execution?.phase !== "obstructed" && action.execution?.phase !== "conflict" && action.execution?.phase !== "completed";
 }
 function actionIsExecuting(action: BoundAction) {
   return action.execution?.startedAtMs != null && actionIsMoving(action);
+}
+/** Settle ownership before publishing the boundary frame. An automatic route
+ * may have extended beyond its planned slot into a later authored movement. */
+function resolveMovementOwners(run: SimulationRun, actions: BoundAction[], atMs: number) {
+  const owners = new Map<number, BoundAction>();
+  for (const action of actions.filter(action => actionIsExecuting(action) && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff")
+    .sort((a, b) => Number(Boolean(a.automatic || a.adaptiveReadLabel)) - Number(Boolean(b.automatic || b.adaptiveReadLabel)))) {
+    if (action.actorId == null) continue;
+    if (owners.has(action.actorId)) blockAction(run, action, "conflict", `Move ${action.sequence} conflicts with another route for player ${action.actorId}.`, atMs);
+    else owners.set(action.actorId, action);
+  }
+  return owners;
 }
 function actionIsObservable(action: BoundAction, run: SimulationRun) {
   return actionIsExecuting(action) || run.elapsedMs === 0 && action.startTime === 0 && actionIsMoving(action) && !action.plan?.dependencies.length;
@@ -2698,6 +2748,7 @@ function refreshActionSchedule(run: SimulationRun) {
 function startReadyActions(run: SimulationRun, atMs: number) {
   if (run.shotStart) return;
   refreshActionSchedule(run);
+  let movementStarted = false;
   for (const action of run.actions) {
     if (!actionIsMoving(action) || action.execution?.startedAtMs != null) continue;
     let waiting: BoundAction | null = null;
@@ -2729,7 +2780,9 @@ function startReadyActions(run: SimulationRun, atMs: number) {
     action.startTime = Math.max(action.startTime, atMs);
     executionFor(action).notice = null;
     processActionStart(run, action);
+    if (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") movementStarted = true;
   }
+  if (movementStarted) resolveMovementOwners(run, run.actions, atMs);
   refreshActionSchedule(run);
 }
 
@@ -2856,13 +2909,7 @@ function updateOffense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
   const activeActions = run.actions.filter((action) => actionIsExecuting(action) && timeMs >= action.startTime && timeMs < action.startTime + action.durationMs);
   activeActions.forEach((action) => { if (isScreenAction(action)) prepareScreen(run, action, timeMs, hoop); });
   const handler = markerForId(run.players, run.ballHandlerId), ball = run.ball ?? handler ?? HOOP_POINT, drive = driveThreat(run, hoop);
-  const owners = new Map<number, BoundAction>();
-  for (const action of activeActions.filter((action) => action.arrow.kind !== "pass" && action.arrow.kind !== "handoff").sort((a, b) => Number(Boolean(a.automatic || a.adaptiveReadLabel)) - Number(Boolean(b.automatic || b.adaptiveReadLabel)))) {
-    if (action.actorId == null) continue;
-    if (owners.has(action.actorId)) {
-      const state = executionFor(action); state.phase = "conflict"; state.notice = `Move ${action.sequence} conflicts with another route for player ${action.actorId}.`; state.completedAtMs = timeMs;
-    } else owners.set(action.actorId, action);
-  }
+  const owners = resolveMovementOwners(run, activeActions, timeMs);
   run.players = run.players.map((player) => {
     let target: CourtPoint | null = null, authoredTarget = false, maxSpeed = OFF_BALL_MAX_SPEED_FT_PER_SECOND;
     const movement = owners.get(player.id);
@@ -3440,6 +3487,7 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   }
   recordRouteHistory(run);
   run.frame = frameFor(run);
+  executionAuditors.get(run)?.(inspectSimulationExecution(run));
 }
 
 /** Advance execution and recorded state without copying an interpolated display frame. */

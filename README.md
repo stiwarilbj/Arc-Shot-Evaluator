@@ -859,6 +859,21 @@ The frontend regression suite includes
 `pnpm --dir frontend test:save-simulate`, which round-trips representative plays
 through both persistence targets and compares participant bindings, timing, and
 shared-engine outcomes using isolated storage. It does not touch saved libraries.
+
+`pnpm --dir frontend test:simulation-adversarial` replays difficult engine fixtures
+and checks the audit's invariant detection, failure reduction, and worker-host
+command consistency. For larger local-only sweeps, run
+`pnpm --dir frontend audit:simulation --cases 2048 --commands 128`.
+The audit generates valid drawings and pause/edit/resume/settings sequences,
+checks each internal execution slice, and saves reduced failures with readable
+traces as ordinary regression fixtures. It already exposed and guards against
+an automatic screen briefly retaining movement ownership when a later authored
+route starts. Normal app runs do not allocate audit snapshots or run these
+checks; both build targets share the corrected engine. See the
+[adversarial audit guide](docs/playbook-adversarial-audit.md) for seeds, coverage,
+reproduction commands, and the bounded reducer's limits. The expensive sweep is
+not part of deployment, and the Pages workflow is unchanged.
+
 Real GPU/media verification commands are in the editor guide; passing unit tests
 alone does not establish masking quality on arbitrary footage.
 

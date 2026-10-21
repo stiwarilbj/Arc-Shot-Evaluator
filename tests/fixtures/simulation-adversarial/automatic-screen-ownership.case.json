@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "seed": 20261685,
+  "engineVersion": 8,
+  "layout": "overlap",
+  "drawing": {
+    "version": 1,
+    "id": "audit-20261685",
+    "name": "Adversarial overlap",
+    "players": [
+      {
+        "id": 1,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": 2,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": 4,
+        "x": 50,
+        "y": 100
+      }
+    ],
+    "defenders": [],
+    "defenders_visible": true,
+    "ball": {
+      "x": 0,
+      "y": 0
+    },
+    "arrows": [
+      {
+        "id": "action-0",
+        "kind": "movement",
+        "start": {
+          "x": 0,
+          "y": 0
+        },
+        "end": {
+          "x": 0,
+          "y": 0
+        },
+        "sequence": 1,
+        "timing": 4,
+        "actor_id": 1,
+        "path": "curve",
+        "control": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "action-6",
+        "kind": "movement",
+        "start": {
+          "x": 0,
+          "y": 0
+        },
+        "end": {
+          "x": 50,
+          "y": 78
+        },
+        "sequence": 4,
+        "timing": 0.5,
+        "actor_id": 2
+      }
+    ]
+  },
+  "settings": {
+    "offenseOffBall": "read-react",
+    "defenseScheme": "zone-2-1-2",
+    "defenseStrategy": "fight-over",
+    "offBallIntensity": 70,
+    "automaticActions": {
+      "screen": true,
+      "handoff": true,
+      "pickRoll": true,
+      "offBallScreen": true
+    },
+    "offenseMode": "adaptive"
+  },
+  "commands": [
+    {
+      "kind": "advance",
+      "steps": 240,
+      "deltaMs": 16.666666666666668
+    }
+  ]
+}
