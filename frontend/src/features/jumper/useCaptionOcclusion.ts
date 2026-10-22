@@ -50,7 +50,7 @@ export function useCaptionOcclusion(
         );
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context || baseFrames > 450)
-          throw Error("Silhouette check unavailable for this base video.");
+          throw Error("Silhouette check unavailable for this base video");
         const sink = new CanvasSink(track, {
           width: canvas.width,
           height: canvas.height,
@@ -63,7 +63,7 @@ export function useCaptionOcclusion(
           abort.signal.throwIfAborted();
           const sample = await sink.getCanvas(frame / 30);
           abort.signal.throwIfAborted();
-          if (!sample) throw Error("Could not read a silhouette frame.");
+          if (!sample) throw Error("Could not read a silhouette frame");
           context.drawImage(sample.canvas, 0, 0);
           const mask = shooterSample(
             context.getImageData(0, 0, canvas.width, canvas.height).data,
@@ -78,7 +78,7 @@ export function useCaptionOcclusion(
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
         if (!frames.some((frame) => frame.points.length >= 24))
-          throw Error("No readable shooter silhouette.");
+          throw Error("No readable shooter silhouette");
         if (!abort.signal.aborted)
           setCache({ base, masks: { width, height, frames } });
       } catch {
@@ -115,7 +115,7 @@ export function useCaptionOcclusion(
               project,
               risks,
               status:
-                "Silhouette overlap checked. Review hints only: hands and release are not identified.",
+                "Silhouette overlap checked. Review hints only: hands and release are not identified",
             });
         } catch {
           if (!abort.signal.aborted)
@@ -123,7 +123,7 @@ export function useCaptionOcclusion(
               base,
               project,
               risks: [],
-              status: "Caption overlap check unavailable. Review manually.",
+              status: "Caption overlap check unavailable. Review manually",
               failed: true,
             });
         }
@@ -138,7 +138,7 @@ export function useCaptionOcclusion(
     return {
       risks: [],
       status:
-        "Caption overlap check unavailable. Review the shooting motion manually.",
+        "Caption overlap check unavailable. Review the shooting motion manually",
       retry: () => {
         setDecodeFailure(null);
         setRetry((value) => value + 1);
@@ -148,7 +148,7 @@ export function useCaptionOcclusion(
     return {
       risks: [],
       status:
-        "Automatic caption checks are unavailable for legacy bases. Review placement manually.",
+        "Automatic caption checks are unavailable for legacy bases. Review placement manually",
       retry: undefined,
     };
   return {

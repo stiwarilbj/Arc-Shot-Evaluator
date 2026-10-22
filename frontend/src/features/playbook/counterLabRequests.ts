@@ -10,7 +10,7 @@ const record = (value: unknown): value is Record<string, unknown> => value !== n
 const identifier = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const point = (value: unknown) => record(value) && Number.isFinite(value.x) && Number.isFinite(value.y);
 function requireField(valid: unknown, field: string): asserts valid {
-  if (!valid) throw new Error(`Invalid Counter Lab request: ${field}.`);
+  if (!valid) throw new Error(`Invalid Counter Lab request: ${field}`);
 }
 
 /** Check untrusted structured-clone input before changing worker ownership. */
@@ -55,7 +55,7 @@ export function parseCounterLabRequest(value: unknown): CounterLabRequest {
       validateCounterLabInput(request.draft, request.profiles, request.modes);
       return request;
     }
-    default: throw new Error("Invalid Counter Lab request: unknown message kind.");
+    default: throw new Error("Invalid Counter Lab request: unknown message kind");
   }
 }
 
@@ -63,5 +63,5 @@ export function parseCounterLabRequest(value: unknown): CounterLabRequest {
 export function counterLabRequestError(value: unknown, error: unknown): Extract<CounterLabMessage, { type: "error" }> {
   return { type: "error", id: record(value) && identifier(value.id) ? value.id : "",
     ...(record(value) && value.type === "details" && identifier(value.detailId) ? { detailId: value.detailId } : {}),
-    message: error instanceof Error ? error.message : "Invalid Counter Lab request. Try again." };
+    message: error instanceof Error ? error.message : "Invalid Counter Lab request. Try again" };
 }

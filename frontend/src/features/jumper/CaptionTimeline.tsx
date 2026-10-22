@@ -135,14 +135,14 @@ export default function CaptionTimeline({
       </div>
       <p className="jumper-caption">
         Drag a bar to move it; drag an edge to trim it. Arrow keys adjust one
-        frame; Shift adjusts ten.
+        frame; Shift adjusts ten
       </p>
       <p className="jumper-caption jumper-caption-snap-hint" role="status">
         {guide
           ? `${guide.snapped ? "Snapped" : "Align"} ${guide.edge} → ${guide.label} · ${seconds(guide.frame)}`
           : magnet
-            ? "Magnet on · drag near a cut, playhead, or caption edge."
-            : "Magnet off · drag freely; timing still uses 30 fps."}
+            ? "Magnet on · drag near a cut, playhead, or caption edge"
+            : "Magnet off · drag freely; timing still uses 30 fps"}
       </p>
       {captions.map((caption, index) => (
         <div

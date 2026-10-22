@@ -18,16 +18,16 @@ export function HomePage() {
       <header className="home-intro">
         <div className="home-hero-copy">
           <p className="home-eyebrow home-app-name">
-            ARCade Hoops · A basketball toolkit.
+            ARCade Hoops · A basketball toolkit
           </p>
           <h1>
             See your game
             <br />
-            from every <span>angle.</span>
+            from every <span>angle</span>
           </h1>
           <p className="home-hero-description">
             Study your shot. Draw your next play. Challenge a defense. Turn a
-            jumpshot into a mystery.
+            jumpshot into a mystery
           </p>
           <div className="home-hero-actions">
             <HomeLink className="home-primary-link" href="#shot-analyzer">
@@ -47,7 +47,7 @@ export function HomePage() {
           </div>
           <p className="home-privacy">
             <ShieldCheck size={15} aria-hidden="true" /> No account. No paid
-            inference API. Your uploads stay on your device.
+            inference API. Your uploads stay on your device
           </p>
         </div>
         <nav className="home-start" aria-label="Choose a basketball tool">
@@ -82,17 +82,17 @@ export function HomePage() {
         <div>
           <p className="home-eyebrow">Explore ARCade Hoops</p>
           <h2 id="home-tools-heading" tabIndex={-1}>
-            Four ways to work on your game.
+            Four ways to work on your game
           </h2>
         </div>
-        <p>Try a mini demo, then make it your own.</p>
+        <p>Try a mini demo, then make it your own</p>
       </div>
       <div className="home-features">
         <Feature
           number="01"
           title="Shot Analyzer"
-          subtitle="Look closer at your shooting motion."
-          description="Find attempt windows, review outcomes, and keep shot notes. The downloaded app adds full vision analysis and Coach Notes."
+          subtitle="Look closer at your shooting motion"
+          description="Find attempt windows, review outcomes, and keep shot notes. The downloaded app adds full vision analysis and Coach Notes"
           detail="Browser review · Full analysis locally"
           href="#shot-analyzer"
         >
@@ -101,8 +101,8 @@ export function HomePage() {
         <Feature
           number="02"
           title="Playbook"
-          subtitle="Turn an idea into a court diagram."
-          description="Shape routes, screens, and passes, then watch your idea move. Start from a blank court or adapt one of 24 starter plays."
+          subtitle="Turn an idea into a court diagram"
+          description="Shape routes, screens, and passes, then watch your idea move. Start from a blank court or adapt one of 24 starter plays"
           detail="24 starters · Editable courts · PNG export"
           href="#playbook"
         >
@@ -111,8 +111,8 @@ export function HomePage() {
         <Feature
           number="03"
           title="Counter Lab"
-          subtitle="Find where a play breaks down."
-          description="Compare defensive responses, find the first breakdown, and test small repairs. Save an improved copy back to Playbook."
+          subtitle="Find where a play breaks down"
+          description="Compare defensive responses, find the first breakdown, and test small repairs. Save an improved copy back to Playbook"
           detail="Drawn + adaptive offense · Simulation scores"
           href="#counter-lab"
         >
@@ -121,8 +121,8 @@ export function HomePage() {
         <Feature
           number="04"
           title="Guess the Jumper"
-          subtitle="Make the jumpshot the only clue."
-          description="Aim and place a point on the shooter to make them black, other players gray, and the background neutral. Save private clips and quiz yourself."
+          subtitle="Make the jumpshot the only clue"
+          description="Aim and place a point on the shooter to make them black, other players gray, and the background neutral. Save private clips and quiz yourself"
           detail="Personal clips · Public NBA pack unavailable"
           secondaryHref="#jumper/create"
           secondaryLabel="Create a clip"
@@ -134,10 +134,10 @@ export function HomePage() {
       <aside className="home-local" aria-labelledby="home-local-heading">
         <div>
           <p className="home-eyebrow">Take ARCade Hoops with you</p>
-          <h2 id="home-local-heading">Browser convenience. Local control.</h2>
+          <h2 id="home-local-heading">Browser convenience. Local control</h2>
           <p>
             Use the tools here, or run the downloaded app for full shot analysis
-            and native clip processing. Both keep personal media on your device.
+            and native clip processing. Both keep personal media on your device
           </p>
         </div>
         <a
@@ -474,8 +474,8 @@ function CounterDemo() {
       </Court>
       <p className="home-demo-note" aria-live="polite">
         {slip
-          ? "A slip sends the screener toward the rim."
-          : "A switch exchanges defensive assignments."}
+          ? "A slip sends the screener toward the rim"
+          : "A switch exchanges defensive assignments"}
       </p>
     </>
   );

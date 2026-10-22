@@ -30,11 +30,11 @@ export async function prepareShooterSelection(
   if (IS_GITHUB_PAGES) {
     if (!("gpu" in navigator) || !("VideoEncoder" in globalThis))
       throw Error(
-        "This editor needs WebGPU and video encoding. Guess and My Clips still work; use Chrome or the downloaded app to create clips.",
+        "This editor needs WebGPU and video encoding. Guess and My Clips still work; use Chrome or the downloaded app to create clips",
       );
     if (!(await navigator.gpu.requestAdapter()))
       throw Error(
-        "WebGPU is unavailable on this device. Use the downloaded editor.",
+        "WebGPU is unavailable on this device. Use the downloaded editor",
       );
     signal.throwIfAborted();
   }
@@ -105,13 +105,13 @@ export async function processVideo(
           else
             fail(
               Error(
-                "The masking worker returned invalid videos. Retry processing.",
+                "The masking worker returned invalid videos. Retry processing",
               ),
             );
         } else
           fail(
             Error(
-              "The masking worker returned an invalid response. Retry processing.",
+              "The masking worker returned an invalid response. Retry processing",
             ),
           );
       };
@@ -143,7 +143,7 @@ export async function processVideo(
     if (typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id)) {
       id = undefined;
       throw Error(
-        "Local editor returned an invalid upload identity. Retry uploading.",
+        "Local editor returned an invalid upload identity. Retry uploading",
       );
     }
     await api(`/jobs/${id}/process`, {
@@ -181,7 +181,7 @@ export async function processVideo(
         state.progress > 1
       )
         throw Error(
-          "Local editor returned an invalid job update. Retry processing.",
+          "Local editor returned an invalid job update. Retry processing",
         );
       progress({ stage: state.stage, progress: state.progress });
       if (state.status === "error")
@@ -191,7 +191,7 @@ export async function processVideo(
       if (state.status === "done") {
         if (!state.result || typeof state.result !== "object")
           throw Error(
-            "Local editor returned an incomplete result. Retry processing.",
+            "Local editor returned an incomplete result. Retry processing",
           );
         const kinds = request.presentation?.startsWith("silhouette")
           ? ["quiz"]

@@ -34,7 +34,7 @@ self.onmessage = (event: MessageEvent<unknown>) => {
     if (!lifecycle.owns(owner)) return;
     if (error instanceof DOMException && error.name === "AbortError") { post({ type: "cancelled", id: request.id }); return; }
     if (!lifecycle.canPublish(owner)) return;
-    post({ type: "error", id: request.id, message: error instanceof Error ? error.message : "The comparison could not finish. Try again." });
+    post({ type: "error", id: request.id, message: error instanceof Error ? error.message : "The comparison could not finish. Try again" });
   }).finally(() => { lifecycle.finish(owner); });
 };
 export {};

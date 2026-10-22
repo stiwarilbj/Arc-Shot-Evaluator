@@ -60,7 +60,7 @@ export async function exportEdits(
     try {
       while (true) {
         if (performance.now() - started > 300000)
-          throw Error("Local rendering timed out; retry a shorter edit.");
+          throw Error("Local rendering timed out; retry a shorter edit");
         localSignal.throwIfAborted();
         const stateResponse = await fetch(`/api/jumper-lab/edits/${id}`, {
           signal: localSignal,

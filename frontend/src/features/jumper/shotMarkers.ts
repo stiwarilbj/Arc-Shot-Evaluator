@@ -37,8 +37,8 @@ export function shotMotionWarnings(project: EditProject): ShotMotionWarning[] {
         id: `missing-${kind}`,
         source,
         message: held.has(source)
-          ? `${shotMarkerNames[kind]} is retained only as a freeze frame, not moving footage.`
-          : `${shotMarkerNames[kind]} source frame ${source + 1} is absent from the edited video (trimmed, deleted, or skipped by speed).`,
+          ? `${shotMarkerNames[kind]} is retained only as a freeze frame, not moving footage`
+          : `${shotMarkerNames[kind]} source frame ${source + 1} is absent from the edited video (trimmed, deleted, or skipped by speed)`,
       });
   }
   const ordered = shotMarkerKinds
@@ -50,7 +50,7 @@ export function shotMotionWarnings(project: EditProject): ShotMotionWarning[] {
     warnings.push({
       id: "order",
       message:
-        "Check marker order: Gather should come before Release, then Finish. Mark distinct source frames; edits remain unrestricted.",
+        "Check marker order: Gather should come before Release, then Finish. Mark distinct source frames; edits remain unrestricted",
     });
     return warnings;
   }
@@ -85,7 +85,7 @@ export function shotMotionWarnings(project: EditProject): ShotMotionWarning[] {
       warnings.push({
         id: `cut-${before.id}-${after.id}`,
         edited: offset,
-        message: `The cut before Piece ${i + 1} jumps through or reorders the marked shooting motion at ${(offset / 30).toFixed(2)}s.`,
+        message: `The cut before Piece ${i + 1} jumps through or reorders the marked shooting motion at ${(offset / 30).toFixed(2)}s`,
       });
     offset += pieceFrames(after);
   }

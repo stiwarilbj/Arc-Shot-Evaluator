@@ -43,7 +43,7 @@ export function validateShotRelease(value: unknown): asserts value is ShotReleas
   const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
   const point = (v: unknown): v is CourtPoint => object(v) && finite(v.x) && finite(v.y);
   const id = (v: unknown) => Number.isSafeInteger(v) && (v as number) > 0;
-  function check(valid: unknown): asserts valid { if (!valid) throw new Error("Invalid shot-release context."); }
+  function check(valid: unknown): asserts valid { if (!valid) throw new Error("Invalid shot-release context"); }
   check(object(value)); const v = value;
   check(v.version === 1 && v.scale === "simulation-score" && finite(v.atMs) && v.atMs >= 0);
   check(object(v.shooter) && id(v.shooter.id) && point(v.shooter.position) && point(v.shooter.velocityFtPerSecond)

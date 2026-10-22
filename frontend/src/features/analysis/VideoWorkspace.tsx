@@ -235,7 +235,7 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
       if (video.paused) await video.play();
       else video.pause();
     } catch {
-      setMediaError("This video could not be played in the browser. Try the annotated MP4 export.");
+      setMediaError("This video could not be played in the browser. Try the annotated MP4 export");
     }
   }
 
@@ -259,10 +259,10 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
             setDuration(video.duration || session.session.duration);
             video.currentTime = Math.min(resumeTimeRef.current, Math.max(0, video.duration - 0.05));
             if (resumePlaybackRef.current) {
-              void video.play().catch(() => setMediaError("Playback could not resume after switching views."));
+              void video.play().catch(() => setMediaError("Playback could not resume after switching views"));
             }
           }}
-          onError={() => setMediaError("This video stream could not be decoded by the browser.")}
+          onError={() => setMediaError("This video stream could not be decoded by the browser")}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
         />
@@ -335,7 +335,7 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
           type="button"
           aria-label="Full screen"
           onClick={() => {
-            void videoRef.current?.requestFullscreen().catch(() => setMediaError("Full screen is unavailable in this browser."));
+            void videoRef.current?.requestFullscreen().catch(() => setMediaError("Full screen is unavailable in this browser"));
           }}
         >
           <Maximize size={18} />

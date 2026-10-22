@@ -46,7 +46,7 @@ export function compileActionDependencies(actions: readonly DependencyAction[], 
   const ordered = actions.map((action, index) => ({ action, index })).sort((a, b) =>
     Number(a.action.automatic) - Number(b.action.automatic) || a.action.sequence - b.action.sequence || a.index - b.index).map(({ action }) => action);
   for (const action of ordered) {
-    if (plans.has(action.key)) throw new Error("Simulation action identities must be unique.");
+    if (plans.has(action.key)) throw new Error("Simulation action identities must be unique");
     plans.set(action.key, { key: action.key, nominalStartMs: action.startTime, dependencies: [],
       requiresPossessionId: transfers.has(action.kind) ? action.actorId : action.onBall ? action.userId ?? action.actorId : null });
   }
@@ -54,9 +54,9 @@ export function compileActionDependencies(actions: readonly DependencyAction[], 
     const plan = plans.get(action.key)!;
     const transfer = transfers.has(action.kind), screen = screens.has(action.kind);
     const fail = (phase: "conflict" | "obstructed", reason: string) => { plan.failure ??= { phase, notice: `Move ${action.sequence} ${reason}` }; };
-    if (action.actorId == null) fail("obstructed", "has no available actor.");
-    if (transfer && (action.recipientId == null || action.actorId === action.recipientId)) fail("obstructed", "needs a different, available receiver.");
-    if (screen && (action.userId == null || action.userId === action.actorId)) fail("obstructed", "needs a different, available screen user.");
+    if (action.actorId == null) fail("obstructed", "has no available actor");
+    if (transfer && (action.recipientId == null || action.actorId === action.recipientId)) fail("obstructed", "needs a different, available receiver");
+    if (screen && (action.userId == null || action.userId === action.actorId)) fail("obstructed", "needs a different, available screen user");
     const add = (prior: DependencyAction, milestone: ActionDependency["milestone"], playerId: number | null) => {
       if (!plan.dependencies.some((edge) => edge.key === prior.key && edge.milestone === milestone)) plan.dependencies.push({ key: prior.key, milestone, playerId });
     };
@@ -70,19 +70,19 @@ export function compileActionDependencies(actions: readonly DependencyAction[], 
       }
     }
     const earlier = ordered.slice(0, ordered.indexOf(action)).filter((prior) => prior.sequence === action.sequence && !plans.get(prior.key)!.failure);
-    if (earlier.some((prior) => prior.actorId === action.actorId && !transfers.has(prior.kind) && !transfer)) fail("conflict", `conflicts with another route for player ${action.actorId}.`);
-    if (transfer && earlier.some((prior) => transfers.has(prior.kind))) fail("conflict", "conflicts with another simultaneous transfer of the ball.");
+    if (earlier.some((prior) => prior.actorId === action.actorId && !transfers.has(prior.kind) && !transfer)) fail("conflict", `conflicts with another route for player ${action.actorId}`);
+    if (transfer && earlier.some((prior) => transfers.has(prior.kind))) fail("conflict", "conflicts with another simultaneous transfer of the ball");
     if (screen && earlier.some((prior) => screens.has(prior.kind) && prior.userId === action.userId
-      && !(prior.userTarget && action.userTarget && prior.userTarget.x === action.userTarget.x && prior.userTarget.y === action.userTarget.y))) fail("conflict", `conflicts with another screen for player ${action.userId}.`);
+      && !(prior.userTarget && action.userTarget && prior.userTarget.x === action.userTarget.x && prior.userTarget.y === action.userTarget.y))) fail("conflict", `conflicts with another screen for player ${action.userId}`);
     const holder = plan.requiresPossessionId;
     if (holder != null) {
       const providers = ordered.filter((prior) => prior !== action && transfers.has(prior.kind) && prior.recipientId === holder
         && (prior.sequence < action.sequence || prior.sequence === action.sequence && holder !== initialHandlerId));
       const provider = providers.at(-1);
       if (provider) add(provider, "catch", holder);
-      else if (holder !== initialHandlerId) fail("obstructed", `cannot start because player ${holder} has no preceding catch or initial possession.`);
+      else if (holder !== initialHandlerId) fail("obstructed", `cannot start because player ${holder} has no preceding catch or initial possession`);
     }
   }
-  for (const key of cyclicActionKeys(plans)) plans.get(key)!.failure = { phase: "conflict", notice: "Circular action dependencies prevent this move from starting." };
+  for (const key of cyclicActionKeys(plans)) plans.get(key)!.failure = { phase: "conflict", notice: "Circular action dependencies prevent this move from starting" };
   return plans;
 }

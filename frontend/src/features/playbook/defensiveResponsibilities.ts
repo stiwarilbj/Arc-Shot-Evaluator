@@ -105,24 +105,24 @@ export function coordinateDefensiveDuties(state: DefensiveTeamState, c: DefenseC
     const same = old?.role === role && old.playerId === playerId && old.zoneSlot === slot && old.actionId === actionId && old.relatedDefenderId === relatedDefenderId;
     next.set(id, same ? old : { defenderId: id, role, playerId, zoneSlot: slot, actionId, relatedDefenderId, reason, releaseOn, sinceMs: c.atMs });
   };
-  put(primary.defenderId, "primary", primary.playerId, "Contain the current ball threat.", "ball-threat-or-assignment-change", screens.get(primary.defenderId)?.actionId ?? null);
+  put(primary.defenderId, "primary", primary.playerId, "Contain the current ball threat", "ball-threat-or-assignment-change", screens.get(primary.defenderId)?.actionId ?? null);
   for (const screen of screens.values()) if (!next.has(screen.defenderId))
-    put(screen.defenderId, "screen", screen.playerId, "Own the locked screen matchup.", "screen-release-or-participant-loss", screen.actionId);
+    put(screen.defenderId, "screen", screen.playerId, "Own the locked screen matchup", "screen-release-or-participant-loss", screen.actionId);
   for (const [id, playerId] of c.chasers) if (defenders.has(id) && players.has(playerId) && !next.has(id))
-    put(id, "matchup", playerId, "Keep the scheme's designated chaser.", "scheme-or-participant-change");
-  if (state.helper) put(state.helper.defenderId, "helper", state.helper.playerId, "Help the drive; teammates inherit the vacated duty.", "threat-cleared-or-ball-change");
+    put(id, "matchup", playerId, "Keep the scheme's designated chaser", "scheme-or-participant-change");
+  if (state.helper) put(state.helper.defenderId, "helper", state.helper.playerId, "Help the drive; teammates inherit the vacated duty", "threat-cleared-or-ball-change");
 
   for (const [id, recovery] of state.recoveries) {
     const current = base(id), destination = c.zone ? c.anchor(id) : players.get(current.playerId!) ?? null;
     if (!defenders.has(id) || next.has(id) || current.playerId !== recovery.playerId || current.zoneSlot !== recovery.zoneSlot
       || destination && c.distance(defenders.get(id)!, destination) <= 6) { state.recoveries.delete(id); continue; }
-    put(id, "recovery", current.playerId, "Recover to the inherited duty, not the former matchup.", "arrival-or-priority-change", null, recovery.relatedDefenderId);
+    put(id, "recovery", current.playerId, "Recover to the inherited duty, not the former matchup", "arrival-or-priority-change", null, recovery.relatedDefenderId);
   }
   const rimId = c.rimCandidates.find(id => defenders.has(id) && !next.has(id));
   if (rimId != null) {
     const playerId = base(rimId).playerId;
     put(rimId, "rim-protector", [...next.values()].some(d => d.playerId === playerId) ? null : playerId,
-      "Keep one free defender responsible for interior support.", "priority-duty-or-better-position");
+      "Keep one free defender responsible for interior support", "priority-duty-or-better-position");
   }
 
   // Claim zone closeouts together. Retain a plausible existing claim before
@@ -140,14 +140,14 @@ export function coordinateDefensiveDuties(state: DefensiveTeamState, c: DefenseC
       const prior = options.find(o => o.p.id === state.duties.get(d.id)?.playerId);
       const choice = prior && prior.score <= (options[0]?.score ?? Infinity) + 3 ? prior : options[0];
       const role = next.get(d.id)?.role ?? "zone";
-      put(d.id, role, choice?.p.id ?? null, role === "zone" ? "Own the zone slot and its unique closeout." : next.get(d.id)!.reason,
+      put(d.id, role, choice?.p.id ?? null, role === "zone" ? "Own the zone slot and its unique closeout" : next.get(d.id)!.reason,
         role === "zone" ? "ball-area-or-threat-change" : next.get(d.id)!.releaseOn, null, next.get(d.id)?.relatedDefenderId ?? null);
       if (choice) claimed.add(choice.p.id);
     }
   } else for (const d of free) {
     const playerId = base(d.id).playerId;
     put(d.id, "matchup", playerId != null && !claimed.has(playerId) ? playerId : null,
-      "Keep the current team matchup; spare defenders hold their position.", "assignment-or-participant-change");
+      "Keep the current team matchup; spare defenders hold their position", "assignment-or-participant-change");
     if (playerId != null) claimed.add(playerId);
   }
   state.duties = next;

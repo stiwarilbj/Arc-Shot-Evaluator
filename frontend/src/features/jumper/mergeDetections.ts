@@ -30,14 +30,14 @@ export function mergeDetectedPeople(
   const unchanged = (message: string) => ({ tracks, added: 0, message });
   if (!tracks.some((track) => track.id === target && !track.ignored))
     return unchanged(
-      "Click the shooter in the first frame before finding other people.",
+      "Click the shooter in the first frame before finding other people",
     );
   if (boxes.some((box) =>
     box.length !== 4 ||
     box.some((n) => !Number.isFinite(n) || n < 0 || n > 1) ||
     box[0] >= box[2] || box[1] >= box[3],
   ))
-    throw Error("Invalid person detections. Your selections were kept.");
+    throw Error("Invalid person detections. Your selections were kept");
   const claimed = new Set<number>();
   for (const track of tracks) {
     const seed = track.prompts.find((prompt) => prompt.frame === 0);
@@ -49,7 +49,7 @@ export function mergeDetectedPeople(
     );
     if (candidates.length !== 1 || claimed.has(candidates[0]))
       return unchanged(
-        `Track ${track.id} could not be matched safely in the first frame. Your shooter and corrections were kept. Adjust its starting selection or add people manually.`,
+        `Track ${track.id} could not be matched safely in the first frame. Your shooter and corrections were kept. Adjust its starting selection or add people manually`,
       );
     claimed.add(candidates[0]);
   }
@@ -66,7 +66,7 @@ export function mergeDetectedPeople(
     tracks.reduce((n, t) => n + t.prompts.length, 0) + distinct.length > 128
   )
     return unchanged(
-      "Adding these detections would exceed the track or correction limit. Your selections were kept; remove unwanted tracks or shorten the clip.",
+      "Adding these detections would exceed the track or correction limit. Your selections were kept; remove unwanted tracks or shorten the clip",
     );
   const used = new Set(tracks.map((track) => track.id));
   let next = 1;
@@ -79,6 +79,6 @@ export function mergeDetectedPeople(
   return {
     tracks: additions.length ? [...tracks, ...additions] : tracks,
     added: additions.length,
-    message: `Added ${additions.length} new people. Your shooter and corrections were kept.${skipped ? ` ${skipped} overlapping detections were not added; select missing people manually.` : ""} Review detections for spectators and false positives.`,
+    message: `Added ${additions.length} new people. Your shooter and corrections were kept.${skipped ? ` ${skipped} overlapping detections were not added; select missing people manually.` : ""} Review detections for spectators and false positives`,
   };
 }

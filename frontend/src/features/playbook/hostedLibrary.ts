@@ -31,7 +31,7 @@ export function validateHostedLibrary(value: unknown): HostedLibrary {
     }
     if (library.version === 2 && (!Array.isArray(library.histories) || !library.migration || !validChecksum(library.checksum))) throw new Error();
     return library;
-  } catch { throw new Error("Saved plays could not be read. Your stored data has been preserved."); }
+  } catch { throw new Error("Saved plays could not be read. Your stored data has been preserved"); }
 }
 export async function verifyHostedLibrary(library: HostedLibrary): Promise<void> {
   if (library.version === 1) return;
@@ -82,7 +82,7 @@ export async function upgradeHostedLibrary(library: HostedLibrary): Promise<Revi
 }
 export async function reviseHostedLibrary(library: RevisionLibrary, id: string, document: PlaybookDocument | null, creations = library.creations): Promise<RevisionLibrary> {
   const current = library.histories.find(history => history.id === id) ?? { id, anchor: null, entries: [] };
-  if (current.entries.at(-1)?.kind === "delete") throw new Error("This play was explicitly deleted. Recover a separate copy instead.");
+  if (current.entries.at(-1)?.kind === "delete") throw new Error("This play was explicitly deleted. Recover a separate copy instead");
   const history = await appendRevision(current, document, document?.revision ?? crypto.randomUUID().replaceAll("-", ""));
   return sealHostedLibrary({ version: 2, plays: [...(document ? [document] : []), ...library.plays.filter(play => play.id !== id)], creations,
     histories: [...library.histories.filter(item => item.id !== id), history], migration: library.migration,

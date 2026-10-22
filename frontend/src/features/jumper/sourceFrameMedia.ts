@@ -18,7 +18,7 @@ export async function sourceFrameMap(file: Blob, start: number, end: number, sig
       for await(const packet of new EncodedPacketSink(track).packets(undefined,undefined,{metadataOnly:true})) {
         signal?.throwIfAborted();
         times.push({timestamp:packet.timestamp,duration:packet.duration});
-        if(times.length>100_000) throw Error("Video has too many source frames. Upload a shorter source file.");
+        if(times.length>100_000) throw Error("Video has too many source frames. Upload a shorter source file");
       }
       signal?.throwIfAborted();
       buildFrameMap(times,start,end);

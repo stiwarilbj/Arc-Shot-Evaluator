@@ -111,7 +111,7 @@ export class PaletteFrames {
         try { tx.abort(); } catch { reject(Error("Temporary mask storage timed out")); }
       }, 10000);
       tx.oncomplete = () => { clearTimeout(timer); resolve(labels ?? request.result); };
-      tx.onabort = tx.onerror = () => { clearTimeout(timer); reject(Error("Temporary mask storage failed. Free device storage or shorten the clip.")); };
+      tx.onabort = tx.onerror = () => { clearTimeout(timer); reject(Error("Temporary mask storage failed. Free device storage or shorten the clip")); };
     });
   }
   async add(frame: number, labels: Uint8Array) {
@@ -122,7 +122,7 @@ export class PaletteFrames {
     if (this.db) await this.store(frame, packed);
     else {
       if (this.bytes + packed.byteLength > FALLBACK_LIMIT)
-        throw Error("Temporary mask storage unavailable. Allow browser storage or shorten the clip.");
+        throw Error("Temporary mask storage unavailable. Allow browser storage or shorten the clip");
       this.memory.set(frame, packed); this.bytes += packed.byteLength;
     }
     this.count++;

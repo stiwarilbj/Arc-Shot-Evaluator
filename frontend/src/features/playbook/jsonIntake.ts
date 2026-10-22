@@ -3,7 +3,7 @@
 export const MAX_PLAYBOOK_JSON_BYTES = 256 * 1024;
 export const MAX_PLAYBOOK_LIBRARY_BYTES = 16 * 1024 * 1024;
 export const MAX_PLAYBOOK_JSON_DEPTH = 32;
-const preserved = " Your current draft and stored data have been preserved.";
+const preserved = " Your current draft and stored data have been preserved";
 
 export function checkPlaybookJsonText(text: string, maxBytes = MAX_PLAYBOOK_JSON_BYTES): void {
   // UTF-8 has at least as many bytes as UTF-16 code units. Reject huge strings

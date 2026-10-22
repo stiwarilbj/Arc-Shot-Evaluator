@@ -93,14 +93,14 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
       play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
         ? { ...candidate, kind: "slip-screen", timing: Math.max(0.5, (candidate.timing ?? 1.2) * 0.8) }
         : candidate);
-      repairs.push({ id: `slip-${arrow.id}`, name: "Slip the screen", reason: "Roll before the switch can settle, then test whether the handler or screener gains a cleaner option.", play });
+      repairs.push({ id: `slip-${arrow.id}`, name: "Slip the screen", reason: "Roll before the switch can settle, then test whether the handler or screener gains a cleaner option", play });
     }
     if (arrow.kind === "pick-roll" || arrow.kind === "pick-pop") {
       const play = structuredClone(draft);
       play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
         ? { ...candidate, kind: arrow.kind === "pick-roll" ? "pick-pop" : "pick-roll", exit_target: candidate.exit_target ?? { x: clamp(candidate.end.x + (candidate.end.x < 50 ? -12 : 12)), y: clamp(candidate.end.y + 5) } }
         : candidate);
-      repairs.push({ id: `roll-pop-${arrow.id}`, name: arrow.kind === "pick-roll" ? "Pop instead of roll" : "Roll instead of pop", reason: "Change the screener's finish and compare the newly available lane or perimeter shot.", play });
+      repairs.push({ id: `roll-pop-${arrow.id}`, name: arrow.kind === "pick-roll" ? "Pop instead of roll" : "Roll instead of pop", reason: "Change the screener's finish and compare the newly available lane or perimeter shot", play });
     }
     if (arrow.kind === "screen" || arrow.kind === "pick-roll" || arrow.kind === "pick-pop" || arrow.kind === "pass" || arrow.kind === "movement") {
       for (const change of [-0.25, 0.25]) {
@@ -108,7 +108,7 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
         play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
           ? { ...candidate, timing: Math.max(0.5, Math.min(4, Math.round(((candidate.timing ?? 1.2) + change) * 100) / 100)) }
           : candidate);
-        repairs.push({ id: `timing-${arrow.id}-${change}`, name: `${change < 0 ? "Quicker" : "More time for"} ${arrow.kind.replaceAll("-", " ")} · Move ${move}`, reason: `${change < 0 ? "Shorten" : "Lengthen"} the action duration by ${Math.abs(change).toFixed(2)} seconds. Later moves shift with the sequence.`, play });
+        repairs.push({ id: `timing-${arrow.id}-${change}`, name: `${change < 0 ? "Quicker" : "More time for"} ${arrow.kind.replaceAll("-", " ")} · Move ${move}`, reason: `${change < 0 ? "Shorten" : "Lengthen"} the action duration by ${Math.abs(change).toFixed(2)} seconds. Later moves shift with the sequence`, play });
       }
     }
     if (arrow.kind === "pass") {
@@ -126,7 +126,7 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
         play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id ? { ...candidate, recipient_id: recipient.id, end: point(recipient.x, recipient.y) } : candidate);
         const redirected = bindAuthoredActions(play).find((action) => action.arrow.id === arrow.id);
         if (redirected?.recipientId !== recipient.id || redirected.recipientId === originalReceiver || redirected.recipientId === redirected.actorId) continue;
-        repairs.push({ id: `pass-${arrow.id}-${recipient.id}`, name: `Pass to Player ${recipient.id} · Move ${move}`, reason: "Test a different receiver against the same starting court and defense.", play });
+        repairs.push({ id: `pass-${arrow.id}-${recipient.id}`, name: `Pass to Player ${recipient.id} · Move ${move}`, reason: "Test a different receiver against the same starting court and defense", play });
       }
     }
 
@@ -135,7 +135,7 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
       play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
         ? { ...candidate, end: point(clamp(candidate.end.x + (candidate.end.x < 50 ? -4 : 4)), candidate.end.y) }
         : candidate);
-      repairs.push({ id: `space-${arrow.id}`, name: "Move the screen angle", reason: "Change the screening angle slightly and see whether the cutter gains space.", play });
+      repairs.push({ id: `space-${arrow.id}`, name: "Move the screen angle", reason: "Change the screening angle slightly and see whether the cutter gains space", play });
     }
   }
   const unique = new Map<string, Pick<CounterLabRepair, "id" | "name" | "reason" | "play">>();

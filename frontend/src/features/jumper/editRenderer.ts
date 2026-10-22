@@ -51,7 +51,7 @@ export async function renderEdits(
     for (const [index, caption] of project.captions.entries())
       if (!captionLayout(metrics, width, height, caption).fits)
         throw Error(
-          `Caption ${index + 1} cannot fit in the safe area. Use smaller text or shorten the caption.`,
+          `Caption ${index + 1} cannot fit in the safe area. Use smaller text or shorten the caption`,
         );
     const sink = new CanvasSink(track, { poolSize: 2 }),
       writer = await writers(width, height);

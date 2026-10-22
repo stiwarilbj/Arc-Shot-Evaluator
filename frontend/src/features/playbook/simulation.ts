@@ -196,17 +196,17 @@ export const DEFENSE_SCHEME_LABELS: Record<ResolvedDefenseScheme, string> = {
 };
 
 export const DEFENSE_SCHEME_DESCRIPTIONS: Record<DefenseScheme, string> = {
-  auto: "Randomly choose an eligible scheme at the start of each possession.",
-  "man-to-man": "Stay with assigned players and contain the ball in front.",
-  "pack-line": "Guard assignments while off-ball defenders shade toward the paint.",
-  "zone-2-3": "Two high defenders pressure the wings; three protect the lane and baseline.",
-  "zone-3-2": "Three across the top close to shooters; two protect the low blocks.",
-  "zone-1-3-1": "Pressure the top, cover three across the middle, and patrol the baseline.",
-  "zone-2-1-2": "Two high defenders steer the ball toward a middle anchor and two low defenders.",
-  "zone-1-2-2": "One high defender pressures the ball with two wings and two low defenders behind.",
-  "matchup-1-1-3": "Two guards pressure high while three defenders protect the front line by area.",
-  "box-and-one": "One defender tracks the top threat; four defenders hold a box zone.",
-  "triangle-and-two": "Two defenders track the top threats; three defenders hold a triangle zone.",
+  auto: "Randomly choose an eligible scheme at the start of each possession",
+  "man-to-man": "Stay with assigned players and contain the ball in front",
+  "pack-line": "Guard assignments while off-ball defenders shade toward the paint",
+  "zone-2-3": "Two high defenders pressure the wings; three protect the lane and baseline",
+  "zone-3-2": "Three across the top close to shooters; two protect the low blocks",
+  "zone-1-3-1": "Pressure the top, cover three across the middle, and patrol the baseline",
+  "zone-2-1-2": "Two high defenders steer the ball toward a middle anchor and two low defenders",
+  "zone-1-2-2": "One high defender pressures the ball with two wings and two low defenders behind",
+  "matchup-1-1-3": "Two guards pressure high while three defenders protect the front line by area",
+  "box-and-one": "One defender tracks the top threat; four defenders hold a box zone",
+  "triangle-and-two": "Two defenders track the top threats; three defenders hold a triangle zone",
 };
 
 export const DEFENSE_SCHEME_ORDER: ResolvedDefenseScheme[] = [
@@ -233,8 +233,8 @@ export function chooseDefenseScheme(
   }
   if (eligible.includes(requested)) return { scheme: requested, automatic: false, notice: null };
   const reason = defenderCount < MAX_COURT_PLAYERS
-    ? `${DEFENSE_SCHEME_LABELS[requested]} needs five defenders. Man-to-man is active for this possession.`
-    : `${DEFENSE_SCHEME_LABELS[requested]} needs ${requested === "triangle-and-two" ? "two offensive players" : "one offensive player"}. Man-to-man is active for this possession.`;
+    ? `${DEFENSE_SCHEME_LABELS[requested]} needs five defenders. Man-to-man is active for this possession`
+    : `${DEFENSE_SCHEME_LABELS[requested]} needs ${requested === "triangle-and-two" ? "two offensive players" : "one offensive player"}. Man-to-man is active for this possession`;
   return { scheme: "man-to-man", automatic: false, notice: reason };
 }
 
@@ -605,17 +605,17 @@ const DEFENSE_SCHEMES = new Set<string>(["auto", ...DEFENSE_SCHEME_ORDER]);
 const AUTOMATIC_ACTION_FLAGS = ["screen", "handoff", "pickRoll", "offBallScreen"] as const;
 
 export function validateSettings(value: unknown): asserts value is SimulationSettings {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Simulation settings must be an object.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Simulation settings must be an object");
   const settings = value as Record<string, unknown>;
-  if (typeof settings.offenseOffBall !== "string" || !OFF_BALL_STYLES.has(settings.offenseOffBall)) throw new TypeError("Invalid simulation setting: offenseOffBall.");
-  if (typeof settings.defenseStrategy !== "string" || !DEFENSE_STRATEGIES.has(settings.defenseStrategy)) throw new TypeError("Invalid simulation setting: defenseStrategy.");
-  if (settings.defenseScheme !== undefined && (typeof settings.defenseScheme !== "string" || !DEFENSE_SCHEMES.has(settings.defenseScheme))) throw new TypeError("Invalid simulation setting: defenseScheme.");
-  if (settings.offenseMode !== undefined && settings.offenseMode !== "adaptive" && settings.offenseMode !== "scripted") throw new TypeError("Invalid simulation setting: offenseMode.");
-  if (typeof settings.offBallIntensity !== "number" || !Number.isFinite(settings.offBallIntensity)) throw new TypeError("Invalid simulation setting: offBallIntensity must be finite.");
+  if (typeof settings.offenseOffBall !== "string" || !OFF_BALL_STYLES.has(settings.offenseOffBall)) throw new TypeError("Invalid simulation setting: offenseOffBall");
+  if (typeof settings.defenseStrategy !== "string" || !DEFENSE_STRATEGIES.has(settings.defenseStrategy)) throw new TypeError("Invalid simulation setting: defenseStrategy");
+  if (settings.defenseScheme !== undefined && (typeof settings.defenseScheme !== "string" || !DEFENSE_SCHEMES.has(settings.defenseScheme))) throw new TypeError("Invalid simulation setting: defenseScheme");
+  if (settings.offenseMode !== undefined && settings.offenseMode !== "adaptive" && settings.offenseMode !== "scripted") throw new TypeError("Invalid simulation setting: offenseMode");
+  if (typeof settings.offBallIntensity !== "number" || !Number.isFinite(settings.offBallIntensity)) throw new TypeError("Invalid simulation setting: offBallIntensity must be finite");
   const automatic = settings.automaticActions;
-  if (!automatic || typeof automatic !== "object" || Array.isArray(automatic)) throw new TypeError("Invalid simulation setting: automaticActions must contain boolean flags.");
+  if (!automatic || typeof automatic !== "object" || Array.isArray(automatic)) throw new TypeError("Invalid simulation setting: automaticActions must contain boolean flags");
   for (const flag of AUTOMATIC_ACTION_FLAGS) {
-    if (typeof (automatic as Record<string, unknown>)[flag] !== "boolean") throw new TypeError(`Invalid simulation setting: automaticActions.${flag} must be boolean.`);
+    if (typeof (automatic as Record<string, unknown>)[flag] !== "boolean") throw new TypeError(`Invalid simulation setting: automaticActions.${flag} must be boolean`);
   }
 }
 
@@ -1210,14 +1210,14 @@ function stopAuthoredActionsAt(run: SimulationRun, timeMs: number) {
   const ball = run.ballState;
   if (isTransferBall(ball)) {
     run.ballState = transitionBall(ball, { kind: "interrupt", atMs: timeMs,
-      reason: "An adaptive read interrupted the transfer.", giverPosition: markerForId(run.players, ball.transfer.giverId) ?? undefined });
+      reason: "An adaptive read interrupted the transfer", giverPosition: markerForId(run.players, ball.transfer.giverId) ?? undefined });
   }
   run.actions = run.actions.flatMap((action) => {
     if (action.startTime >= timeMs - 1e-6) return [];
     const endTime = action.startTime + action.durationMs;
     if (endTime <= timeMs) return [action];
     const state = executionFor(action);
-    if (actionIsMoving(action)) { state.phase = "interrupted"; state.completedAtMs = timeMs; state.notice = "An adaptive read replaced the remaining action."; }
+    if (actionIsMoving(action)) { state.phase = "interrupted"; state.completedAtMs = timeMs; state.notice = "An adaptive read replaced the remaining action"; }
     return [{ ...action, durationMs: Math.max(0, timeMs - action.startTime) }];
   });
   run.actionGraph = new Map(run.actions.filter((action) => action.plan).map((action) => [action.plan!.key, action]));
@@ -1248,12 +1248,12 @@ function readReason(choice: LiveReadChoice, handler: PlaybookMarker, hoop: Court
   if (choice.kind === "pass") {
     const space = Number.isFinite(choice.receiverGap) ? `${choice.receiverGap.toFixed(1)} ft of space` : "open space";
     const rating = shotSkillRating(choice.player, hoop);
-    return `Player ${choice.player.id} has ${space}, a clear passing lane, good floor spacing, and a ${rating}/5 shot rating for ${choice.expectedPoints.toFixed(2)} estimated points.`;
+    return `Player ${choice.player.id} has ${space}, a clear passing lane, good floor spacing, and a ${rating}/5 shot rating for ${choice.expectedPoints.toFixed(2)} estimated points`;
   }
   if (choice.kind === "drive") {
-    return `Player ${handler.id} has a clear lane and a ${playerRating(handler, "finishing")}/5 finishing rating; the route projects ${choice.expectedPoints.toFixed(2)} points.`;
+    return `Player ${handler.id} has a clear lane and a ${playerRating(handler, "finishing")}/5 finishing rating; the route projects ${choice.expectedPoints.toFixed(2)} points`;
   }
-  return `Player ${choice.player.id} has the best available shot at ${choice.expectedPoints.toFixed(2)} estimated points with ${choice.quality}% quality.`;
+  return `Player ${choice.player.id} has the best available shot at ${choice.expectedPoints.toFixed(2)} estimated points with ${choice.quality}% quality`;
 }
 
 function startAdaptiveChoice(run: SimulationRun, choice: LiveReadChoice, hoop: CourtPoint, early = false) {
@@ -1301,7 +1301,7 @@ function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
   const handler = markerForId(run.players, run.ballHandlerId);
   if (!handler) {
     run.adaptiveReadLabel = "No ball handler";
-    run.adaptiveReadReason = "The play has no player in possession to continue the action.";
+    run.adaptiveReadReason = "The play has no player in possession to continue the action";
     return;
   }
 
@@ -1333,14 +1333,14 @@ function resolveAdaptiveRead(run: SimulationRun, hoop: CourtPoint) {
   const shotChoice = (best?.kind === "shot" ? best : handlerShot) ?? choices.find((choice) => choice.kind === "shot");
   if (!shotChoice) {
     run.adaptiveReadLabel = "No safe continuation";
-    run.adaptiveReadReason = "No player is available to finish the play.";
+    run.adaptiveReadReason = "No player is available to finish the play";
     return;
   }
   run.adaptiveReadLabel = run.adaptiveActionsTaken > 0 ? "Best shot after live reads" : "No safe continuation";
   run.adaptiveReadRoute = null;
   run.adaptiveReadReason = run.adaptiveActionsTaken > 0
     ? readReason(shotChoice, handler, hoop)
-    : `Defenders cover the best passing and driving routes, so player ${shotChoice.player.id} takes the shot with the best available expected value.`;
+    : `Defenders cover the best passing and driving routes, so player ${shotChoice.player.id} takes the shot with the best available expected value`;
   beginShot(run, shotChoice.player, hoop);
 }
 
@@ -1835,7 +1835,7 @@ function processActionStart(run: SimulationRun, action: BoundAction) {
   if (action.arrow.kind === "pass" || action.arrow.kind === "handoff") {
     if (run.ballState.kind !== "held" || action.actorId !== run.ballHandlerId || action.actorId == null
       || action.actorId === action.recipientId || action.recipientId == null || !markerForId(run.players, action.recipientId)) {
-      blockAction(run, action, "obstructed", "The intended passer cannot transfer the ball in its current state.", run.elapsedMs);
+      blockAction(run, action, "obstructed", "The intended passer cannot transfer the ball in its current state", run.elapsedMs);
       return;
     }
     const record = transferFor(action);
@@ -2614,7 +2614,7 @@ function executionFor(action: BoundAction): ActionRuntime {
     phase: "pending", startedAtMs: null, completedAtMs: null, progress: 0, notice: null, paths: new Map(), waitMs: 0 };
 }
 function transferFor(action: BoundAction): TransferRecord {
-  if (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") throw new Error("Only transfers have ball evidence.");
+  if (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") throw new Error("Only transfers have ball evidence");
   return action.transfer ??= { actionKey: action.plan?.key ?? `${action.arrow.id}:${action.sequence}`,
     kind: action.arrow.kind, giverId: action.actorId, receiverId: action.recipientId,
     release: null, arrival: null, outcome: { kind: "pending" } };
@@ -2632,7 +2632,7 @@ function actionDiagnostics(run: SimulationRun): ActionDiagnostic[] {
 const executionAuditors = new WeakMap<SimulationRun, (snapshot: SimulationExecutionSnapshot) => void>();
 export type SimulationExecutionSnapshot = ReturnType<typeof inspectSimulationExecution>;
 export function watchSimulationExecution(run: SimulationRun, audit: (snapshot: SimulationExecutionSnapshot) => void) {
-  if (executionAuditors.has(run)) throw new Error("This run already has an execution auditor.");
+  if (executionAuditors.has(run)) throw new Error("This run already has an execution auditor");
   executionAuditors.set(run, audit);
   return () => { if (executionAuditors.get(run) === audit) executionAuditors.delete(run); };
 }
@@ -2677,7 +2677,7 @@ function resolveMovementOwners(run: SimulationRun, actions: BoundAction[], atMs:
   for (const action of actions.filter(action => actionIsExecuting(action) && action.arrow.kind !== "pass" && action.arrow.kind !== "handoff")
     .sort((a, b) => Number(Boolean(a.automatic || a.adaptiveReadLabel)) - Number(Boolean(b.automatic || b.adaptiveReadLabel)))) {
     if (action.actorId == null) continue;
-    if (owners.has(action.actorId)) blockAction(run, action, "conflict", `Move ${action.sequence} conflicts with another route for player ${action.actorId}.`, atMs);
+    if (owners.has(action.actorId)) blockAction(run, action, "conflict", `Move ${action.sequence} conflicts with another route for player ${action.actorId}`, atMs);
     else owners.set(action.actorId, action);
   }
   return owners;
@@ -2755,26 +2755,26 @@ function startReadyActions(run: SimulationRun, atMs: number) {
     for (const edge of action.plan?.dependencies ?? []) {
       const prior = run.actionGraph.get(edge.key);
       if (!prior || !actionIsMoving(prior) && prior.execution?.phase !== "completed") {
-        blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: prerequisite ${prior ? `move ${prior.sequence}` : edge.key} did not complete.`, atMs);
+        blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: prerequisite ${prior ? `move ${prior.sequence}` : edge.key} did not complete`, atMs);
         break;
       }
       if (edge.milestone === "catch" ? caughtAt(prior.transfer) == null : prior.execution?.phase !== "completed") waiting ??= prior;
     }
     if (action.startTime > atMs + 1e-6) {
       if (waiting && action.plan!.nominalStartMs <= atMs + 1e-6 && actionIsMoving(action)) {
-        executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}.`;
+        executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}`;
       }
       continue;
     }
     if (!actionIsMoving(action)) continue;
     if (waiting) {
-      executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}.`;
+      executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}`;
       action.startTime = atMs + SIMULATION_FIXED_STEP_MS;
       continue;
     }
     const holder = action.plan?.requiresPossessionId;
     if (holder != null && holder !== run.ballHandlerId) {
-      blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: player ${holder} does not hold the ball.`, atMs);
+      blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: player ${holder} does not hold the ball`, atMs);
       continue;
     }
     action.startTime = Math.max(action.startTime, atMs);
@@ -2874,7 +2874,7 @@ function prepareScreen(run: SimulationRun, action: BoundAction, timeMs: number, 
   const state = executionFor(action), actor = markerForId(run.players, action.actorId), user = markerForId(run.players, screenUserId(action));
   if (!actionIsMoving(action)) return;
   if (!actor || !user) {
-    blockAction(run, action, "obstructed", `Move ${action.sequence} lost an available screen participant.`, timeMs);
+    blockAction(run, action, "obstructed", `Move ${action.sequence} lost an available screen participant`, timeMs);
     return;
   }
   if (action.arrow.kind === "slip-screen") { state.phase = "release"; return; }
@@ -3005,14 +3005,14 @@ function reconcileBall(run: SimulationRun, atMs: number) {
     const giver = markerForId(run.players, ball.transfer.giverId);
     const receiver = markerForId(run.players, ball.transfer.receiverId);
     if (!action || !actionIsExecuting(action)) {
-      run.ballState = transitionBall(ball, { kind: "interrupt", atMs, reason: "The active transfer was interrupted.", giverPosition: giver ?? undefined });
+      run.ballState = transitionBall(ball, { kind: "interrupt", atMs, reason: "The active transfer was interrupted", giverPosition: giver ?? undefined });
       if (action) {
         const execution = executionFor(action);
         execution.phase = "interrupted"; execution.completedAtMs = atMs;
-        execution.notice = "The active transfer was interrupted.";
+        execution.notice = "The active transfer was interrupted";
       }
     } else if (!receiver || ball.kind === "handoff-pending" && !giver) {
-      blockAction(run, action, "obstructed", !receiver ? "The selected receiver is unavailable." : "The handoff giver is unavailable.", atMs);
+      blockAction(run, action, "obstructed", !receiver ? "The selected receiver is unavailable" : "The handoff giver is unavailable", atMs);
     }
   }
 }
@@ -3331,7 +3331,7 @@ function updateShot(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
     const shooter = markerForId(run.players, run.ballHandlerId);
     if (!shooter || !beginShot(run, shooter, hoop, timeMs)) {
       run.adaptiveReadLabel = "No controlled shot";
-      run.adaptiveReadReason = "No player controlled the ball when the possession ended.";
+      run.adaptiveReadReason = "No player controlled the ball when the possession ended";
       return;
     }
   }
@@ -3341,7 +3341,7 @@ function updateShot(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
     const shooter = markerForId(run.players, ball.shooterId);
     if (shooter && !ball.pathOverride) ball.position = { x: shooter.x, y: shooter.y };
     if (timeMs + 1e-6 < ball.releaseAtMs) return;
-    if (!shooter) throw new Error("The shooter is unavailable at release.");
+    if (!shooter) throw new Error("The shooter is unavailable at release");
     const offBall = calculateOffBallQuality(run.players, run.ball, run.settings, run.defenders, shooter.id);
     const releaseContext = evaluateShotContext(run.players, run.defenders, shooter, offBall, hoop, badgeShotContext(run, shooter, timeMs));
     ball = run.ballState = transitionBall(ball, { kind: "release-shot", atMs: timeMs, releaseContext });
@@ -3387,7 +3387,7 @@ function transferBallToRecipient(run: SimulationRun, nextTime: number, stepMs: n
   const receiver = markerForId(run.players, ball.transfer.receiverId);
   const giver = markerForId(run.players, ball.transfer.giverId);
   if (!receiver || ball.kind === "handoff-pending" && !giver) {
-    blockAction(run, transfer, "obstructed", !receiver ? "The selected receiver is unavailable." : "The handoff giver is unavailable.", nextTime);
+    blockAction(run, transfer, "obstructed", !receiver ? "The selected receiver is unavailable" : "The handoff giver is unavailable", nextTime);
     return;
   }
   const ready = (ball.kind !== "handoff-pending" || giver && pointDistanceFeet(giver, receiver) <= 2.8)
@@ -3408,7 +3408,7 @@ function transferBallToRecipient(run: SimulationRun, nextTime: number, stepMs: n
     return;
   }
   if (extendPhase(run, transfer, stepMs)) return;
-  blockAction(run, transfer, "obstructed", ball.kind === "handoff-pending" ? "The players could not meet for the handoff." : "The receiver could not complete the catch.", nextTime);
+  blockAction(run, transfer, "obstructed", ball.kind === "handoff-pending" ? "The players could not meet for the handoff" : "The receiver could not complete the catch", nextTime);
 }
 
 function extendPhase(run: SimulationRun, action: BoundAction, delta: number) {
@@ -3437,8 +3437,8 @@ function finalizeCompletedMovement(run: SimulationRun, previousTime: number, nex
     else {
       state.phase = "obstructed"; state.completedAtMs = nextTime;
       const traffic = [actor, user].some((participant) => participant && [...run.players.filter((player) => player.id !== participant.id), ...run.defenders].some((other) => pointDistanceFeet(participant, other) < 2.5));
-      state.notice = state.congestion?.status === "blocked" ? `Move ${action.sequence} could not make progress through the reserved player traffic.`
-        : traffic ? `Move ${action.sequence} was blocked by nearby player traffic.` : `Move ${action.sequence} did not finish within the allowed time.`;
+      state.notice = state.congestion?.status === "blocked" ? `Move ${action.sequence} could not make progress through the reserved player traffic`
+        : traffic ? `Move ${action.sequence} was blocked by nearby player traffic` : `Move ${action.sequence} did not finish within the allowed time`;
     }
     if (actor) run.offBallAnchors.set(actor.id, { x: actor.x, y: actor.y });
     if (user) run.offBallAnchors.set(user.id, { x: user.x, y: user.y });
@@ -3492,7 +3492,7 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
 
 /** Advance execution and recorded state without copying an interpolated display frame. */
 export function advanceSimulationState(run: SimulationRun, deltaMs: number, settings: SimulationSettings = run.settings, hoop = HOOP_POINT): void {
-  if (!Number.isFinite(deltaMs)) throw new TypeError("Simulation elapsed time must be finite.");
+  if (!Number.isFinite(deltaMs)) throw new TypeError("Simulation elapsed time must be finite");
   if (run.elapsedMs >= run.durationMs || deltaMs <= 0) return;
   assertSimulationSessionHoop(run, hoop);
   setSimulationRunSettings(run, settings);
@@ -3554,12 +3554,12 @@ function stagePausedRun(run: SimulationRun): SimulationRun {
   const data: Record<string, unknown> = {};
   for (const [key, descriptor] of Object.entries(descriptors)) {
     if ("value" in descriptor) {
-      if (!descriptor.writable) throw new Error("The paused simulation cannot accept edits.");
+      if (!descriptor.writable) throw new Error("The paused simulation cannot accept edits");
       data[key] = descriptor.value;
     }
   }
   for (const action of run.actions) for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(action))) {
-    if (!("value" in descriptor) || !descriptor.writable || !Object.isExtensible(action)) throw new Error("The paused action cannot accept edits.");
+    if (!("value" in descriptor) || !descriptor.writable || !Object.isExtensible(action)) throw new Error("The paused action cannot accept edits");
   }
   const candidate = structuredClone(data) as SimulationRun;
   if (isShotBall(candidate.ballState)) freezeShotRelease(candidate.ballState.releaseContext);
@@ -3586,16 +3586,16 @@ export function restoreSimulationExecution(run: SimulationRun, candidate: Simula
   const removed = Object.entries(Object.getOwnPropertyDescriptors(run)).filter(([key, descriptor]) => "value" in descriptor && !fieldNames.has(key));
   for (const [key] of fields) {
     const descriptor = Object.getOwnPropertyDescriptor(run, key);
-    if (descriptor ? !descriptor.writable : !Object.isExtensible(run)) throw new Error("The simulation cannot accept restored state.");
+    if (descriptor ? !descriptor.writable : !Object.isExtensible(run)) throw new Error("The simulation cannot accept restored state");
   }
-  if (removed.some(([, descriptor]) => !descriptor.configurable)) throw new Error("The simulation cannot accept restored state.");
+  if (removed.some(([, descriptor]) => !descriptor.configurable)) throw new Error("The simulation cannot accept restored state");
   for (const [key] of removed) Reflect.deleteProperty(run, key);
   for (const [key, descriptor] of fields) Reflect.set(run, key, descriptor.value);
   runRouteCache.delete(run);
 }
 
 function validatePausedRun(run: SimulationRun) {
-  const finite = (value: number) => { if (!Number.isFinite(value)) throw new Error("The paused edit produced invalid simulation state."); };
+  const finite = (value: number) => { if (!Number.isFinite(value)) throw new Error("The paused edit produced invalid simulation state"); };
   const point = (value: CourtPoint) => { finite(value.x); finite(value.y); };
   for (const value of [run.elapsedMs, run.accumulatorMs, run.durationMs, run.routeRevision]) finite(value);
   for (const marker of [...run.players, ...run.defenders]) point(marker);
@@ -3604,7 +3604,7 @@ function validatePausedRun(run: SimulationRun) {
   for (const value of run.velocities.values()) point(value);
   for (const value of [...run.actionStartOverrides.values(), ...run.recipientStartOverrides.values()]) { finite(value.atMs); point(value.point); }
   for (const action of run.actions) {
-    if (run.actionGraph.get(`${action.arrow.id}:${action.sequence}`) !== action) throw new Error("Paused action dependencies are inconsistent.");
+    if (run.actionGraph.get(`${action.arrow.id}:${action.sequence}`) !== action) throw new Error("Paused action dependencies are inconsistent");
     finite(action.startTime); finite(action.durationMs);
     if (action.execution) {
       finite(action.execution.progress); finite(action.execution.waitMs);
@@ -3614,13 +3614,13 @@ function validatePausedRun(run: SimulationRun) {
   if (isTransferBall(run.ballState)) {
     const transfer = run.ballState.transfer;
     if (run.actionGraph.get(transfer.actionKey)?.transfer !== transfer || transfer.outcome.kind !== "pending"
-      || !run.players.some(player => player.id === transfer.receiverId)) throw new Error("The pending catch is inconsistent.");
+      || !run.players.some(player => player.id === transfer.receiverId)) throw new Error("The pending catch is inconsistent");
   }
   if (isShotBall(run.ballState)) {
     point(run.ballState.start); finite(run.ballState.quality); finite(run.ballState.releaseAtMs);
     if (run.ballState.releaseContext) {
       validateShotRelease(run.ballState.releaseContext);
-      if (run.ballState.quality !== run.ballState.releaseContext.quality) throw new Error("The released shot evaluation is inconsistent.");
+      if (run.ballState.quality !== run.ballState.releaseContext.quality) throw new Error("The released shot evaluation is inconsistent");
     }
   }
   for (const marker of [...run.frame.players, ...run.frame.defenders]) point(marker);
@@ -3761,9 +3761,9 @@ function transactPausedSimulation(run: SimulationRun, draft: PlaybookDraft, hoop
 
 export function editPausedSimulationMarker(run: SimulationRun, type: "player" | "defender" | "ball", id: number | string, point: CourtPoint, draft: PlaybookDraft = run.source) {
   validatePlaybookDocument(draft);
-  if (!pausedDraftIsCompatible(run.source, draft)) throw new Error("The paused drawing changed its actions or participants. Restart playback to apply it.");
-  if (!["player", "defender", "ball"].includes(type) || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Choose a valid paused marker and court position.");
-  if (type !== "ball" && !(type === "player" ? run.players : run.defenders).some(marker => marker.id === Number(id))) throw new Error("The paused marker is no longer on the court.");
+  if (!pausedDraftIsCompatible(run.source, draft)) throw new Error("The paused drawing changed its actions or participants. Restart playback to apply it");
+  if (!["player", "defender", "ball"].includes(type) || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Choose a valid paused marker and court position");
+  if (type !== "ball" && !(type === "player" ? run.players : run.defenders).some(marker => marker.id === Number(id))) throw new Error("The paused marker is no longer on the court");
   assertSimulationSessionHoop(run, HOOP_POINT);
   const relocation = { type, id, point: clampCourt(point) };
   const frame = transactPausedSimulation(run, draft, HOOP_POINT, relocation);

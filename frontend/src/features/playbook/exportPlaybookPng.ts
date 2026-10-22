@@ -11,14 +11,14 @@ export async function exportPlaybookPng(svg: SVGSVGElement, name: string): Promi
     const source = image;
     await new Promise<void>((resolve, reject) => {
       source.onload = () => resolve();
-      source.onerror = () => reject(new Error("PNG export could not render this diagram. Please try again."));
+      source.onerror = () => reject(new Error("PNG export could not render this diagram. Please try again"));
       source.src = svgUrl!;
     });
     const canvas = document.createElement("canvas");
     canvas.width = 1600;
     canvas.height = 1232;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("PNG export could not access the canvas. Please try again.");
+    if (!context) throw new Error("PNG export could not access the canvas. Please try again");
     context.fillStyle = "#0d0f10";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#f3f1ec";
@@ -26,7 +26,7 @@ export async function exportPlaybookPng(svg: SVGSVGElement, name: string): Promi
     context.fillText(name || "ARCade Hoops play", 48, 48);
     context.drawImage(source, 0, 80, canvas.width, 1152);
     const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PNG export could not create the image file. Please try again.")), "image/png");
+      canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PNG export could not create the image file. Please try again")), "image/png");
     });
     pngUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");

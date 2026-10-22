@@ -15,21 +15,21 @@ export function buildFrameMap(
   end: number,
 ): SourceFrameMap {
   if (!Number.isFinite(start) || !Number.isFinite(end) || source.some(s => !Number.isFinite(s.timestamp) || !Number.isFinite(s.duration) || s.duration < 0))
-    throw Error("The video has invalid source-frame timing.");
+    throw Error("The video has invalid source-frame timing");
   const sorted = source.filter(s => micros(s.timestamp) >= 0).sort((a,b) => a.timestamp-b.timestamp);
-  if (!sorted.length || sorted.length > 100_000) throw Error("The video has no supported source-frame timeline.");
+  if (!sorted.length || sorted.length > 100_000) throw Error("The video has no supported source-frame timeline");
   const frames = sorted.map((s, index) => {
     const time = micros(s.timestamp), next = sorted[index+1];
     const duration = next ? micros(next.timestamp)-time : micros(s.duration);
     if (!Number.isSafeInteger(time) || !Number.isSafeInteger(duration) || duration < 0 || (duration === 0 && next))
-      throw Error("The video has duplicate or invalid frame timestamps. Try another export.");
+      throw Error("The video has duplicate or invalid frame timestamps. Try another export");
     return { source_index: index, source_us: time, duration_us: duration };
   });
   const origin = frames[0].source_us, startUS = micros(start), endUS = micros(end);
   const count = frameCount(start,end);
   if (startUS < 0 || count < 1 || count > 450 || endUS <= startUS ||
       origin+endUS > frames.at(-1)!.source_us+frames.at(-1)!.duration_us+2)
-    throw Error("The selected segment extends beyond the source-frame timeline.");
+    throw Error("The selected segment extends beyond the source-frame timeline");
   let at = 0;
   const mapped: SourceFrameMap['frames'] = [];
   for(let frame=0;frame<count;frame++) {
@@ -38,7 +38,7 @@ export function buildFrameMap(
     mapped.push({...frames[at]});
   }
   const result: SourceFrameMap = { version:1, origin_us:origin, start_us:startUS, end_us:endUS, frames:mapped };
-  if (!validFrameMap(result)) throw Error("The selected segment needs unavailable source-frame timing.");
+  if (!validFrameMap(result)) throw Error("The selected segment needs unavailable source-frame timing");
   return result;
 }
 
@@ -61,12 +61,12 @@ export function validFrameMap(value: unknown, start?: number, end?: number): val
 /** Seek just inside the mapped frame to avoid floating-point ambiguity at its leading edge. */
 export function sourceFrameTime(map: SourceFrameMap, frame: number) {
   const f=map.frames[frame];
-  if(!f || !Number.isInteger(frame)) throw Error("Frame is outside the source-frame map.");
+  if(!f || !Number.isInteger(frame)) throw Error("Frame is outside the source-frame map");
   return (f.source_us+Math.min(1000,f.duration_us/2))/1e6;
 }
 export function verifySourceFrame(map: SourceFrameMap, frame: number, sample: {timestamp:number}|null) {
   if(!sample || Math.abs(micros(sample.timestamp)-map.frames[frame].source_us)>2)
-    throw Error(`Source frame ${frame+1} decoded at a different timestamp. Reload the video and retry.`);
+    throw Error(`Source frame ${frame+1} decoded at a different timestamp. Reload the video and retry`);
 }
 
 export function sameFrameMap(a: SourceFrameMap | undefined, b: SourceFrameMap | undefined) {

@@ -115,7 +115,7 @@ export async function captionRisks(
       const state = editFrame(project, frame);
       const sample = masks.frames[state.source];
       if (!sample)
-        throw Error("A source frame is missing from the silhouette check.");
+        throw Error("A source frame is missing from the silhouette check");
       const crop = framingRect(state.framing);
       for (const score of scores) {
         const hit = silhouetteCoverage(sample, crop, score.box);

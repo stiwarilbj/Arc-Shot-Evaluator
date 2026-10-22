@@ -171,7 +171,7 @@ export default function ReviewComparison({
     >
       <p className="jumper-caption">
         Compare the same moment. Original footage is an editing reference only;
-        saved and downloaded videos stay masked.
+        saved and downloaded videos stay masked
       </p>
       <div
         className="jumper-comparison-toggle"
@@ -244,13 +244,13 @@ export default function ReviewComparison({
       {sourceFailed && (
         <p role="status">
           Original reference could not play. You can still review and download
-          the masked clip.
+          the masked clip
         </p>
       )}
       {failed && (
         <p role="alert">
           Masked preview could not play. Retry loading the review; your result
-          is retained.
+          is retained
         </p>
       )}
       {(failed || sourceFailed) && (

@@ -107,7 +107,7 @@ export default function FreezeFramePicker({
             Recorded masked frames within ±0.20s of {(anchor / 30).toFixed(2)}s,
             kept inside its piece. Edge clarity is relative to these previews,
             not a measure of pose quality or original motion blur. Choose a
-            readable pose, then Freeze at playhead.
+            readable pose, then Freeze at playhead
           </p>
           <button disabled={!active} onClick={() => setAnchor(frame)}>
             Refresh around current playhead
@@ -168,7 +168,7 @@ export default function FreezeFramePicker({
               {candidates.length === 1 ? (
                 <p className="jumper-caption">
                   Only one distinct recorded frame is available here. Move into
-                  a motion piece to compare nearby poses.
+                  a motion piece to compare nearby poses
                 </p>
               ) : null}
             </>

@@ -278,7 +278,7 @@ export async function commitBrowserRestore(
       try {
         if (revision(read.result) !== expectedRevision)
           throw Error(
-            "The library changed during restore. Retry the same backup; no clips were replaced.",
+            "The library changed during restore. Retry the same backup; no clips were replaced",
           );
         for (const value of clips) tx.objectStore("clips").add(value);
         for (const value of history) {
@@ -338,7 +338,7 @@ export async function restoreLocalLibrary(
     v.skipped < 0
   )
     throw Error(
-      "Restore response could not be verified. Retry the same backup safely.",
+      "Restore response could not be verified. Retry the same backup safely",
     );
   return v;
 }

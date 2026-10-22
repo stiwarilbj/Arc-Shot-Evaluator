@@ -407,13 +407,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   useEffect(() => {
     let mounted = true;
-    const refresh = () => { void fetchPlaybooks().then((plays) => { if (mounted) setSaved(plays); }).catch((caught: unknown) => { if (mounted) setError(caught instanceof Error ? caught.message : "Saved plays are unavailable. Retry when the server is running."); }); };
+    const refresh = () => { void fetchPlaybooks().then((plays) => { if (mounted) setSaved(plays); }).catch((caught: unknown) => { if (mounted) setError(caught instanceof Error ? caught.message : "Saved plays are unavailable. Retry when the server is running"); }); };
     refresh();
     const unsubscribe = subscribePlaybooks(refresh);
     return () => { mounted = false; unsubscribe(); };
   }, []);
   useEffect(() => {
-    if (savedOpen) void fetchPlaybooks().then(setSaved).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Saved plays could not be loaded."));
+    if (savedOpen) void fetchPlaybooks().then(setSaved).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Saved plays could not be loaded"));
   }, [savedOpen]);
 
   useEffect(() => {
@@ -489,7 +489,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setError(null);
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The paused edit could not be applied. Your previous drawing is intact.");
+      setError(cause instanceof Error ? cause.message : "The paused edit could not be applied. Your previous drawing is intact");
       return false;
     }
   }
@@ -577,7 +577,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     } catch (caught) {
       if (draftSession.failSave(request, caught instanceof CreationAttemptError && caught.retainAttempt)) {
         setStatus("error");
-        setError(caught instanceof Error ? caught.message : "Play could not be saved. Your draft is still here.");
+        setError(caught instanceof Error ? caught.message : "Play could not be saved. Your draft is still here");
       }
       return false;
     }
@@ -637,7 +637,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function startSimulation() {
     if (!draft.players.length) {
-      setError("Add at least one offensive player before running a simulation.");
+      setError("Add at least one offensive player before running a simulation");
       return;
     }
     if (simulationPaused && simulationClientRef.current) {
@@ -678,7 +678,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setError(null);
     } catch {
       setSimulationPlaying(false);
-      setError("Playback worker could not start. Your drawing is intact. Press Play to retry.");
+      setError("Playback worker could not start. Your drawing is intact. Press Play to retry");
     }
     focusBoard();
   }
@@ -757,7 +757,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setSaved((current) => current.filter((play) => play.id !== id));
       if (draft.id === id) loadDraft(clonePlaybook(READY_SETUP));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Play could not be deleted.");
+      setError(caught instanceof Error ? caught.message : "Play could not be deleted");
     } finally {
       setDeleteId(null);
     }
@@ -765,7 +765,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function addMarker(point: CourtPoint, type: "player" | "defender") {
     if (markerCount(draft, type) >= 5) {
-      setError(`You can place up to five ${type === "player" ? "offensive players" : "defenders"}.`);
+      setError(`You can place up to five ${type === "player" ? "offensive players" : "defenders"}`);
       return;
     }
     const collection = type === "player" ? draft.players : draft.defenders;
@@ -795,7 +795,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (tool === "pick-pop") {
       const { screenerId, handlerId, screenPoint } = pickPopSelection;
       if (screenerId == null || handlerId == null) {
-        setError("Select the screener and ball handler first.");
+        setError("Select the screener and ball handler first");
         return;
       }
       if (!screenPoint) {
@@ -805,7 +805,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       }
       const screener = draft.players.find((player) => player.id === screenerId);
       if (!screener) {
-        setError("The selected screener is no longer on the court.");
+        setError("The selected screener is no longer on the court");
         return;
       }
       addAuthoredArrow({ id: arrowId(), kind: "pick-pop", start: { x: screener.x, y: screener.y }, end: screenPoint, exit_target: point, screener_id: screenerId, handler_id: handlerId, path: "straight", timing: 1.5, sequence: nextSequence });
@@ -814,12 +814,12 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (tool === "off-ball-screen" || tool === "pin-down") {
       const { screenerId, cutterId, screenPoint } = offBallScreenSelection;
       if (screenerId == null || cutterId == null) {
-        setError("Select a screener and cutter before placing the screen.");
+        setError("Select a screener and cutter before placing the screen");
         return;
       }
       const screener = draft.players.find((player) => player.id === screenerId);
       if (!screener) {
-        setError("The selected screener is no longer on the court.");
+        setError("The selected screener is no longer on the court");
         setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
         return;
       }
@@ -844,12 +844,12 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     }
     if (tool === "backdoor-cut") {
       if (backdoorCutterId == null) {
-        setError("Select the cutter before placing the backdoor route.");
+        setError("Select the cutter before placing the backdoor route");
         return;
       }
       const cutter = draft.players.find((player) => player.id === backdoorCutterId);
       if (!cutter) {
-        setError("The selected cutter is no longer on the court.");
+        setError("The selected cutter is no longer on the court");
         setBackdoorCutterId(null);
         return;
       }
@@ -858,7 +858,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     }
     if (tool === "player") return addMarker(point, "player");
     if (tool === "ball") {
-      if (draft.ball) setError("This play already has a ball. Select it and press Delete to replace it.");
+      if (draft.ball) setError("This play already has a ball. Select it and press Delete to replace it");
       else {
         const next = clonePlaybook(draft);
         next.ball = point;
@@ -922,7 +922,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setStatus("idle");
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The paused marker could not be moved.");
+      setError(cause instanceof Error ? cause.message : "The paused marker could not be moved");
     }
   }
 
@@ -1016,7 +1016,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     }
     if (tool === "pick-pop") {
       if (selection.type !== "player") {
-        setError("Choose offensive players for the screen and ball handler.");
+        setError("Choose offensive players for the screen and ball handler");
         return;
       }
       const id = Number(selection.id);
@@ -1025,19 +1025,19 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         setPickPopSelection({ screenerId: id, handlerId: null, screenPoint: null });
         setSelected(selection);
       } else if (pickPopSelection.handlerId == null) {
-        if (pickPopSelection.screenerId === id) setError("Choose a different player as the ball handler.");
+        if (pickPopSelection.screenerId === id) setError("Choose a different player as the ball handler");
         else {
           setPickPopSelection({ ...pickPopSelection, handlerId: id });
           setSelected(selection);
         }
       } else {
-        setError("Click the screen location, then the pop destination.");
+        setError("Click the screen location, then the pop destination");
       }
       return;
     }
     if (tool === "off-ball-screen" || tool === "pin-down") {
       if (selection.type !== "player") {
-        setError("Choose offensive players for the screener and cutter.");
+        setError("Choose offensive players for the screener and cutter");
         return;
       }
       const id = Number(selection.id);
@@ -1046,19 +1046,19 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         setOffBallScreenSelection({ screenerId: id, cutterId: null, screenPoint: null });
         setSelected(selection);
       } else if (offBallScreenSelection.cutterId == null) {
-        if (offBallScreenSelection.screenerId === id) setError("Choose a different player as the cutter.");
+        if (offBallScreenSelection.screenerId === id) setError("Choose a different player as the cutter");
         else {
           setOffBallScreenSelection({ ...offBallScreenSelection, cutterId: id });
           setSelected(selection);
         }
       } else {
-        setError(tool === "pin-down" ? "Click the screen location, then the cutter destination." : "Click the screen location.");
+        setError(tool === "pin-down" ? "Click the screen location, then the cutter destination" : "Click the screen location");
       }
       return;
     }
     if (tool === "backdoor-cut") {
       if (selection.type !== "player") {
-        setError("Choose an offensive player for the backdoor cut.");
+        setError("Choose an offensive player for the backdoor cut");
         return;
       }
       setBackdoorCutterId(Number(selection.id));
@@ -1152,7 +1152,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setError(null);
     try {
       const svg = svgRef.current;
-      if (!svg) throw new Error("PNG export could not find the court. Please try again.");
+      if (!svg) throw new Error("PNG export could not find the court. Please try again");
       const clone = svg.cloneNode(true) as SVGSVGElement;
       clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
       clone.setAttribute("width", "1600");
@@ -1167,7 +1167,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       await exportPlaybookPng(clone, draft.name);
     } catch (caught) {
       setError(caught instanceof Error && caught.message.startsWith("PNG export")
-        ? caught.message : "PNG export failed. Please try again.");
+        ? caught.message : "PNG export failed. Please try again");
     }
   }
 
@@ -1212,7 +1212,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           <PresetButton active={draft.name === "Ready setup" && !draft.arrows.length} icon={<Shield size={17} />} label="Ready setup" onClick={() => requestLoad(clonePlaybook(READY_SETUP))} />
           <PresetButton active={starterOpen} icon={<FolderOpen size={17} />} label="Starter plays" onClick={() => setStarterOpen(true)} />
           <PresetButton active={!draft.players.length && !draft.ball} icon={<Circle size={17} />} label="Empty court" onClick={() => requestLoad(clonePlaybook(EMPTY_COURT))} />
-          <details className="playbook-action-list"><summary>Actions · {draft.arrows.length}</summary><div role="group" aria-label="Edit play actions">{draft.arrows.map((arrow, index) => <button key={arrow.id} type="button" aria-pressed={selected?.type === "arrow" && selected.id === arrow.id} onClick={() => { setSimulationPlaying(false); chooseTool("select"); setSelected({ type: "arrow", id: arrow.id }); }}><strong>Move {arrowSequence(arrow, index)}</strong><span>{actionLabel(arrow.kind)}</span></button>)}</div>{!draft.arrows.length ? <p>No actions drawn yet.</p> : <p>Select an action to edit it, even when its arrow is hidden.</p>}</details>
+          <details className="playbook-action-list"><summary>Actions · {draft.arrows.length}</summary><div role="group" aria-label="Edit play actions">{draft.arrows.map((arrow, index) => <button key={arrow.id} type="button" aria-pressed={selected?.type === "arrow" && selected.id === arrow.id} onClick={() => { setSimulationPlaying(false); chooseTool("select"); setSelected({ type: "arrow", id: arrow.id }); }}><strong>Move {arrowSequence(arrow, index)}</strong><span>{actionLabel(arrow.kind)}</span></button>)}</div>{!draft.arrows.length ? <p>No actions drawn yet</p> : <p>Select an action to edit it, even when its arrow is hidden</p>}</details>
           <button type="button" className={`preset-button ${draft.defenders_visible ? "is-active" : ""}`} onClick={() => {
             const next = clonePlaybook(draft);
             next.defenders_visible = !next.defenders_visible;
@@ -1233,7 +1233,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 setDefenderSkillsId(defender.id);
                 setSelected({ type: "defender", id: defender.id });
               }}>Defender {defender.id}</button>)}
-            </div> : <p className="ratings-empty">Turn on Defenders or use AI defense to add defenders first.</p>}
+            </div> : <p className="ratings-empty">Turn on Defenders or use AI defense to add defenders first</p>}
             {selectedSkillsDefender ? <>
               <div className="ratings-panel-heading defender-badge-heading"><strong>Defender {selectedSkillsDefender.id} badges</strong><span>{selectedSkillsDefender.badges?.filter((badge) => DEFENSIVE_BADGE_ORDER.includes(badge as DefensiveBadge)).length ?? 0} selected</span></div>
               <div className="player-badge-list" role="group" aria-label={`Defender ${selectedSkillsDefender.id} defensive badges`}>
@@ -1246,7 +1246,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                   </button>;
                 })}
               </div>
-              <small>Badges guide assignments and reactions. Paused edits apply when you resume.</small>
+              <small>Badges guide assignments and reactions. Paused edits apply when you resume</small>
             </> : null}
           </div> : null}
           <button type="button" className={`preset-button ${defenseSchemesOpen ? "is-active" : ""}`} aria-expanded={defenseSchemesOpen} aria-controls="defense-schemes-panel" onClick={() => setDefenseSchemesOpen((open) => !open)}>
@@ -1254,7 +1254,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           </button>
           {defenseSchemesOpen ? <div id="defense-schemes-panel" className="defense-schemes-panel" role="group" aria-label="Defensive scheme for the next possession">
             <label><span>Scheme</span><ArcSelect ariaLabel="Defensive scheme" className="arc-select--compact arc-select--full defense-scheme-select" value={simulationSettings.defenseScheme} options={DEFENSE_SCHEME_OPTIONS} onValueChange={(value) => changeSimulationSetting("defenseScheme", value as DefenseScheme)} /></label>
-            <small>{simulationSettings.defenseScheme === "auto" ? "Auto draws an eligible scheme at random when a run starts." : `${DEFENSE_SCHEME_LABELS[simulationSettings.defenseScheme]} is set for the next run.`}</small>
+            <small>{simulationSettings.defenseScheme === "auto" ? "Auto draws an eligible scheme at random when a run starts" : `${DEFENSE_SCHEME_LABELS[simulationSettings.defenseScheme]} is set for the next run`}</small>
             {simulationActive ? <small className="defense-scheme-active">Current: {currentDefenseSchemeLabel}</small> : null}
             {simulationActive && simulationFrame.execution?.some((action) => action.notice) ? <span className="simulation-movement-notice" role="status">{simulationFrame.execution.filter((action) => action.notice).at(-1)?.notice}</span> : null}
             {simulationActive && simulationFrame.defenseSchemeNotice ? <small className="defense-scheme-notice" role="status">{simulationFrame.defenseSchemeNotice}</small> : null}
@@ -1267,7 +1267,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <label><input type="checkbox" checked={simulationSettings.automaticActions.handoff} onChange={(event) => changeAutomaticAction("handoff", event.currentTarget.checked)} /><span>Handoffs</span></label>
             <label><input type="checkbox" checked={simulationSettings.automaticActions.pickRoll} onChange={(event) => changeAutomaticAction("pickRoll", event.currentTarget.checked)} /><span>Pick and rolls</span></label>
             <label><input type="checkbox" checked={simulationSettings.automaticActions.offBallScreen} onChange={(event) => changeAutomaticAction("offBallScreen", event.currentTarget.checked)} /><span>Off-ball screens</span></label>
-            <small>Applied when the next simulation starts.</small>
+            <small>Applied when the next simulation starts</small>
           </div> : null}
           <button type="button" className={`preset-button ${ratingsOpen ? "is-active" : ""}`} aria-expanded={ratingsOpen} aria-controls="player-skills-panel" onClick={() => setRatingsOpen((open) => !open)}>
             <UsersRound size={17} /><span>Player skills</span><i className={`toggle-dot ${ratingsOpen ? "is-on" : ""}`} />
@@ -1283,7 +1283,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 setRatingPlayerId(player.id);
                 setSelected({ type: "player", id: player.id });
               }}>Player {player.id}</button>)}
-            </div> : <p className="ratings-empty">Add an offensive player to set ratings and badges.</p>}
+            </div> : <p className="ratings-empty">Add an offensive player to set ratings and badges</p>}
             {playerSkillsTab === "ratings" ? <div id="player-ratings-content" role="tabpanel" aria-labelledby="player-ratings-tab" className="player-skill-tab-content">
               <div className="ratings-panel-heading"><strong>Team adjustment</strong><span>All players</span></div>
               {([
@@ -1313,7 +1313,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                   </div>
                 </div>;
               }) : null}
-              <small>Ratings range from 1 (low) to 5 (high). New players start at 3.</small>
+              <small>Ratings range from 1 (low) to 5 (high). New players start at 3</small>
             </div> : <div id="player-badges-content" role="tabpanel" aria-labelledby="player-badges-tab" className="player-skill-tab-content">
               {selectedRatingsPlayer ? <>
                 <div className="ratings-panel-heading"><strong>Player {selectedRatingsPlayer.id} badges</strong><span>{selectedRatingsPlayer.badges?.length ?? 0} selected</span></div>
@@ -1327,11 +1327,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                     </button>;
                   })}
                 </div>
-                <small>Badges shape simulation decisions. Paused edits apply when you resume.</small>
-              </> : <p className="ratings-empty">Add an offensive player to assign badges.</p>}
+                <small>Badges shape simulation decisions. Paused edits apply when you resume</small>
+              </> : <p className="ratings-empty">Add an offensive player to assign badges</p>}
             </div>}
           </div> : null}
-          <p className="playbook-help">Drag markers to set positions. Select an arrow to adjust its endpoint. Use Delete or the toolbar to clean up.</p>
+          <p className="playbook-help">Drag markers to set positions. Select an arrow to adjust its endpoint. Use Delete or the toolbar to clean up</p>
         </aside>
         <main className={`playbook-editor ${simulationActive ? "is-simulating" : ""}`}>
           <div className="playbook-toolbar" role="toolbar" aria-label="Playbook drawing tools">
@@ -1385,20 +1385,20 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
             <div className="simulation-setting"><span>Offense off-ball</span><ArcSelect ariaLabel="Offense off-ball style" className="arc-select--compact playbook-offense-select" value={simulationSettings.offenseOffBall} options={[{ value: "read-react", label: "Read & react" }, { value: "cuts", label: "Structured cuts" }, { value: "spacing", label: "Spacing only" }, { value: "off", label: "Off" }]} onValueChange={(value) => changeSimulationSetting("offenseOffBall", value as SimulationSettings["offenseOffBall"])} /></div>
             <div className="simulation-setting simulation-defense-setting"><span>Coverage & emphasis</span><ArcSelect ariaLabel="Coverage and defensive emphasis" className="arc-select--compact playbook-defense-select" value={simulationSettings.defenseStrategy} options={[
-              { value: "help", label: "Help & recover", description: "Send weak-side help to drives, then recover." },
-              { value: "contain", label: "Contain & deny", description: "Contain the handler and stay close to each assignment." },
-              { value: "switch", label: "Switch screens", description: "Exchange matchups at screen use or a close handoff." },
-              { value: "fight-over", label: "Fight over top", description: "Keep matchups and route the screened defender over the screen." },
-              { value: "go-under", label: "Go under", description: "Keep matchups and route the screened defender below the screen." },
-              { value: "drop", label: "Drop coverage", description: "The screener's defender protects the lane while the handler is covered." },
-              { value: "hedge", label: "Hedge & recover", description: "Show briefly at the screen, then return to the matchup." },
-              { value: "trap-rotate", label: "Trap & rotate", description: "Bring extra pressure and rotate help behind the screen or drive." },
-              { value: "deny-lanes", label: "Deny passing lanes", description: "Shade off-ball defenders toward passing lanes and close on receivers." },
-              { value: "protect-paint", label: "Protect paint", description: "Keep help defenders closer to the basket and drive lane." },
-              { value: "off", label: "Hold positions", description: "Stay in place; overlapping players still separate." },
+              { value: "help", label: "Help & recover", description: "Send weak-side help to drives, then recover" },
+              { value: "contain", label: "Contain & deny", description: "Contain the handler and stay close to each assignment" },
+              { value: "switch", label: "Switch screens", description: "Exchange matchups at screen use or a close handoff" },
+              { value: "fight-over", label: "Fight over top", description: "Keep matchups and route the screened defender over the screen" },
+              { value: "go-under", label: "Go under", description: "Keep matchups and route the screened defender below the screen" },
+              { value: "drop", label: "Drop coverage", description: "The screener's defender protects the lane while the handler is covered" },
+              { value: "hedge", label: "Hedge & recover", description: "Show briefly at the screen, then return to the matchup" },
+              { value: "trap-rotate", label: "Trap & rotate", description: "Bring extra pressure and rotate help behind the screen or drive" },
+              { value: "deny-lanes", label: "Deny passing lanes", description: "Shade off-ball defenders toward passing lanes and close on receivers" },
+              { value: "protect-paint", label: "Protect paint", description: "Keep help defenders closer to the basket and drive lane" },
+              { value: "off", label: "Hold positions", description: "Stay in place; overlapping players still separate" },
             ]} onValueChange={(value) => changeSimulationSetting("defenseStrategy", value as SimulationSettings["defenseStrategy"])} /></div>
             <label className="simulation-setting simulation-setting-range"><span>Off-ball intensity <output>{simulationSettings.offBallIntensity}%</output></span><input aria-label="Off-ball intensity" type="range" min={0} max={100} step={1} value={simulationSettings.offBallIntensity} onChange={(event) => changeSimulationSetting("offBallIntensity", Number(event.currentTarget.value))} /></label>
-            <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior.</span>
+            <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior</span>
           </div> : null}
           <div className="court-frame">
             <svg ref={svgRef} className="court-svg" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
@@ -1461,16 +1461,16 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         </main>
         <aside className={`saved-plays-panel ${savedOpen ? "is-open" : ""}`} aria-label="Saved plays">
           <div className="saved-plays-heading"><div><span className="section-kicker">Local library</span><h2>Saved plays</h2></div><button type="button" className="icon-button" aria-label="Close saved plays" onClick={() => setSavedOpen(false)}><X size={17} /></button></div>
-          {saved.length ? <div className="saved-play-list">{saved.map((play) => <SavedPlayCard key={play.id} play={play} active={draft.id === play.id} deletePending={deleteId === play.id} onOpen={() => requestLoad(clonePlaybook(play))} onDuplicate={() => duplicate(play)} onDelete={() => { if (window.confirm(`Delete ${play.name}?`)) void confirmDelete(play.id); }} />)}</div> : <div className="saved-empty"><FolderOpen size={20} /><p>Your saved diagrams will appear here.</p><button type="button" onClick={() => void saveDraft()}>Save this play</button></div>}
+          {saved.length ? <div className="saved-play-list">{saved.map((play) => <SavedPlayCard key={play.id} play={play} active={draft.id === play.id} deletePending={deleteId === play.id} onOpen={() => requestLoad(clonePlaybook(play))} onDuplicate={() => duplicate(play)} onDelete={() => { if (window.confirm(`Delete ${play.name}?`)) void confirmDelete(play.id); }} />)}</div> : <div className="saved-empty"><FolderOpen size={20} /><p>Your saved diagrams will appear here</p><button type="button" onClick={() => void saveDraft()}>Save this play</button></div>}
         </aside>
       </div>
       {starterOpen ? <div className="playbook-modal-backdrop" role="presentation" onMouseDown={() => setStarterOpen(false)}><section className="playbook-modal starter-modal" role="dialog" aria-modal="true" aria-labelledby="starter-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-heading"><div><span className="section-kicker">Start from a diagram</span><h2 id="starter-title">Starter plays</h2></div><button type="button" className="icon-button" onClick={() => setStarterOpen(false)} aria-label="Close starter plays"><X size={17} /></button></div>
         <label className="starter-search"><Search size={15} /><input type="search" aria-label="Search starter plays" placeholder="Search sets and actions" value={starterSearch} onChange={(event) => setStarterSearch(event.currentTarget.value)} /></label>
         <div className="starter-categories" role="group" aria-label="Filter starter plays by category">{starterCategories.map((category) => <button type="button" key={category} className={starterCategory === category ? "is-active" : ""} aria-pressed={starterCategory === category} onClick={() => setStarterCategory(category)}>{category}</button>)}</div>
-        <div className="starter-grid">{filteredStarterPlays.map((play) => { const details = STARTER_PLAY_DETAILS[play.name]; return <button type="button" className="starter-card" key={play.name} onClick={() => { requestLoad(clonePlaybook(play)); setStarterOpen(false); }}><MiniCourt play={play} /><span className="starter-card-copy"><span className="starter-category-label">{details?.category}</span><strong>{play.name}</strong><span>{details?.description ?? "Edit this diagram"}</span></span></button>; })}{filteredStarterPlays.length === 0 ? <p className="starter-empty">No starter plays match that search.</p> : null}</div>
+        <div className="starter-grid">{filteredStarterPlays.map((play) => { const details = STARTER_PLAY_DETAILS[play.name]; return <button type="button" className="starter-card" key={play.name} onClick={() => { requestLoad(clonePlaybook(play)); setStarterOpen(false); }}><MiniCourt play={play} /><span className="starter-card-copy"><span className="starter-category-label">{details?.category}</span><strong>{play.name}</strong><span>{details?.description ?? "Edit this diagram"}</span></span></button>; })}{filteredStarterPlays.length === 0 ? <p className="starter-empty">No starter plays match that search</p> : null}</div>
       </section></div> : null}
-      {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes. Save it before opening the new starting point, or discard the draft.</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave && draftSession.isCurrent(didSave) && replacementRef.current === next) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
+      {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes. Save it before opening the new starting point, or discard the draft</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave && draftSession.isCurrent(didSave) && replacementRef.current === next) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
     </div>
   );
 }

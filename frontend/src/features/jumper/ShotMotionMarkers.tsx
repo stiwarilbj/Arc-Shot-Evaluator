@@ -44,7 +44,7 @@ export default function ShotMotionMarkers({
         Mark Gather, Release, and Finish on the masked source timeline. These
         reference frames stay fixed when pieces move or are cut. Warnings are
         advice only; you can keep any edit. Source time begins at the masked
-        segment, not the original upload.
+        segment, not the original upload
       </p>
       <label>
         Source time for shot markers (s)
@@ -69,7 +69,7 @@ export default function ShotMotionMarkers({
       />
       <p className="jumper-caption">
         Source frame {source + 1} · {(source / 30).toFixed(2)}s. Preview before
-        marking.
+        marking
       </p>
       <button onClick={() => seek(editFrame(project, frame).source)}>
         Use edited playhead for markers
@@ -112,7 +112,7 @@ export default function ShotMotionMarkers({
       <p className="jumper-caption">
         Mark at least two stages to check cuts between them. These are your
         reference points, not automatic pose detection. Markers never appear in
-        downloads or quizzes.
+        downloads or quizzes
       </p>
       <div aria-live="polite">
         {warnings.map((warning) => (
@@ -135,7 +135,7 @@ export default function ShotMotionMarkers({
         !warnings.length ? (
           <p className="jumper-caption">
             No marker-based interruptions detected. Review the complete motion
-            yourself.
+            yourself
           </p>
         ) : null}
       </div>

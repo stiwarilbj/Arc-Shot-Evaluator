@@ -263,8 +263,8 @@ export function planCongestion(intents: MotionIntent[], desired: MotionPoint[], 
       }
       next.set(i.key, { routeId: routeId(i), status, blockers: [...blockers].sort(),
         sinceMs: prior?.status === status && prior.routeId === routeId(i) ? prior.sinceMs : now,
-        reason: status === "blocked" ? "Route progress stalled during the bounded planning window."
-          : status === "yielding" ? "Yield briefly to a reserved passage or destination." : "Use a bounded detour around reserved traffic.", waypoint });
+        reason: status === "blocked" ? "Route progress stalled during the bounded planning window"
+          : status === "yielding" ? "Yield briefly to a reserved passage or destination" : "Use a bounded detour around reserved traffic", waypoint });
       reserved.set(i.key, best?.trace ?? trajectory(i, { x: 0, y: 0 }, null));
     }
     state.decisions = next;

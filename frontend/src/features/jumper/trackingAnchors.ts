@@ -15,7 +15,7 @@ export function latestShooterAnchor(tracks: Track[], target: number, frame: numb
 export function setShooterAnchor(tracks: Track[], target: number, frame: number, confirmed: boolean): Track[] {
   const prompt = tracks.find(track => track.id === target)?.prompts.find(prompt => prompt.frame === frame);
   if (!prompt || frame <= 0 || (confirmed && !hasBodySelection(prompt)))
-    throw Error("Add an Include point on the shooter at a clear later frame first.");
+    throw Error("Add an Include point on the shooter at a clear later frame first");
   return tracks.map(track => track.id !== target ? track : {
     ...track, prompts: track.prompts.map(prompt => prompt.frame !== frame ? prompt : {
       ...prompt, anchor: confirmed || undefined,

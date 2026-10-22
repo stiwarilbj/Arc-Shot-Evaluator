@@ -13,9 +13,9 @@ export type PlaybookRecovery = {
   revisions: { revision: string; parent: string | null; checksum: string; valid: boolean; committed?: boolean | null; kind: "save" | "delete"; document?: PlaybookDocument }[];
 };
 export class HistoryVerificationUnavailableError extends Error {
-  constructor() { super("Saved-play integrity verification is temporarily unavailable. Your stored data has been preserved; retry before attempting recovery."); }
+  constructor() { super("Saved-play integrity verification is temporarily unavailable. Your stored data has been preserved; retry before attempting recovery"); }
 }
-export const HISTORY_ERROR = "Saved-play history failed its integrity check. Your stored data has been preserved. Use explicit recovery to copy a verified revision; no older drawing was loaded automatically.";
+export const HISTORY_ERROR = "Saved-play history failed its integrity check. Your stored data has been preserved. Use explicit recovery to copy a verified revision; no older drawing was loaded automatically";
 export const validRevision = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{32}$/.test(value);
 export const validChecksum = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 

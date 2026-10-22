@@ -39,11 +39,11 @@ export function requireShooterBox(
   );
   if (matches.length > 1)
     throw new ShooterSelectionError(
-      "Your selection overlaps more than one detected player. Add another Include point on a part of the shooter away from the other player in the first frame.",
+      "Your selection overlaps more than one detected player. Add another Include point on a part of the shooter away from the other player in the first frame",
     );
   if (!matches.length)
     throw new ShooterSelectionError(
-      "Your points do not identify one detected player. Clear the first-frame points and click inside the shooter again. If detection keeps missing them, use manual selection under corrections and check the silhouette preview.",
+      "Your points do not identify one detected player. Clear the first-frame points and click inside the shooter again. If detection keeps missing them, use manual selection under corrections and check the silhouette preview",
     );
   return [...matches[0]];
 }

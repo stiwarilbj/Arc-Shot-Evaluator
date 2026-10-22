@@ -34,7 +34,7 @@ const clock = (run: SimulationRun) => run.elapsedMs + run.accumulatorMs;
 const eventTime = (run: SimulationRun): EventTime => ({ atMs: clock(run), elapsedMs: run.elapsedMs, accumulatorMs: run.accumulatorMs });
 
 export function simulationSeed(seed = Math.floor(Math.random() * 0x100000000)) {
-  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new TypeError("Choose a valid unsigned 32-bit simulation seed.");
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new TypeError("Choose a valid unsigned 32-bit simulation seed");
   return seed;
 }
 
@@ -91,7 +91,7 @@ export function beginSimulationSession(run: SimulationRun, hoop: CourtPoint, see
 
 export function assertSimulationSessionHoop(run: SimulationRun, hoop: CourtPoint) {
   const session = sessions.get(run);
-  if (session && (hoop.x !== session.record.hoop.x || hoop.y !== session.record.hoop.y)) throw new Error("Keep the recorded session's hoop fixed. Start a new session to change courts.");
+  if (session && (hoop.x !== session.record.hoop.x || hoop.y !== session.record.hoop.y)) throw new Error("Keep the recorded session's hoop fixed. Start a new session to change courts");
 }
 
 /** Editing after seeking creates a new future. Seeking alone preserves it. */
@@ -152,7 +152,7 @@ function applyEvent(run: SimulationRun, event: SimulationSessionEvent, hoop: Cou
   if (event.kind === "advance") advanceSimulationState(run, event.deltaMs, run.settings, hoop);
   else if (event.kind === "settings") setSimulationRunSettings(run, event.settings);
   else if (event.relocation) editPausedSimulationMarker(run, event.relocation.type, event.relocation.id, event.relocation.point, event.drawing);
-  else if (!rebasePausedSimulation(run, event.drawing, hoop)) throw new Error("The recorded edit changes the session's actions or participants.");
+  else if (!rebasePausedSimulation(run, event.drawing, hoop)) throw new Error("The recorded edit changes the session's actions or participants");
 }
 
 export function getSimulationSessionInfo(run: SimulationRun) {
@@ -166,14 +166,14 @@ export function getSimulationSessionInfo(run: SimulationRun) {
 /** The record is independent, JSON-compatible, and contains no live run data. */
 export function captureSimulationSession(run: SimulationRun): SimulationSessionRecord {
   const session = sessions.get(run);
-  if (!session) throw new Error("This simulation was not started as a recorded session.");
+  if (!session) throw new Error("This simulation was not started as a recorded session");
   return structuredClone(session.record);
 }
 
 export function seekSimulationSession(run: SimulationRun, timeMs: number) {
   const session = sessions.get(run);
-  if (!session) throw new Error("This simulation was not started as a recorded session.");
-  if (!Number.isFinite(timeMs) || timeMs < 0 || timeMs > session.endMs + EPSILON) throw new RangeError("Seek within the recorded simulation.");
+  if (!session) throw new Error("This simulation was not started as a recorded session");
+  if (!Number.isFinite(timeMs) || timeMs < 0 || timeMs > session.endMs + EPSILON) throw new RangeError("Seek within the recorded simulation");
   const time = Math.min(timeMs, session.endMs);
   let start: Checkpoint | undefined;
   for (const item of session.checkpoints) if (item.atMs <= time + EPSILON) start = item;
@@ -218,21 +218,21 @@ export function advanceRecordedSimulation(run: SimulationRun, deltaMs: number): 
 /** Rebuild checkpoints from a versioned record; no random defense is redrawn. */
 export function restoreSimulationSession(input: SimulationSessionRecord): SimulationRun {
   const record = structuredClone(input);
-  if (!record || record.version !== 1 || record.engineVersion !== SIMULATION_ENGINE_VERSION) throw new Error("This simulation session requires the same engine version.");
+  if (!record || record.version !== 1 || record.engineVersion !== SIMULATION_ENGINE_VERSION) throw new Error("This simulation session requires the same engine version");
   simulationSeed(record.seed);
   validatePlaybookDocument(record.initialDrawing);
   if (!record.hoop || !Number.isFinite(record.hoop.x) || !Number.isFinite(record.hoop.y)
-    || !Array.isArray(record.events) || record.events.length > 200000) throw new Error("Invalid simulation session record.");
+    || !Array.isArray(record.events) || record.events.length > 200000) throw new Error("Invalid simulation session record");
   const run = createSimulationRun(record.initialDrawing, record.initialSettings, record.hoop, { recordSession: true, seed: record.seed });
-  if (run.activeDefenseScheme !== record.resolvedDefenseScheme) throw new Error("The recorded defensive scheme does not match this session.");
+  if (run.activeDefenseScheme !== record.resolvedDefenseScheme) throw new Error("The recorded defensive scheme does not match this session");
   for (const event of record.events) {
     if (!event || !["advance", "settings", "edit"].includes(event.kind)
       || !Number.isFinite(event.atMs) || Math.abs(event.atMs - clock(run)) > EPSILON
       || !Number.isFinite(event.elapsedMs) || !Number.isFinite(event.accumulatorMs)
-      || event.kind === "advance" && (!Number.isFinite(event.deltaMs) || event.deltaMs <= 0 || event.deltaMs > 50 || !Number.isFinite(event.endMs) || event.endMs <= event.atMs)) throw new Error("Invalid simulation session event.");
+      || event.kind === "advance" && (!Number.isFinite(event.deltaMs) || event.deltaMs <= 0 || event.deltaMs > 50 || !Number.isFinite(event.endMs) || event.endMs <= event.atMs)) throw new Error("Invalid simulation session event");
     applyEvent(run, event, record.hoop);
     if (Math.abs(run.elapsedMs - event.elapsedMs) > EPSILON || Math.abs(run.accumulatorMs - event.accumulatorMs) > EPSILON
-      || event.kind === "advance" && Math.abs(clock(run) - event.endMs) > EPSILON) throw new Error("The simulation session diverged from its recorded execution.");
+      || event.kind === "advance" && Math.abs(clock(run) - event.endMs) > EPSILON) throw new Error("The simulation session diverged from its recorded execution");
   }
   seekSimulationSession(run, record.positionMs);
   return run;

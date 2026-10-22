@@ -52,43 +52,43 @@ export default function MaskTimeline({
         Review hints, not accuracy guarantees. Unmarked frames may still need
         correction.
         {warnings.some((w) => w.kind === "tracking_disagreement")
-          ? " Forward/backward mismatch means two independent shooter tracks disagree. Inspect the shooter and add Include/Exclude points, or shorten the segment; these flags do not prove which pass is correct."
+          ? " Forward/backward mismatch means two independent shooter tracks disagree. Inspect the shooter and add Include/Exclude points, or shorten the segment; these flags do not prove which pass is correct"
           : ""}
         {warnings.some((w) => w.kind === "refinement_uncertain")
-          ? " Small-player detail uncertain means a close crop could not safely refine the visible outline. Inspect hands, feet and overlaps; add Include/Exclude points or choose a closer segment. Hidden details cannot be recovered."
+          ? " Small-player detail uncertain means a close crop could not safely refine the visible outline. Inspect hands, feet and overlaps; add Include/Exclude points or choose a closer segment. Hidden details cannot be recovered"
           : ""}
         {warnings.some((w) => w.kind === "frame_cropped")
-          ? " Shooting motion may be cropped means source detections and visible mask contact indicate sustained cropping at the image edge. Inspect the original frame and trim to a fully visible shot or use wider footage if the hand, head or body is missing. Include/Exclude points can correct visible masks but cannot restore offscreen anatomy. Minor contact is not automatically a tracking failure; uncertain interior masks still need correction."
+          ? " Shooting motion may be cropped means source detections and visible mask contact indicate sustained cropping at the image edge. Inspect the original frame and trim to a fully visible shot or use wider footage if the hand, head or body is missing. Include/Exclude points can correct visible masks but cannot restore offscreen anatomy. Minor contact is not automatically a tracking failure; uncertain interior masks still need correction"
           : ""}
         {warnings.some((w) => w.kind === "ball_attachment")
-          ? " Possible ball in shooter mask means a round, image-supported attachment near a detected wrist persists across neighboring frames. Inspect the original release frame, add Exclude points inside the ball and Include points on visible fingers, then reprocess. Do not exclude an uncertain hand boundary; use a clearer neighboring frame if necessary. This hint never removes pixels automatically and cannot prove where the ball ends and fingers begin."
+          ? " Possible ball in shooter mask means a round, image-supported attachment near a detected wrist persists across neighboring frames. Inspect the original release frame, add Exclude points inside the ball and Include points on visible fingers, then reprocess. Do not exclude an uncertain hand boundary; use a clearer neighboring frame if necessary. This hint never removes pixels automatically and cannot prove where the ball ends and fingers begin"
           : ""}
         {warnings.some((w) => w.kind === "floor_attachment")
-          ? " Possible shadow or reflection means a persistent extension below detected feet or a repeated body-like shape needs review. Inspect neighboring original frames. Add Exclude points only on unwanted floor regions, keeping Include points on real shoes and legs, then reprocess. Detection boxes are approximate; this check never trims a body automatically."
+          ? " Possible shadow or reflection means a persistent extension below detected feet or a repeated body-like shape needs review. Inspect neighboring original frames. Add Exclude points only on unwanted floor regions, keeping Include points on real shoes and legs, then reprocess. Detection boxes are approximate; this check never trims a body automatically"
           : ""}
         {warnings.some((w) => w.kind === "mask_joined")
-          ? " Possible joined players means a mask may include a neighboring person. Inspect both tracks, add Include/Exclude points on the problem frame, and reprocess. Real occlusion can produce similar evidence; this is a review hint, not a confirmed identity error."
+          ? " Possible joined players means a mask may include a neighboring person. Inspect both tracks, add Include/Exclude points on the problem frame, and reprocess. Real occlusion can produce similar evidence; this is a review hint, not a confirmed identity error"
           : ""}
         {warnings.some(
           (w) =>
             w.kind === "correction_include_missed" ||
             w.kind === "correction_exclude_failed",
         )
-          ? " A correction did not take effect in the final silhouettes. Inspect the flagged frame and track, adjust Include/Exclude points, and reprocess. Points check visible mask membership, not player identity or hidden limbs."
+          ? " A correction did not take effect in the final silhouettes. Inspect the flagged frame and track, adjust Include/Exclude points, and reprocess. Points check visible mask membership, not player identity or hidden limbs"
           : ""}
         {warnings.some((w) => w.kind === "ambiguous_players")
-          ? " After an uncertain disappearance, the shooter stays unpainted until the identity is supported. Inspect a clear returning frame, add an Include point on the shooter (and Exclude points on nearby people if needed), then reprocess. Hidden bodies are never filled in."
+          ? " After an uncertain disappearance, the shooter stays unpainted until the identity is supported. Inspect a clear returning frame, add an Include point on the shooter (and Exclude points on nearby people if needed), then reprocess. Hidden bodies are never filled in"
           : ""}
         {warnings.some((w) => w.kind === "memory_rejected")
-          ? " An uncertain prediction was kept out of tracking memory. Other players’ rejected masks remain reviewable; uncertain shooter masks are suppressed. Add a clear Include/Exclude correction or shorten the segment. Keeping earlier evidence does not guarantee the track stayed on the right person."
+          ? " An uncertain prediction was kept out of tracking memory. Other players’ rejected masks remain reviewable; uncertain shooter masks are suppressed. Add a clear Include/Exclude correction or shorten the segment. Keeping earlier evidence does not guarantee the track stayed on the right person"
           : ""}
-        {stale ? " Selections changed; reprocess to refresh these hints." : ""}
+        {stale ? " Selections changed; reprocess to refresh these hints" : ""}
       </p>
       {lanes.length ? (
         <>
           <p className="jumper-caption">
             Click a colored marker to inspect it. Focus a row and use Left/Right
-            to move between flagged frames.
+            to move between flagged frames
           </p>
           <div className="jumper-warning-lanes">
             {lanes.map(({ kind, frames, ranges }) => (
@@ -170,7 +170,7 @@ export default function MaskTimeline({
                   </span>
                   {w.kind === "possible_camera_cut" ? (
                     <small>
-                      Scene-wide hint; inspect the shooter and other players.
+                      Scene-wide hint; inspect the shooter and other players
                     </small>
                   ) : null}
                   <div className="jumper-warning-tracks">
@@ -192,7 +192,7 @@ export default function MaskTimeline({
                     ) : (
                       <small>
                         {w.kind !== "possible_camera_cut"
-                          ? "Specific track not recorded; check the selected player."
+                          ? "Specific track not recorded; check the selected player"
                           : ""}
                       </small>
                     )}
@@ -200,13 +200,13 @@ export default function MaskTimeline({
                 </div>
               ))
             ) : (
-              <span>Frame {frame + 1}: no automatic hints recorded here.</span>
+              <span>Frame {frame + 1}: no automatic hints recorded here</span>
             )}
           </div>
         </>
       ) : (
         <p className="jumper-caption">
-          No automatic hints recorded. Review the complete motion before saving.
+          No automatic hints recorded. Review the complete motion before saving
         </p>
       )}
     </section>

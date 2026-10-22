@@ -99,11 +99,11 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
         ) : null}
         <p>
           {session.quality?.messages[0]
-            ?? "Review the warning below the video, then try a clip with the shooter, rim, and arc visible."}
+            ?? "Review the warning below the video, then try a clip with the shooter, rim, and arc visible"}
         </p>
         <section className="rail-panel correction-panel empty-correction-panel">
           <h3>Add a missed attempt</h3>
-          <p className="basis-note">Use the frame number where the ball leaves the hand. The detector evidence stays unchanged.</p>
+          <p className="basis-note">Use the frame number where the ball leaves the hand. The detector evidence stays unchanged</p>
           <label className="correction-field">
             <span>Release frame</span>
             <input
@@ -167,7 +167,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
               <Metric label="Motion" result={shot.evidence.motion_events?.motion_type?.replaceAll("_", " ") ?? "Unknown"} />
               <Metric label="Release after takeoff" result={shot.evidence.motion_events?.release_after_takeoff_ms == null ? "Unavailable" : `${shot.evidence.motion_events.release_after_takeoff_ms.toFixed(0)} ms`} />
               <Metric label="Defenders tracked" result={String(shot.evidence.defenders?.length ?? 0)} />
-              <p className="basis-note">{shot.evidence.statistics_eligibility?.reason ?? "Shot subtype remains subject to review."}</p>
+              <p className="basis-note">{shot.evidence.statistics_eligibility?.reason ?? "Shot subtype remains subject to review"}</p>
               <div className="event-links" aria-label="Jump-shot evidence frames">
                 <h4>Evidence frames</h4>
                 {[
@@ -239,9 +239,9 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
                   <small>{defender.closing_speed?.value == null ? "closing speed unavailable" : `${defender.closing_speed.value.toFixed(0)} px/s`} · {defender.arm_extension == null ? "arm unknown" : `arm ${defender.arm_extension.toFixed(2)}`} · {defender.body_orientation_deg == null ? "body unknown" : `body ${defender.body_orientation_deg.toFixed(0)}°`}{defender.timing_available === false ? " · timing unknown" : ""}</small>
                 </div>
               ))}
-              <p className="basis-note">Opponent identity and world-unit separation require court/team review.</p>
+              <p className="basis-note">Opponent identity and world-unit separation require court/team review</p>
             </div>
-          ) : isJumpShot ? <p className="basis-note">No reliable defender track was found; this does not imply an open shot.</p> : null}
+          ) : isJumpShot ? <p className="basis-note">No reliable defender track was found; this does not imply an open shot</p> : null}
           <div className="flag-list">
             {(shot.flags.length ? shot.flags : ["No material tracking warnings"]).map((flag) => <p key={flag}>{flag}</p>)}
           </div>
@@ -258,7 +258,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
                 <Metric label="Mechanics quality" result={shot.evidence.mechanics_assessment?.overall == null ? "Unavailable · validation pending" : `${Math.round(shot.evidence.mechanics_assessment.overall * 100)}%`} />
                 <Metric label="Chance at release" result={shot.evidence.predictions?.release?.probability == null ? "Unavailable · validation pending" : `${Math.round(shot.evidence.predictions.release.probability * 100)}%`} />
                 <Metric label="Chance after 200 ms" result={shot.evidence.predictions?.release_plus_200ms?.probability == null ? "Unavailable · validation pending" : `${Math.round(shot.evidence.predictions.release_plus_200ms.probability * 100)}%`} />
-                <p className="basis-note">Probability is withheld until a jump-shot model is trained and calibrated on held-out players and venues.</p>
+                <p className="basis-note">Probability is withheld until a jump-shot model is trained and calibrated on held-out players and venues</p>
               </>
             ) : null}
             {!isJumpShot ? <>
@@ -275,7 +275,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
           </section>
           <section className="rail-panel form-panel">
             <h3>{isJumpShot ? "Pose at release" : "Form at release"}</h3>
-            {isJumpShot ? <p className="basis-note">Joint angles are descriptive observations; no jump-shot grade is reported before blinded coaching validation.</p> : null}
+            {isJumpShot ? <p className="basis-note">Joint angles are descriptive observations; no jump-shot grade is reported before blinded coaching validation</p> : null}
             {shot.evidence.shot_quality != null ? (
               <Metric label="Visible shot quality" result={`${Math.round(shot.evidence.shot_quality * 100)}%`} />
             ) : null}
@@ -292,7 +292,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
 
       <section className="rail-panel correction-panel">
         <h3>Review this outcome</h3>
-        <p className="basis-note">Observation confidence describes what the video shows; severe form and release problems lower the score even when the ball falls.</p>
+        <p className="basis-note">Observation confidence describes what the video shows; severe form and release problems lower the score even when the ball falls</p>
         <div className="correction-actions" role="group" aria-label="Correct shot outcome">
           {(["make", "miss", "review"] as const).map((nextOutcome) => (
             <button
@@ -425,7 +425,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
       {isJumpShot ? (
         <section className="rail-panel correction-panel calibration-panel">
           <h3>Court setup</h3>
-          <p className="basis-note">Four floor landmarks let ARCade Hoops turn projected feet into a court-plane distance. Coordinates are source-video pixels and court metres.</p>
+          <p className="basis-note">Four floor landmarks let ARCade Hoops turn projected feet into a court-plane distance. Coordinates are source-video pixels and court metres</p>
           <div className="correction-field">
             <span>Court rules</span>
             <ArcSelect ariaLabel="Court rules" className="arc-select--full" value={courtPreset} options={[

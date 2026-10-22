@@ -39,7 +39,7 @@ export default function EditClipCopy({
     void (async () => {
       if (!clip.presentation?.startsWith("silhouette") && !clip.quiz)
         throw Error(
-          "This legacy highlight contains original player colors. Upload it in Create and mask it before editing a silhouette copy.",
+          "This legacy highlight contains original player colors. Upload it in Create and mask it before editing a silhouette copy",
         );
       const base = await videoBlob(
         clip.id,
@@ -120,7 +120,7 @@ export default function EditClipCopy({
       setSaved(true);
       onSaved();
     } catch (e) {
-      setError(`${String(e)} Your download remains available.`);
+      setError(`${String(e)} Your download remains available`);
     } finally {
       lock.current = false;
       setSaving(false);
@@ -134,7 +134,7 @@ export default function EditClipCopy({
           Return to upload editor
         </button>
       </div>
-      <p>Your saved original stays unchanged. Saving creates a new clip.</p>
+      <p>Your saved original stays unchanged. Saving creates a new clip</p>
       {base ? (
         <>
           <VideoEditPanel
@@ -172,7 +172,7 @@ export default function EditClipCopy({
                 disabled={!output || output.stale || output.rendering || saving}
                 onChange={(e) => setReviewed(e.target.checked)}
               />{" "}
-              I reviewed the full finished motion and masking.
+              I reviewed the full finished motion and masking
             </label>
             <label>
               Player label

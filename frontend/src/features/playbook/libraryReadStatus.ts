@@ -8,11 +8,11 @@ export class IncompletePlaybookLibraryError extends Error {
   readonly complete = false;
   constructor(readonly availablePlays: PlaybookDocument[], readonly issues: PlaybookReadIssue[]) {
     const reasons = [
-      issues.some((issue) => issue.kind === "invalid") ? "Some saved files contain invalid documents." : "",
-      issues.some((issue) => issue.kind === "unavailable") ? "Some saved files are temporarily unavailable; retry when storage is available." : "",
-      issues.some((issue) => issue.kind === "unknown") || !issues.length ? "Some saved files could not be read; retry the refresh." : "",
+      issues.some((issue) => issue.kind === "invalid") ? "Some saved files contain invalid documents" : "",
+      issues.some((issue) => issue.kind === "unavailable") ? "Some saved files are temporarily unavailable; retry when storage is available" : "",
+      issues.some((issue) => issue.kind === "unknown") || !issues.length ? "Some saved files could not be read; retry the refresh" : "",
     ].filter(Boolean).join(" ");
-    super(`Saved library refresh is incomplete. ${reasons} Previously loaded plays have been kept. Stored files have not been changed.`);
+    super(`Saved library refresh is incomplete. ${reasons} Previously loaded plays have been kept. Stored files have not been changed`);
   }
 }
 

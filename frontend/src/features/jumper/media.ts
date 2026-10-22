@@ -32,21 +32,21 @@ export async function openVideo(file: Blob) {
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode()))
       throw Error(
-        "This video codec cannot be decoded on this device. Try an MP4 or the downloaded app.",
+        "This video codec cannot be decoded on this device. Try an MP4 or the downloaded app",
       );
     let origin = await track.getFirstTimestamp();
     if (origin < 0) {
       const frames = new VideoSampleSink(track).samples(0);
       try {
         const first = await frames.next();
-        if (first.done) throw Error("Video has no presentable frames.");
+        if (first.done) throw Error("Video has no presentable frames");
         origin = first.value.timestamp;
         first.value.close();
       } finally { await frames.return(); }
     }
     const duration = (await track.computeDuration()) - origin;
     if (!Number.isFinite(duration) || duration <= 0)
-      throw Error("The video has no usable timeline.");
+      throw Error("The video has no usable timeline");
     return { input, track, duration, origin };
   } catch (error) {
     input.dispose();
@@ -92,7 +92,7 @@ export async function writers(width: number, height: number) {
         ? "vp8"
         : null;
   if (!codec)
-    throw Error("Video export is unsupported here. Use the downloaded app.");
+    throw Error("Video export is unsupported here. Use the downloaded app");
   const mime = codec === "avc" ? "video/mp4" : "video/webm";
   const create = async (highQuality = false) => {
     const canvas = new OffscreenCanvas(width, height);

@@ -29,7 +29,7 @@ const clock = (v: unknown): v is number => finite(v) && v >= 0;
 const identity = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) > 0;
 const text = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= 512;
 const point = (v: unknown) => record(v) && finite(v.x) && finite(v.y);
-function check(valid: unknown, field: string): asserts valid { if (!valid) throw new Error(`Invalid Playbook worker message: ${field}.`); }
+function check(valid: unknown, field: string): asserts valid { if (!valid) throw new Error(`Invalid Playbook worker message: ${field}`); }
 function envelope(value: unknown): asserts value is Record<string, unknown> & Envelope {
   check(record(value), "expected an object");
   check(text(value.sessionId) && identity(value.requestId) && Number.isSafeInteger(value.revision) && (value.revision as number) >= 0, "session, revision or request identity");
@@ -54,7 +54,7 @@ export function parseSimulationCommand(value: unknown): SimulationCommand {
     }
     case "seek": check(clock(value.timeMs), "seek time"); break;
     case "frame": check(clock(value.deltaMs) && value.deltaMs <= 50, "bounded elapsed time"); break;
-    default: throw new Error("Invalid Playbook worker message: unknown command.");
+    default: throw new Error("Invalid Playbook worker message: unknown command");
   }
   return value as SimulationCommand;
 }

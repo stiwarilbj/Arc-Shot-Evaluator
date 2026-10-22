@@ -11,8 +11,8 @@ export function maskingErrorMessage(error: unknown): string {
       message,
     )
   )
-    return "The GPU stopped while tracking. Your video and selections are unchanged. Close other GPU-heavy tabs and retry, try a shorter segment, or use the free downloaded editor.";
-  return `${message}. If this device cannot complete WebGPU processing, use the downloaded editor.`;
+    return "The GPU stopped while tracking. Your video and selections are unchanged. Close other GPU-heavy tabs and retry, try a shorter segment, or use the free downloaded editor";
+  return `${message}. If this device cannot complete WebGPU processing, use the downloaded editor`;
 }
 export type Variant = "highlight" | "quiz" | "reveal" | "base";
 export interface Player {
@@ -274,7 +274,7 @@ export function validateMaskRequest(
     v.objects.length > 20
   )
     throw Error(
-      "Choose a segment of at most 15 seconds and select the players.",
+      "Choose a segment of at most 15 seconds and select the players",
     );
   if (
     v.objects.reduce(
@@ -283,7 +283,7 @@ export function validateMaskRequest(
       0,
     ) > 128
   )
-    throw Error("Use at most 128 correction frames per clip.");
+    throw Error("Use at most 128 correction frames per clip");
   const ids = new Set<number>();
   for (const track of v.objects) {
     if (
@@ -298,7 +298,7 @@ export function validateMaskRequest(
       !track.prompts.length ||
       track.prompts.length > 32
     )
-      throw Error("Each player needs a unique track and an initial selection.");
+      throw Error("Each player needs a unique track and an initial selection");
     ids.add(track.id);
     let previous = -1;
     for (const p of track.prompts) {
@@ -309,12 +309,12 @@ export function validateMaskRequest(
         p.frame < 0 ||
         p.frame >= frameCount(v.start, v.end)
       )
-        throw Error("A correction is outside the selected segment.");
+        throw Error("A correction is outside the selected segment");
       previous = p.frame;
       if ((p.anchor !== undefined && typeof p.anchor !== "boolean") ||
           (p.anchor === true && (track.id !== v.target_id || p.frame === 0 ||
             (!p.box && !(Array.isArray(p.labels) && p.labels.includes(1))))))
-        throw Error("A tracking anchor needs a later Include selection on the shooter.");
+        throw Error("A tracking anchor needs a later Include selection on the shooter");
       const valid = (n: unknown) =>
         typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
       if (
@@ -325,7 +325,7 @@ export function validateMaskRequest(
           p.box[0] >= p.box[2] ||
           p.box[1] >= p.box[3])
       )
-        throw Error("Invalid player box.");
+        throw Error("Invalid player box");
       if (
         p.points &&
         (!Array.isArray(p.points) ||
@@ -339,17 +339,17 @@ export function validateMaskRequest(
               Array.isArray(point) && point.length === 2 && point.every(valid),
           ))
       )
-        throw Error("Invalid correction points.");
+        throw Error("Invalid correction points");
       if (!p.box && !p.points)
-        throw Error("Select the player with a point or box.");
+        throw Error("Select the player with a point or box");
       correctionPrompt(p, track.id);
     }
   }
-  if (!ids.has(v.target_id)) throw Error("Select the named player.");
+  if (!ids.has(v.target_id)) throw Error("Select the named player");
   if (
     v.objects.find((track) => track.id === v.target_id)!.prompts[0].frame !== 0
   )
-    throw Error("Select the named player in the starting frame.");
+    throw Error("Select the named player in the starting frame");
 }
 export function shuffled(ids: string[], random = Math.random): string[] {
   const result = [...ids];

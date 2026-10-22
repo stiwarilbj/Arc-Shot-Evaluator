@@ -14,13 +14,13 @@ export function createPlaybookSimulationHost() {
     try {
       const command = parseSimulationCommand(input);
       if (command.type === "start") {
-        if (run) throw new Error("This worker already owns a session. Restart playback to create another.");
+        if (run) throw new Error("This worker already owns a session. Restart playback to create another");
         accepted = true;
         run = createSimulationRun(command.drawing, command.settings, undefined, { recordSession: true, seed: command.seed });
         sessionId = command.sessionId; revision = command.revision; lastRequest = command.requestId; playing = true;
       } else {
-        if (!run || command.sessionId !== sessionId) throw new Error("This playback session is no longer active.");
-        if (command.requestId <= lastRequest || (command.type === "frame" ? command.revision !== revision : command.revision <= revision)) throw new Error("This playback command was superseded.");
+        if (!run || command.sessionId !== sessionId) throw new Error("This playback session is no longer active");
+        if (command.requestId <= lastRequest || (command.type === "frame" ? command.revision !== revision : command.revision <= revision)) throw new Error("This playback command was superseded");
         accepted = true;
         lastRequest = command.requestId; revision = command.revision;
         if (command.type === "frame") { if (playing) advanceSimulationState(run, command.deltaMs); }
@@ -31,14 +31,14 @@ export function createPlaybookSimulationHost() {
           playing = false;
           const r = command.relocation;
           if (r) editPausedSimulationMarker(run, r.type, r.id, r.point, command.drawing);
-          else if (!rebasePausedSimulation(run, command.drawing)) throw new Error("This edit changes the actions or participants. Restart playback to apply it.");
+          else if (!rebasePausedSimulation(run, command.drawing)) throw new Error("This edit changes the actions or participants. Restart playback to apply it");
         }
       }
       if (run.elapsedMs >= run.durationMs) playing = false;
       return { ...envelope, type: "state", view: { frame: getSimulationFrame(run), settings: run.settings, durationMs: run.durationMs, session: getSimulationSessionInfo(run)!, playing } };
     } catch (error) {
       if (accepted) playing = false;
-      return { ...envelope, type: "error", message: error instanceof Error ? error.message.slice(0, 512) : "Playback was interrupted. Restart to try again." };
+      return { ...envelope, type: "error", message: error instanceof Error ? error.message.slice(0, 512) : "Playback was interrupted. Restart to try again" };
     }
   };
 }

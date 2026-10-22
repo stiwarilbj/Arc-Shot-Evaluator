@@ -150,7 +150,7 @@ export default function JumperLab({
         <div>
           <span className="jumper-eyebrow">THE SHOT IS THE CLUE</span>
           <h1>Guess the Jumper</h1>
-          <p>Recognize the release. Make your own mystery clips.</p>
+          <p>Recognize the release. Make your own mystery clips</p>
         </div>
         <span className="jumper-private">Device-local · No accounts</span>
       </header>
@@ -434,7 +434,7 @@ function Guess({
     );
     const chosen = selected ?? (exact.length === 1 ? exact[0] : null);
     if (!chosen) {
-      setError("Choose a player from the suggestions before submitting.");
+      setError("Choose a player from the suggestions before submitting");
       return;
     }
     lock.current = true;
@@ -547,8 +547,8 @@ function Guess({
           <p>
             Create a clip and choose “Use in my guessing game.”{" "}
             {nba.length
-              ? "Or choose NBA from the collection menu to play the reviewed collection."
-              : "The reviewed NBA collection is still being prepared."}
+              ? "Or choose NBA from the collection menu to play the reviewed collection"
+              : "The reviewed NBA collection is still being prepared"}
           </p>
           <button
             className="button button-primary"
@@ -581,7 +581,7 @@ function Guess({
                 >
                   Retry playback
                 </button>{" "}
-                Your score is unchanged.
+                Your score is unchanged
               </p>
             ) : null}
             <p className="jumper-caption">
@@ -623,8 +623,8 @@ function Guess({
                 ) : null}
                 <p>
                   {submitted.outcome
-                    ? "Correct. You recognized the release."
-                    : `You picked ${submitted.selected.name}. Watch the follow-through again.`}
+                    ? "Correct. You recognized the release"
+                    : `You picked ${submitted.selected.name}. Watch the follow-through again`}
                 </p>
                 <button
                   type="button"
@@ -683,7 +683,7 @@ function Guess({
                 </button>
                 <p className="jumper-caption">
                   One answer per round. Spelling suggestions help; you choose
-                  the player.
+                  the player
                 </p>
               </form>
             )}
@@ -759,7 +759,7 @@ function Library({
       <div className="jumper-toolbar">
         <p>
           Finished videos stay on this device. Browser data can be cleared; keep
-          a library backup to protect your collection.
+          a library backup to protect your collection
         </p>
         <button
           type="button"
@@ -820,7 +820,7 @@ function Library({
           <h2>No saved clips yet</h2>
           <p>
             Upload a video, hide the background, and save your finished result
-            here.
+            here
           </p>
           <button
             type="button"
@@ -848,13 +848,13 @@ function Library({
                   label={`${selected.player.name} silhouette`}
                   active={active}
                   onFailure={() =>
-                    setVideoError("This saved video could not play.")
+                    setVideoError("This saved video could not play")
                   }
                 />
               ) : (
                 <p className="jumper-notice">
                   Legacy download · this older file may contain original player
-                  colors. Create a new silhouette to anonymize it.
+                  colors. Create a new silhouette to anonymize it
                 </p>
               )}
               <a
