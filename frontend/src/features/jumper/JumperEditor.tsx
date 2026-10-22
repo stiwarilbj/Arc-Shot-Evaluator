@@ -576,7 +576,7 @@ export default function JumperEditor({
     <div ref={editorRoot} className="jumper-editor" onKeyDown={historyKey}>
       <aside className="jumper-panel jumper-editor-controls">
         <span className="jumper-eyebrow">MAKE A MYSTERY</span>
-        <h2>One shot. No clues</h2>
+        <h2>One shot · No clues</h2>
         <p>
           Aim at the shooter and press Place point to turn them black. Other
           players become gray, with a flat background and no original colors or

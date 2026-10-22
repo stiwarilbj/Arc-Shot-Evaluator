@@ -134,7 +134,7 @@ export function HomePage() {
       <aside className="home-local" aria-labelledby="home-local-heading">
         <div>
           <p className="home-eyebrow">Take ARCade Hoops with you</p>
-          <h2 id="home-local-heading">Browser convenience. Local control</h2>
+          <h2 id="home-local-heading">Browser convenience · Local control</h2>
           <p>
             Use the tools here, or run the downloaded app for full shot analysis
             and native clip processing. Both keep personal media on your device
