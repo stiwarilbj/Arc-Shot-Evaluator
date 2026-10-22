@@ -26,7 +26,7 @@ export function HomePage() {
             from every <span>angle</span>
           </h1>
           <p className="home-hero-description">
-            Study your shot. Draw your next play. Challenge a defense. Turn a
+            Study your shot · Draw your next play · Challenge a defense · Turn a
             jumpshot into a mystery
           </p>
           <div className="home-hero-actions">
@@ -46,8 +46,8 @@ export function HomePage() {
             </button>
           </div>
           <p className="home-privacy">
-            <ShieldCheck size={15} aria-hidden="true" /> No account. No paid
-            inference API. Your uploads stay on your device
+            <ShieldCheck size={15} aria-hidden="true" /> No account · No paid
+            inference API · Your uploads stay on your device
           </p>
         </div>
         <nav className="home-start" aria-label="Choose a basketball tool">
@@ -92,7 +92,7 @@ export function HomePage() {
           number="01"
           title="Shot Analyzer"
           subtitle="Look closer at your shooting motion"
-          description="Find attempt windows, review outcomes, and keep shot notes. The downloaded app adds full vision analysis and Coach Notes"
+          description="Find attempt windows, review outcomes, and keep shot notes · The downloaded app adds full vision analysis and Coach Notes"
           detail="Browser review · Full analysis locally"
           href="#shot-analyzer"
         >
@@ -102,7 +102,7 @@ export function HomePage() {
           number="02"
           title="Playbook"
           subtitle="Turn an idea into a court diagram"
-          description="Shape routes, screens, and passes, then watch your idea move. Start from a blank court or adapt one of 24 starter plays"
+          description="Shape routes, screens, and passes, then watch your idea move · Start from a blank court or adapt one of 24 starter plays"
           detail="24 starters · Editable courts · PNG export"
           href="#playbook"
         >
@@ -112,7 +112,7 @@ export function HomePage() {
           number="03"
           title="Counter Lab"
           subtitle="Find where a play breaks down"
-          description="Compare defensive responses, find the first breakdown, and test small repairs. Save an improved copy back to Playbook"
+          description="Compare defensive responses, find the first breakdown, and test small repairs · Save an improved copy back to Playbook"
           detail="Drawn + adaptive offense · Simulation scores"
           href="#counter-lab"
         >
@@ -122,7 +122,7 @@ export function HomePage() {
           number="04"
           title="Guess the Jumper"
           subtitle="Make the jumpshot the only clue"
-          description="Aim and place a point on the shooter to make them black, other players gray, and the background neutral. Save private clips and quiz yourself"
+          description="Aim and place a point on the shooter to make them black, other players gray, and the background neutral · Save private clips and quiz yourself"
           detail="Personal clips · Public NBA pack unavailable"
           secondaryHref="#jumper/create"
           secondaryLabel="Create a clip"
@@ -137,7 +137,7 @@ export function HomePage() {
           <h2 id="home-local-heading">Browser convenience · Local control</h2>
           <p>
             Use the tools here, or run the downloaded app for full shot analysis
-            and native clip processing. Both keep personal media on your device
+            and native clip processing · Both keep personal media on your device
           </p>
         </div>
         <a
