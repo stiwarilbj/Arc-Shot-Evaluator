@@ -1,10 +1,6 @@
 import { useState, type ReactNode } from "react";
 import {
   ArrowRight,
-  CircleDot,
-  ClipboardList,
-  FlaskConical,
-  ScanLine,
   ShieldCheck,
   Play,
   RotateCcw,
@@ -26,8 +22,7 @@ export function HomePage() {
             from every <span>angle</span>
           </h1>
           <p className="home-hero-description">
-            Study your shot · Draw your next play · Challenge a defense · Turn a
-            jumpshot into a mystery
+            Tools to study your shot, build plays, and explore the game
           </p>
           <div className="home-hero-actions">
             <HomeLink className="home-primary-link" href="#shot-analyzer">
@@ -50,50 +45,21 @@ export function HomePage() {
             inference API · Your uploads stay on your device
           </p>
         </div>
-        <nav className="home-start" aria-label="Choose a basketball tool">
-          <p className="home-start-label">What are you working on?</p>
-          <StartLink
-            href="#shot-analyzer"
-            icon={<CircleDot />}
-            title="My shooting motion"
-            description="Review footage with Shot Analyzer"
-          />
-          <StartLink
-            href="#playbook"
-            icon={<ClipboardList />}
-            title="An idea for a play"
-            description="Draw it on the Playbook court"
-          />
-          <StartLink
-            href="#counter-lab"
-            icon={<FlaskConical />}
-            title="A defense to beat"
-            description="Test your idea in Counter Lab"
-          />
-          <StartLink
-            href="#jumper/create"
-            icon={<ScanLine />}
-            title="A mystery jumpshot"
-            description="Create a clip in Guess the Jumper"
-          />
-        </nav>
       </header>
       <div className="home-tools-heading">
         <div>
-          <p className="home-eyebrow">Explore ARCade Hoops</p>
           <h2 id="home-tools-heading" tabIndex={-1}>
-            Four ways to work on your game
+            Explore the tools
           </h2>
         </div>
-        <p>Try a mini demo, then make it your own</p>
+        <p>Try a demo or open a workspace</p>
       </div>
       <div className="home-features">
         <Feature
           number="01"
           title="Shot Analyzer"
-          subtitle="Look closer at your shooting motion"
-          description="Find attempt windows, review outcomes, and keep shot notes · The downloaded app adds full vision analysis and Coach Notes"
-          detail="Browser review · Full analysis locally"
+          description="Review attempts, mark outcomes, and export shot data"
+          detail="Full vision analysis in the downloaded app"
           href="#shot-analyzer"
         >
           <ShotDemo />
@@ -101,9 +67,8 @@ export function HomePage() {
         <Feature
           number="02"
           title="Playbook"
-          subtitle="Turn an idea into a court diagram"
-          description="Shape routes, screens, and passes, then watch your idea move · Start from a blank court or adapt one of 24 starter plays"
-          detail="24 starters · Editable courts · PNG export"
+          description="Draw routes, screens, and passes, then watch your idea move"
+          detail="24 starter plays · PNG export"
           href="#playbook"
         >
           <PlayDemo />
@@ -111,9 +76,8 @@ export function HomePage() {
         <Feature
           number="03"
           title="Counter Lab"
-          subtitle="Find where a play breaks down"
-          description="Compare defensive responses, find the first breakdown, and test small repairs · Save an improved copy back to Playbook"
-          detail="Drawn + adaptive offense · Simulation scores"
+          description="Compare defenses, inspect breakdowns, and test verified repairs"
+          detail="Save improved copies to Playbook"
           href="#counter-lab"
         >
           <CounterDemo />
@@ -121,9 +85,8 @@ export function HomePage() {
         <Feature
           number="04"
           title="Guess the Jumper"
-          subtitle="Make the jumpshot the only clue"
-          description="Aim and place a point on the shooter to make them black, other players gray, and the background neutral · Save private clips and quiz yourself"
-          detail="Personal clips · Public NBA pack unavailable"
+          description="Mask your shooter, edit clips, and keep them in a private library"
+          detail="Personal clips · NBA collection unavailable"
           secondaryHref="#jumper/create"
           secondaryLabel="Create a clip"
           href="#jumper"
@@ -133,11 +96,10 @@ export function HomePage() {
       </div>
       <aside className="home-local" aria-labelledby="home-local-heading">
         <div>
-          <p className="home-eyebrow">Take ARCade Hoops with you</p>
-          <h2 id="home-local-heading">Browser convenience · Local control</h2>
+          <h2 id="home-local-heading">Run ARCade Hoops locally</h2>
           <p>
-            Use the tools here, or run the downloaded app for full shot analysis
-            and native clip processing · Both keep personal media on your device
+            Get full shot analysis and native clip processing while keeping
+            personal media on your device
           </p>
         </div>
         <a
@@ -180,35 +142,9 @@ function HomeLink({
   );
 }
 
-function StartLink({
-  href,
-  icon,
-  title,
-  description,
-}: {
-  href: string;
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <HomeLink href={href} className="home-start-link">
-      <span className="home-start-icon" aria-hidden="true">
-        {icon}
-      </span>
-      <span>
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-      <ArrowRight size={17} aria-hidden="true" />
-    </HomeLink>
-  );
-}
-
 function Feature({
   number,
   title,
-  subtitle,
   description,
   detail,
   secondaryHref,
@@ -218,7 +154,6 @@ function Feature({
 }: {
   number: string;
   title: string;
-  subtitle: string;
   description: string;
   detail: string;
   secondaryHref?: string;
@@ -236,7 +171,6 @@ function Feature({
           {number}
         </span>
         <h2 id={`home-feature-${number}`}>{title}</h2>
-        <p className="home-feature-subtitle">{subtitle}</p>
         <p className="home-feature-description">{description}</p>
         <p className="home-feature-detail">{detail}</p>
         <div className="home-feature-actions">
@@ -253,7 +187,6 @@ function Feature({
       </div>
       <div className="home-preview">
         {children}
-        <span className="home-demo-caption">Illustrative demo</span>
       </div>
     </section>
   );
