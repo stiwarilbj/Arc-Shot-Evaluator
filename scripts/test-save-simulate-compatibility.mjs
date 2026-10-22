@@ -8,6 +8,7 @@ import { build } from '../frontend/node_modules/vite/dist/node/index.js';
 import { installBrowserLocks } from './helpers/browser-locks.mjs';
 import { SAVE_SIMULATE_PLAYS } from './fixtures/save-simulate-plays.mjs';
 import { normalizePlaybookPrecision } from '../frontend/src/features/playbook/documentPrecision.ts';
+import { flattenPlaybookPath } from '../frontend/src/features/playbook/playbookBranches.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { bindAuthoredActions, createSimulationRun, getSimulationFrame, advanceSimulationRun, observeCounterLabRun, SIMULATION_STEP_MS } from '../frontend/src/features/playbook/simulation.ts';
 
@@ -72,14 +73,18 @@ async function compilePersistence(target) {
 function drawing(document) {
   const point = value => value ? { x: value.x, y: value.y } : null;
   const marker = (value, offense) => ({ id: value.id, ...point(value), badges: value.badges ?? [], ...(offense ? { ratings: { threePoint: 3, midrange: 3, finishing: 3, ...value.ratings } } : {}) });
+  const arrow = (value, index) => ({
+    id: value.id, kind: value.kind, sequence: value.sequence ?? index + 1, path: value.path ?? 'straight', timing: value.timing ?? 1.2,
+    start: point(value.start), end: point(value.end), control: point(value.control), exit_target: point(value.exit_target),
+    ...Object.fromEntries(['actor_id', 'recipient_id', 'screener_id', 'handler_id', 'cutter_id'].map(key => [key, value[key] ?? null])),
+  });
   return {
     version: document.version, name: document.name, defenders_visible: document.defenders_visible,
     players: document.players.map(value => marker(value, true)), defenders: document.defenders.map(value => marker(value, false)), ball: point(document.ball),
-    arrows: document.arrows.map((arrow, index) => ({
-      id: arrow.id, kind: arrow.kind, sequence: arrow.sequence ?? index + 1, path: arrow.path ?? 'straight', timing: arrow.timing ?? 1.2,
-      start: point(arrow.start), end: point(arrow.end), control: point(arrow.control), exit_target: point(arrow.exit_target),
-      ...Object.fromEntries(['actor_id', 'recipient_id', 'screener_id', 'handler_id', 'cutter_id'].map(key => [key, arrow[key] ?? null])),
-    })),
+    arrows: document.arrows.map(arrow),
+    ...(document.branches ? { branches: document.branches.map(branch => ({
+      id: branch.id, label: branch.label, fork: branch.fork, continuation: branch.continuation.map(arrow),
+    })) } : {}),
   };
 }
 function bindings(document) {
@@ -133,6 +138,13 @@ function compareTrials(actual, expected, label) {
 const previous = { window: Object.getOwnPropertyDescriptor(globalThis, 'window'), fetch: Object.getOwnPropertyDescriptor(globalThis, 'fetch'), locks: Object.getOwnPropertyDescriptor(globalThis.navigator, 'locks') };
 const restore = (object, key, descriptor) => descriptor ? Object.defineProperty(object, key, descriptor) : delete object[key];
 const local = startLocalPersistence();
+const branchSource = structuredClone(SAVE_SIMULATE_PLAYS[1]);
+const branchFork = branchSource.document.arrows.find(arrow => arrow.id === 'slip-feed');
+branchSource.document = { ...branchSource.document, name: `${branchSource.document.name} branches`, branches: [{
+  id: 'ending-compat', label: 'Slip', fork: { actionIds: [branchFork.id], sequence: branchFork.sequence },
+  continuation: branchSource.document.arrows.filter(arrow => arrow.sequence >= branchFork.sequence),
+}] };
+const compatibilityFixtures = [...SAVE_SIMULATE_PLAYS, branchSource];
 try {
   installBrowserLocks();
   const roundTrips = new Map();
@@ -148,7 +160,7 @@ try {
     globalThis.fetch = target === 'local' ? local.fetch : () => { throw new Error('Hosted persistence must not make API requests'); };
     const api = await newClient(), savedPlays = [];
     assert.deepEqual(await api.fetchPlaybooks(), [], `${target}: isolated library starts empty`);
-    for (const fixture of SAVE_SIMULATE_PLAYS) {
+    for (const fixture of compatibilityFixtures) {
       const source = structuredClone(fixture.document), before = structuredClone(source);
       const expected = drawing(normalizePlaybookPrecision(source));
       let saved = await api.createPlaybook(source);
@@ -174,7 +186,7 @@ try {
     console.log(`${target}: ${savedPlays.length} real API round trips, fresh-client reloads and repeated updates preserve drawing, precision and bindings`);
   }
   let comparisons = 0;
-  for (const [index, fixture] of SAVE_SIMULATE_PLAYS.entries()) {
+    for (const [index, fixture] of compatibilityFixtures.entries()) {
     const hosted = roundTrips.get('github-pages')[index], downloaded = roundTrips.get('local')[index];
     assert.deepEqual(drawing(hosted), drawing(downloaded), `${fixture.document.name}: cross-target persisted content`);
     assert.deepEqual(bindings(hosted), bindings(downloaded), `${fixture.document.name}: cross-target participant bindings`);
@@ -196,6 +208,16 @@ try {
       compareTrials(simulate(hosted, settings), first, `${label}: deterministic rerun`);
       comparisons++;
     }
+  }
+  const hostedFamily = roundTrips.get('github-pages').at(-1);
+  const hostedEnding = flattenPlaybookPath(hostedFamily, 'ending-compat', 'Slip');
+  for (const target of ['github-pages', 'local']) {
+    const family = roundTrips.get(target).at(-1);
+    const ending = flattenPlaybookPath(family, 'ending-compat', 'Slip');
+    assert.deepEqual(drawing(ending), drawing(hostedEnding), `${target}: selected ending resolves identically after family reload`);
+    assert.deepEqual(bindings(ending), bindings(hostedEnding), `${target}: selected ending participant bindings survive persistence`);
+    const settings = { ...DEFAULT_SIMULATION_SETTINGS, defenseScheme: 'man-to-man', defenseStrategy: 'switch', offenseMode: 'scripted' };
+    compareTrials(simulate(ending, settings), simulate(hostedEnding, settings), `${target}: selected branch vs hosted flattened ending`);
   }
   console.log(`Save-and-simulate compatibility passed: ${comparisons} scenarios, exact fixed-step replay/diagnostic samples, execution outcomes, possession and quality; curves, slips, handoffs, simultaneous actions, precision, legacy and partial/empty rosters`);
 } finally {

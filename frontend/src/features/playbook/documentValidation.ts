@@ -1,4 +1,5 @@
-import type { PlaybookDocument } from "./types.ts";
+import type { PlaybookDocument, PlaybookDraft } from "./types.ts";
+import { resolvePlaybookPath } from "./playbookBranches.ts";
 
 // Version-1 persistence contract. Keep in sync with backend/api/playbooks.py;
 // both implementations run the same shared document examples in tests.
@@ -69,6 +70,22 @@ export function validatePlaybookDocument(value: unknown): void {
     if (arrow.kind === "backdoor-cut") check(arrow.actor_id != null, "Backdoor cuts need an actor");
     if (arrow.recipient_id != null) check(["pass", "handoff"].includes(arrow.kind) && arrow.recipient_id !== arrow.actor_id, "Transfers need distinct participants");
     if (["pick-pop", "pin-down"].includes(arrow.kind)) point(arrow.exit_target);
+  }
+  if (value.branches !== undefined) {
+    check(Array.isArray(value.branches) && value.branches.length <= 8, "A play can have at most eight endings");
+    const branchIds = new Set<string>();
+    for (const branch of value.branches) {
+      check(object(branch) && typeof branch.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(branch.id) && !branchIds.has(branch.id), "Ending identities must be unique short labels");
+      branchIds.add(branch.id);
+      check(typeof branch.label === "string" && Array.from(branch.label.trim()).length >= 1 && Array.from(branch.label.trim()).length <= 40, "Ending labels must contain 1–40 characters");
+      check(object(branch.fork) && Array.isArray(branch.fork.actionIds) && branch.fork.actionIds.length >= 1 && branch.fork.actionIds.length <= 30
+        && branch.fork.actionIds.every((id) => typeof id === "string" && /^[a-z0-9-]{1,64}$/.test(id))
+        && new Set(branch.fork.actionIds).size === branch.fork.actionIds.length
+        && integer(branch.fork.sequence) && branch.fork.sequence >= 1 && branch.fork.sequence <= 30, "Ending fork reference is invalid");
+      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined });
+      const resolved = resolvePlaybookPath(value as unknown as PlaybookDraft, branch.id);
+      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined });
+    }
   }
 }
 

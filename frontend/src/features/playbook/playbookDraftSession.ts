@@ -30,6 +30,11 @@ export function playbookContentKey(draft: PlaybookDraft): string {
       arrow.sequence ?? index + 1, arrow.path ?? "straight", point(arrow.control), arrow.timing ?? 1.2,
       arrow.actor_id ?? null, arrow.recipient_id ?? null, arrow.screener_id ?? null,
       arrow.cutter_id ?? null, arrow.handler_id ?? null, point(arrow.exit_target)]),
+    (draft.branches ?? []).map((branch) => [branch.id, branch.label, branch.fork.actionIds, branch.fork.sequence,
+      branch.continuation.map((arrow, index) => [arrow.id, arrow.kind, point(arrow.start), point(arrow.end),
+        arrow.sequence ?? index + 1, arrow.path ?? "straight", point(arrow.control), arrow.timing ?? 1.2,
+        arrow.actor_id ?? null, arrow.recipient_id ?? null, arrow.screener_id ?? null,
+        arrow.cutter_id ?? null, arrow.handler_id ?? null, point(arrow.exit_target)])]),
   ]);
 }
 

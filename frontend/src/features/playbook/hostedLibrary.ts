@@ -3,9 +3,11 @@ import { validateSavedPlaybook, validatePlaybookSaveResult } from "./documentVal
 import { appendRevision, canonicalContent, contentChecksum, HISTORY_ERROR, HistoryVerificationUnavailableError, PLAYBOOK_HISTORY_LIMIT, sameRef, validChecksum, validRevision, verifyRevision, type PlayHistory, type PlaybookRecovery } from "./revisionHistory.ts";
 import type { PlaybookDocument } from "./types.ts";
 export type CreationReceipt = { id: string; request: string; result: PlaybookDocument };
-type LegacyLibrary = { version: 1; plays: PlaybookDocument[]; creations: CreationReceipt[] };
-export type RevisionLibrary = { version: 2; plays: PlaybookDocument[]; creations: CreationReceipt[]; histories: PlayHistory[]; migration: { source: LegacyLibrary; checksum: string }; checksum: string; preservedSources?: { content: string; checksum: string }[]; reservedIds?: string[] };
-export type HostedLibrary = LegacyLibrary | RevisionLibrary;
+export type LegacyLibrary = { version: 1; plays: PlaybookDocument[]; creations: CreationReceipt[] };
+type RevisionFields = { plays: PlaybookDocument[]; creations: CreationReceipt[]; histories: PlayHistory[]; checksum: string; preservedSources?: { content: string; checksum: string }[]; reservedIds?: string[] };
+export type RevisionLibrary = RevisionFields & { version: 2; migration: { source: LegacyLibrary; checksum: string } };
+export type BranchAwareLibrary = RevisionFields & { version: 3; migration: { source: RevisionLibrary; checksum: string } };
+export type HostedLibrary = LegacyLibrary | RevisionLibrary | BranchAwareLibrary;
 
 function validateUniquePlays(plays: unknown[]): void {
   const ids = new Set<string>();
@@ -15,12 +17,12 @@ function validateUniquePlays(plays: unknown[]): void {
     ids.add(play.id);
   }
 }
-/** Parsing stays synchronous; checksums are verified before callers use a v2 library. */
+/** Parsing stays synchronous; checksums are verified before callers use revisioned storage. */
 export function validateHostedLibrary(value: unknown): HostedLibrary {
   try {
     if (Array.isArray(value)) { validateUniquePlays(value); return { version: 1, plays: value, creations: [] }; }
     const library = value as HostedLibrary;
-    if (!library || ![1, 2].includes(library.version) || !Array.isArray(library.plays) || !Array.isArray(library.creations)) throw new Error();
+    if (!library || ![1, 2, 3].includes(library.version) || !Array.isArray(library.plays) || !Array.isArray(library.creations)) throw new Error();
     validateUniquePlays(library.plays);
     const ids = new Set<string>();
     for (const receipt of library.creations) {
@@ -29,7 +31,11 @@ export function validateHostedLibrary(value: unknown): HostedLibrary {
       if (playbookContentKey(receipt.result) !== receipt.request) throw new Error();
       ids.add(receipt.id);
     }
-    if (library.version === 2 && (!Array.isArray(library.histories) || !library.migration || !validChecksum(library.checksum))) throw new Error();
+    if (library.version === 2 || library.version === 3) {
+      if (!Array.isArray(library.histories) || !library.migration || !validChecksum(library.checksum)) throw new Error();
+    }
+    if (library.version === 2 && validateHostedLibrary(library.migration.source).version !== 1) throw new Error();
+    if (library.version === 3 && validateHostedLibrary(library.migration.source).version !== 2) throw new Error();
     return library;
   } catch { throw new Error("Saved plays could not be read. Your stored data has been preserved"); }
 }
@@ -37,8 +43,10 @@ export async function verifyHostedLibrary(library: HostedLibrary): Promise<void>
   if (library.version === 1) return;
   try {
     const { checksum, ...payload } = library;
+    const source = validateHostedLibrary(library.migration.source);
     if (await contentChecksum(payload) !== checksum || await contentChecksum(library.migration.source) !== library.migration.checksum
-      || validateHostedLibrary(library.migration.source).version !== 1) throw new Error();
+      || source.version !== library.version - 1) throw new Error();
+    if (source.version >= 2) await verifyHostedLibrary(source);
     if (library.reservedIds !== undefined && (!Array.isArray(library.reservedIds) || library.reservedIds.some(id => typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(id)))) throw new Error();
     if (library.preservedSources !== undefined) {
       if (!Array.isArray(library.preservedSources)) throw new Error();
@@ -67,8 +75,18 @@ export async function verifyHostedLibrary(library: HostedLibrary): Promise<void>
 export async function sealHostedLibrary(library: Omit<RevisionLibrary, "checksum">): Promise<RevisionLibrary> {
   return { ...library, checksum: await contentChecksum(library) };
 }
-export async function upgradeHostedLibrary(library: HostedLibrary): Promise<RevisionLibrary> {
-  if (library.version === 2) return library;
+async function sealBranchAwareLibrary(library: Omit<BranchAwareLibrary, "checksum">): Promise<BranchAwareLibrary> {
+  return { ...library, checksum: await contentChecksum(library) };
+}
+async function upgradeToBranchAware(library: RevisionLibrary): Promise<BranchAwareLibrary> {
+  return sealBranchAwareLibrary({ version: 3, plays: library.plays, creations: library.creations, histories: library.histories,
+    migration: { source: library, checksum: await contentChecksum(library) },
+    ...(library.preservedSources ? { preservedSources: library.preservedSources } : {}),
+    ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}) });
+}
+export async function upgradeHostedLibrary(library: HostedLibrary): Promise<RevisionLibrary | BranchAwareLibrary> {
+  if (library.version === 3) return library;
+  if (library.version === 2) return library.plays.some((play) => play.branches?.length) ? upgradeToBranchAware(library) : library;
   const histories: PlayHistory[] = [];
   // Migration and the first change are committed together; the validated source
   // is retained verbatim as a recovery snapshot, even after history pruning.
@@ -78,15 +96,23 @@ export async function upgradeHostedLibrary(library: HostedLibrary): Promise<Revi
     history = await appendRevision(history, null, crypto.randomUUID().replaceAll("-", ""));
     histories.push(history);
   }
-  return sealHostedLibrary({ version: 2, plays: library.plays, creations: library.creations, histories, migration: { source: library, checksum: await contentChecksum(library) } });
+  const source = library;
+  const upgraded = await sealHostedLibrary({ version: 2, plays: source.plays, creations: source.creations, histories, migration: { source, checksum: await contentChecksum(source) } });
+  return upgraded.plays.some((play) => play.branches?.length) ? upgradeToBranchAware(upgraded) : upgraded;
 }
-export async function reviseHostedLibrary(library: RevisionLibrary, id: string, document: PlaybookDocument | null, creations = library.creations): Promise<RevisionLibrary> {
+export async function reviseHostedLibrary(library: RevisionLibrary | BranchAwareLibrary, id: string, document: PlaybookDocument | null, creations = library.creations): Promise<RevisionLibrary | BranchAwareLibrary> {
   const current = library.histories.find(history => history.id === id) ?? { id, anchor: null, entries: [] };
   if (current.entries.at(-1)?.kind === "delete") throw new Error("This play was explicitly deleted. Recover a separate copy instead");
   const history = await appendRevision(current, document, document?.revision ?? crypto.randomUUID().replaceAll("-", ""));
-  return sealHostedLibrary({ version: 2, plays: [...(document ? [document] : []), ...library.plays.filter(play => play.id !== id)], creations,
-    histories: [...library.histories.filter(item => item.id !== id), history], migration: library.migration,
-    ...(library.preservedSources ? { preservedSources: library.preservedSources } : {}), ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}) });
+  const plays = [...(document ? [document] : []), ...library.plays.filter(play => play.id !== id)];
+  const histories = [...library.histories.filter(item => item.id !== id), history];
+  const extras = {
+    ...(library.preservedSources ? { preservedSources: library.preservedSources } : {}),
+    ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}),
+  };
+  if (library.version === 3) return sealBranchAwareLibrary({ version: 3, plays, creations, histories, migration: library.migration, ...extras });
+  const revised = await sealHostedLibrary({ version: 2, plays, creations, histories, migration: library.migration, ...extras });
+  return plays.some((play) => play.branches?.length) ? upgradeToBranchAware(revised) : revised;
 }
 /** Recovery never trusts a damaged head or silently selects an older drawing.
  * Independently checksummed revisions can only be copied to a fresh identity. */
@@ -94,7 +120,7 @@ export async function inspectHostedRecovery(value: unknown, id: string): Promise
   const library = value as RevisionLibrary;
   let verified = false;
   try { validateHostedLibrary(value); await verifyHostedLibrary(library); verified = true; } catch (error) { if (error instanceof HistoryVerificationUnavailableError) throw error; /* Preserve every damaged record in storage. */ }
-  if (library?.version !== 2 || !Array.isArray(library.histories)) throw new Error(HISTORY_ERROR);
+  if (library?.version !== 2 && library?.version !== 3 || !Array.isArray(library.histories)) throw new Error(HISTORY_ERROR);
   const history = library.histories.find(item => item?.id === id);
   if (!history || !Array.isArray(history.entries)) throw new Error("Saved-play history not found");
   if (history.entries.length > 32) throw new Error(HISTORY_ERROR);

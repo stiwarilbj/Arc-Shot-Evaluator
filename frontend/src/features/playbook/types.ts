@@ -91,6 +91,15 @@ export interface PlaybookArrow {
   exit_target?: CourtPoint;
 }
 
+export interface PlaybookBranch {
+  id: string;
+  label: string;
+  /** Stable Main action identities for the simultaneous group before which this ending forks */
+  fork: { actionIds: string[]; sequence: number };
+  /** Copied continuation beginning with the fork group */
+  continuation: PlaybookArrow[];
+}
+
 export interface PlaybookDocument {
   version: 1;
   /** Opaque save precondition; absent only on legacy version-1 documents. */
@@ -104,6 +113,8 @@ export interface PlaybookDocument {
   defenders: PlaybookMarker[];
   ball: CourtPoint | null;
   arrows: PlaybookArrow[];
+  /** Optional version-1 extension; absent on older unbranched plays */
+  branches?: PlaybookBranch[];
 }
 
 export type PlaybookDraft = Omit<PlaybookDocument, "id" | "created_at" | "updated_at"> & {

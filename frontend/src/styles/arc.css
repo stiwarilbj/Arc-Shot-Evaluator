@@ -655,7 +655,33 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .is-screen-cutter .offense-marker { stroke: #f3f1ec; stroke-width: 5; stroke-dasharray: 4 3; }
 .playbook-help { margin: 15px 7px 5px; color: var(--dim); font-size: 10px; line-height: 1.5; }
 .playbook-editor { min-width: 0; }
+.playbook-branch-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 5px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0; background: var(--surface); }
+.playbook-branch-tabs { display: flex; align-items: center; gap: 5px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.playbook-branch-tab-item { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; min-height: 32px; padding: 2px 4px 2px 2px; border: 1px solid transparent; border-radius: 6px; background: var(--surface-2); }
+.playbook-branch-tab-item.is-active { border-color: color-mix(in srgb, var(--orange) 55%, var(--line)); background: color-mix(in srgb, var(--orange) 8%, var(--surface-2)); }
+.playbook-branch-tab { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-height: 29px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.playbook-branch-tab:hover { color: var(--text); }
+.playbook-branch-tab[aria-selected="true"] { color: var(--orange); }
+.playbook-branch-icon { display: grid; place-items: center; width: 25px; min-width: 25px; height: 25px; border: 0; border-radius: 4px; background: transparent; color: var(--dim); cursor: pointer; }
+.playbook-branch-icon:hover { background: var(--surface); color: var(--orange); }
+.playbook-branch-label-input { width: min(150px, 34vw); min-height: 28px; padding: 0 7px; border: 1px solid var(--orange); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; font-size: 11px; }
+.playbook-branch-tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+.playbook-compare-main { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.playbook-compare-main input { accent-color: var(--orange); }
+.playbook-fork-notice { max-width: 240px; color: var(--muted); font-size: 10px; text-align: right; }
+.is-compare-route .shared-court-route { stroke: var(--muted); stroke-width: 2; stroke-dasharray: 8 7; opacity: .48; }
+.playbook-action-row { display: grid; gap: 4px; }
+.playbook-action-row > button:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.playbook-action-row > button:first-child strong { color: var(--text); }
+.playbook-action-row > button:first-child span { color: var(--muted); }
+.playbook-action-row > button:first-child small { flex-basis: 100%; color: var(--orange); font-size: 10px; }
+.playbook-action-list .branch-create-action { min-height: 30px; padding: 4px 8px; border-style: dashed; color: var(--orange); font-size: 10px; }
+.playbook-action-list .branch-create-action:disabled { cursor: not-allowed; opacity: .45; }
+.branch-action-badge { display: inline-flex; align-items: center; min-height: 19px; padding: 1px 6px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 9px; font-style: normal; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; }
+.branch-action-added { border-color: color-mix(in srgb, var(--make) 60%, var(--line)); color: var(--make); }
+.branch-action-changed { border-color: color-mix(in srgb, var(--orange) 60%, var(--line)); color: var(--orange); }
 .playbook-toolbar { display: flex; align-items: center; gap: 5px; min-height: 52px; padding: 7px; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius) var(--radius) 0 0; background: var(--surface); }
+.playbook-branch-bar + .playbook-toolbar { border-radius: 0; }
 .tool-button { flex: 0 0 auto; justify-content: center; gap: 6px; min-height: 35px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 650; white-space: nowrap; }
 .tool-button:hover:not(:disabled) { border-color: var(--line-strong); color: var(--text); }
 .tool-button.is-active { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 11%, var(--surface)); color: var(--orange); }
@@ -744,6 +770,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .counter-import-panel { margin-bottom: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .counter-import-panel h3 { margin-top: 18px; }
 .counter-import-list, .counter-starters { display: flex; flex-wrap: wrap; gap: 8px; }
+.counter-import-family { display: grid; gap: 5px; width: 100%; }
+.counter-import-endings { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 0 2px 5px 10px; }
+.counter-import-endings > span { margin-right: 2px; color: var(--dim); font-size: 10px; }
+.counter-import-endings button { min-height: 27px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); cursor: pointer; font-size: 10px; }
+.counter-import-endings button:hover { border-color: var(--orange); color: var(--orange); }
 .counter-import-choice { display: grid; gap: 4px; min-height: 56px; max-width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
 .counter-import-choice span { font-size: 12px; color: var(--muted); }
 .counter-chip { min-height: 44px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); cursor: pointer; }
@@ -1082,6 +1113,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .playbook-header-actions .button { min-height: 34px; padding: 0 8px; font-size: 10px; }
   .playbook-header-actions .button-subtle { margin-left: 0; }
   .playbook-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .playbook-branch-bar { align-items: flex-start; flex-direction: column; gap: 5px; padding: 5px; }
+  .playbook-branch-tabs { width: 100%; }
+  .playbook-branch-tools { width: 100%; align-items: flex-start; flex-direction: column; }
+  .playbook-fork-notice { max-width: none; text-align: left; }
+  .playbook-compare-main { align-self: flex-end; min-height: 26px; }
   .playbook-toolbar { gap: 2px; }
   .tool-button { padding: 0 8px; }
   .tool-button span { display: none; }

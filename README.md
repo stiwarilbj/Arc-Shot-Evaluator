@@ -11,7 +11,7 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 | **Workspace**                                                                        | **What you can do**                                                                                           |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | [Shot Analyzer](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#shot-analyzer)      | Upload footage, review attempt windows and available measurements, correct results, and export shot data.     |
-| [Playbook](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#playbook)                | Draw and simulate half-court actions, customize players, and save or export diagrams.                         |
+| [Playbook](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#playbook)                | Draw and simulate half-court actions, branch shared openings into endings, and save or export diagrams        |
 | [Counter Lab](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#counter-lab)          | Test a play against different defenses, inspect breakdowns, and compare verified repairs.                     |
 | [Others → Guess the Jumper](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#jumper) | Mask and edit your own jumpshot videos, keep a private clip library, and guess the shooter from their motion. |
 

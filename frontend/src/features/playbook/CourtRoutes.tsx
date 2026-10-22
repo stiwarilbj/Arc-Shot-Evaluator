@@ -1,9 +1,9 @@
 import { useId } from "react";
 import { courtPointToSvg } from "./courtGeometry";
 import { routeVisible, type ArrowVisibility, type CourtRoute } from "./arrowVisibility";
-export function CourtRoutes({ routes, visibility, labels = false }: { routes: CourtRoute[]; visibility: ArrowVisibility; labels?: boolean }) {
+export function CourtRoutes({ routes, visibility, labels = false, compare = false }: { routes: CourtRoute[]; visibility: ArrowVisibility; labels?: boolean; compare?: boolean }) {
   const marker = `route-${useId().replace(/:/g, "")}`;
-  return <g className="court-route-layer" pointerEvents="none"><defs><marker id={marker} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="var(--orange)" /></marker></defs>{routes.filter((route) => routeVisible(route, visibility)).map((route) => {
+  return <g className={`court-route-layer ${compare ? "is-compare-route" : ""}`} pointerEvents="none"><defs><marker id={marker} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="var(--orange)" /></marker></defs>{routes.filter((route) => routeVisible(route, visibility)).map((route) => {
     const start = courtPointToSvg(route.start), end = courtPointToSvg(route.end);
     const via = route.via && courtPointToSvg(route.via);
     const control = route.kind === "shot" ? { x: (start.x + end.x) / 2, y: Math.min(start.y, end.y) - 105 } : route.control && courtPointToSvg(route.control);

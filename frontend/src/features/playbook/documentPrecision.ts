@@ -36,5 +36,11 @@ export function normalizePlaybookPrecision<T extends PlaybookDraft>(playbook: T)
     if (arrow.exit_target) point(arrow.exit_target);
     if (arrow.timing !== undefined) arrow.timing = roundForStorage(arrow.timing, 2);
   }
+  for (const branch of saved.branches ?? []) for (const arrow of branch.continuation) {
+    point(arrow.start); point(arrow.end);
+    if (arrow.control) point(arrow.control);
+    if (arrow.exit_target) point(arrow.exit_target);
+    if (arrow.timing !== undefined) arrow.timing = roundForStorage(arrow.timing, 2);
+  }
   return saved;
 }

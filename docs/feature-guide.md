@@ -125,6 +125,30 @@ in memory and are cleared by reloading or starting another play · Exact recover
 is supported within the same engine version and runtime; saved version-1 plays
 remain unchanged · See [simulation sessions](playbook-simulation-sessions.md)
 
+### Branch one opening into endings
+
+Use **Create a branch here** on a Main action to fork before that move and copy
+the selected move and every later move into a new ending · Actions sharing a move
+number fork together · Main stays as the original, and up to eight labeled
+endings can be edited separately · Editing an inherited shared-opening action
+updates Main and every ending that still inherits it; continuation edits stay in
+the selected ending · Rename, delete, create, and drawing edits support undo/redo,
+while switching tabs keeps the draft clean · Endings can be empty while being
+edited · If a fork action is deleted from Main, the ending keeps its copied route
+and moves its shared boundary to the next surviving Main group · An inline notice
+explains that adjustment
+
+Play and PNG export use the selected complete path from the original starting
+positions · **Compare with Main** overlays changed and removed Main routes and
+respects the shared arrow-visibility setting · The action list marks additions and
+changes and identifies shared moves · **Test in Counter Lab** sends a standalone
+copy of the selected path · Saved branched plays can be imported there as Main or
+one named ending at a time, and verified repairs save as standalone plays · Branch
+records are an optional version-1 extension, so existing unbranched files need no
+migration · The downloaded app requires a branch-aware local server before it will
+save endings; browser storage upgrades atomically and older clients reject the new
+storage envelope rather than discarding branches
+
 Playbook execution runs in a dedicated browser worker, loaded on the first
 **Play**, on both the hosted and downloaded builds · Drawing, input, and layout
 remain on the page · Session/revision checks reject stale frames after paused

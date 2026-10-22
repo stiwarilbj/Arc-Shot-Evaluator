@@ -29,6 +29,7 @@ NAME_WHITESPACE = " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u
 MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
+MAX_BRANCHES = 8
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
 MAX_JSON_DEPTH = 32
@@ -203,7 +204,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
     if not isinstance(defenders_visible, bool):
         raise HTTPException(400, "defenders_visible must be boolean")
     now = _now()
-    return {
+    result = {
         "version": 1,
         "id": playbook_id,
         "name": name.strip(NAME_WHITESPACE),
@@ -215,6 +216,56 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         "ball": clean_ball,
         "arrows": arrows,
     }
+    raw_branches = payload.get("branches")
+    if raw_branches is not None:
+        if not isinstance(raw_branches, list) or len(raw_branches) > MAX_BRANCHES:
+            raise HTTPException(400, f"A play can have at most {MAX_BRANCHES} endings")
+        branches: list[dict] = []
+        branch_ids: set[str] = set()
+        for branch in raw_branches:
+            if not isinstance(branch, dict) or not isinstance(branch.get("id"), str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", branch["id"]):
+                raise HTTPException(400, "Ending identities must be unique short labels")
+            branch_id = branch["id"]
+            if branch_id in branch_ids:
+                raise HTTPException(400, "Ending identities must be unique short labels")
+            branch_ids.add(branch_id)
+            label = branch.get("label")
+            if not isinstance(label, str) or not 1 <= len(label.strip(NAME_WHITESPACE)) <= 40:
+                raise HTTPException(400, "Ending labels must contain 1-40 characters")
+            fork = branch.get("fork")
+            if not isinstance(fork, dict) or not isinstance(fork.get("actionIds"), list) or not 1 <= len(fork["actionIds"]) <= MAX_ARROWS:
+                raise HTTPException(400, "Ending fork reference is invalid")
+            fork_ids = fork["actionIds"]
+            fork_sequence = fork.get("sequence")
+            if any(not isinstance(action_id, str) or not re.fullmatch(r"[a-z0-9-]{1,64}", action_id) for action_id in fork_ids) or len(set(fork_ids)) != len(fork_ids):
+                raise HTTPException(400, "Ending fork reference is invalid")
+            if not _integer(fork_sequence) or not 1 <= fork_sequence <= MAX_ARROWS:
+                raise HTTPException(400, "Ending fork sequence is invalid")
+            continuation_value = branch.get("continuation")
+            if not isinstance(continuation_value, list) or len(continuation_value) > MAX_ARROWS:
+                raise HTTPException(400, "Ending actions must contain at most 30 actions")
+            continuation = _document({**payload, "arrows": continuation_value, "branches": []}, playbook_id=playbook_id, created_at=created_at)["arrows"]
+            ordered_main = sorted(enumerate(arrows), key=lambda entry: (entry[1]["sequence"], entry[0]))
+            anchor_ids = set(fork_ids)
+            anchor_sequences = [arrow["sequence"] for _, arrow in ordered_main if arrow["id"] in anchor_ids]
+            if anchor_sequences:
+                cutoff = min(anchor_sequences)
+            else:
+                later = [arrow["sequence"] for _, arrow in ordered_main if arrow["sequence"] >= fork_sequence]
+                cutoff = min(later) if later else None
+            shared = [arrow for _, arrow in ordered_main if cutoff is None or arrow["sequence"] < cutoff]
+            max_shared = max((arrow["sequence"] for arrow in shared), default=0)
+            ordered_continuation = sorted(enumerate(continuation), key=lambda entry: (entry[1]["sequence"], entry[0]))
+            continuation_groups = list(dict.fromkeys(arrow["sequence"] for _, arrow in ordered_continuation))
+            rebased_sequence = {sequence: max_shared + index + 1 for index, sequence in enumerate(continuation_groups)}
+            resolved = shared + [{**arrow, "sequence": rebased_sequence[arrow["sequence"]]} for _, arrow in ordered_continuation]
+            if len(resolved) > MAX_ARROWS:
+                raise HTTPException(400, "Each resolved ending must contain at most 30 actions")
+            _document({**payload, "arrows": resolved, "branches": []}, playbook_id=playbook_id, created_at=created_at)
+            branches.append({"id": branch_id, "label": label.strip(NAME_WHITESPACE), "fork": {"actionIds": list(fork_ids), "sequence": fork_sequence}, "continuation": continuation})
+        if branches:
+            result["branches"] = branches
+    return result
 
 
 def _check_json_depth(text: str) -> None:
@@ -647,6 +698,7 @@ def _saved_play_instant(value: object) -> int | float:
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
+    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1"
     try:
         PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
         paths = sorted(PLAYBOOKS_DIR.iterdir())
@@ -701,7 +753,9 @@ def _replay_creation(path: Path, request: str) -> dict:
 
 
 @router.post("")
-def create_playbook(payload: Annotated[dict, Depends(_request_document)], create_id: Annotated[str | None, Header(alias="X-ARC-Create-ID")] = None) -> dict:
+def create_playbook(payload: Annotated[dict, Depends(_request_document)], create_id: Annotated[str | None, Header(alias="X-ARC-Create-ID")] = None, extensions: Annotated[str | None, Header(alias="X-ARC-Playbook-Extensions")] = None) -> dict:
+    if payload.get("branches") and extensions != "branches-v1":
+        raise HTTPException(409, "This server requires a branch-aware client before saving endings")
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -734,12 +788,17 @@ def get_playbook(playbook_id: str) -> dict:
 
 
 @router.put("/{playbook_id}")
-def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_document)], if_match: Annotated[str | None, Header(alias="If-Match")] = None) -> dict:
+def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_document)], if_match: Annotated[str | None, Header(alias="If-Match")] = None, extensions: Annotated[str | None, Header(alias="X-ARC-Playbook-Extensions")] = None) -> dict:
     path = _path(playbook_id)
     with _playbook_lock(path):
         if _deleted_path(path).exists() or not path.is_file():
             raise HTTPException(404, "Playbook not found")
         current = _read(path, include_creation=True)
+        current_has_branches = bool(current.get("branches"))
+        if current_has_branches and (extensions != "branches-v1" or "branches" not in payload):
+            raise HTTPException(409, "This play contains endings and requires an explicit branch-aware update. The saved play is unchanged")
+        if payload.get("branches") and extensions != "branches-v1":
+            raise HTTPException(409, "This play contains endings and requires a branch-aware client. The saved play is unchanged")
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:

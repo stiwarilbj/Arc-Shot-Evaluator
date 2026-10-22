@@ -855,3 +855,55 @@ def test_revision_preconditions_and_legacy_upgrade_preserve_files(tmp_path, monk
     third = client.put(f"/api/playbooks/{legacy['id']}", json=second, headers={"If-Match": _match(second)}).json()
     assert second["updated_at"] == third["updated_at"]
     assert second["revision"] != third["revision"]
+
+
+def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Branch family")
+    payload["branches"] = [{
+        "id": "ending-1",
+        "label": "Slip",
+        "fork": {"actionIds": ["arrow-one"], "sequence": 2},
+        "continuation": [payload["arrows"][0]],
+    }]
+
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1"
+    refused = client.post("/api/playbooks", json=payload)
+    assert refused.status_code == 409
+
+    created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "branches-v1"})
+    assert created.status_code == 200
+    saved = created.json()
+    assert saved["branches"][0]["label"] == "Slip"
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["branches"] == saved["branches"]
+
+    stale_client = {key: value for key, value in saved.items() if key not in {"id", "created_at", "updated_at", "revision", "branches"}}
+    refused_update = client.put(f"/api/playbooks/{saved['id']}", json=stale_client, headers={"If-Match": _match(saved)})
+    assert refused_update.status_code == 409
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["branches"] == saved["branches"]
+
+    updated_payload = {**stale_client, "name": "Branch family revised", "branches": saved["branches"]}
+    updated = client.put(f"/api/playbooks/{saved['id']}", json=updated_payload, headers={
+        "If-Match": _match(saved),
+        "X-ARC-Playbook-Extensions": "branches-v1",
+    })
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "Branch family revised"
+    assert updated.json()["branches"] == saved["branches"]
+
+    cleared = {**stale_client, "name": "Endings intentionally removed", "branches": []}
+    cleared_response = client.put(f"/api/playbooks/{saved['id']}", json=cleared, headers={
+        "If-Match": _match(updated.json()),
+        "X-ARC-Playbook-Extensions": "branches-v1",
+    })
+    assert cleared_response.status_code == 200
+    assert "branches" not in cleared_response.json()
+
+    invalid = {**updated_payload, "branches": [{**saved["branches"][0], "label": "x" * 41}]}
+    rejected = client.put(f"/api/playbooks/{saved['id']}", json=invalid, headers={
+        "If-Match": _match(cleared_response.json()),
+        "X-ARC-Playbook-Extensions": "branches-v1",
+    })
+    assert rejected.status_code == 400
+    assert client.get(f"/api/playbooks/{saved['id']}").json() == cleared_response.json()

@@ -43,12 +43,13 @@ import { editPlaybookPoint } from "./editPlaybookPoint";
 import { exportPlaybookPng } from "./exportPlaybookPng";
 import { clamp, markerPoint, arrowSequence, lerpPoint, defaultArrowControl, arrowControl, actionPointAt, actionPath, screenCutterPath } from "./playbookPaths";
 import { prepareMiniCourt } from "./miniCourtGeometry";
+import { applyEditedPath, branchActionStatus, createBranchFromAction, flattenPlaybookPath, MAX_PLAYBOOK_BRANCHES, orderedActions as orderBranchActions, resolvePlaybookPath } from "./playbookBranches.ts";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -67,7 +68,8 @@ import type { SimulationView } from "./playbookSimulationProtocol";
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
 type PointerSample = { clientX: number; clientY: number; pointerId: number };
 type PointerGesture = PointerSample & { moved: boolean };
-type DragState = PointerGesture & { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-exit" | "arrow-control"; id: number | string; before: PlaybookDraft };
+type DragState = PointerGesture & { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-exit" | "arrow-control"; id: number | string; before: PlaybookDraft; historyBefore: PlaybookDraft; historyBranchId: string | null };
+type DraftHistoryEntry = { draft: PlaybookDraft; branchId: string | null };
 function pointerGesture(event: PointerSample): PointerGesture {
   return { clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId, moved: false };
 }
@@ -132,7 +134,9 @@ function removeSelection(draft: PlaybookDraft, selection: Selection): PlaybookDr
   const next = clonePlaybook(draft);
   if (selection.type === "player") {
     next.players = next.players.filter((marker) => marker.id !== selection.id);
-    next.arrows = next.arrows.filter((arrow) => arrow.screener_id !== selection.id && arrow.cutter_id !== selection.id && arrow.handler_id !== selection.id && arrow.actor_id !== selection.id && arrow.recipient_id !== selection.id);
+    const withoutPlayer = (arrows: PlaybookArrow[]) => arrows.filter((arrow) => arrow.screener_id !== selection.id && arrow.cutter_id !== selection.id && arrow.handler_id !== selection.id && arrow.actor_id !== selection.id && arrow.recipient_id !== selection.id);
+    next.arrows = withoutPlayer(next.arrows);
+    next.branches = next.branches?.map((branch) => ({ ...branch, continuation: withoutPlayer(branch.continuation) }));
   }
   if (selection.type === "defender") next.defenders = next.defenders.filter((marker) => marker.id !== selection.id);
   if (selection.type === "ball") next.ball = null;
@@ -171,6 +175,10 @@ function normalizeDraft(source: PlaybookDraft) {
     const control = arrow.control ?? defaultArrowControl(arrow.start, arrow.end);
     return { ...arrow, sequence, path, timing: clampTiming(arrow.timing ?? 1.2), control };
   });
+  next.branches = next.branches?.map((branch) => ({ ...branch, continuation: branch.continuation.map((arrow, index) => ({
+    ...arrow, sequence: arrowSequence(arrow, index), path: arrow.path === "curve" ? "curve" : "straight",
+    timing: clampTiming(arrow.timing ?? 1.2), control: arrow.control ?? defaultArrowControl(arrow.start, arrow.end),
+  })) }));
   return next;
 }
 
@@ -268,8 +276,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   ));
   const [draftSession] = useState(() => createPlaybookDraftSession(clonePlaybook(READY_SETUP), (play) => playbookContentKey(normalizeDraft(play))));
   const [draft, setDraftState] = useState<PlaybookDraft>(() => draftSession.current);
-  const [history, setHistory] = useState<PlaybookDraft[]>([]);
-  const [future, setFuture] = useState<PlaybookDraft[]>([]);
+  const [history, setHistory] = useState<DraftHistoryEntry[]>([]);
+  const [future, setFuture] = useState<DraftHistoryEntry[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+  const [renamingBranchId, setRenamingBranchId] = useState<string | null>(null);
+  const [branchLabelValue, setBranchLabelValue] = useState("");
+  const [compareMain, setCompareMain] = useState(false);
+  const branchLabelInput = useRef<HTMLInputElement>(null);
   const [dirty, setDirty] = useState(false);
   const [selected, setSelected] = useState<Selection>(null);
   const [tool, setTool] = useState<PlaybookTool>("select");
@@ -329,7 +342,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   useEffect(() => { if (!active) interruptPointerRef.current(); }, [active]);
 
   function setDraft(next: PlaybookDraft) {
-    setDraftState(draftSession.edit(next));
+    setDraftState(draftSession.edit(canonicalizeActiveDraft(next)));
     setDirty(draftSession.dirty);
   }
 
@@ -338,11 +351,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setReplacementState(next);
   }
 
-  const selectedArrow = selected?.type === "arrow" ? draft.arrows.find((arrow) => arrow.id === selected.id) : null;
+  const activePath = useMemo(() => resolvePlaybookPath(draft, activeBranchId), [draft, activeBranchId]);
+  const activeDraft = activePath.play;
+  const selectedArrow = selected?.type === "arrow" ? activeDraft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
   const selectedSkillsDefender = draft.defenders.find((defender) => defender.id === defenderSkillsId) ?? draft.defenders[0] ?? null;
-  const selectedParticipants = useMemo(() => selectedArrow ? bindAuthoredActions(draft).find((action) => action.arrow.id === selectedArrow.id) : null, [draft, selectedArrow?.id]);
-  const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, draft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
+  const selectedParticipants = useMemo(() => selectedArrow ? bindAuthoredActions(activeDraft).find((action) => action.arrow.id === selectedArrow.id) : null, [activeDraft, selectedArrow?.id]);
+  const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, activeDraft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
   const starterCategories = useMemo(() => ["All plays", ...new Set(STARTER_PLAYS.map((play) => STARTER_PLAY_DETAILS[play.name]?.category ?? "Other"))], []);
   const filteredStarterPlays = useMemo(() => {
     const query = starterSearch.trim().toLowerCase();
@@ -354,7 +369,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     });
   }, [starterCategory, starterSearch]);
   const simulationFrame = simulationFrameState ?? EMPTY_SIMULATION_FRAME;
-  const draftDuration = useMemo(() => simulationTimelineDuration(draft.arrows) + SIMULATION_SHOT_MS, [draft.arrows]);
+  const draftDuration = useMemo(() => simulationTimelineDuration(activeDraft.arrows) + SIMULATION_SHOT_MS, [activeDraft.arrows]);
   const simulationDuration = simulationView?.durationMs ?? draftDuration;
   const simulationActive = simulationFrameState !== null;
   const simulationInterrupted = simulationActive && simulationClientRef.current === null;
@@ -366,6 +381,26 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     : simulationActive
       ? `${simulationFrame.offBallQuality}%`
       : "70%";
+
+  function cloneActiveDraft() { return clonePlaybook(activeDraft); }
+
+  function canonicalizeActiveDraft(next: PlaybookDraft, source: PlaybookDraft = draftSession.current, branchId = activeBranchId) {
+    const canonical = applyEditedPath(source, branchId, next, resolvePlaybookPath(source, branchId));
+    const validPlayers = new Set(canonical.players.map((player) => player.id));
+    const removeUnbound = (arrows: PlaybookArrow[]) => arrows.filter((arrow) => [arrow.actor_id, arrow.recipient_id, arrow.screener_id, arrow.cutter_id, arrow.handler_id].every((id) => id == null || validPlayers.has(id)));
+    canonical.arrows = removeUnbound(canonical.arrows);
+    canonical.branches = canonical.branches?.map((branch) => ({ ...branch, continuation: removeUnbound(branch.continuation) }));
+    return canonical;
+  }
+
+  function recordHistory(snapshot: PlaybookDraft, branchId: string | null) {
+    setHistory((current) => [...current.slice(-39), { draft: clonePlaybook(snapshot), branchId }]);
+    setFuture([]);
+  }
+
+  useEffect(() => {
+    if (renamingBranchId) branchLabelInput.current?.focus();
+  }, [renamingBranchId]);
 
   useEffect(() => {
     if (selectedArrow) setArrowFields({ id: selectedArrow.id, sequence: String(selectedArrowSequence ?? 1), timing: clampTiming(selectedArrow.timing ?? 1.2).toFixed(1) });
@@ -417,8 +452,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }, [savedOpen]);
 
   useEffect(() => {
-    onDraftChange?.(clonePlaybook(draft));
-  }, [draft, onDraftChange]);
+    onDraftChange?.(flattenPlaybookPath(draft, activeBranchId, activePath.branch?.label));
+  }, [draft, activeBranchId, activePath.branch?.label, onDraftChange]);
 
   useEffect(() => {
     if (requestedPlay) requestLoad(clonePlaybook(requestedPlay.play));
@@ -477,14 +512,16 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   // Validate the drawing synchronously. The worker stages compatible execution
   // edits atomically; transport failures preserve the user's editable draft.
-  function handoffDraft(next: PlaybookDraft, preserveSimulation: boolean) {
+  function handoffCanonicalDraft(next: PlaybookDraft, preserveSimulation: boolean, branchId = activeBranchId) {
     try {
       validatePlaybookDocument(next);
-      if (preserveSimulation && simulationClientRef.current && simulationDrawingRef.current && pausedDraftIsCompatible(simulationDrawingRef.current, next)) {
-        simulationClientRef.current.edit(next);
-        simulationDrawingRef.current = next;
+      const executable = flattenPlaybookPath(next, branchId);
+      if (preserveSimulation && simulationClientRef.current && simulationDrawingRef.current && pausedDraftIsCompatible(simulationDrawingRef.current, executable)) {
+        simulationClientRef.current.edit(executable);
+        simulationDrawingRef.current = executable;
       } else resetSimulation();
-      setDraft(next);
+      setDraftState(draftSession.edit(next));
+      setDirty(draftSession.dirty);
       setStatus("idle");
       setError(null);
       return true;
@@ -494,22 +531,32 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     }
   }
 
+  function handoffDraft(next: PlaybookDraft, preserveSimulation: boolean) {
+    return handoffCanonicalDraft(canonicalizeActiveDraft(next), preserveSimulation);
+  }
+
   function commit(next: PlaybookDraft, previous = draft) {
+    const canonical = canonicalizeActiveDraft(next, previous);
+    if (isSameDraft(canonical, previous)) return;
+    commitCanonical(canonical, previous, activeBranchId);
+  }
+
+  function commitCanonical(next: PlaybookDraft, previous = draft, branchId = activeBranchId) {
     if (isSameDraft(next, previous)) return;
     const before = clonePlaybook(previous);
     const preserveSimulation = simulationClientRef.current !== null && !simulationPlaying;
-    if (!handoffDraft(next, preserveSimulation)) return;
-    setHistory((current) => [...current.slice(-39), before]);
-    setFuture([]);
+    if (!handoffCanonicalDraft(next, preserveSimulation, branchId)) return;
+    recordHistory(before, activeBranchId);
   }
 
   function undo() {
     const previous = history.at(-1);
     if (!previous) return;
     const before = clonePlaybook(draft);
-    if (!handoffDraft(previous, simulationClientRef.current !== null && !simulationPlaying)) return;
+    if (!handoffCanonicalDraft(previous.draft, simulationClientRef.current !== null && !simulationPlaying, previous.branchId)) return;
     setHistory((current) => current.slice(0, -1));
-    setFuture((current) => [before, ...current]);
+    setFuture((current) => [{ draft: before, branchId: activeBranchId }, ...current]);
+    setActiveBranchId(previous.branchId);
     setSelected(null);
   }
 
@@ -517,9 +564,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     const next = future[0];
     if (!next) return;
     const before = clonePlaybook(draft);
-    if (!handoffDraft(next, simulationClientRef.current !== null && !simulationPlaying)) return;
+    if (!handoffCanonicalDraft(next.draft, simulationClientRef.current !== null && !simulationPlaying, next.branchId)) return;
     setFuture((current) => current.slice(1));
-    setHistory((current) => [...current, before]);
+    setHistory((current) => [...current, { draft: before, branchId: activeBranchId }]);
+    setActiveBranchId(next.branchId);
     setSelected(null);
   }
 
@@ -540,6 +588,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     dragRef.current = null;
     setHistory([]);
     setFuture([]);
+    setActiveBranchId(null);
+    setRenamingBranchId(null);
+    setCompareMain(false);
     setSelected(null);
     setTool("select");
     setDrawStart(null);
@@ -551,6 +602,66 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setStatus("idle");
     setError(null);
     resetSimulation();
+  }
+
+  function selectBranch(branchId: string | null) {
+    if (branchId === activeBranchId) return;
+    interruptPointerInteraction();
+    resetSimulation();
+    setSelected(null);
+    setRenamingBranchId(null);
+    setCompareMain(false);
+    setActiveBranchId(branchId);
+  }
+
+  function createBranch(actionId: string) {
+    if ((draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES) {
+      setError("This play already has eight endings");
+      return;
+    }
+    try {
+      const labelNumber = (draft.branches ?? []).reduce((max, branch) => {
+        const match = /^Ending (\d+)$/i.exec(branch.label.trim());
+        return match ? Math.max(max, Number(match[1])) : max;
+      }, 0) + 1;
+      const branch = createBranchFromAction(draft, actionId, labelNumber);
+      const next = clonePlaybook(draft);
+      next.branches = [...(next.branches ?? []), branch];
+      commitCanonical(next, draft, null);
+      selectBranch(branch.id);
+      setRenamingBranchId(branch.id);
+      setBranchLabelValue(branch.label);
+      setSelected(null);
+      setError(null);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "This ending could not be created"); }
+  }
+
+  function saveBranchLabel() {
+    if (!renamingBranchId) return;
+    const value = branchLabelValue.trim();
+    if (!value || Array.from(value).length > 40) {
+      setError("Ending labels must contain 1–40 characters");
+      branchLabelInput.current?.focus();
+      return;
+    }
+    if (draft.branches?.find((branch) => branch.id === renamingBranchId)?.label === value) {
+      setRenamingBranchId(null);
+      return;
+    }
+    const next = clonePlaybook(draft);
+    next.branches = (next.branches ?? []).map((branch) => branch.id === renamingBranchId ? { ...branch, label: value } : branch);
+    commitCanonical(next, draft, activeBranchId);
+    setRenamingBranchId(null);
+    setError(null);
+  }
+
+  function deleteBranch(branchId: string) {
+    const branch = draft.branches?.find((item) => item.id === branchId);
+    if (!branch || !window.confirm(`Delete ${branch.label}?`)) return;
+    const next = clonePlaybook(draft);
+    next.branches = (next.branches ?? []).filter((item) => item.id !== branchId);
+    commitCanonical(next, draft, activeBranchId);
+    if (activeBranchId === branchId) selectBranch(null);
   }
 
   function requestLoad(next: PlaybookDraft) {
@@ -588,7 +699,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function changePlayerRating(playerId: number, key: keyof PlayerSkillRatings, value: number) {
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.players = next.players.map((player) => player.id === playerId
       ? { ...player, ratings: { threePoint: 3, midrange: 3, finishing: 3, ...player.ratings, [key]: Math.max(1, Math.min(5, Math.round(value))) } }
       : player);
@@ -596,7 +707,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function togglePlayerBadge(playerId: number, badge: OffensiveBadge) {
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.players = next.players.map((player) => {
       if (player.id !== playerId) return player;
       const badges = player.badges ?? [];
@@ -611,7 +722,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function toggleDefenderBadge(defenderId: number, badge: DefensiveBadge) {
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.defenders = next.defenders.map((defender) => {
       if (defender.id !== defenderId) return defender;
       const badges = (defender.badges ?? []).filter((current): current is DefensiveBadge => DEFENSIVE_BADGE_ORDER.includes(current as DefensiveBadge));
@@ -627,7 +738,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function adjustTeamRating(key: keyof PlayerSkillRatings, amount: -1 | 1) {
     if (!draft.players.length) return;
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.players = next.players.map((player) => {
       const ratings = { threePoint: 3, midrange: 3, finishing: 3, ...player.ratings };
       return { ...player, ratings: { ...ratings, [key]: Math.max(1, Math.min(5, ratings[key] + amount)) } };
@@ -672,8 +783,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         },
       });
       simulationClientRef.current = client;
-      simulationDrawingRef.current = draft;
-      client.start(draft, simulationSettingsRef.current);
+      const executable = flattenPlaybookPath(draft, activeBranchId);
+      simulationDrawingRef.current = executable;
+      client.start(executable, simulationSettingsRef.current);
       setSimulationPlaying(true);
       setError(null);
     } catch {
@@ -684,7 +796,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function applyAIDefense() {
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.defenders_visible = true;
     next.defenders = placeDefendersGoalSide(next.players, next.defenders, HOOP_POINT);
     commit(next);
@@ -693,7 +805,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function addAuthoredArrow(arrow: PlaybookArrow) {
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.arrows = [...next.arrows, arrow];
     commit(next);
     setSelected({ type: "arrow", id: arrow.id });
@@ -705,7 +817,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function changeArrowSequence(arrowIdValue: string, requestedSequence: number) {
     if (!Number.isFinite(requestedSequence)) return;
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.arrows = next.arrows.map((arrow) => arrow.id === arrowIdValue
       ? { ...arrow, sequence: Math.max(1, Math.min(30, Math.round(requestedSequence))) }
       : arrow);
@@ -714,7 +826,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function changeArrowPath(arrowIdValue: string, path: "straight" | "curve") {
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.arrows = next.arrows.map((arrow) => arrow.id === arrowIdValue
       ? { ...arrow, path, control: path === "curve" ? arrowControl(arrow) : arrow.control }
       : arrow);
@@ -723,7 +835,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function changeArrowParticipant(id: string, field: "actor_id" | "recipient_id", value: string) {
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.arrows = next.arrows.map((arrow) => {
       if (arrow.id !== id) return arrow;
       const updated = { ...arrow, [field]: value === "auto" ? undefined : Number(value) };
@@ -735,7 +847,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function changeArrowTiming(arrowIdValue: string, requestedTiming: number) {
     if (!Number.isFinite(requestedTiming)) return;
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     next.arrows = next.arrows.map((arrow) => arrow.id === arrowIdValue ? { ...arrow, timing: clampTiming(requestedTiming) } : arrow);
     commit(next);
     setSelected({ type: "arrow", id: arrowIdValue });
@@ -770,7 +882,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     }
     const collection = type === "player" ? draft.players : draft.defenders;
     const id = Math.max(0, ...collection.map((marker) => marker.id)) + 1;
-    const next = clonePlaybook(draft);
+    const next = cloneActiveDraft();
     const marker: PlaybookMarker = { id, ...point, badges: [], ...(type === "player" ? { ratings: { threePoint: 3, midrange: 3, finishing: 3 } } : {}) };
     if (type === "player") next.players = [...next.players, marker];
     else next.defenders = [...next.defenders, marker];
@@ -791,7 +903,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     const point = pointFromPointer(event, svgRef.current);
     if (!point) return;
     focusBoard();
-    const nextSequence = Math.max(0, ...draft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1;
+    const nextSequence = Math.max(0, ...activeDraft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1;
     if (tool === "pick-pop") {
       const { screenerId, handlerId, screenPoint } = pickPopSelection;
       if (screenerId == null || handlerId == null) {
@@ -860,7 +972,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (tool === "ball") {
       if (draft.ball) setError("This play already has a ball. Select it and press Delete to replace it");
       else {
-        const next = clonePlaybook(draft);
+        const next = cloneActiveDraft();
         next.ball = point;
         commit(next);
         setSelected({ type: "ball", id: "ball" });
@@ -901,15 +1013,17 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     // Construct the drawing before the run changes; the engine validates and
     // commits this same draft together with the marker's live relocation.
     const next = editPlaybookPoint(drag.before, drag, point);
+    const canonical = canonicalizeActiveDraft(next, draftSession.current, drag.historyBranchId);
     try {
-      validatePlaybookDocument(next);
+      validatePlaybookDocument(canonical);
+      const executable = flattenPlaybookPath(canonical, drag.historyBranchId);
       const editingTimeline = drag.type === "arrow-start" || drag.type === "arrow-end" || drag.type === "arrow-exit" || drag.type === "arrow-control";
       const client = simulationClientRef.current;
       if (editingTimeline && simulationActive) resetSimulation();
       else if (client) {
         if (drag.type === "ball" || drag.type === "player" || drag.type === "defender") {
-          client.edit(next, { type: drag.type, id: drag.id, point });
-          simulationDrawingRef.current = next;
+          client.edit(executable, { type: drag.type, id: drag.id, point });
+          simulationDrawingRef.current = executable;
           setSimulationPlaying(false);
           // Immediate drag feedback only; the acknowledged worker snapshot
           // replaces it. Never use this optimistic view as executable state.
@@ -918,7 +1032,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           } : frame);
         }
       }
-      setDraft(next);
+      setDraftState(draftSession.edit(canonical));
+      setDirty(draftSession.dirty);
       setStatus("idle");
       setError(null);
     } catch (cause) {
@@ -939,7 +1054,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (drawing) {
       const { start, end } = drawing;
       if (pointDistance(start, end) > 3) {
-        const next = clonePlaybook(currentDraft);
+        const pathBefore = resolvePlaybookPath(currentDraft, activeBranchId).play;
+        const next = clonePlaybook(pathBefore);
         const kind: ArrowKind = tool === "pass" ? "pass" : tool === "screen" ? "screen" : tool === "slip-screen" ? "slip-screen" : tool === "handoff" ? "handoff" : tool === "pick-roll" ? "pick-roll" : "movement";
         const newArrow: PlaybookArrow = {
           id: arrowId(),
@@ -948,13 +1064,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           end,
           path: "straight",
           timing: kind === "screen" || kind === "slip-screen" || kind === "pick-roll" ? 1.4 : 1.2,
-          sequence: Math.max(0, ...currentDraft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
+          sequence: Math.max(0, ...pathBefore.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1,
           ...(kind === "screen" || kind === "slip-screen" || kind === "pick-roll" ? {
             screener_id: nearestPlayerId(currentDraft.players, start),
             handler_id: currentDraft.ball ? nearestPlayerId(currentDraft.players, currentDraft.ball, nearestPlayerId(currentDraft.players, start)) ?? undefined : undefined,
           } : {}),
         };
-        const binding = bindAuthoredActions({ ...currentDraft, arrows: [...currentDraft.arrows, newArrow] }).find((action) => action.arrow.id === newArrow.id);
+        const binding = bindAuthoredActions({ ...pathBefore, arrows: [...pathBefore.arrows, newArrow] }).find((action) => action.arrow.id === newArrow.id);
         if (binding?.actorId != null) newArrow.actor_id = binding.actorId;
         if ((kind === "pass" || kind === "handoff") && binding?.recipientId != null) newArrow.recipient_id = binding.recipientId;
         next.arrows = [...next.arrows, newArrow];
@@ -970,9 +1086,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function finishExistingDrag() {
     const drag = dragRef.current;
-    if (drag && !isSameDraft(draftSession.current, drag.before)) {
-      setHistory((current) => [...current.slice(-39), clonePlaybook(drag.before)]);
-      setFuture([]);
+    if (drag && !isSameDraft(draftSession.current, drag.historyBefore)) {
+      recordHistory(drag.historyBefore, drag.historyBranchId);
     }
   }
 
@@ -1009,7 +1124,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     focusBoard();
     if (!selection) return;
     if (tool === "delete") {
-      commit(removeSelection(draft, selection));
+      commit(removeSelection(cloneActiveDraft(), selection));
       setSelected(null);
       setTool("select");
       return;
@@ -1072,7 +1187,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     // Select so clicks in placement modes remain predictable.
     if (selection.type === "arrow") {
       setSelected(selection);
-      dragRef.current = { type: "arrow-end", id: selection.id, before: clonePlaybook(draftSession.current), ...pointerGesture(event) };
+      dragRef.current = { type: "arrow-end", id: selection.id, before: cloneActiveDraft(), historyBefore: clonePlaybook(draftSession.current), historyBranchId: activeBranchId, ...pointerGesture(event) };
       svgRef.current?.setPointerCapture(event.pointerId);
       return;
     }
@@ -1085,7 +1200,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setDefenderSkillsId(Number(selection.id));
       setDefenderSkillsOpen(true);
     }
-    dragRef.current = { type: selection.type, id: selection.id, before: clonePlaybook(draftSession.current), ...pointerGesture(event) };
+    dragRef.current = { type: selection.type, id: selection.id, before: cloneActiveDraft(), historyBefore: clonePlaybook(draftSession.current), historyBranchId: activeBranchId, ...pointerGesture(event) };
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
@@ -1094,7 +1209,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (dragRef.current || drawingRef.current) return;
     focusBoard();
     if (tool === "delete") {
-      commit(removeSelection(draft, { type: "arrow", id: arrow.id }));
+      commit(removeSelection(cloneActiveDraft(), { type: "arrow", id: arrow.id }));
       setSelected(null);
       setTool("select");
       return;
@@ -1102,7 +1217,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     // Endpoint handles follow the same always-draggable rule as the arrow
     // stroke, including while another drawing tool is active.
     setSelected({ type: "arrow", id: arrow.id });
-    dragRef.current = { type: endpoint === "start" ? "arrow-start" : endpoint === "end" ? "arrow-end" : endpoint === "exit" ? "arrow-exit" : "arrow-control", id: arrow.id, before: clonePlaybook(draftSession.current), ...pointerGesture(event) };
+    dragRef.current = { type: endpoint === "start" ? "arrow-start" : endpoint === "end" ? "arrow-end" : endpoint === "exit" ? "arrow-exit" : "arrow-control", id: arrow.id, before: cloneActiveDraft(), historyBefore: clonePlaybook(draftSession.current), historyBranchId: activeBranchId, ...pointerGesture(event) };
     svgRef.current?.setPointerCapture(event.pointerId);
   }
 
@@ -1135,7 +1250,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (event.key === "Delete" || event.key === "Backspace") {
       if (selected) {
         event.preventDefault();
-        commit(removeSelection(draft, selected));
+        commit(removeSelection(cloneActiveDraft(), selected));
         setSelected(null);
       }
       return;
@@ -1144,8 +1259,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     event.preventDefault();
     const amount = event.shiftKey ? 2 : 0.75;
     const delta = { x: event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0, y: event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0 };
-    const currentPoint = selected.type === "ball" ? draft.ball : selected.type === "player" ? draft.players.find((marker) => marker.id === selected.id) : selected.type === "defender" ? draft.defenders.find((marker) => marker.id === selected.id) : draft.arrows.find((arrow) => arrow.id === selected.id)?.end;
-    if (currentPoint) commit(replacePoint(draft, selected, { x: clamp(currentPoint.x + delta.x), y: clamp(currentPoint.y + delta.y) }));
+    const currentPoint = selected.type === "ball" ? activeDraft.ball : selected.type === "player" ? activeDraft.players.find((marker) => marker.id === selected.id) : selected.type === "defender" ? activeDraft.defenders.find((marker) => marker.id === selected.id) : activeDraft.arrows.find((arrow) => arrow.id === selected.id)?.end;
+    if (currentPoint) commit(replacePoint(activeDraft, selected, { x: clamp(currentPoint.x + delta.x), y: clamp(currentPoint.y + delta.y) }));
   }
 
   async function exportPng() {
@@ -1164,20 +1279,46 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       style.textContent = `.shared-court-route{fill:none;stroke:#ee733f;stroke-width:2;stroke-dasharray:6 4}.shared-court-route.route-adjustment{stroke:#b3b9b5;stroke-width:1.5;stroke-dasharray:2 4}.shared-court-route.route-shot{stroke-dasharray:3 5}.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.simulation-defender-number{fill:#73bff0;stroke:none;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-caption{fill:#b3b9b5;stroke:none;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
       if (simulationActive) style.textContent += ".marker-number,.simulation-defender-number{font-size:26px}";
       clone.prepend(style);
-      await exportPlaybookPng(clone, draft.name);
+      const exportName = activePath.branch ? `${draft.name} — ${activePath.branch.label}` : draft.name;
+      if (activePath.branch) {
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", "36"); label.setAttribute("y", "54"); label.setAttribute("class", "playbook-export-ending-label");
+        label.textContent = activePath.branch.label;
+        clone.append(label);
+        style.textContent += ".playbook-export-ending-label{fill:#ee733f;font:700 22px sans-serif} .is-compare-route .shared-court-route{stroke:#b3b9b5;stroke-dasharray:8 7;opacity:.42}";
+      }
+      await exportPlaybookPng(clone, exportName);
     } catch (caught) {
       setError(caught instanceof Error && caught.message.startsWith("PNG export")
         ? caught.message : "PNG export failed. Please try again");
     }
   }
 
-  const authoredRoutes = useMemo(() => authoredCourtRoutes(draft), [draft]);
+  const authoredRoutes = useMemo(() => authoredCourtRoutes(activeDraft), [activeDraft]);
+  const mainRoutes = useMemo(() => authoredCourtRoutes(draft), [draft]);
+  const changedMainActionIds = useMemo(() => new Set(mainRoutes.flatMap((route) => {
+    const id = route.actionId;
+    if (!id) return [];
+    const status = branchActionStatus(activeDraft.arrows, draft.arrows, id);
+    return status ? [id] : [];
+  })), [mainRoutes, activeDraft.arrows, draft.arrows]);
+  const removedMainActionIds = useMemo(() => new Set(draft.arrows.filter((arrow) => !activeDraft.arrows.some((candidate) => candidate.id === arrow.id)).map((arrow) => arrow.id)), [draft.arrows, activeDraft.arrows]);
+  const compareRoutes = activeBranchId && compareMain
+    ? mainRoutes.filter((route) => route.actionId && (changedMainActionIds.has(route.actionId) || removedMainActionIds.has(route.actionId)))
+    : [];
+  const currentBranch = activePath.branch;
+  const missingForkAnchors = currentBranch?.fork.actionIds.filter((id) => !draft.arrows.some((arrow) => arrow.id === id)) ?? [];
+  const forkNotice = missingForkAnchors.length
+    ? missingForkAnchors.length < (currentBranch?.fork.actionIds.length ?? 0)
+      ? "A simultaneous fork move was removed; the remaining move keeps this fork"
+      : "The fork now follows the deleted Main move group"
+    : null;
   const editingArrowId = !simulationPlaying && selected?.type === "arrow" ? selected.id : null;
-  const visibleArrows = draft.arrows.filter((arrow) => arrow.id === editingArrowId || (!simulationActive && authoredRoutes.some((route) => route.actionId === arrow.id && route.id.endsWith(":actor") && routeVisible(route, arrowVisibility))));
+  const visibleArrows = activeDraft.arrows.filter((arrow) => arrow.id === editingArrowId || (!simulationActive && authoredRoutes.some((route) => route.actionId === arrow.id && route.id.endsWith(":actor") && routeVisible(route, arrowVisibility))));
   const currentDefenseSchemeLabel = simulationFrame.activeDefenseScheme
     ? `${simulationFrame.defenseSchemeWasAutomatic ? "Auto · " : ""}${DEFENSE_SCHEME_LABELS[simulationFrame.activeDefenseScheme]}`
     : "No possession running";
-  const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? `Saved · ${draft.arrows.length} actions` : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
+  const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? `Saved · ${activeDraft.arrows.length} actions` : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
 
   return (
     <div ref={rootRef} className="playbook-page" tabIndex={-1} onKeyDown={onKeyDown} onBlur={(event) => {
@@ -1190,7 +1331,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         <div className="playbook-title-group">
           <div className="play-name-input-wrap">
             <input aria-label="Play name" value={draft.name} maxLength={80} onChange={(event) => {
-              const next = clonePlaybook(draft);
+              const next = cloneActiveDraft();
               next.name = event.currentTarget.value;
               setDraft(next);
               setStatus("idle");
@@ -1202,7 +1343,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         <div className="playbook-header-actions">
           <button type="button" className="button button-subtle" onClick={() => setSavedOpen(true)}><FolderOpen size={16} />Saved plays</button>
           <button type="button" className="button button-outline" onClick={exportPng}><Download size={16} />Export PNG</button>
-          {onTestInCounterLab ? <button type="button" className="button button-outline" onClick={() => onTestInCounterLab(clonePlaybook(draft))}><ShieldCheck size={16} />Test in Counter Lab</button> : null}
+          {onTestInCounterLab ? <button type="button" className="button button-outline" onClick={() => onTestInCounterLab(flattenPlaybookPath(draft, activeBranchId, activePath.branch?.label))}><ShieldCheck size={16} />Test in Counter Lab</button> : null}
           <button type="button" className="button button-primary" onClick={() => void saveDraft()} disabled={status === "saving"}><Save size={16} />{status === "saving" ? "Saving…" : "Save play"}</button>
         </div>
       </div>
@@ -1212,9 +1353,18 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           <PresetButton active={draft.name === "Ready setup" && !draft.arrows.length} icon={<Shield size={17} />} label="Ready setup" onClick={() => requestLoad(clonePlaybook(READY_SETUP))} />
           <PresetButton active={starterOpen} icon={<FolderOpen size={17} />} label="Starter plays" onClick={() => setStarterOpen(true)} />
           <PresetButton active={!draft.players.length && !draft.ball} icon={<Circle size={17} />} label="Empty court" onClick={() => requestLoad(clonePlaybook(EMPTY_COURT))} />
-          <details className="playbook-action-list"><summary>Actions · {draft.arrows.length}</summary><div role="group" aria-label="Edit play actions">{draft.arrows.map((arrow, index) => <button key={arrow.id} type="button" aria-pressed={selected?.type === "arrow" && selected.id === arrow.id} onClick={() => { setSimulationPlaying(false); chooseTool("select"); setSelected({ type: "arrow", id: arrow.id }); }}><strong>Move {arrowSequence(arrow, index)}</strong><span>{actionLabel(arrow.kind)}</span></button>)}</div>{!draft.arrows.length ? <p>No actions drawn yet</p> : <p>Select an action to edit it, even when its arrow is hidden</p>}</details>
+          <details className="playbook-action-list"><summary>Actions · {activeDraft.arrows.length}</summary><div role="group" aria-label="Edit play actions">{activeDraft.arrows.map((arrow, index) => {
+            const sharedIn = (draft.branches ?? []).filter((branch) => resolvePlaybookPath(draft, branch.id).sharedIds.has(arrow.id)).length;
+            const isShared = activeBranchId ? activePath.sharedIds.has(arrow.id) : sharedIn > 0;
+            const affected = sharedIn + 1;
+            const branchStatus = activeBranchId ? branchActionStatus(activeDraft.arrows, draft.arrows, arrow.id) : null;
+            return <div className="playbook-action-row" key={arrow.id}>
+              <button type="button" aria-pressed={selected?.type === "arrow" && selected.id === arrow.id} onClick={() => { setSimulationPlaying(false); chooseTool("select"); setSelected({ type: "arrow", id: arrow.id }); }}><strong>Move {arrowSequence(arrow, index)}</strong><span>{actionLabel(arrow.kind)}</span>{branchStatus ? <em className={`branch-action-badge branch-action-${branchStatus}`}>{branchStatus === "added" ? "Added" : "Changed"}</em> : null}{isShared ? <small>Shared opening · edits affect Main + {sharedIn} ending{sharedIn === 1 ? "" : "s"}</small> : null}</button>
+              {!activeBranchId ? <button type="button" className="branch-create-action" disabled={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES} title={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES ? "A play can have at most eight endings" : `Create a branch before Move ${arrowSequence(arrow, index)}`} onClick={() => createBranch(arrow.id)}>Create a branch here</button> : null}
+            </div>;
+          })}</div>{activePath.branch && !activePath.branch.continuation.length ? <p>No ending actions yet</p> : !activeDraft.arrows.length ? <p>No actions drawn yet</p> : <p>Select an action to edit it, even when its arrow is hidden</p>}</details>
           <button type="button" className={`preset-button ${draft.defenders_visible ? "is-active" : ""}`} onClick={() => {
-            const next = clonePlaybook(draft);
+            const next = cloneActiveDraft();
             next.defenders_visible = !next.defenders_visible;
             if (next.defenders_visible && !next.defenders.length) {
               next.defenders = placeDefendersGoalSide(next.players, [], HOOP_POINT);
@@ -1334,6 +1484,19 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           <p className="playbook-help">Drag markers to set positions. Select an arrow to adjust its endpoint. Use Delete or the toolbar to clean up</p>
         </aside>
         <main className={`playbook-editor ${simulationActive ? "is-simulating" : ""}`}>
+          {draft.branches?.length ? <div className="playbook-branch-bar">
+            <div className="playbook-branch-tabs" role="tablist" aria-label="Play endings">
+              <button type="button" role="tab" aria-selected={activeBranchId === null} className={`playbook-branch-tab ${activeBranchId === null ? "is-active" : ""}`} onClick={() => selectBranch(null)}>Main</button>
+              {draft.branches.map((branch) => <div className={`playbook-branch-tab-item ${activeBranchId === branch.id ? "is-active" : ""}`} key={branch.id}>
+                <button type="button" role="tab" aria-selected={activeBranchId === branch.id} className="playbook-branch-tab" onClick={() => selectBranch(branch.id)}>{branch.label}</button>
+                {renamingBranchId === branch.id ? <input ref={branchLabelInput} className="playbook-branch-label-input" aria-label={`Rename ${branch.label}`} maxLength={40} value={branchLabelValue} onChange={(event) => setBranchLabelValue(event.currentTarget.value)} onBlur={saveBranchLabel} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveBranchLabel(); } if (event.key === "Escape") { setRenamingBranchId(null); setBranchLabelValue(branch.label); } }} /> : <>
+                  <button type="button" className="playbook-branch-icon" aria-label={`Rename ${branch.label}`} title={`Rename ${branch.label}`} onClick={() => { setBranchLabelValue(branch.label); setRenamingBranchId(branch.id); }}> <Pencil size={13} /></button>
+                  <button type="button" className="playbook-branch-icon" aria-label={`Delete ${branch.label}`} title={`Delete ${branch.label}`} onClick={() => deleteBranch(branch.id)}><Trash2 size={13} /></button>
+                </>}
+              </div>)}
+            </div>
+            {activeBranchId ? <div className="playbook-branch-tools">{forkNotice ? <span className="playbook-fork-notice" role="status">{forkNotice}</span> : null}<label className="playbook-compare-main"><input type="checkbox" checked={compareMain} onChange={(event) => setCompareMain(event.currentTarget.checked)} />Compare with Main</label></div> : null}
+          </div> : null}
           <div className="playbook-toolbar" role="toolbar" aria-label="Playbook drawing tools">
             <ToolButton active={tool === "select"} icon={<MousePointer2 size={15} />} label="Select" title={TOOL_LABELS.select} onClick={() => chooseTool("select")} />
             <ToolButton active={tool === "player"} icon={<UserRound size={15} />} label="Add player" title={TOOL_LABELS.player} onClick={() => chooseTool("player")} />
@@ -1375,11 +1538,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               seekSimulation(event.key === "Home" ? 0 : event.key === "End" ? simulationSession.recordedUntilMs : Math.max(0, Math.min(simulationSession.recordedUntilMs, simulationSession.positionMs + offsets[event.key])));
             }} /><output>{(simulationSession.positionMs / 1000).toFixed(2)} / {(simulationSession.recordedUntilMs / 1000).toFixed(2)}s</output></label> : null}
             {selectedArrow ? <>
-              <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={Math.max(1, draft.arrows.length)} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>Same number runs together</small></label>
+              <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={30} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => { const value = event.currentTarget.value; setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: value })); }} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>Same number runs together</small></label>
               {["movement", "backdoor-cut", "pass", "handoff"].includes(selectedArrow.kind) ? <div className="sequence-editor"><span>{selectedArrow.kind === "pass" || selectedArrow.kind === "handoff" ? "Passer" : "Player"}</span><ArcSelect ariaLabel="Action player" className="arc-select--compact playbook-path-select" value={String(selectedArrow.actor_id ?? "auto")} options={[...(selectedArrow.kind === "backdoor-cut" ? [] : [{ value: "auto", label: `Auto · Player ${selectedParticipants?.actorId ?? "?"}` }]), ...draft.players.map((player) => ({ value: String(player.id), label: `Player ${player.id}` }))]} onValueChange={(value) => changeArrowParticipant(selectedArrow.id, "actor_id", value)} /></div> : null}
               {selectedArrow.kind === "pass" || selectedArrow.kind === "handoff" ? <div className="sequence-editor"><span>Receiver</span><ArcSelect ariaLabel="Action receiver" className="arc-select--compact playbook-path-select" value={String(selectedArrow.recipient_id ?? "auto")} options={[{ value: "auto", label: `Auto · Player ${selectedParticipants?.recipientId ?? "?"}` }, ...draft.players.filter((player) => player.id !== (selectedArrow.actor_id ?? selectedParticipants?.actorId)).map((player) => ({ value: String(player.id), label: `Player ${player.id}` }))]} onValueChange={(value) => changeArrowParticipant(selectedArrow.id, "recipient_id", value)} /></div> : null}
               <div className="sequence-editor"><span>Path</span><ArcSelect ariaLabel="Arrow path" className="arc-select--compact playbook-path-select" value={selectedArrow.path ?? "straight"} options={[{ value: "straight", label: "Straight" }, { value: "curve", label: "Curved" }]} onValueChange={(value) => changeArrowPath(selectedArrow.id, value as "straight" | "curve")} /></div>
-              <label className="sequence-editor"><span>Min. seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: event.currentTarget.value }))} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
+              <label className="sequence-editor"><span>Min. seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => { const value = event.currentTarget.value; setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: value })); }} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
             </> : null}
           </div>
           {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
@@ -1410,6 +1573,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} rx="8" className="court-floor" fill="url(#court-boards)" />
               <CourtMarkings />
               {simulationActive ? <CourtRoutes routes={simulationFrame.routes.filter((route) => route.actionId !== editingArrowId || editingArrowId == null)} visibility={arrowVisibility} labels /> : <CourtRoutes routes={authoredRoutes.filter((route) => !route.id.endsWith(":actor") && route.kind === "handler-support")} visibility={arrowVisibility} />}
+              {!simulationActive && compareRoutes.length ? <CourtRoutes routes={compareRoutes} visibility={arrowVisibility} compare /> : null}
               {visibleArrows.map((arrow) => {
                 const start = markerPoint(arrow.start);
                 const end = markerPoint(arrow.end);

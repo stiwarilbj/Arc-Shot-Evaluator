@@ -53,6 +53,9 @@ const queuePlayMutation = createPlayMutationQueue();
 const CHANGE_EVENT = "arc-playbooks-changed";
 const parseLibrary = createParsedLibraryCache(validateLibrary);
 const parseHostedLibrary = createParsedLibraryCache(validateHostedLibrary);
+function hasRevisionHistory(library: HostedLibrary): library is Exclude<HostedLibrary, { version: 1 }> {
+  return library.version === 2 || library.version === 3;
+}
 const libraryReads = createSharedLibraryRead(async () => {
   const plays = IS_GITHUB_PAGES ? await readLocalPlaybooks() : await readRemotePlaybooks();
   return [...plays].sort(compareSavedPlaybooks);
@@ -82,11 +85,19 @@ async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIde
   // Identify this POST before sending it, so recovery never guesses which copy
   // was saved or repeats a write. The backend replays matching create receipts.
   const id = identity.operation === "create" ? creationId! : identity.id;
+  const usesBranchExtension = playbook.branches !== undefined;
   try {
     return await withPersistenceDeadline(async (signal) => {
+      if (usesBranchExtension) {
+        const capability = await fetch("/api/playbooks", { signal, cache: "no-store" });
+        if (!capability.ok) await parse<never>(capability);
+        if (capability.headers.get("X-ARC-Playbook-Extensions") !== "branches-v1") {
+          throw new Error("This local server does not support Playbook endings yet. Update the downloaded app before saving this branched play");
+        }
+      }
       const response = await fetch(identity.operation === "create" ? "/api/playbooks" : `/api/playbooks/${encodeURIComponent(id)}`, {
         method: identity.operation === "create" ? "POST" : "PUT", signal,
-        headers: { "Content-Type": "application/json", ...(identity.operation === "create" ? { "X-ARC-Create-ID": id } : { "If-Match": `"${playbook.revision ?? "legacy"}"` }) },
+        headers: { "Content-Type": "application/json", ...(usesBranchExtension ? { "X-ARC-Playbook-Extensions": "branches-v1" } : {}), ...(identity.operation === "create" ? { "X-ARC-Create-ID": id } : { "If-Match": `"${playbook.revision ?? "legacy"}"` }) },
         body: JSON.stringify(playbook),
       });
       const saved = await parseSave(response, identity);
@@ -169,7 +180,7 @@ async function readLocalLibrary(): Promise<HostedLibrary> {
 }
 async function readLocalPlaybooks(): Promise<PlaybookDocument[]> {
   const library = await readLocalLibrary();
-  if (library.version === 2 && library.preservedSources?.length) throw new IncompletePlaybookLibraryError(structuredClone(library.plays), [{ file: "preserved-browser-library.json", kind: "invalid" }]);
+  if (hasRevisionHistory(library) && library.preservedSources?.length) throw new IncompletePlaybookLibraryError(structuredClone(library.plays), [{ file: "preserved-browser-library.json", kind: "invalid" }]);
   return library.plays;
 }
 async function writeLocalLibrary(library: HostedLibrary, signal: AbortSignal) {
@@ -199,6 +210,7 @@ async function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identit
     defenders: structuredClone(playbook.defenders),
     ball: playbook.ball ? structuredClone(playbook.ball) : null,
     arrows: structuredClone(playbook.arrows),
+    ...(playbook.branches !== undefined ? { branches: structuredClone(playbook.branches) } : {}),
   };
   validatePlaybookSaveResult(saved, identity);
   const library = await upgradeHostedLibrary(await readLocalLibrary());
@@ -232,7 +244,7 @@ export async function createPlaybook(playbook: PlaybookDraft, creationId = newCr
           if (receipt.request !== request) throw new PersistenceResponseError("This creation attempt belongs to a different drawing", 409);
           return structuredClone(receipt.result);
         }
-        if (library.plays.some(item => item.id === creationId) || (library.version === 2 && (library.histories.some(item => item.id === creationId) || library.reservedIds?.includes(creationId)))) throw new PersistenceResponseError("This creation identity is already in use", 409);
+        if (library.plays.some(item => item.id === creationId) || (hasRevisionHistory(library) && (library.histories.some(item => item.id === creationId) || library.reservedIds?.includes(creationId)))) throw new PersistenceResponseError("This creation identity is already in use", 409);
         return persistLocalPlaybook({ ...playbook, created_at: undefined, updated_at: undefined }, creationId, identity, signal, { id: creationId, request });
       });
       const saved = await saveRemotePlay(playbook, identity, creationId);
@@ -340,7 +352,7 @@ export async function recoverPlaybookRevision(id: string, revision: string, crea
         return structuredClone(receipt.result);
       }
       if (!/^play-[a-f0-9]{32}$/.test(creationId) || creationId === id || library.plays.some(item => item.id === creationId)
-        || (library.version === 2 && (library.histories.some(item => item.id === creationId) || library.reservedIds?.includes(creationId)))) throw new Error("Invalid recovery identity");
+        || (hasRevisionHistory(library) && (library.histories.some(item => item.id === creationId) || library.reservedIds?.includes(creationId)))) throw new Error("Invalid recovery identity");
       const now = new Date().toISOString();
       const saved: PlaybookDocument = { ...normalizePlaybookPrecision(draft), id: creationId, revision: newCreationId().slice(5), created_at: now, updated_at: now };
       validatePlaybookSaveResult(saved, { operation: "create", sourceId: id });
