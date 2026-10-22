@@ -1,13 +1,14 @@
 # ARCade Hoops
 
+**[Open the live website →](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)**
+
 [![ARCade Hoops: See your game from every angle · Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper](frontend/public/assets/arcade-hoops-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
 
 ARCade Hoops leads with **Shot Analyzer** for basketball footage review, alongside
 Playbook, Counter Lab, and Guess the Jumper · The original **ARC logo** remains the
 app’s main mark
 
-[Open the live website](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home) or
-[run the downloaded app](#run-the-downloaded-app) on your own computer · Both
+[Run the downloaded app](#run-the-downloaded-app) on your own computer · Both
 versions include all four workspaces · Processing uses the browser or local server;
 no account, paid inference API, or cloud-processing service is required
 
