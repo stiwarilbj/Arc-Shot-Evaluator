@@ -122,6 +122,36 @@ planned start · Conflicting ownership and circular dependencies are diagnosed b
 execution; failed prerequisites explain why dependent moves cannot start · Saved
 plays keep the version-1 document format · See [action dependencies](playbook-action-dependencies.md)
 
+### Spacing gates
+
+Choose **Spacing gate** in the drawing toolbar, then click near a player and an
+action to place an expectation · The inspector lets you assign the player and
+action, choose **Stay inside** or **Stay outside**, and set a circular or
+rectangular target in feet · Drag the area or resize handle on court, or use the
+numeric fields for precise keyboard edits · The boundary counts as inside
+
+Connect the gate to an action start or completion, a confirmed catch, a screen
+set or use, or a point selected directly on an authored route · For a sustained
+expectation, set **Before** and **After** to check the player's recorded center
+through that whole window · Any violation records its first time and position;
+missing milestones or incomplete windows say **Not evaluated** rather than
+claiming the expectation was met
+
+The collapsed **Spacing gates** list summarizes each check · Select an entry to
+highlight its court area and action; once the run records a result, choose it to
+pause at the check or first violation · Gate observations never move players,
+delay actions, or affect possession, defense, shot quality, or tactical results ·
+The **Show spacing gates** control is independent of route-arrow visibility ·
+The same expectations appear for the selected player in **My Role** and can seek
+to their recorded evaluation
+
+Gate edits are undoable and invalidate their earlier results · An action or
+player connected to a gate must be explicitly retargeted or have its gate removed
+before that action or player can be changed or deleted · Gates follow the same
+shared-opening and ending-specific rules as branches, and remain with saved plays,
+imports, duplicates, and recovery history · Counter Lab and Read Coach receive
+flattened executable paths without gate metadata
+
 ### Rehearse a player’s role
 
 Select a player in **Player skills**, then choose **Rehearse this role** to open a

@@ -94,19 +94,21 @@ export function waitLabel(wait: PlaybookTimingWait, source?: PlaybookArrow) {
 }
 
 /** Nearest point and normalized distance along a polyline, used for court-picked waits */
-export function projectPointToRoute(point: CourtPoint, route: CourtPoint[]) {
+export function projectPointToRoute(point: CourtPoint, route: CourtPoint[], scale = { x: 1, y: 1 }) {
   if (!route.length) return { progress: 0, segment: 0, point, distance: Infinity };
+  const metric = (value: CourtPoint) => ({ x: value.x * scale.x, y: value.y * scale.y });
+  const metricRoute = route.map(metric), metricPoint = metric(point);
   const lengths = [0];
-  for (let i = 1; i < route.length; i++) lengths.push(lengths[i - 1] + Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y));
+  for (let i = 1; i < metricRoute.length; i++) lengths.push(lengths[i - 1] + Math.hypot(metricRoute[i].x - metricRoute[i - 1].x, metricRoute[i].y - metricRoute[i - 1].y));
   const total = lengths.at(-1) ?? 0;
   let best = { gap: Infinity, progress: 0, segment: 0, point: route[0] };
   for (let i = 1; i < route.length; i++) {
-    const a = route[i - 1], b = route[i], dx = b.x - a.x, dy = b.y - a.y;
+    const a = metricRoute[i - 1], b = metricRoute[i], dx = b.x - a.x, dy = b.y - a.y;
     const amount = dx * dx + dy * dy
-      ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)))
+      ? Math.max(0, Math.min(1, ((metricPoint.x - a.x) * dx + (metricPoint.y - a.y) * dy) / (dx * dx + dy * dy)))
       : 0;
-    const candidate = { x: a.x + dx * amount, y: a.y + dy * amount };
-    const gap = Math.hypot(point.x - candidate.x, point.y - candidate.y);
+    const candidate = { x: route[i - 1].x + (route[i].x - route[i - 1].x) * amount, y: route[i - 1].y + (route[i].y - route[i - 1].y) * amount };
+    const gap = Math.hypot(metricPoint.x - (candidate.x * scale.x), metricPoint.y - (candidate.y * scale.y));
     if (gap < best.gap) best = { gap, point: candidate, segment: i - 1, progress: total ? (lengths[i - 1] + (lengths[i] - lengths[i - 1]) * amount) / total : 0 };
   }
   return { progress: best.progress, segment: best.segment, point: best.point, distance: best.gap };

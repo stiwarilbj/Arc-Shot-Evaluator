@@ -55,5 +55,13 @@ export function normalizePlaybookPrecision<T extends PlaybookDraft>(playbook: T)
       for (const wait of arrow.timingPlan?.waits ?? []) if (wait.progress !== undefined) wait.progress = roundForStorage(wait.progress, 4);
     }
   }
+  for (const gate of saved.spacingGates?.gates ?? []) {
+    point(gate.area.center);
+    if (gate.area.shape === "circle") gate.area.radiusFeet = roundForStorage(gate.area.radiusFeet, 2);
+    else { gate.area.widthFeet = roundForStorage(gate.area.widthFeet, 2); gate.area.heightFeet = roundForStorage(gate.area.heightFeet, 2); }
+    gate.beforeSeconds = roundForStorage(gate.beforeSeconds, 2);
+    gate.afterSeconds = roundForStorage(gate.afterSeconds, 2);
+    if (gate.trigger.progress !== undefined) gate.trigger.progress = roundForStorage(gate.trigger.progress, 4);
+  }
   return saved;
 }

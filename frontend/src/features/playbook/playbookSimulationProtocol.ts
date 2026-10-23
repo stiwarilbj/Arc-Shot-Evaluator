@@ -131,5 +131,20 @@ export function parseSimulationResponse(value: unknown): SimulationResponse {
     for (const key of ["startedAtMs", "completedAtMs"]) check(a[key] === null || clock(a[key]), "action time");
     check(a.notice === null || typeof a.notice === "string", "action notice");
   }
+  if (f.spacingGateResults !== undefined) {
+    check(Array.isArray(f.spacingGateResults) && f.spacingGateResults.length <= 30, "spacing gate results");
+    const gateIds = new Set<string>();
+    for (const result of f.spacingGateResults) {
+      check(record(result) && text(result.gateId) && !gateIds.has(result.gateId), "spacing gate result identity");
+      gateIds.add(result.gateId);
+      check(["pending", "checking", "met", "missed", "not-evaluated"].includes(result.status as string), "spacing gate result status");
+      for (const key of ["triggerAtMs", "checkedAtMs", "firstViolationAtMs"]) check(result[key] === null || clock(result[key]), `spacing gate ${key}`);
+      check(result.actualPoint === null || point(result.actualPoint), "spacing gate player position");
+      check(result.reason === null || typeof result.reason === "string" && result.reason.length <= 512, "spacing gate reason");
+      if (result.status === "missed") check(clock(result.firstViolationAtMs) && point(result.actualPoint), "missed spacing gate evidence");
+      if (result.status === "met") check(clock(result.triggerAtMs) && clock(result.checkedAtMs), "met spacing gate times");
+      if (result.status === "not-evaluated") check(typeof result.reason === "string" && result.reason.length > 0, "unevaluated spacing gate reason");
+    }
+  }
   return value as SimulationResponse;
 }

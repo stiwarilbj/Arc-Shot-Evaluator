@@ -1491,6 +1491,73 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 560px) { .role-rehearsal-header { align-items: flex-start; flex-direction: column; } .role-rehearsal-header > .button { min-height: 38px; } .role-rehearsal-page { padding: 10px; } .role-rehearsal-court-panel, .role-rehearsal-cues { padding: 9px; } .role-rehearsal-toolbar { align-items: flex-start; flex-direction: column; gap: 4px; } .role-playback-buttons .button { flex: 1 1 auto; } }
 @media (prefers-reduced-motion: reduce) { .read-role-muted { transition: none; } }
 
+/* Spacing Gates use the same authored data in editing, playback, export, and My Role */
+.spacing-gate { cursor: pointer; outline: none; }
+.spacing-gate-area { fill: color-mix(in srgb, var(--orange) 14%, transparent); stroke: var(--orange); stroke-width: 2.2; stroke-dasharray: 8 5; vector-effect: non-scaling-stroke; pointer-events: all; }
+.spacing-gate:hover .spacing-gate-area, .spacing-gate.is-selected .spacing-gate-area { fill: color-mix(in srgb, var(--orange) 22%, transparent); stroke-width: 3; }
+.spacing-gate:focus-visible .spacing-gate-area { stroke: #fff; stroke-width: 4; }
+.spacing-gate-met .spacing-gate-area { stroke: #74d39b; }
+.spacing-gate-missed .spacing-gate-area { fill: color-mix(in srgb, #ff776c 18%, transparent); stroke: #ff776c; }
+.spacing-gate-not-evaluated .spacing-gate-area { stroke: #a8b0ad; stroke-dasharray: 3 5; }
+.spacing-gate-label rect { fill: color-mix(in srgb, var(--surface) 94%, #000); stroke: var(--line-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.spacing-gate-label text { fill: var(--text); font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; dominant-baseline: central; }
+.spacing-gate-instruction { fill: var(--text); stroke: var(--surface); stroke-width: 3px; paint-order: stroke; font: 700 10px sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.spacing-gate-result-label { pointer-events: none; }
+.spacing-gate-result-label text { fill: var(--text); stroke: var(--surface); stroke-width: 4px; paint-order: stroke; font: 800 11px sans-serif; text-anchor: middle; dominant-baseline: central; }
+.spacing-gate-result-label.status-met text { fill: #8ce0ad; }
+.spacing-gate-result-label.status-missed text { fill: #ff9388; }
+.spacing-gate-result-label.status-not-evaluated text { fill: var(--muted); }
+.spacing-gate-center-handle, .spacing-gate-resize-handle { fill: var(--surface); stroke: var(--orange); stroke-width: 3; vector-effect: non-scaling-stroke; cursor: grab; }
+.spacing-gate-resize-handle { fill: var(--orange); }
+.spacing-gate-library { display: grid; gap: 6px; }
+.spacing-gate-library-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+.spacing-gate-library-toggle span:nth-child(2) { margin-left: auto; color: var(--muted); font-size: 11px; }
+.spacing-gate-library-list { display: grid; gap: 5px; max-height: 220px; overflow: auto; }
+.spacing-gate-library-list > p, .spacing-gate-pending-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.spacing-gate-list-item { display: grid; grid-template-columns: 23px minmax(0, 1fr) auto; align-items: center; gap: 6px; width: 100%; min-height: 42px; padding: 6px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); text-align: left; cursor: pointer; }
+.spacing-gate-list-item:hover, .spacing-gate-list-item.is-selected { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 7%, var(--surface)); }
+.spacing-gate-list-item > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
+.spacing-gate-list-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.spacing-gate-list-item small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.spacing-gate-status-dot { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid currentColor; border-radius: 50%; color: var(--muted); font-size: 13px; font-weight: 800; }
+.spacing-gate-status-dot.status-met, .spacing-gate-result-card.status-met { color: #74d39b; }
+.spacing-gate-status-dot.status-missed, .spacing-gate-result-card.status-missed { color: #ff9388; }
+.spacing-gate-status-dot.status-checking, .spacing-gate-result-card.status-checking { color: #ffd08a; }
+.spacing-gate-status-dot.status-not-evaluated, .spacing-gate-result-card.status-not-evaluated { color: var(--muted); }
+.spacing-gate-status-text { color: var(--muted); font-size: 9px; white-space: nowrap; }
+.spacing-gate-inspector { display: grid; gap: 9px; padding: 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); }
+.spacing-gate-inspector > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.spacing-gate-inspector > header > div { display: grid; gap: 3px; min-width: 0; }
+.spacing-gate-inspector > header strong { color: var(--text); font-size: 11px; line-height: 1.4; }
+.spacing-gate-inspector label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 10px; }
+.spacing-gate-inspector label > span { color: var(--text); font-weight: 650; }
+.spacing-gate-inspector input, .spacing-gate-inspector select { width: 100%; min-height: 34px; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--text); font: inherit; font-size: 11px; }
+.spacing-gate-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.spacing-gate-route-pick { display: grid; gap: 7px; }
+.spacing-gate-route-pick .button { justify-content: center; min-height: 36px; }
+.spacing-gate-inspector > small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.spacing-gate-result-card { display: grid; gap: 3px; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); text-align: left; cursor: pointer; }
+.spacing-gate-result-card:disabled { cursor: default; }
+.spacing-gate-result-card strong { display: flex; gap: 6px; align-items: center; font-size: 11px; }
+.spacing-gate-result-card small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.spacing-gate-route-preview .shared-court-route { stroke: #ffd08a !important; stroke-width: 4 !important; stroke-dasharray: 8 5; }
+.spacing-gate-route-preview text { fill: #ffd08a; stroke: var(--surface); stroke-width: 4px; paint-order: stroke; font: 800 12px sans-serif; text-anchor: middle; }
+.role-spacing-gates { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.role-spacing-gates > header { display: flex; align-items: center; justify-content: space-between; color: var(--text); font-size: 11px; }
+.role-spacing-gates > header span { color: var(--muted); }
+.role-spacing-gate { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 7px; width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); text-align: left; cursor: pointer; }
+.role-spacing-gate:disabled { cursor: default; opacity: .72; }
+.role-spacing-gate-status { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid currentColor; border-radius: 50%; color: var(--muted); font-weight: 800; }
+.role-spacing-gate.status-met .role-spacing-gate-status { color: #74d39b; }
+.role-spacing-gate.status-missed .role-spacing-gate-status { color: #ff9388; }
+.role-spacing-gate.status-checking .role-spacing-gate-status { color: #ffd08a; }
+.role-spacing-gate > span:last-child { display: grid; gap: 3px; }
+.role-spacing-gate strong { font-size: 10px; }
+.role-spacing-gate small { color: var(--muted); font-size: 9px; line-height: 1.4; }
+.role-spacing-gate:hover:not(:disabled) { border-color: var(--orange); }
+.spacing-gate-library :focus-visible, .spacing-gate-inspector :focus-visible, .role-spacing-gates :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+@media (max-width: 700px) { .spacing-gate-fields { grid-template-columns: 1fr 1fr; } .spacing-gate-list-item { grid-template-columns: 22px minmax(0, 1fr); } .spacing-gate-status-text { display: none; } }
+
 @media (max-width: 1100px) {
   .saved-plays-panel:not(.is-open) { visibility: hidden; pointer-events: none; }
 }

@@ -8,6 +8,7 @@ const offenseBadges = new Set(["playmaker", "off-dribble-creator", "deep-range",
 const defenseBadges = new Set(["lockdown", "paint-protector", "helper"]);
 const timingEvents = new Set(["start", "complete", "catch", "screen-set", "screen-use", "route-point"]);
 const routePhases = new Set(["main", "approach", "use", "release"]);
+const spacingEvents = new Set(["start", "complete", "catch", "screen-set", "screen-use", "route-point"]);
 const roleCuePhases = new Set(["hold", "perform", "receive", "screen", "screen-use", "roll", "pop", "cut", "pass", "handoff", "move", "wait"]);
 const defenseSchemes = new Set(["man-to-man", "pack-line", "zone-2-3", "zone-3-2", "zone-1-3-1", "zone-2-1-2", "zone-1-2-2", "matchup-1-1-3", "box-and-one", "triangle-and-two"]);
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
@@ -182,9 +183,9 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
         && branch.fork.actionIds.every((id) => typeof id === "string" && /^[a-z0-9-]{1,64}$/.test(id))
         && new Set(branch.fork.actionIds).size === branch.fork.actionIds.length
         && integer(branch.fork.sequence) && branch.fork.sequence >= 1 && branch.fork.sequence <= 30, "Ending fork reference is invalid");
-      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined }, false);
+      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined, spacingGates: undefined }, false);
       const resolved = resolvePlaybookPath(value as unknown as PlaybookDraft, branch.id);
-      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined });
+      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined, spacingGates: undefined });
       validateTimingEdges(resolved.play);
       const sharedSyncMembers = new Map<string, Set<string>>();
       const endingSyncMembers = new Map<string, Set<string>>();
@@ -227,6 +228,61 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
       check(!cueKeys.has(key), "Role cue identities must be unique"); cueKeys.add(key);
     }
   }
+  if (value.spacingGates !== undefined) {
+    const lesson = value.spacingGates;
+    check(object(lesson) && lesson.version === 1 && Array.isArray(lesson.gates) && lesson.gates.length <= 30, "Spacing gates must be a version-1 list with at most 30 entries");
+    const branches = new Map(((value.branches ?? []) as Array<Record<string, unknown>>).map((branch) => [String(branch.id), branch]));
+    const gateIds = new Set<string>();
+    const mainActions = new Map((arrows as Array<Record<string, unknown>>).map((arrow) => [String(arrow.id), arrow]));
+    for (const rawGate of lesson.gates) {
+      check(object(rawGate) && Object.keys(rawGate).every((key) => ["id", "playerId", "area", "rule", "trigger", "beforeSeconds", "afterSeconds", "instruction", "scope", "branchId"].includes(key)), "Spacing gate contains unsupported fields");
+      const gate = rawGate as Record<string, unknown>;
+      check(typeof gate.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(gate.id) && !gateIds.has(gate.id), "Spacing gate IDs must be unique short labels");
+      gateIds.add(gate.id);
+      check(integer(gate.playerId) && playerIds.has(gate.playerId), "Spacing gate must reference an offensive player");
+      check(gate.rule === "inside" || gate.rule === "outside", "Spacing gate rule must be inside or outside");
+      check(gate.scope === "shared" || gate.scope === "ending", "Spacing gate scope is invalid");
+      const area = gate.area;
+      check(object(area) && Object.keys(area).every((key) => ["shape", "center", "radiusFeet", "widthFeet", "heightFeet"].includes(key)), "Spacing gate area is invalid");
+      point(area.center);
+      const center = area.center as { x: number; y: number };
+      if (area.shape === "circle") {
+        check(typeof area.radiusFeet === "number" && Number.isFinite(area.radiusFeet) && area.radiusFeet >= 0.5 && area.radiusFeet <= 25
+          && area.widthFeet === undefined && area.heightFeet === undefined, "Spacing gate circle radius must be 0.5–25 feet");
+        check(center.x * 0.5 >= area.radiusFeet - 1e-6 && (100 - center.x) * 0.5 >= area.radiusFeet - 1e-6
+          && center.y * 0.47 >= area.radiusFeet - 1e-6 && (100 - center.y) * 0.47 >= area.radiusFeet - 1e-6, "Spacing gate must stay within the playable court");
+      } else {
+        check(area.shape === "rectangle" && typeof area.widthFeet === "number" && Number.isFinite(area.widthFeet) && area.widthFeet >= 1 && area.widthFeet <= 50
+          && typeof area.heightFeet === "number" && Number.isFinite(area.heightFeet) && area.heightFeet >= 1 && area.heightFeet <= 47
+          && area.radiusFeet === undefined, "Spacing gate rectangle dimensions are invalid");
+        check(center.x * 0.5 >= area.widthFeet / 2 - 1e-6 && (100 - center.x) * 0.5 >= area.widthFeet / 2 - 1e-6
+          && center.y * 0.47 >= area.heightFeet / 2 - 1e-6 && (100 - center.y) * 0.47 >= area.heightFeet / 2 - 1e-6, "Spacing gate must stay within the playable court");
+      }
+      for (const key of ["beforeSeconds", "afterSeconds"] as const) {
+        const seconds = gate[key];
+        check(typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0 && seconds <= 5
+          && Math.abs(seconds * 10 - Math.round(seconds * 10)) < 1e-6, `Spacing gate ${key} must use 0.1-second steps up to five seconds`);
+      }
+      check(gate.instruction === undefined || typeof gate.instruction === "string" && Array.from(gate.instruction).length <= 120, "Spacing gate instruction must be 120 characters or fewer");
+      check(object(gate.trigger) && Object.keys(gate.trigger).every((key) => ["actionId", "event", "routePlayerId", "routePhase", "routeSegment", "progress"].includes(key)), "Spacing gate checkpoint is invalid");
+      const trigger = gate.trigger as Record<string, unknown>;
+      check(typeof trigger.actionId === "string" && /^[a-z0-9-]{1,64}$/.test(trigger.actionId) && spacingEvents.has(String(trigger.event)), "Spacing gate checkpoint must reference a supported action milestone");
+      const branch = gate.scope === "ending" ? branches.get(String(gate.branchId)) : undefined;
+      check(gate.scope !== "ending" || (typeof gate.branchId === "string" && branch), "Ending spacing gate must reference an existing ending");
+      check(gate.scope !== "shared" || gate.branchId === undefined, "Shared spacing gates cannot name an ending");
+      const action = gate.scope === "shared" ? mainActions.get(trigger.actionId) : (branch?.continuation as Array<Record<string, unknown>> | undefined)?.find((candidate) => candidate.id === trigger.actionId);
+      check(action, "Spacing gate checkpoint must stay in its shared opening or selected ending");
+      if (trigger.event === "catch") check(["pass", "handoff"].includes(String(action.kind)), "Catch checkpoints require a pass or handoff");
+      if (trigger.event === "screen-set") check(["screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"].includes(String(action.kind)), "Screen-set checkpoints require a screen action");
+      if (trigger.event === "screen-use") check(["screen", "slip-screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "handoff"].includes(String(action.kind)), "Screen-use checkpoints require a screen or handoff action");
+      if (trigger.event === "route-point") {
+        check(integer(trigger.routePlayerId) && playerIds.has(trigger.routePlayerId) && typeof trigger.routePhase === "string" && routePhases.has(trigger.routePhase)
+          && integer(trigger.routeSegment) && trigger.routeSegment >= 0 && trigger.routeSegment <= 63
+          && typeof trigger.progress === "number" && Number.isFinite(trigger.progress) && trigger.progress > 0 && trigger.progress < 1,
+        "Route checkpoints need a player, route phase, segment, and progress between zero and one");
+      } else check(trigger.routePlayerId === undefined && trigger.routePhase === undefined && trigger.routeSegment === undefined && trigger.progress === undefined, "Only route checkpoints can specify a route point");
+    }
+  }
   if (value.readCoach !== undefined) validateReadCoach(value.readCoach);
 }
 
@@ -237,7 +293,7 @@ export function validateReadCoachSessionRecord(raw: unknown) {
     && Array.isArray(raw.events) && raw.events.length <= 200000, "Read checkpoint session is invalid");
   check(object(raw.hoop), "Read checkpoint court is invalid"); point(raw.hoop);
   const source = raw.initialDrawing;
-  check(object(source) && source.readCoach === undefined && source.roleCues === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
+  check(object(source) && source.readCoach === undefined && source.roleCues === undefined && source.spacingGates === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
   validatePlaybookDocument(source);
   const settings = raw.initialSettings;
   check(object(settings) && ["off", "spacing", "cuts", "read-react"].includes(String(settings.offenseOffBall))
@@ -256,7 +312,7 @@ export function validateReadCoachSessionRecord(raw: unknown) {
     } else if (event.kind === "settings") {
       check(object(event.settings), "Read checkpoint replay settings are invalid");
     } else if (event.kind === "edit") {
-      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.roleCues === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
+      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.roleCues === undefined && event.drawing.spacingGates === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
       validatePlaybookDocument(event.drawing);
     } else throw new Error("Read checkpoint replay event is unsupported");
   }
@@ -315,7 +371,7 @@ function validateReadCoach(raw: unknown) {
       choiceIds.add(choice.id);
       check(typeof choice.label === "string" && choice.label.trim().length > 0 && Array.from(choice.label).length <= 80
         && Array.isArray(choice.arrows) && choice.arrows.length >= 1 && choice.arrows.length <= 30, "Read choice is invalid");
-      const path = { ...source, name: `${String(source.name)} · ${choice.label}`.slice(0, 80), id: String(source.id), arrows: choice.arrows, branches: undefined, readCoach: undefined };
+      const path = { ...source, name: `${String(source.name)} · ${choice.label}`.slice(0, 80), id: String(source.id), arrows: choice.arrows, branches: undefined, readCoach: undefined, spacingGates: undefined };
       validatePlaybookDocument(path);
     }
     check(typeof item.correctChoiceId === "string" && choiceIds.has(item.correctChoiceId), "Choose one intended read");

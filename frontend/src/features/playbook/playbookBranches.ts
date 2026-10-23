@@ -36,6 +36,7 @@ export function resolvePlaybookPath(source: PlaybookDraft, branchId: string | nu
   delete play.branches;
   if (!branch) {
     play.arrows = orderedActions(source.arrows);
+    play.spacingGates = source.spacingGates ? { version: 1, gates: source.spacingGates.gates.filter((gate) => gate.scope === "shared") } : undefined;
     return { play, branch: null, sharedCount: play.arrows.length, sharedIds: new Set(play.arrows.map((arrow) => arrow.id)) };
   }
 
@@ -61,6 +62,9 @@ export function resolvePlaybookPath(source: PlaybookDraft, branchId: string | nu
     sequence: rebasedSequence.get(sequence)!,
   }));
   play.arrows = [...shared, ...rebasedContinuation];
+  const sharedGateIds = new Set(play.arrows.filter((arrow) => sharedIds.has(arrow.id)).map((arrow) => arrow.id));
+  play.spacingGates = source.spacingGates ? { version: 1, gates: source.spacingGates.gates.filter((gate) =>
+    gate.scope === "shared" ? sharedGateIds.has(gate.trigger.actionId) : gate.branchId === branch.id) } : undefined;
   return { play, branch, sharedCount: shared.length, sharedIds: new Set(shared.map((arrow) => arrow.id)) };
 }
 
@@ -68,6 +72,7 @@ export function flattenPlaybookPath(source: PlaybookDraft, branchId: string | nu
   const resolved = resolvePlaybookPath(source, branchId).play;
   delete resolved.readCoach;
   delete resolved.roleCues;
+  delete resolved.spacingGates;
   if (label) resolved.name = `${source.name} — ${label}`.slice(0, 80);
   return resolved;
 }
@@ -75,6 +80,12 @@ export function flattenPlaybookPath(source: PlaybookDraft, branchId: string | nu
 /** Apply an edited flattened path back to its shared Main opening and private continuation */
 export function applyEditedPath(source: PlaybookDraft, branchId: string | null, editedPath: PlaybookDraft, oldPath: ResolvedPlaybookPath): PlaybookDraft {
   const next = clonePlaybook(editedPath);
+  const oldVisibleGateIds = new Set(oldPath.play.spacingGates?.gates.map((gate) => gate.id) ?? []);
+  const newVisibleGates = editedPath.spacingGates?.gates ?? [];
+  const replaceGateIds = new Set([...oldVisibleGateIds, ...newVisibleGates.map((gate) => gate.id)]);
+  next.spacingGates = source.spacingGates || editedPath.spacingGates
+    ? { version: 1, gates: [...(source.spacingGates?.gates ?? []).filter((gate) => !replaceGateIds.has(gate.id)), ...structuredClone(newVisibleGates)] }
+    : undefined;
   if (!branchId || !oldPath.branch) {
     next.branches = source.branches ? structuredClone(source.branches) : undefined;
     next.arrows = editedPath.arrows;

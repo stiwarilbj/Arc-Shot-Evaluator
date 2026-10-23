@@ -37,6 +37,7 @@ export function playbookContentKey(draft: PlaybookDraft): string {
         arrow.cutter_id ?? null, arrow.handler_id ?? null, point(arrow.exit_target)])]),
     draft.readCoach ?? null,
     draft.roleCues ?? null,
+    draft.spacingGates ?? null,
   ]);
 }
 

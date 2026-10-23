@@ -1,4 +1,4 @@
-export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "slip-screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut" | "delete";
+export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "slip-screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut" | "spacing-gate" | "delete";
 export type ArrowKind = "movement" | "pass" | "screen" | "slip-screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut";
 export type ArrowPath = "straight" | "curve";
 export type OffenseOffBallStyle = "off" | "spacing" | "cuts" | "read-react";
@@ -156,6 +156,39 @@ export type RoleCuePhase = "hold" | "perform" | "receive" | "screen" | "screen-u
 export type RoleCueOverride = { playerId: number; actionId: string; phase: RoleCuePhase; scope: "shared" | "ending"; branchId?: string; text: string; signature: string };
 export type RoleCueLesson = { version: 1; cues: RoleCueOverride[] };
 
+export type SpacingGateEvent = "start" | "complete" | "catch" | "screen-set" | "screen-use" | "route-point";
+export type SpacingGateTrigger = {
+  actionId: string;
+  event: SpacingGateEvent;
+  routePlayerId?: number;
+  routePhase?: "main" | "approach" | "use" | "release";
+  routeSegment?: number;
+  progress?: number;
+};
+export type SpacingGate = {
+  id: string;
+  playerId: number;
+  area: { shape: "circle"; center: CourtPoint; radiusFeet: number }
+    | { shape: "rectangle"; center: CourtPoint; widthFeet: number; heightFeet: number };
+  rule: "inside" | "outside";
+  trigger: SpacingGateTrigger;
+  beforeSeconds: number;
+  afterSeconds: number;
+  instruction?: string;
+  scope: "shared" | "ending";
+  branchId?: string;
+};
+export type SpacingGateLesson = { version: 1; gates: SpacingGate[] };
+export type SpacingGateResult = {
+  gateId: string;
+  status: "pending" | "checking" | "met" | "missed" | "not-evaluated";
+  triggerAtMs: number | null;
+  checkedAtMs: number | null;
+  firstViolationAtMs: number | null;
+  actualPoint: CourtPoint | null;
+  reason: string | null;
+};
+
 export interface PlaybookDocument {
   version: 1;
   /** Opaque save precondition; absent only on legacy version-1 documents. */
@@ -175,6 +208,8 @@ export interface PlaybookDocument {
   readCoach?: ReadCoachLesson;
   /** Optional version-1 extension for authored My Role cue wording */
   roleCues?: RoleCueLesson;
+  /** Optional version-1 extension for authored spacing expectations */
+  spacingGates?: SpacingGateLesson;
 }
 
 export type PlaybookDraft = Omit<PlaybookDocument, "id" | "created_at" | "updated_at"> & {

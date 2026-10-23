@@ -4,6 +4,7 @@ import { ReadCoachCourt } from "./ReadCoachViews.tsx";
 import { createPlaybookSimulationClient, type PlaybookSimulationClient } from "./playbookSimulationClient.ts";
 import { buildRoleCues, type RoleCue } from "./roleRehearsal.ts";
 import { authoredCourtRoutes } from "./simulation.ts";
+import { spacingGateStatusSymbol, spacingGateStatusText } from "./SpacingGateLayer.tsx";
 import type { SimulationView } from "./playbookSimulationProtocol.ts";
 import type { PlaybookDraft, RoleCuePhase, SimulationSettings } from "./types.ts";
 import type { ArrowVisibility } from "./arrowVisibility.ts";
@@ -40,6 +41,7 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
   const [error, setError] = useState<string | null>(null);
   const [showWholeTeam, setShowWholeTeam] = useState(false);
   const [roleRoutesOn, setRoleRoutesOn] = useState(true);
+  const [showRoleSpacingGates, setShowRoleSpacingGates] = useState(true);
   const [selectedCueKey, setSelectedCueKey] = useState<string | null>(null);
   const [editingCue, setEditingCue] = useState(false);
   const [cueText, setCueText] = useState("");
@@ -163,6 +165,8 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
     || previousCueTime !== undefined && Math.abs(cue.startAtMs - previousCueTime) <= 1
     || nextCueTime !== undefined && Math.abs(cue.startAtMs - nextCueTime) <= 1));
   const roleRouteList = useMemo(() => authoredCourtRoutes(play).filter((route) => route.playerId === playerId && route.actionId !== null), [play, playerId]);
+  const roleSpacingGates = useMemo(() => (play.spacingGates?.gates ?? []).filter((gate) => gate.playerId === playerId), [play.spacingGates, playerId]);
+  const spacingGateResults = view?.frame.spacingGateResults ?? [];
   const isMissingPlayer = !activePlayer;
 
   function seek(timeMs: number) {
@@ -210,9 +214,10 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
           <label><span>Player</span><select aria-label="Choose a player to rehearse" value={activePlayer ? String(activePlayer.id) : ""} onChange={(event) => onViewChange("role", event.currentTarget.value ? Number(event.currentTarget.value) : null)}><option value="">Choose a player</option>{play.players.map((player) => <option key={player.id} value={player.id}>Player {player.id}</option>)}</select></label>
           <label className="role-toggle"><input type="checkbox" checked={showWholeTeam} onChange={(event) => setShowWholeTeam(event.currentTarget.checked)} /><span><UsersRound size={14} />Show whole team</span></label>
           <label className="role-toggle"><input type="checkbox" checked={roleRoutesOn} onChange={(event) => setRoleRoutesOn(event.currentTarget.checked)} /><span>Role routes: {roleRoutesOn ? "On" : "Off"}</span></label>
+          <label className="role-toggle"><input type="checkbox" checked={showRoleSpacingGates} onChange={(event) => setShowRoleSpacingGates(event.currentTarget.checked)} /><span>Spacing gates: {showRoleSpacingGates ? "On" : "Off"}</span></label>
         </div>
         {isMissingPlayer ? <div className="role-rehearsal-empty" role="status"><strong>{playerId === null ? "Choose a player to rehearse" : `Player ${playerId} is not in this play`}</strong><p>Select an offensive player above. The routed player is never silently replaced</p></div> : null}
-        {!isMissingPlayer && view ? <ReadCoachCourt frame={view.frame} visibility={roleRoutesOn ? "all" : "off"} showRoutes={roleRoutesOn} routes={roleRoutesOn ? roleRouteList : []} emphasisPlayerId={playerId} showWholeTeam={showWholeTeam} ariaLabel={`Simulation rehearsal for Player ${playerId}`} /> : null}
+        {!isMissingPlayer && view ? <ReadCoachCourt frame={view.frame} visibility={roleRoutesOn ? "all" : "off"} showRoutes={roleRoutesOn} routes={roleRoutesOn ? roleRouteList : []} emphasisPlayerId={playerId} showWholeTeam={showWholeTeam} spacingGates={roleSpacingGates} showSpacingGates={showRoleSpacingGates} ariaLabel={`Simulation rehearsal for Player ${playerId}`} /> : null}
         {!isMissingPlayer && play.arrows.length > 0 && !view && !error ? <div className="role-rehearsal-empty" role="status">{prepareProgress === null ? "Opening the recorded rehearsal…" : `Preparing the authored rehearsal… ${prepareProgress}%`}</div> : null}
         {error ? <div className="role-rehearsal-error" role="alert"><span>{error}</span><button type="button" className="button button-outline" onClick={() => setRestartNonce((value) => value + 1)}>Retry rehearsal</button></div> : null}
         {play.arrows.length === 0 && !isMissingPlayer ? <p className="role-rehearsal-empty-note">This play has no executable possession yet · Add an action in Playbook to rehearse movement</p> : null}
@@ -224,6 +229,17 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
       <aside className="role-rehearsal-cues" aria-label="Player responsibilities">
         <div className="role-cues-heading"><div><span className="section-kicker">Responsibilities</span><h2>{activePlayer ? `Player ${activePlayer.id}` : "Choose a player"}</h2></div><span>{cues.length} cues</span></div>
         {stationaryRole && activePlayer ? <p className="role-rehearsal-empty-note">No authored actions bind to this player · They hold their starting position</p> : null}
+        {activePlayer && roleSpacingGates.length ? <section className="role-spacing-gates" aria-label={`Player ${activePlayer.id} spacing expectations`}>
+          <header><strong>Spacing expectations</strong><span>{roleSpacingGates.length}</span></header>
+          {roleSpacingGates.map((gate) => {
+            const result = spacingGateResults.find((candidate) => candidate.gateId === gate.id);
+            const time = result?.firstViolationAtMs ?? result?.checkedAtMs ?? result?.triggerAtMs;
+            return <button type="button" key={gate.id} className={`role-spacing-gate status-${result?.status ?? "pending"}`} disabled={time == null} onClick={() => time != null && seek(time)}>
+              <span className="role-spacing-gate-status" aria-hidden="true">{spacingGateStatusSymbol(result?.status)}</span>
+              <span><strong>{gate.instruction || `${gate.rule === "inside" ? "Stay inside" : "Stay outside"} the ${gate.area.shape}`}</strong><small>{spacingGateStatusText(result?.status)} · {result?.reason ?? (result?.firstViolationAtMs != null ? `First violation at ${(result.firstViolationAtMs / 1000).toFixed(2)}s` : result?.checkedAtMs != null ? `Checked at ${(result.checkedAtMs / 1000).toFixed(2)}s` : "Play to check this expectation")}</small></span>
+            </button>;
+          })}
+        </section> : null}
         {visibleCues.map((cue) => { const index = cues.findIndex((item) => item.key === cue.key); const position = Math.abs(cue.startAtMs - (currentCueTime ?? cue.startAtMs)) <= 1 ? "Current" : Math.abs(cue.startAtMs - (previousCueTime ?? Number.NaN)) <= 1 ? "Previous" : "Next"; return <button type="button" key={cue.key} className={`role-cue-card ${cue.key === selectedCue?.key ? "is-current" : ""}`} onClick={() => focusCue(cue)} aria-current={cue.key === selectedCue?.key ? "step" : undefined}>
           <span className={`role-cue-status is-${cue.status}`}>{position} · {statusLabel(cue.status)}</span><strong>{cue.text}</strong><small>Move {cue.sequence} · {(cue.startAtMs / 1000).toFixed(1)}s{cue.phase === "receive" && cue.diagnostic?.transfer?.outcome.kind === "pending" ? " · awaiting confirmed catch" : ""}</small>{cue.diagnostic?.notice ? <small className="role-cue-notice">{cue.diagnostic.notice}</small> : null}{cue.reviewWording ? <small className="role-cue-review">Review wording · its action or dependency changed</small> : null}
           {index > 0 && Math.abs(cues[index - 1].startAtMs - cue.startAtMs) < 1 ? <span className="sr-only">Simultaneous with previous responsibility</span> : null}

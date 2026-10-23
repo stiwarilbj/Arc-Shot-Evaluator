@@ -118,6 +118,59 @@ def test_defender_badges_default_validate_and_round_trip(tmp_path, monkeypatch) 
         assert client.post("/api/playbooks", json=invalid).status_code == 400
 
 
+def test_spacing_gates_round_trip_and_require_extension_aware_updates(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Spacing gates")
+    payload["spacingGates"] = {"version": 1, "gates": [{
+        "id": "gate-one", "playerId": 1,
+        "area": {"shape": "circle", "center": {"x": 50, "y": 70}, "radiusFeet": 3.127},
+        "rule": "inside", "trigger": {"actionId": "arrow-one", "event": "start"},
+        "beforeSeconds": 0.2, "afterSeconds": 0.7, "instruction": "Keep the corner clear", "scope": "shared",
+    }]}
+    headers = {"X-ARC-Playbook-Extensions": "spacing-gates-v1"}
+    response = client.post("/api/playbooks", json=payload, headers=headers)
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["spacingGates"]["gates"][0]["area"]["radiusFeet"] == 3.13
+    assert saved["spacingGates"]["gates"][0]["beforeSeconds"] == 0.2
+    assert "spacing-gates-v1" in client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"]
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["spacingGates"] == saved["spacingGates"]
+
+    stale_payload = _payload("Older client edit")
+    conflict = client.put(f"/api/playbooks/{saved['id']}", json=stale_payload, headers={"If-Match": _match(saved)})
+    assert conflict.status_code == 409
+    assert "spacing" in conflict.json()["detail"].lower()
+
+    current = {**saved, "name": "Updated spacing gates"}
+    updated = client.put(f"/api/playbooks/{saved['id']}", json=current, headers={**headers, "If-Match": _match(saved)})
+    assert updated.status_code == 200
+    assert updated.json()["spacingGates"] == saved["spacingGates"]
+
+
+def test_spacing_gate_validation_rejects_invalid_geometry_and_milestones(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    headers = {"X-ARC-Playbook-Extensions": "spacing-gates-v1"}
+    base_gate = {
+        "id": "gate-one", "playerId": 1,
+        "area": {"shape": "circle", "center": {"x": 50, "y": 70}, "radiusFeet": 3},
+        "rule": "inside", "trigger": {"actionId": "arrow-one", "event": "start"},
+        "beforeSeconds": 0, "afterSeconds": 0, "scope": "shared",
+    }
+    invalid_gates = [
+        {**base_gate, "area": {**base_gate["area"], "center": {"x": 0, "y": 0}}},
+        {**base_gate, "beforeSeconds": 0.15},
+        {**base_gate, "playerId": 99},
+        {**base_gate, "trigger": {"actionId": "missing-action", "event": "start"}},
+        {**base_gate, "trigger": {"actionId": "arrow-one", "event": "catch"}},
+    ]
+    for gate in invalid_gates:
+        payload = _payload("Invalid gate")
+        payload["spacingGates"] = {"version": 1, "gates": [gate]}
+        assert client.post("/api/playbooks", json=payload, headers=headers).status_code == 400
+
+
 def test_playbook_rejects_out_of_bounds_or_duplicate_markers(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     client = TestClient(app)
@@ -868,7 +921,7 @@ def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_pat
         "continuation": [payload["arrows"][0]],
     }]
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
 
@@ -1033,7 +1086,7 @@ def test_read_coach_lessons_require_capability_and_round_trip(tmp_path, monkeypa
     }]}
     payload["readCoach"] = lesson
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
     created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "read-coach-v1"})

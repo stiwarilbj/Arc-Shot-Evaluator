@@ -87,7 +87,7 @@ async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIde
   const id = identity.operation === "create" ? creationId! : identity.id;
   const usesBranchExtension = playbook.branches !== undefined;
   const usesTimingExtension = [...playbook.arrows, ...(playbook.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined);
-  const requiredExtensions = [usesBranchExtension ? "branches-v1" : null, usesTimingExtension ? "timing-v1" : null, playbook.readCoach?.checkpoints.length ? "read-coach-v1" : null, playbook.roleCues !== undefined ? "role-rehearsal-v1" : null].filter((value): value is string => value !== null);
+  const requiredExtensions = [usesBranchExtension ? "branches-v1" : null, usesTimingExtension ? "timing-v1" : null, playbook.readCoach?.checkpoints.length ? "read-coach-v1" : null, playbook.roleCues !== undefined ? "role-rehearsal-v1" : null, playbook.spacingGates !== undefined ? "spacing-gates-v1" : null].filter((value): value is string => value !== null);
   try {
     return await withPersistenceDeadline(async (signal) => {
       if (requiredExtensions.length) {
@@ -216,6 +216,7 @@ async function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identit
     ...(playbook.branches !== undefined ? { branches: structuredClone(playbook.branches) } : {}),
     ...(playbook.readCoach !== undefined ? { readCoach: structuredClone(playbook.readCoach) } : {}),
     ...(playbook.roleCues !== undefined ? { roleCues: structuredClone(playbook.roleCues) } : {}),
+    ...(playbook.spacingGates !== undefined ? { spacingGates: structuredClone(playbook.spacingGates) } : {}),
   };
   validatePlaybookSaveResult(saved, identity);
   const library = await upgradeHostedLibrary(await readLocalLibrary());

@@ -32,6 +32,7 @@ MAX_ARROWS = 30
 MAX_BRANCHES = 8
 MAX_READ_CHECKPOINTS = 8
 MAX_ROLE_CUES = 600
+MAX_SPACING_GATES = 30
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
 MAX_JSON_DEPTH = 32
@@ -56,6 +57,7 @@ ALLOWED_DEFENDER_BADGES = {"lockdown", "paint-protector", "helper"}
 TIMING_EVENTS = {"start", "complete", "catch", "screen-set", "screen-use", "route-point"}
 TIMING_PHASES = {"main", "approach", "use", "release"}
 ROLE_CUE_PHASES = {"hold", "perform", "receive", "screen", "screen-use", "roll", "pop", "cut", "pass", "handoff", "move", "wait"}
+SPACING_EVENTS = {"start", "complete", "catch", "screen-set", "screen-use", "route-point"}
 
 
 def _validate_timing_path(arrows: list[dict]) -> None:
@@ -181,6 +183,101 @@ def _has_read_coach(value: dict) -> bool:
 def _has_role_cues(value: dict) -> bool:
     lesson = value.get("roleCues")
     return isinstance(lesson, dict) and bool(lesson.get("cues"))
+
+
+def _has_spacing_gates(value: dict) -> bool:
+    lesson = value.get("spacingGates")
+    return isinstance(lesson, dict) and isinstance(lesson.get("gates"), list)
+
+
+def _spacing_gates(value: object, players: list[dict], arrows: list[dict], branches: list[dict]) -> dict:
+    if not isinstance(value, dict) or set(value) != {"version", "gates"} or value.get("version") != 1:
+        raise HTTPException(400, "Spacing gate data is invalid")
+    gates = value.get("gates")
+    if not isinstance(gates, list) or len(gates) > MAX_SPACING_GATES:
+        raise HTTPException(400, f"A play can contain at most {MAX_SPACING_GATES} spacing gates")
+    player_ids = {marker["id"] for marker in players}
+    main_by_id = {arrow["id"]: arrow for arrow in arrows}
+    branch_by_id = {branch["id"]: branch for branch in branches}
+    gate_ids: set[str] = set()
+    clean: list[dict] = []
+    for gate in gates:
+        allowed = {"id", "playerId", "area", "rule", "trigger", "beforeSeconds", "afterSeconds", "instruction", "scope", "branchId"}
+        if not isinstance(gate, dict) or set(gate) - allowed:
+            raise HTTPException(400, "Spacing gate contains unsupported fields")
+        gate_id = gate.get("id")
+        if not isinstance(gate_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", gate_id) or gate_id in gate_ids:
+            raise HTTPException(400, "Spacing gate identities must be unique short labels")
+        gate_ids.add(gate_id)
+        player_id = gate.get("playerId")
+        if not _integer(player_id) or player_id not in player_ids:
+            raise HTTPException(400, "Spacing gates must reference an offensive player")
+        rule, scope = gate.get("rule"), gate.get("scope")
+        if rule not in {"inside", "outside"} or scope not in {"shared", "ending"}:
+            raise HTTPException(400, "Spacing gate rule or scope is invalid")
+        branch_id = gate.get("branchId")
+        if scope == "shared" and branch_id is not None:
+            raise HTTPException(400, "Shared spacing gates cannot name an ending")
+        if scope == "ending" and (not isinstance(branch_id, str) or branch_id not in branch_by_id):
+            raise HTTPException(400, "Ending spacing gates must reference an existing ending")
+        area = gate.get("area")
+        if not isinstance(area, dict) or set(area) - {"shape", "center", "radiusFeet", "widthFeet", "heightFeet"}:
+            raise HTTPException(400, "Spacing gate area is invalid")
+        center = _point(area.get("center"), "Spacing gate center")
+        if area.get("shape") == "circle":
+            radius = area.get("radiusFeet")
+            if not isinstance(radius, (int, float)) or isinstance(radius, bool) or not math.isfinite(radius) or not 0.5 <= radius <= 25 or "widthFeet" in area or "heightFeet" in area:
+                raise HTTPException(400, "Spacing gate circle radius must be 0.5-25 feet")
+            if min(center["x"] * 0.5, (100 - center["x"]) * 0.5, center["y"] * 0.47, (100 - center["y"]) * 0.47) < radius - 1e-6:
+                raise HTTPException(400, "Spacing gate must stay within the playable court")
+            clean_area = {"shape": "circle", "center": center, "radiusFeet": round(float(radius), 2)}
+        elif area.get("shape") == "rectangle":
+            width, height = area.get("widthFeet"), area.get("heightFeet")
+            if any(not isinstance(n, (int, float)) or isinstance(n, bool) or not math.isfinite(n) for n in (width, height)) or not 1 <= width <= 50 or not 1 <= height <= 47 or "radiusFeet" in area:
+                raise HTTPException(400, "Spacing gate rectangle dimensions are invalid")
+            if min(center["x"] * 0.5, (100 - center["x"]) * 0.5) < width / 2 - 1e-6 or min(center["y"] * 0.47, (100 - center["y"]) * 0.47) < height / 2 - 1e-6:
+                raise HTTPException(400, "Spacing gate must stay within the playable court")
+            clean_area = {"shape": "rectangle", "center": center, "widthFeet": round(float(width), 2), "heightFeet": round(float(height), 2)}
+        else:
+            raise HTTPException(400, "Spacing gate shape must be circle or rectangle")
+        times = []
+        for field in ("beforeSeconds", "afterSeconds"):
+            seconds = gate.get(field)
+            if not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not math.isfinite(seconds) or not 0 <= seconds <= 5 or abs(seconds * 10 - round(seconds * 10)) > 1e-6:
+                raise HTTPException(400, f"Spacing gate {field} must use 0.1-second steps up to five seconds")
+            times.append(round(float(seconds), 1))
+        instruction = gate.get("instruction")
+        if instruction is not None and (not isinstance(instruction, str) or len(instruction) > 120):
+            raise HTTPException(400, "Spacing gate instruction must be 120 characters or fewer")
+        trigger = gate.get("trigger")
+        trigger_fields = {"actionId", "event", "routePlayerId", "routePhase", "routeSegment", "progress"}
+        if not isinstance(trigger, dict) or set(trigger) - trigger_fields:
+            raise HTTPException(400, "Spacing gate checkpoint is invalid")
+        action_id, event = trigger.get("actionId"), trigger.get("event")
+        if not isinstance(action_id, str) or not re.fullmatch(r"[a-z0-9-]{1,64}", action_id) or event not in SPACING_EVENTS:
+            raise HTTPException(400, "Spacing gate checkpoint must reference a supported action milestone")
+        action = main_by_id.get(action_id) if scope == "shared" else next((arrow for arrow in branch_by_id[branch_id]["continuation"] if arrow["id"] == action_id), None)
+        if action is None:
+            raise HTTPException(400, "Spacing gate checkpoint must stay in its shared opening or selected ending")
+        if event == "catch" and action["kind"] not in {"pass", "handoff"}:
+            raise HTTPException(400, "Catch checkpoints require a pass or handoff")
+        if event == "screen-set" and action["kind"] not in {"screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"}:
+            raise HTTPException(400, "Screen-set checkpoints require a screen action")
+        if event == "screen-use" and action["kind"] not in {"screen", "slip-screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "handoff"}:
+            raise HTTPException(400, "Screen-use checkpoints require a screen or handoff action")
+        clean_trigger = {"actionId": action_id, "event": event}
+        if event == "route-point":
+            route_player = trigger.get("routePlayerId")
+            phase, segment, progress = trigger.get("routePhase"), trigger.get("routeSegment"), trigger.get("progress")
+            if not _integer(route_player) or route_player not in player_ids or phase not in TIMING_PHASES or not _integer(segment) or not 0 <= segment <= 63 or not isinstance(progress, (int, float)) or isinstance(progress, bool) or not math.isfinite(progress) or not 0 < progress < 1:
+                raise HTTPException(400, "Route checkpoints need a player, route phase, segment, and progress between zero and one")
+            clean_trigger.update({"routePlayerId": route_player, "routePhase": phase, "routeSegment": segment, "progress": round(float(progress), 4)})
+        elif set(trigger) - {"actionId", "event"}:
+            raise HTTPException(400, "Only route checkpoints can specify a route point")
+        clean.append({"id": gate_id, "playerId": player_id, "area": clean_area, "rule": rule, "trigger": clean_trigger,
+            "beforeSeconds": times[0], "afterSeconds": times[1], **({"instruction": instruction.strip()} if isinstance(instruction, str) and instruction.strip() else {}),
+            "scope": scope, **({"branchId": branch_id} if branch_id is not None else {})})
+    return {"version": 1, "gates": clean}
 
 
 def _role_cues(value: object, players: list[dict], arrows: list[dict], branches: list[dict]) -> dict:
@@ -632,7 +729,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         "arrows": arrows,
     }
     raw_branches = payload.get("branches")
-    nested_payload = {key: value for key, value in payload.items() if key != "roleCues"}
+    nested_payload = {key: value for key, value in payload.items() if key not in {"roleCues", "spacingGates"}}
     if raw_branches is not None:
         if not isinstance(raw_branches, list) or len(raw_branches) > MAX_BRANCHES:
             raise HTTPException(400, f"A play can have at most {MAX_BRANCHES} endings")
@@ -692,6 +789,8 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         result["readCoach"] = _read_coach(payload["readCoach"], playbook_id)
     if "roleCues" in payload:
         result["roleCues"] = _role_cues(payload["roleCues"], players, arrows, result.get("branches", []))
+    if "spacingGates" in payload:
+        result["spacingGates"] = _spacing_gates(payload["spacingGates"], players, arrows, result.get("branches", []))
     if validate_timing_edges:
         _validate_timing_path(result["arrows"])
     return result
@@ -1127,7 +1226,7 @@ def _saved_play_instant(value: object) -> int | float:
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
-    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1"
+    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1"
     try:
         PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
         paths = sorted(PLAYBOOKS_DIR.iterdir())
@@ -1192,6 +1291,8 @@ def create_playbook(payload: Annotated[dict, Depends(_request_document)], create
         raise HTTPException(409, "This server requires a Read Coach-aware client before saving lessons")
     if _has_role_cues(payload) and "role-rehearsal-v1" not in supported:
         raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
+    if _has_spacing_gates(payload) and "spacing-gates-v1" not in supported:
+        raise HTTPException(409, "This server requires a spacing-gate-aware client before saving spacing instructions")
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -1253,6 +1354,11 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
         if _has_role_cues(payload) and "role-rehearsal-v1" not in supported:
             raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
+        current_has_spacing_gates = _has_spacing_gates(current)
+        if current_has_spacing_gates and ("spacing-gates-v1" not in supported or "spacingGates" not in payload):
+            raise HTTPException(409, "This play contains spacing gates and requires an explicit spacing-gate-aware update. The saved play is unchanged")
+        if "spacingGates" in payload and "spacing-gates-v1" not in supported:
+            raise HTTPException(409, "This server requires a spacing-gate-aware client before saving spacing instructions")
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:

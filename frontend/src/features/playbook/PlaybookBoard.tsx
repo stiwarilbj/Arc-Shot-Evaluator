@@ -13,6 +13,7 @@ import { buildPocketInsertion } from "./pocketActions.ts";
 import { ReadCoachAuthorPanel, ReadCoachPracticeView, readCoachSnapshotFrame } from "./ReadCoachViews.tsx";
 import { RoleRehearsalView } from "./RoleRehearsalView.tsx";
 import { authoredRoleCueTemplates } from "./roleRehearsal.ts";
+import { SpacingGateLayer, spacingGateStatusSymbol, spacingGateStatusText, type SpacingGateDragKind } from "./SpacingGateLayer.tsx";
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDownToLine,
@@ -39,6 +40,8 @@ import {
   Settings2,
   Shield,
   ShieldCheck,
+  Square,
+  Target,
   Trash2,
   Undo2,
   UserRound,
@@ -58,7 +61,7 @@ import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, ReadCoachCheckpoint, RoleCuePhase, SimulationSettings } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, ReadCoachCheckpoint, RoleCuePhase, SimulationSettings, SpacingGate, SpacingGateEvent, SpacingGateResult } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -79,6 +82,7 @@ type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | 
 type PointerSample = { clientX: number; clientY: number; pointerId: number };
 type PointerGesture = PointerSample & { moved: boolean };
 type DragState = PointerGesture & { type: "player" | "defender" | "ball" | "arrow-start" | "arrow-end" | "arrow-exit" | "arrow-control"; id: number | string; before: PlaybookDraft; historyBefore: PlaybookDraft; historyBranchId: string | null };
+type SpacingGateDrag = PointerGesture & { gateId: string; kind: SpacingGateDragKind; before: PlaybookDraft; branchId: string | null; start: CourtPoint; original: SpacingGate };
 type DraftHistoryEntry = { draft: PlaybookDraft; branchId: string | null };
 function pointerGesture(event: PointerSample): PointerGesture {
   return { clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId, moved: false };
@@ -97,6 +101,7 @@ const TOOL_LABELS: Record<PlaybookTool, string> = {
   "off-ball-screen": "Add manual off-ball screen",
   "pin-down": "Add pin-down screen",
   "backdoor-cut": "Add backdoor cut",
+  "spacing-gate": "Place a spacing gate area",
   delete: "Delete selected object",
 };
 
@@ -139,6 +144,44 @@ function clampTiming(value: number) {
   return Math.max(0.5, Math.min(4, Number.isFinite(value) ? value : 1.2));
 }
 
+function clampSpacingGate(gate: SpacingGate): SpacingGate {
+  const next = structuredClone(gate);
+  if (next.area.shape === "circle") {
+    const maxRadius = 23.5;
+    next.area.radiusFeet = Math.max(0.5, Math.min(maxRadius, next.area.radiusFeet));
+    const r = next.area.radiusFeet;
+    next.area.center.x = clamp(next.area.center.x, r * 2, 100 - r * 2);
+    next.area.center.y = clamp(next.area.center.y, r / 0.47, 100 - r / 0.47);
+  } else {
+    next.area.widthFeet = Math.max(1, Math.min(50, next.area.widthFeet));
+    next.area.heightFeet = Math.max(1, Math.min(47, next.area.heightFeet));
+    next.area.center.x = clamp(next.area.center.x, next.area.widthFeet, 100 - next.area.widthFeet);
+    next.area.center.y = clamp(next.area.center.y, next.area.heightFeet / 0.94, 100 - next.area.heightFeet / 0.94);
+  }
+  return next;
+}
+
+function spacingGateEventOptions(action?: PlaybookArrow): Array<{ value: SpacingGateEvent; label: string }> {
+  const options: Array<{ value: SpacingGateEvent; label: string }> = [{ value: "start", label: "Action starts" }, { value: "complete", label: "Action completes" }];
+  if (!action) return options;
+  if (action.kind === "pass" || action.kind === "handoff") options.push({ value: "catch", label: "Confirmed catch" });
+  if (["screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"].includes(action.kind)) options.push({ value: "screen-set", label: "Screen is set" });
+  if (["screen", "slip-screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "handoff"].includes(action.kind)) options.push({ value: "screen-use", label: "Screen is used" });
+  options.push({ value: "route-point", label: "Player reaches a route point" });
+  return options;
+}
+
+function spacingGateOutcomeTime(result: SpacingGateResult) {
+  return result.firstViolationAtMs ?? result.checkedAtMs ?? result.triggerAtMs ?? 0;
+}
+
+function spacingGateTimeDescription(gate: SpacingGate) {
+  const event = gate.trigger.event === "start" ? "action start" : gate.trigger.event === "complete" ? "action completion"
+    : gate.trigger.event === "catch" ? "confirmed catch" : gate.trigger.event === "screen-set" ? "screen set"
+      : gate.trigger.event === "screen-use" ? "screen use" : "route point";
+  return `${gate.beforeSeconds || gate.afterSeconds ? `${gate.beforeSeconds.toFixed(1)}s before through ${gate.afterSeconds.toFixed(1)}s after ` : "At "}${event}`;
+}
+
 function timingIdentity(prefix: string) {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`}`;
 }
@@ -178,6 +221,30 @@ function timingConnectionEditError(previous: PlaybookDraft, next: PlaybookDraft)
         const message = `Move ${oldSource.sequence ?? "?"} is connected to a Wait until event. Remove or retarget that wait before changing or deleting this action`;
         return message;
       }
+    }
+  }
+  return null;
+}
+
+function spacingGateEditError(previous: PlaybookDraft, next: PlaybookDraft) {
+  const nextById = new Map((next.spacingGates?.gates ?? []).map((gate) => [gate.id, gate]));
+  const findAction = (play: PlaybookDraft, gate: SpacingGate) => gate.scope === "shared"
+    ? play.arrows.find((arrow) => arrow.id === gate.trigger.actionId)
+    : play.branches?.find((branch) => branch.id === gate.branchId)?.continuation.find((arrow) => arrow.id === gate.trigger.actionId);
+  for (const before of previous.spacingGates?.gates ?? []) {
+    const after = nextById.get(before.id);
+    if (!after) continue; // Explicit gate deletion accompanies the destructive edit
+    if (after.playerId !== before.playerId || JSON.stringify(after.trigger) !== JSON.stringify(before.trigger)) continue; // Explicit reassignment or retargeting
+    if (!next.players.some((player) => player.id === before.playerId)) return `Spacing gate ${before.id} is assigned to Player ${before.playerId}. Retarget or remove that gate before removing the player`;
+    const oldAction = findAction(previous, before), newAction = findAction(next, after);
+    if (!newAction) return `Spacing gate ${before.id} points to an action that no longer exists. Retarget or remove that gate first`;
+    if (oldAction && (oldAction.kind !== newAction.kind || oldAction.actor_id !== newAction.actor_id || oldAction.recipient_id !== newAction.recipient_id
+      || oldAction.screener_id !== newAction.screener_id || oldAction.handler_id !== newAction.handler_id || oldAction.cutter_id !== newAction.cutter_id)) {
+      return `Spacing gate ${before.id} depends on this action’s participants or type. Retarget or remove that gate before changing the action`;
+    }
+    if (before.trigger.event === "route-point" && oldAction && JSON.stringify({ start: oldAction.start, end: oldAction.end, control: oldAction.control, exit_target: oldAction.exit_target, path: oldAction.path })
+      !== JSON.stringify({ start: newAction.start, end: newAction.end, control: newAction.control, exit_target: newAction.exit_target, path: newAction.path })) {
+      return `Spacing gate ${before.id} is pinned to this route. Choose a new route point or remove that gate before editing the route`;
     }
   }
   return null;
@@ -309,6 +376,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const rootRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const spacingGateDragRef = useRef<SpacingGateDrag | null>(null);
   const drawingRef = useRef<PointerGesture & { start: CourtPoint; end: CourtPoint } | null>(null);
   const applyPointerRef = useRef<(sample: PointerSample) => void>(() => {});
   const [pointerMoves] = useState(() => createFrameBatch<PointerSample>(
@@ -332,6 +400,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [timingOpen, setTimingOpen] = useState(false);
   const [timingPreviewActionId, setTimingPreviewActionId] = useState<string | null>(null);
   const [routePointPick, setRoutePointPick] = useState<{ actionId: string; sourceId: string; playerId: number; routePhase: "main" | "approach" | "use" | "release" } | null>(null);
+  const [spacingGateRoutePick, setSpacingGateRoutePick] = useState<string | null>(null);
+  const [selectedSpacingGateId, setSelectedSpacingGateId] = useState<string | null>(null);
+  const [spacingGateListOpen, setSpacingGateListOpen] = useState(false);
+  const [showSpacingGates, setShowSpacingGates] = useState(true);
   const branchLabelInput = useRef<HTMLInputElement>(null);
   const [dirty, setDirty] = useState(false);
   const [selected, setSelected] = useState<Selection>(null);
@@ -388,9 +460,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       window.removeEventListener("blur", interrupt);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       pointerMoves.cancel();
-      const interaction = drawingRef.current ?? dragRef.current;
+      const interaction = drawingRef.current ?? dragRef.current ?? spacingGateDragRef.current;
       drawingRef.current = null;
       dragRef.current = null;
+      spacingGateDragRef.current = null;
       if (interaction && svgRef.current?.hasPointerCapture(interaction.pointerId)) svgRef.current.releasePointerCapture(interaction.pointerId);
     };
   }, [pointerMoves]);
@@ -411,6 +484,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const timingActive = hasTimingPlan(activeDraft);
   const timingBindings = useMemo(() => bindAuthoredActions(activeDraft), [activeDraft]);
   const selectedArrow = selected?.type === "arrow" ? activeDraft.arrows.find((arrow) => arrow.id === selected.id) : null;
+  const selectedSpacingGate = activeDraft.spacingGates?.gates.find((gate) => gate.id === selectedSpacingGateId) ?? null;
+  const selectedSpacingGateAction = selectedSpacingGate ? activeDraft.arrows.find((arrow) => arrow.id === selectedSpacingGate.trigger.actionId) ?? null : null;
+  const spacingGateResults = simulationFrameState?.spacingGateResults ?? [];
+  const selectedSpacingGateResult = selectedSpacingGate ? spacingGateResults.find((result) => result.gateId === selectedSpacingGate.id) : null;
   const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
   const selectedSkillsDefender = draft.defenders.find((defender) => defender.id === defenderSkillsId) ?? draft.defenders[0] ?? null;
   const selectedParticipants = useMemo(() => selectedArrow ? bindAuthoredActions(activeDraft).find((action) => action.arrow.id === selectedArrow.id) : null, [activeDraft, selectedArrow?.id]);
@@ -686,6 +763,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     rootRef.current?.focus();
   }
 
+  function simulationDrawing(source: PlaybookDraft, branchId = activeBranchId) {
+    const executable = flattenPlaybookPath(source, branchId);
+    const gates = resolvePlaybookPath(source, branchId).play.spacingGates;
+    if (gates) executable.spacingGates = structuredClone(gates);
+    return executable;
+  }
+
   function resetSimulation() {
     simulationClientRef.current?.dispose();
     simulationClientRef.current = null;
@@ -810,7 +894,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   function handoffCanonicalDraft(next: PlaybookDraft, preserveSimulation: boolean, branchId = activeBranchId) {
     try {
       validatePlaybookDocument(next);
-      const executable = flattenPlaybookPath(next, branchId);
+      const executable = simulationDrawing(next, branchId);
       if (preserveSimulation && simulationClientRef.current && simulationDrawingRef.current && pausedDraftIsCompatible(simulationDrawingRef.current, executable)) {
         simulationClientRef.current.edit(executable);
         simulationDrawingRef.current = executable;
@@ -832,16 +916,18 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function commit(next: PlaybookDraft, previous = draft) {
     const canonical = canonicalizeActiveDraft(next, previous);
-    if (isSameDraft(canonical, previous)) return;
-    commitCanonical(canonical, previous, activeBranchId);
+    if (isSameDraft(canonical, previous)) return true;
+    return commitCanonical(canonical, previous, activeBranchId);
   }
 
-  function commitCanonical(next: PlaybookDraft, previous = draft, branchId = activeBranchId) {
+  function commitCanonical(next: PlaybookDraft, previous = draft, branchId = activeBranchId, keepRecording = false) {
     if (isSameDraft(next, previous)) return true;
+    const gateError = spacingGateEditError(previous, next);
+    if (gateError) { setError(gateError); return false; }
     const connectionError = timingConnectionEditError(previous, next);
     if (connectionError) { setError(connectionError); return false; }
     const before = clonePlaybook(previous);
-    const preserveSimulation = simulationClientRef.current !== null && !simulationPlaying;
+    const preserveSimulation = simulationClientRef.current !== null && (keepRecording || !simulationPlaying);
     if (!handoffCanonicalDraft(next, preserveSimulation, branchId)) return false;
     recordHistory(before, activeBranchId);
     return true;
@@ -891,7 +977,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function chooseTool(next: PlaybookTool) {
-    if (drawingRef.current || dragRef.current) interruptPointerInteraction();
+    if (drawingRef.current || dragRef.current || spacingGateDragRef.current) interruptPointerInteraction();
+    setSpacingGateRoutePick(null);
     setTool(next);
     if (next !== "off-ball-screen" && next !== "pin-down") setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
     if (next !== "pick-pop") setPickPopSelection({ screenerId: null, handlerId: null, screenPoint: null });
@@ -911,6 +998,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setRenamingBranchId(null);
     setCompareMain(false);
     setRoutePointPick(null);
+    setSpacingGateRoutePick(null);
+    setSelectedSpacingGateId(null);
     setTimingPreviewActionId(null);
     setSelected(null);
     setTool("select");
@@ -933,6 +1022,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setRenamingBranchId(null);
     setCompareMain(false);
     setRoutePointPick(null);
+    setSpacingGateRoutePick(null);
+    setSelectedSpacingGateId(null);
     setTimingPreviewActionId(null);
     setActiveBranchId(branchId);
   }
@@ -951,6 +1042,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       const next = clonePlaybook(draft);
       next.branches = [...(next.branches ?? []), branch];
       const copiedIds = new Set(branch.continuation.map((arrow) => arrow.id));
+      const copiedGates = (next.spacingGates?.gates ?? []).flatMap((gate) => gate.scope === "shared" && copiedIds.has(gate.trigger.actionId)
+        ? [{ ...structuredClone(gate), id: timingIdentity("gate"), scope: "ending" as const, branchId: branch.id }]
+        : []);
+      if (copiedGates.length) next.spacingGates = { version: 1, gates: [...(next.spacingGates?.gates ?? []), ...copiedGates] };
       const branchTemplates = authoredRoleCueTemplates(resolvePlaybookPath(next, branch.id).play);
       const copiedCues = (next.roleCues?.cues ?? []).flatMap((cue) => {
         if (cue.scope !== "shared" || !copiedIds.has(cue.actionId)) return [];
@@ -995,6 +1090,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       const cues = next.roleCues.cues.filter((cue) => cue.scope !== "ending" || cue.branchId !== branchId);
       next.roleCues = { version: 1, cues };
     }
+    if (next.spacingGates) next.spacingGates = { version: 1, gates: next.spacingGates.gates.filter((gate) => gate.scope !== "ending" || gate.branchId !== branchId) };
     commitCanonical(next, draft, activeBranchId);
     if (activeBranchId === branchId) selectBranch(null);
   }
@@ -1128,7 +1224,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         },
       });
       simulationClientRef.current = client;
-      const executable = flattenPlaybookPath(draft, activeBranchId);
+      const executable = simulationDrawing(draft, activeBranchId);
       simulationDrawingRef.current = executable;
       client.start(executable, simulationSettingsRef.current);
       setSimulationPlaying(true);
@@ -1249,12 +1345,103 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setTool("select");
   }
 
+  function commitSpacingGatePath(nextPath: PlaybookDraft, before = draftSession.current, branchId = activeBranchId) {
+    const canonical = canonicalizeActiveDraft(nextPath, before, branchId);
+    pauseSimulation();
+    return commitCanonical(canonical, before, branchId, true);
+  }
+
+  function updateSpacingGate(gateId: string, update: (gate: SpacingGate) => SpacingGate) {
+    const before = clonePlaybook(draftSession.current);
+    const path = resolvePlaybookPath(before, activeBranchId).play;
+    const gate = path.spacingGates?.gates.find((candidate) => candidate.id === gateId);
+    if (!gate) { setError("This spacing gate is no longer available"); return false; }
+    const next = clonePlaybook(path);
+    next.spacingGates = { version: 1, gates: (next.spacingGates?.gates ?? []).map((candidate) => candidate.id === gateId ? clampSpacingGate(update(structuredClone(candidate))) : candidate) };
+    const saved = commitSpacingGatePath(next, before);
+    if (saved) { setSelectedSpacingGateId(gateId); setError(null); }
+    return saved;
+  }
+
+  function placeSpacingGate(point: CourtPoint) {
+    if (draft.spacingGates?.gates.length === 30) { setError("A play can contain at most 30 spacing gates"); return; }
+    if (!activeDraft.players.length) { setError("Add an offensive player before placing a spacing gate"); return; }
+    const action = activeDraft.arrows.find((arrow) => arrow.id === selectedArrow?.id) ?? orderBranchActions(activeDraft.arrows)[0];
+    if (!action) { setError("Draw an action before placing a spacing gate"); return; }
+    const playerId = nearestPlayerId(activeDraft.players, point);
+    if (playerId == null) return;
+    const shared = !activeBranchId || activePath.sharedIds.has(action.id);
+    const gate: SpacingGate = clampSpacingGate({
+      id: timingIdentity("gate"), playerId,
+      area: { shape: "circle", center: { ...point }, radiusFeet: 3 },
+      rule: "inside", trigger: { actionId: action.id, event: "start" }, beforeSeconds: 0, afterSeconds: 0,
+      scope: shared ? "shared" : "ending", ...(!shared && activeBranchId ? { branchId: activeBranchId } : {}),
+    });
+    const next = cloneActiveDraft();
+    next.spacingGates = { version: 1, gates: [...(next.spacingGates?.gates ?? []), gate] };
+    if (commitSpacingGatePath(next)) { setSelectedSpacingGateId(gate.id); setSelected({ type: "arrow", id: action.id }); setSpacingGateListOpen(true); setTool("select"); setError(null); }
+  }
+
+  function deleteSpacingGate(gateId: string) {
+    const next = cloneActiveDraft();
+    const gates = (next.spacingGates?.gates ?? []).filter((gate) => gate.id !== gateId);
+    if (gates.length) next.spacingGates = { version: 1, gates };
+    else delete next.spacingGates;
+    if (commitSpacingGatePath(next)) { if (selectedSpacingGateId === gateId) setSelectedSpacingGateId(null); setSpacingGateRoutePick(null); }
+  }
+
+  function selectSpacingGate(gate: SpacingGate) {
+    setSelectedSpacingGateId(gate.id);
+    setSpacingGateRoutePick(null);
+    setSelected({ type: "arrow", id: gate.trigger.actionId });
+    setTool("select");
+  }
+
+  function beginSpacingGateDrag(event: ReactPointerEvent<SVGGElement>, gateId: string, kind: SpacingGateDragKind) {
+    if (spacingGateDragRef.current || dragRef.current || drawingRef.current) return;
+    const point = pointFromPointer(event, svgRef.current);
+    const gate = activeDraft.spacingGates?.gates.find((candidate) => candidate.id === gateId);
+    if (!point || !gate) return;
+    const before = clonePlaybook(draftSession.current);
+    spacingGateDragRef.current = { ...pointerGesture(event), gateId, kind, before, branchId: activeBranchId, start: point, original: structuredClone(gate) };
+    svgRef.current?.setPointerCapture(event.pointerId);
+    pauseSimulation();
+  }
+
+  function beginSpacingGateRoutePick(gate: SpacingGate) {
+    if (simulationPlaying) pauseSimulation();
+    const playerId = gate.trigger.routePlayerId ?? gate.playerId;
+    const route = authoredRoutes.find((candidate) => candidate.actionId === gate.trigger.actionId && candidate.playerId === playerId);
+    if (!route) { setError(`Player ${playerId} has no authored route for this action`); return; }
+    setSpacingGateRoutePick(gate.id);
+    setError(null);
+    focusBoard();
+  }
+
+  function onSpacingGateRoutePointPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    if (!spacingGateRoutePick) return;
+    event.preventDefault(); event.stopPropagation();
+    const point = pointFromPointer(event, svgRef.current);
+    const gate = activeDraft.spacingGates?.gates.find((candidate) => candidate.id === spacingGateRoutePick);
+    const playerId = gate?.trigger.routePlayerId ?? gate?.playerId;
+    const route = gate && playerId != null ? authoredRoutes.find((candidate) => candidate.actionId === gate.trigger.actionId && candidate.playerId === playerId) : null;
+    if (!point || !gate || !route) { setSpacingGateRoutePick(null); setError("The linked route is no longer available. Choose it again"); return; }
+    // Gate events use the engine's physical-foot route progress, so the point
+    // picker projects with the same 50 ft × 47 ft court metric.
+    const projected = projectPointToRoute(point, sampleAuthoredCourtRoute(route), { x: 0.5, y: 0.47 });
+    if (projected.distance > 5) { setError("Click closer to the player’s route to place the spacing checkpoint"); return; }
+    const committed = updateSpacingGate(gate.id, (current) => ({ ...current, trigger: { actionId: current.trigger.actionId, event: "route-point", routePlayerId: playerId,
+      routePhase: "main", routeSegment: projected.segment, progress: Math.max(.001, Math.min(.999, Math.round(projected.progress * 10000) / 10000)) } }));
+    if (committed) { setSpacingGateRoutePick(null); setError(null); }
+  }
+
   function onBackgroundPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     if (dragRef.current || drawingRef.current) return;
     const point = pointFromPointer(event, svgRef.current);
     if (!point) return;
     focusBoard();
     const nextSequence = Math.max(0, ...activeDraft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1;
+    if (tool === "spacing-gate") { placeSpacingGate(point); return; }
     if (tool === "pick-pop") {
       const { screenerId, handlerId, screenPoint } = pickPopSelection;
       if (screenerId == null || handlerId == null) {
@@ -1376,7 +1563,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function onPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
-    const interaction = drawingRef.current ?? dragRef.current;
+    const interaction = spacingGateDragRef.current ?? drawingRef.current ?? dragRef.current;
     if (interaction?.pointerId !== event.pointerId) return;
     if (!interaction.moved && interaction.clientX === event.clientX && interaction.clientY === event.clientY) return;
     interaction.moved = true;
@@ -1384,6 +1571,33 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function applyPointerPosition(sample: PointerSample) {
+    const gateDrag = spacingGateDragRef.current;
+    if (gateDrag?.pointerId === sample.pointerId) {
+      const point = pointFromPointer(sample, svgRef.current);
+      if (!point) return;
+      const path = resolvePlaybookPath(gateDrag.before, gateDrag.branchId).play;
+      const gate = path.spacingGates?.gates.find((candidate) => candidate.id === gateDrag.gateId);
+      if (!gate) return;
+      let changed: SpacingGate = structuredClone(gate);
+      if (gateDrag.kind === "move") {
+        const dx = point.x - gateDrag.start.x, dy = point.y - gateDrag.start.y;
+        changed.area.center = { x: gate.area.center.x + dx, y: gate.area.center.y + dy };
+      } else if (changed.area.shape === "circle") {
+        const centerFeetX = changed.area.center.x * 0.5, centerFeetY = changed.area.center.y * 0.47;
+        const pointerFeetX = point.x * 0.5, pointerFeetY = point.y * 0.47;
+        changed.area.radiusFeet = Math.max(0.5, Math.hypot(pointerFeetX - centerFeetX, pointerFeetY - centerFeetY));
+      } else {
+        changed.area.widthFeet = Math.max(1, Math.abs(point.x - changed.area.center.x));
+        changed.area.heightFeet = Math.max(1, Math.abs(point.y - changed.area.center.y) * 0.47);
+      }
+      changed = clampSpacingGate(changed);
+      const nextPath = clonePlaybook(path);
+      nextPath.spacingGates = { version: 1, gates: (nextPath.spacingGates?.gates ?? []).map((candidate) => candidate.id === gateDrag.gateId ? changed : candidate) };
+      const canonical = canonicalizeActiveDraft(nextPath, gateDrag.before, gateDrag.branchId);
+      draftSession.edit(canonical); setDraftState(canonical); setDirty(draftSession.dirty); setStatus("idle");
+      gateDrag.moved = true;
+      return;
+    }
     const interaction = drawingRef.current ?? dragRef.current;
     if (interaction?.pointerId !== sample.pointerId) return;
     const point = pointFromPointer(sample, svgRef.current);
@@ -1401,7 +1615,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     const canonical = canonicalizeActiveDraft(next, draftSession.current, drag.historyBranchId);
     try {
       validatePlaybookDocument(canonical);
-      const executable = flattenPlaybookPath(canonical, drag.historyBranchId);
+      const executable = simulationDrawing(canonical, drag.historyBranchId);
       const editingTimeline = drag.type === "arrow-start" || drag.type === "arrow-end" || drag.type === "arrow-exit" || drag.type === "arrow-control";
       const client = simulationClientRef.current;
       if (editingTimeline && simulationActive) resetSimulation();
@@ -1427,13 +1641,22 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function onPointerUp(event: ReactPointerEvent<SVGSVGElement>) {
-    const interaction = drawingRef.current ?? dragRef.current;
+    const interaction = spacingGateDragRef.current ?? drawingRef.current ?? dragRef.current;
     if (interaction?.pointerId !== event.pointerId) return;
     // React state may not have rendered the last move yet. Flush synchronously
     // and read the session/ref values before creating the single undo entry.
     if (interaction.moved || interaction.clientX !== event.clientX || interaction.clientY !== event.clientY) {
       pointerMoves.flush({ clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId });
     } else pointerMoves.flush();
+    const gateDrag = spacingGateDragRef.current;
+    if (gateDrag) {
+      const after = clonePlaybook(draftSession.current);
+      clearPointerInteraction();
+      if (!isSameDraft(after, gateDrag.before)) {
+        if (commitCanonical(after, gateDrag.before, gateDrag.branchId, true)) setSelectedSpacingGateId(gateDrag.gateId);
+      }
+      return;
+    }
     const currentDraft = draftSession.current;
     const drawing = drawingRef.current;
     if (drawing) {
@@ -1477,19 +1700,24 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function clearPointerInteraction() {
-    const interaction = drawingRef.current ?? dragRef.current;
+    const interaction = drawingRef.current ?? dragRef.current ?? spacingGateDragRef.current;
     pointerMoves.cancel();
     // Clear ownership before releasing capture: lostpointercapture also interrupts.
     drawingRef.current = null;
     dragRef.current = null;
+    spacingGateDragRef.current = null;
     setDrawStart(null);
     setDrawEnd(null);
     if (interaction && svgRef.current?.hasPointerCapture(interaction.pointerId)) svgRef.current.releasePointerCapture(interaction.pointerId);
   }
 
   function interruptPointerInteraction(pointerId?: number) {
-    const interaction = drawingRef.current ?? dragRef.current;
+    const gateDrag = spacingGateDragRef.current;
+    const interaction = drawingRef.current ?? dragRef.current ?? gateDrag;
     if (pointerId !== undefined && interaction?.pointerId !== pointerId) return;
+    if (gateDrag) {
+      draftSession.edit(gateDrag.before); setDraftState(gateDrag.before); setDirty(draftSession.dirty);
+    }
     // Preserve displayed edits with one undo step; discard queued positions
     // and unfinished drawings instead of committing a cancelled action.
     finishExistingDrag();
@@ -1520,7 +1748,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function onMarkerPointerDown(event: ReactPointerEvent<SVGElement>, selection: Selection) {
     event.stopPropagation();
-    if (dragRef.current || drawingRef.current) return;
+    if (dragRef.current || drawingRef.current || spacingGateDragRef.current) return;
     focusBoard();
     if (!selection) return;
     if (selection.type === "arrow" && (pocketSelectionMode || event.shiftKey)) {
@@ -1532,6 +1760,20 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       commit(removeSelection(cloneActiveDraft(), selection));
       setSelected(null);
       setTool("select");
+      return;
+    }
+    // Marker groups stop propagation so they can be dragged in Select mode.
+    // Route gate placement through this handler as well as the court's empty
+    // background handler, otherwise clicking the player itself is swallowed.
+    if (tool === "spacing-gate") {
+      if (selection.type === "player") {
+        const point = pointFromPointer(event, svgRef.current);
+        if (point) placeSpacingGate(point);
+      } else if (selection.type === "arrow") {
+        setSelected(selection);
+      } else {
+        setError("Spacing gates can only track offensive players");
+      }
       return;
     }
     if (tool === "pick-pop") {
@@ -1629,6 +1871,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       interruptPointerInteraction();
+      if (spacingGateRoutePick) {
+        event.preventDefault();
+        setSpacingGateRoutePick(null);
+        setError(null);
+        setTool("select");
+        return;
+      }
       if (pocketSelectionMode) {
         event.preventDefault();
         setPocketSelectionMode(false);
@@ -1692,9 +1941,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       clone.setAttribute("height", "1152");
       clone.style.setProperty("--orange", "#ee733f");
       clone.style.setProperty("--muted", "#b3b9b5");
-      clone.querySelectorAll(".selection-handle, .drawing-preview, .adaptive-read-route, .marker-hit-target").forEach((node) => node.remove());
+      clone.querySelectorAll(".selection-handle, .drawing-preview, .adaptive-read-route, .marker-hit-target, .spacing-gate-result-label, .spacing-gate-center-handle, .spacing-gate-resize-handle").forEach((node) => node.remove());
       const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
       style.textContent = `.shared-court-route{fill:none;stroke:#ee733f;stroke-width:2;stroke-dasharray:6 4}.shared-court-route.route-adjustment{stroke:#b3b9b5;stroke-width:1.5;stroke-dasharray:2 4}.shared-court-route.route-shot{stroke-dasharray:3 5}.court-floor{fill:#151819}.court-line{fill:none;stroke:#d7d2c7;stroke-width:3}.court-dash{fill:none;stroke:#8f9692;stroke-width:2;stroke-dasharray:9 10}.movement-arrow,.screen-arrow,.off-ball-screen-arrow,.pick-roll-arrow,.pick-pop-arrow,.pin-down-arrow,.backdoor-cut-arrow,.screen-cutter-arrow,.pass-arrow{fill:none;stroke-width:3}.movement-arrow{stroke:#f3f1ec}.pass-arrow{stroke:#ee733f;stroke-dasharray:9 8}.screen-arrow{stroke:#73bff0;stroke-dasharray:3 7}.off-ball-screen-arrow,.pin-down-arrow{stroke:#b4a1e8;stroke-dasharray:5 5}.screen-cutter-arrow{stroke:#f3f1ec;stroke-dasharray:6 5;opacity:.82}.pick-roll-arrow{stroke:#ee733f;stroke-width:4}.pick-pop-arrow{stroke:#f3bd67;stroke-width:4}.backdoor-cut-arrow{stroke:#7fd2a1;stroke-dasharray:7 5;stroke-width:3.5}.arrow-sequence-badge{pointer-events:none}.arrow-sequence-badge circle{fill:#202426;stroke:#ee733f;stroke-width:2;vector-effect:non-scaling-stroke}.arrow-sequence-badge text{fill:#f3f1ec;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central}.offense-marker{fill:#ee733f;stroke:#fff2ea;stroke-width:2}.defense-marker{fill:none;stroke:#73bff0;stroke-width:3}.ball-marker{fill:#d96b38;stroke:#fff2ea;stroke-width:2}.simulation-defender-number{fill:#73bff0;stroke:none;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-number{fill:#fff8f0;font:700 18px sans-serif;text-anchor:middle;dominant-baseline:central}.marker-caption{fill:#b3b9b5;stroke:none;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle}.basket-mark{fill:none;stroke:#ee733f;stroke-width:4}#movement-arrow path{fill:#f3f1ec}#pass-arrow path{fill:#ee733f}`;
+      style.textContent += `.spacing-gate-area{fill:#ee733f24;stroke:#ee733f;stroke-width:2.2;stroke-dasharray:8 5;vector-effect:non-scaling-stroke}.spacing-gate-met .spacing-gate-area{stroke:#74d39b}.spacing-gate-missed .spacing-gate-area{fill:#ff776c2e;stroke:#ff776c}.spacing-gate-not-evaluated .spacing-gate-area{stroke:#a8b0ad;stroke-dasharray:3 5}.spacing-gate-label rect{fill:#151819;stroke:#7b8581;stroke-width:1}.spacing-gate-label text{fill:#f3f1ec;font:700 10px ui-monospace,monospace;text-anchor:middle;dominant-baseline:central}.spacing-gate-instruction{fill:#f3f1ec;stroke:#151819;stroke-width:3px;paint-order:stroke;font:700 10px sans-serif;text-anchor:middle;dominant-baseline:central}`;
       if (simulationActive) style.textContent += ".marker-number,.simulation-defender-number{font-size:26px}";
       clone.prepend(style);
       const exportName = activePath.branch ? `${draft.name} — ${activePath.branch.label}` : draft.name;
@@ -1734,6 +1984,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const editingArrowId = !simulationPlaying && selected?.type === "arrow" ? selected.id : null;
   const timingPreviewRoute = authoredRoutes.find((route) => route.actionId === (routePointPick?.sourceId ?? timingPreviewActionId)
     && (routePointPick ? route.playerId === routePointPick.playerId : route.id.endsWith(":actor"))) ?? null;
+  const spacingGateRoutePreview = spacingGateRoutePick ? (() => {
+    const gate = activeDraft.spacingGates?.gates.find((candidate) => candidate.id === spacingGateRoutePick);
+    const routePlayerId = gate?.trigger.routePlayerId ?? gate?.playerId;
+    return gate && routePlayerId != null ? authoredRoutes.find((route) => route.actionId === gate.trigger.actionId && route.playerId === routePlayerId) ?? null : null;
+  })() : null;
   const visibleArrows = activeDraft.arrows.filter((arrow) => arrow.id === editingArrowId || (!simulationActive && authoredRoutes.some((route) => route.actionId === arrow.id && route.id.endsWith(":actor") && routeVisible(route, arrowVisibility))));
   const currentDefenseSchemeLabel = simulationFrame.activeDefenseScheme
     ? `${simulationFrame.defenseSchemeWasAutomatic ? "Auto · " : ""}${DEFENSE_SCHEME_LABELS[simulationFrame.activeDefenseScheme]}`
@@ -1741,9 +1996,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? `Saved · ${activeDraft.arrows.length} actions` : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
 
   if (view === "practice") return <ReadCoachPracticeView lesson={draft.readCoach} visibility={arrowVisibility} onExit={() => onViewChange?.("edit")} active={active} />;
-  if (view === "role") return <RoleRehearsalView play={flattenPlaybookPath(draft, activeBranchId)} cueSource={draft} branchId={activeBranchId}
+  if (view === "role") {
+    const rolePlay = flattenPlaybookPath(draft, activeBranchId);
+    if (activeDraft.spacingGates) rolePlay.spacingGates = structuredClone(activeDraft.spacingGates);
+    return <RoleRehearsalView play={rolePlay} cueSource={draft} branchId={activeBranchId}
     branchLabel={activePath.branch?.label ?? null} sharedIds={activePath.sharedIds} playerId={rolePlayerId} settings={simulationSettings}
     visibility={arrowVisibility} active={active} onViewChange={(nextView, playerId) => onViewChange?.(nextView, playerId)} onCueChange={saveRoleCue} />;
+  }
 
   return (
     <div ref={rootRef} className="playbook-page" tabIndex={-1} onKeyDown={onKeyDown} onBlur={(event) => {
@@ -1791,6 +2050,59 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               {!activeBranchId ? <button type="button" className="branch-create-action" disabled={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES} title={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES ? "A play can have at most eight endings" : `Create a branch before Move ${arrowSequence(arrow, index)}`} onClick={() => createBranch(arrow.id)}>Create a branch here</button> : null}
             </div>;
           })}</div>{activePath.branch && !activePath.branch.continuation.length ? <p>No ending actions yet</p> : !activeDraft.arrows.length ? <p>No actions drawn yet</p> : <p>Select an action to edit it, even when its arrow is hidden</p>}</details>
+          <button type="button" className={`preset-button spacing-gate-visibility ${showSpacingGates ? "is-active" : ""}`} aria-pressed={showSpacingGates} onClick={() => setShowSpacingGates((current) => !current)}>
+            <Target size={17} /><span>Show spacing gates</span><i className={`toggle-dot ${showSpacingGates ? "is-on" : ""}`} />
+          </button>
+          <section className="spacing-gate-library" aria-label="Spacing gates">
+            <button type="button" className="spacing-gate-library-toggle" aria-expanded={spacingGateListOpen} onClick={() => setSpacingGateListOpen((open) => !open)}><span>Spacing gates</span><span>{activeDraft.spacingGates?.gates.length ?? 0}</span><span aria-hidden="true">{spacingGateListOpen ? "−" : "+"}</span></button>
+            {spacingGateListOpen ? <div className="spacing-gate-library-list">
+              {(activeDraft.spacingGates?.gates ?? []).map((gate, index) => {
+                const result = spacingGateResults.find((item) => item.gateId === gate.id);
+                return <button type="button" key={gate.id} className={`spacing-gate-list-item ${selectedSpacingGateId === gate.id ? "is-selected" : ""}`} onClick={() => selectSpacingGate(gate)}>
+                  <span className={`spacing-gate-status-dot status-${result?.status ?? "pending"}`} aria-hidden="true">{spacingGateStatusSymbol(result?.status)}</span>
+                  <span><strong>Gate {index + 1} · Player {gate.playerId}</strong><small>{gate.instruction || `${gate.rule === "inside" ? "Stay inside" : "Stay outside"} · ${spacingGateTimeDescription(gate)}`}</small></span>
+                  <span className="spacing-gate-status-text">{spacingGateStatusText(result?.status)}</span>
+                </button>;
+              })}
+              {!(activeDraft.spacingGates?.gates.length) ? <p>Choose an action, then select Spacing gate and click an offensive player</p> : null}
+            </div> : null}
+          </section>
+          {selectedSpacingGate ? <section className="spacing-gate-inspector" aria-label="Selected spacing gate">
+            <header><div><span className="section-kicker">Spacing gate</span><strong>Player {selectedSpacingGate.playerId} · {spacingGateTimeDescription(selectedSpacingGate)}</strong></div><button type="button" className="icon-button" aria-label="Delete spacing gate" title="Delete spacing gate" onClick={() => deleteSpacingGate(selectedSpacingGate.id)}><Trash2 size={15} /></button></header>
+            {selectedSpacingGateResult ? <button type="button" className={`spacing-gate-result-card status-${selectedSpacingGateResult.status}`} disabled={selectedSpacingGateResult.checkedAtMs === null} onClick={() => { if (selectedSpacingGateResult.checkedAtMs !== null) seekSimulation(spacingGateOutcomeTime(selectedSpacingGateResult)); }}>
+              <strong><span aria-hidden="true">{spacingGateStatusSymbol(selectedSpacingGateResult.status)}</span>{spacingGateStatusText(selectedSpacingGateResult.status)}</strong>
+              <small>{selectedSpacingGateResult.reason ?? (selectedSpacingGateResult.firstViolationAtMs !== null ? `First violation · ${(selectedSpacingGateResult.firstViolationAtMs / 1000).toFixed(2)}s` : selectedSpacingGateResult.checkedAtMs !== null ? `Checked · ${(selectedSpacingGateResult.checkedAtMs / 1000).toFixed(2)}s` : "Play the possession to evaluate this expectation")}</small>
+            </button> : <p className="spacing-gate-pending-note">Play the possession to evaluate this expectation</p>}
+            <label><span>Player</span><select aria-label="Spacing gate player" value={String(selectedSpacingGate.playerId)} onChange={(event) => updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, playerId: Number(event.currentTarget.value) }))}>{activeDraft.players.map((player) => <option key={player.id} value={player.id}>Player {player.id}</option>)}</select></label>
+            <label><span>Checkpoint action</span><select aria-label="Spacing gate checkpoint action" value={selectedSpacingGate.trigger.actionId} onChange={(event) => {
+              const actionId = event.currentTarget.value;
+              const action = activeDraft.arrows.find((arrow) => arrow.id === actionId);
+              if (!action) return;
+              const shared = !activeBranchId || activePath.sharedIds.has(action.id);
+              updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, scope: shared ? "shared" : "ending", ...(shared ? { branchId: undefined } : { branchId: activeBranchId ?? undefined }), trigger: { actionId, event: "start" } }));
+            }}>{activeDraft.arrows.map((action, index) => <option key={action.id} value={action.id}>Move {arrowSequence(action, index)} · {actionLabel(action.kind)}</option>)}</select></label>
+            <label><span>Milestone</span><select aria-label="Spacing gate milestone" value={spacingGateRoutePick === selectedSpacingGate.id ? "route-point" : selectedSpacingGate.trigger.event} onChange={(event) => {
+              const value = event.currentTarget.value as SpacingGateEvent;
+              if (value === "route-point") { beginSpacingGateRoutePick(selectedSpacingGate); return; }
+              setSpacingGateRoutePick(null);
+              updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, trigger: { actionId: gate.trigger.actionId, event: value } }));
+            }}>{spacingGateEventOptions(selectedSpacingGateAction ?? undefined).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            {selectedSpacingGate.trigger.event === "route-point" || spacingGateRoutePick === selectedSpacingGate.id ? <div className="spacing-gate-route-pick">
+              <label><span>Route player</span><select aria-label="Spacing checkpoint route player" value={String(selectedSpacingGate.trigger.routePlayerId ?? selectedSpacingGate.playerId)} onChange={(event) => updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, trigger: { ...gate.trigger, routePlayerId: Number(event.currentTarget.value) } }))}>{activeDraft.players.filter((player) => authoredRoutes.some((route) => route.actionId === selectedSpacingGate.trigger.actionId && route.playerId === player.id)).map((player) => <option key={player.id} value={player.id}>Player {player.id}</option>)}</select></label>
+              <button type="button" className={`button ${spacingGateRoutePick === selectedSpacingGate.id ? "button-primary" : "button-outline"}`} onClick={() => spacingGateRoutePick === selectedSpacingGate.id ? setSpacingGateRoutePick(null) : beginSpacingGateRoutePick(selectedSpacingGate)}>{spacingGateRoutePick === selectedSpacingGate.id ? "Click a point on the highlighted route" : "Choose route point"}</button>
+            </div> : null}
+            <div className="spacing-gate-fields">
+              <label><span>Area</span><select aria-label="Spacing gate area shape" value={selectedSpacingGate.area.shape} onChange={(event) => updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, area: event.currentTarget.value === "circle" ? { shape: "circle", center: gate.area.center, radiusFeet: 3 } : { shape: "rectangle", center: gate.area.center, widthFeet: 6, heightFeet: 8 } }))}><option value="circle">Circle</option><option value="rectangle">Rectangle</option></select></label>
+              <label><span>Rule</span><select aria-label="Spacing gate rule" value={selectedSpacingGate.rule} onChange={(event) => updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, rule: event.currentTarget.value as SpacingGate["rule"] }))}><option value="inside">Stay inside</option><option value="outside">Stay outside</option></select></label>
+              <label><span>Center X · ft</span><input key={`${selectedSpacingGate.id}-cx-${selectedSpacingGate.area.center.x}`} aria-label="Spacing gate center X in feet" type="number" min="0" max="50" step="0.1" defaultValue={(selectedSpacingGate.area.center.x * 0.5).toFixed(1)} onBlur={(event) => { const value = Number(event.currentTarget.value); if (Number.isFinite(value)) updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, area: { ...gate.area, center: { ...gate.area.center, x: value * 2 } } })); }} /></label>
+              <label><span>Center Y · ft</span><input key={`${selectedSpacingGate.id}-cy-${selectedSpacingGate.area.center.y}`} aria-label="Spacing gate center Y in feet" type="number" min="0" max="47" step="0.1" defaultValue={(selectedSpacingGate.area.center.y * 0.47).toFixed(1)} onBlur={(event) => { const value = Number(event.currentTarget.value); if (Number.isFinite(value)) updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, area: { ...gate.area, center: { ...gate.area.center, y: value / 0.47 } } })); }} /></label>
+              {selectedSpacingGate.area.shape === "circle" ? <label><span>Radius · ft</span><input key={`${selectedSpacingGate.id}-r-${selectedSpacingGate.area.radiusFeet}`} aria-label="Spacing gate radius in feet" type="number" min="0.5" max="23.5" step="0.1" defaultValue={selectedSpacingGate.area.radiusFeet.toFixed(1)} onBlur={(event) => { const value = Number(event.currentTarget.value); if (Number.isFinite(value)) updateSpacingGate(selectedSpacingGate.id, (gate) => gate.area.shape === "circle" ? ({ ...gate, area: { ...gate.area, radiusFeet: value } }) : gate); }} /></label> : <><label><span>Width · ft</span><input key={`${selectedSpacingGate.id}-w-${selectedSpacingGate.area.widthFeet}`} aria-label="Spacing gate width in feet" type="number" min="1" max="50" step="0.1" defaultValue={selectedSpacingGate.area.widthFeet.toFixed(1)} onBlur={(event) => { const value = Number(event.currentTarget.value); if (Number.isFinite(value)) updateSpacingGate(selectedSpacingGate.id, (gate) => gate.area.shape === "rectangle" ? ({ ...gate, area: { ...gate.area, widthFeet: value } }) : gate); }} /></label><label><span>Height · ft</span><input key={`${selectedSpacingGate.id}-h-${selectedSpacingGate.area.heightFeet}`} aria-label="Spacing gate height in feet" type="number" min="1" max="47" step="0.1" defaultValue={selectedSpacingGate.area.heightFeet.toFixed(1)} onBlur={(event) => { const value = Number(event.currentTarget.value); if (Number.isFinite(value)) updateSpacingGate(selectedSpacingGate.id, (gate) => gate.area.shape === "rectangle" ? ({ ...gate, area: { ...gate.area, heightFeet: value } }) : gate); }} /></label></>}
+              <label><span>Before · sec</span><input key={`${selectedSpacingGate.id}-before-${selectedSpacingGate.beforeSeconds}`} aria-label="Spacing gate hold seconds before checkpoint" type="number" min="0" max="5" step="0.1" defaultValue={selectedSpacingGate.beforeSeconds.toFixed(1)} onBlur={(event) => { const value = Number(event.currentTarget.value); if (Number.isFinite(value)) updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, beforeSeconds: value })); }} /></label>
+              <label><span>After · sec</span><input key={`${selectedSpacingGate.id}-after-${selectedSpacingGate.afterSeconds}`} aria-label="Spacing gate hold seconds after checkpoint" type="number" min="0" max="5" step="0.1" defaultValue={selectedSpacingGate.afterSeconds.toFixed(1)} onBlur={(event) => { const value = Number(event.currentTarget.value); if (Number.isFinite(value)) updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, afterSeconds: value })); }} /></label>
+            </div>
+            <label><span>Instruction · optional</span><input key={`${selectedSpacingGate.id}-instruction-${selectedSpacingGate.instruction ?? ""}`} aria-label="Spacing gate instruction" maxLength={120} defaultValue={selectedSpacingGate.instruction ?? ""} onBlur={(event) => updateSpacingGate(selectedSpacingGate.id, (gate) => ({ ...gate, instruction: event.currentTarget.value.trim() || undefined }))} placeholder="Keep the corner clear" /></label>
+            <small>Gate checks only observe the recorded player center · They never affect movement or the result of the play</small>
+          </section> : null}
           <section className="read-coach-library" aria-label="Read Coach checkpoints">
             <header><strong>Read Coach</strong><span>{draft.readCoach?.checkpoints.length ?? 0}</span></header>
             {(draft.readCoach?.checkpoints ?? []).map((checkpoint, index) => <article className="read-coach-library-item" key={checkpoint.id}>
@@ -1948,6 +2260,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <ToolButton active={tool === "off-ball-screen"} icon={<UsersRound size={15} />} label="Off-ball screen" title={TOOL_LABELS["off-ball-screen"]} onClick={() => chooseTool("off-ball-screen")} />
             <ToolButton active={tool === "pin-down"} icon={<UsersRound size={15} />} label="Pin-down" title={TOOL_LABELS["pin-down"]} onClick={() => chooseTool("pin-down")} />
             <ToolButton active={tool === "backdoor-cut"} icon={<ArrowUpRight size={15} />} label="Backdoor cut" title={TOOL_LABELS["backdoor-cut"]} onClick={() => chooseTool("backdoor-cut")} />
+            <ToolButton active={tool === "spacing-gate"} icon={<Target size={15} />} label="Spacing gate" title={TOOL_LABELS["spacing-gate"]} onClick={() => chooseTool("spacing-gate")} />
             <span className="toolbar-spacer" />
             <ToolButton icon={<BrainCircuit size={15} />} label="AI defense" title="Apply ARCade Hoops defensive AI" onClick={applyAIDefense} />
             <ToolButton icon={simulationPlaying ? <Pause size={15} /> : <Play size={15} />} label={simulationPlaying ? "Pause" : simulationPaused ? "Resume" : "Play"} title={!draft.players.length ? "Add at least one offensive player before simulating" : simulationPlaying ? "Pause play simulation" : simulationPaused ? "Resume play simulation" : "Play simulation with defensive AI"} disabled={!draft.players.length && !simulationActive} onClick={() => {
@@ -2004,7 +2317,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior</span>
           </div> : null}
           <div className="court-frame">
-            <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onDragOver={onPocketDragOver} onDrop={onPocketDrop} onPointerDownCapture={onTimingRoutePointPointerDown} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
+            <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""} ${spacingGateRoutePick ? "is-spacing-gate-route-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onDragOver={onPocketDragOver} onDrop={onPocketDrop} onPointerDownCapture={(event) => spacingGateRoutePick ? onSpacingGateRoutePointPointerDown(event) : onTimingRoutePointPointerDown(event)} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
               <defs>
                 <pattern id="court-boards" width="80" height="80" patternUnits="userSpaceOnUse"><rect width="80" height="80" fill="var(--surface)" /><path d="M0 0h80M0 40h80" stroke="rgba(255,255,255,.022)" strokeWidth="1" /><path d="M40 0v80" stroke="rgba(255,255,255,.014)" strokeWidth="1" /></pattern>
                 <marker id="movement-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--text)" /></marker>
@@ -2014,6 +2327,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               <CourtMarkings />
               {simulationActive ? <CourtRoutes routes={simulationFrame.routes.filter((route) => route.actionId !== editingArrowId || editingArrowId == null)} visibility={arrowVisibility} labels /> : <CourtRoutes routes={authoredRoutes.filter((route) => !route.id.endsWith(":actor") && route.kind === "handler-support")} visibility={arrowVisibility} />}
               {!simulationActive && compareRoutes.length ? <CourtRoutes routes={compareRoutes} visibility={arrowVisibility} compare /> : null}
+              {spacingGateRoutePreview ? <g className="spacing-gate-route-preview" pointerEvents="none"><CourtRoutes routes={[spacingGateRoutePreview]} visibility="all" /><text x={markerPoint(spacingGateRoutePreview.end).x} y={markerPoint(spacingGateRoutePreview.end).y - 24}>CLICK ROUTE POINT</text></g> : null}
+              <SpacingGateLayer gates={activeDraft.spacingGates?.gates ?? []} results={simulationFrame.spacingGateResults ?? []} visible={showSpacingGates} selectedGateId={selectedSpacingGateId} interactive onSelect={(id) => { const gate = activeDraft.spacingGates?.gates.find((candidate) => candidate.id === id); if (gate) selectSpacingGate(gate); }} onPointerStart={beginSpacingGateDrag} />
               {timingPreviewRoute ? <g className={`timing-court-preview ${routePointPick ? "is-picking" : ""}`} pointerEvents="none"><CourtRoutes routes={[timingPreviewRoute]} visibility="all" /><circle cx={markerPoint(timingPreviewRoute.start).x} cy={markerPoint(timingPreviewRoute.start).y} r="16" /><text x={markerPoint(timingPreviewRoute.start).x} y={markerPoint(timingPreviewRoute.start).y - 24}>START</text><circle cx={markerPoint(timingPreviewRoute.end).x} cy={markerPoint(timingPreviewRoute.end).y} r="16" /><text x={markerPoint(timingPreviewRoute.end).x} y={markerPoint(timingPreviewRoute.end).y - 24}>END</text></g> : null}
               {pocketPreviewArrows.map((arrow) => {
                 const participants = [arrow.actor_id, arrow.recipient_id, arrow.screener_id, arrow.handler_id, arrow.cutter_id].filter((id): id is number => id != null);
@@ -2068,7 +2383,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 </g>;
               })()}
             </svg>
-            <div className="court-hint">{routePointPick ? `Click Player ${routePointPick.playerId}'s highlighted route to place the wait point` : tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "pick-pop" ? pickPopSelection.screenerId == null ? "Select the screener" : pickPopSelection.handlerId == null ? "Select the ball handler" : pickPopSelection.screenPoint == null ? "Click the screen location" : "Click the pop destination" : tool === "pin-down" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : offBallScreenSelection.screenPoint == null ? "Click the screen location" : "Click the cutter destination" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : tool === "backdoor-cut" ? backdoorCutterId == null ? "Select the cutter" : "Click the basket route destination" : "Drag across the court to draw"}</div>
+            <div className="court-hint">{spacingGateRoutePick ? "Click the highlighted route to place the spacing checkpoint · Escape cancels" : routePointPick ? `Click Player ${routePointPick.playerId}'s highlighted route to place the wait point` : tool === "spacing-gate" ? "Click near a player to place a spacing gate · Escape cancels" : tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "pick-pop" ? pickPopSelection.screenerId == null ? "Select the screener" : pickPopSelection.handlerId == null ? "Select the ball handler" : pickPopSelection.screenPoint == null ? "Click the screen location" : "Click the pop destination" : tool === "pin-down" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : offBallScreenSelection.screenPoint == null ? "Click the screen location" : "Click the cutter destination" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : tool === "backdoor-cut" ? backdoorCutterId == null ? "Select the cutter" : "Click the basket route destination" : "Drag across the court to draw"}</div>
           </div>
           <TimingMixerPanel id="timing-mixer" actions={activeDraft.arrows} players={activeDraft.players} bindings={timingBindings} routes={authoredRoutes} sharedActionIds={activePath.sharedIds} diagnostics={simulationFrame.execution} selectedActionId={selectedArrow?.id ?? null} routePickPending={routePointPick !== null} open={timingOpen} onOpenChange={setTimingOpen} onSelect={(id) => { if (simulationPlaying) pauseSimulation(); setTool("select"); setSelected({ type: "arrow", id }); }} onChangeStart={changeTimingStart} onChangeDuration={changeTimingDuration} onToggleSync={toggleTimingSync} onAddWait={addTimingWait} onRemoveWait={removeTimingWait} onStartRoutePick={beginRoutePointWait} onPreviewAction={setTimingPreviewActionId} />
           <div className="playbook-statusbar"><span><Hand size={14} /> {selected ? `${selected.type === "ball" ? "Ball" : selected.type === "arrow" ? `Move ${selectedArrowSequence ?? ""}` : `${selected.type === "defender" ? "Defender" : "Player"} ${selected.id}`} selected` : "Nothing selected"}</span><span>Arrows stay draggable · Arrow keys nudge · Shift for larger steps · Cmd/Ctrl Z to undo</span></div>

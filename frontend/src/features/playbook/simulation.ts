@@ -8,7 +8,8 @@ import { coordinateMovement, createMovementBuffers, createMovementOrder, interpo
 import { clearCongestionState } from "./congestionPlanning.ts";
 import { beginSimulationSession, simulationSeed, seededSimulationRandom, assertSimulationSessionHoop, recordSimulationSettings, recordSimulationEdit, recordSimulationAdvance, advanceRecordedSimulation, restoreSimulationSession } from "./simulationSession.ts";
 import type { CourtRoute } from "./arrowVisibility";
-import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, ReadCoachChoice, ReadCoachCourtSnapshot, ReadCoachSessionRecord, SimulationSettings } from "./types.ts";
+import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, ReadCoachChoice, ReadCoachCourtSnapshot, ReadCoachSessionRecord, SimulationSettings, SpacingGate, SpacingGateResult } from "./types.ts";
+import { copySpacingGateResult, newSpacingGateResult, spacingGateMet } from "./spacingGates.ts";
 import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating as playerRating, preparedHasBadge as playerHasBadge, preparedHasBadge as defenderHasBadge, type SimulationAttributes } from "./simulationAttributes.ts";
 import {
   COURT_SCALE,
@@ -21,6 +22,7 @@ import {
 export type SimulationFrame = {
   defensiveResponsibilities?: DefensiveResponsibility[];
   execution?: ActionDiagnostic[];
+  spacingGateResults?: SpacingGateResult[];
   ballHandlerId?: number | null;
   ballPhase?: BallPhase;
   routes: CourtRoute[];
@@ -91,6 +93,8 @@ export type SimulationRun = {
   movementBuffers: { solver: MovementBuffers; intents: MotionIntent[]; intentMap: Map<string, MotionIntent>; playerPositions: Map<number, CourtPoint>; defenderPositions: Map<number, CourtPoint> };
   offBallDecisions?: Map<number, { target: CourtPoint; sinceMs: number; cutting: boolean }>;
   routeHistory?: Array<{ atMs: number; players: PlaybookMarker[]; onBallIds: number[] }>;
+  spacingGateHistory: Array<{ atMs: number; players: PlaybookMarker[] }>;
+  spacingGateResults: SpacingGateResult[];
   actions: BoundAction[];
   actionGraph: Map<string, BoundAction>;
   actionDurationMs: number;
@@ -1463,6 +1467,7 @@ function copyFrame(frame: SimulationFrame): SimulationFrame {
     execution: frame.execution?.map((action) => ({ ...action,
       ...(action.congestion ? { congestion: { ...action.congestion, blockers: [...action.congestion.blockers] } } : {}),
       ...(action.transfer ? { transfer: copyTransfer(action.transfer) } : {}) })),
+    spacingGateResults: frame.spacingGateResults?.map(copySpacingGateResult),
     routes: frame.routes.map((route) => ({ ...route, start: { ...route.start }, end: { ...route.end }, control: route.control ? { ...route.control } : undefined, via: route.via ? { ...route.via } : undefined, points: route.points?.map((point) => ({ ...point })) })),
     players: frame.players.map((player) => ({ ...player })),
     defenders: frame.defenders.map((defender) => ({ ...defender })),
@@ -1496,6 +1501,7 @@ function frameFor(run: SimulationRun): SimulationFrame {
   return {
     defensiveResponsibilities: defensiveDutySnapshot(run.defense),
     execution: [...actionDiagnostics(run), ...(run.readCoachInterruptedActions ?? []).map((item) => ({ ...item }))],
+    ...(run.spacingGateResults.length ? { spacingGateResults: run.spacingGateResults.map(copySpacingGateResult) } : {}),
     ballHandlerId: run.ballHandlerId,
     ballPhase: run.ballState.kind,
     players: run.players.map((player) => ({ ...player })),
@@ -1833,6 +1839,8 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
     adaptiveReadLabel: null,
     adaptiveReadReason: null,
     adaptiveReadRoute: null,
+    spacingGateHistory: [],
+    spacingGateResults: (sourceCopy.spacingGates?.gates ?? []).map((gate) => newSpacingGateResult(gate.id)),
     frame: createInitialFrame(),
   };
   refreshActionSchedule(run);
@@ -1848,6 +1856,10 @@ function initializeSimulationRun(sourceCopy: PlaybookDraft, runSettings: Simulat
   run.actions.forEach((action) => action.execution?.paths.clear());
   run.offBallDecisions?.clear();
   run.routeHistory = [];
+  if (run.spacingGateResults.length) {
+    run.spacingGateHistory = [{ atMs: 0, players: run.players.map((player) => ({ ...player })) }];
+    updateSpacingGateResults(run);
+  }
   defensiveTargets(run, 0, hoop);
   run.frame = frameFor(run);
   run.previousFrame = run.frame;
@@ -3729,6 +3741,7 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   }
   run.elapsedMs = endTime;
   startReadyActions(run, endTime);
+  recordSpacingGateStep(run, endTime);
   if (run.settings.offenseMode !== "scripted" && !run.shotStart && run.elapsedMs + 1e-6 >= run.nextEarlyReadMs) {
     if (!run.actions.some((action) => !action.automatic && actionIsExecuting(action) && action.startTime <= run.elapsedMs && action.startTime + action.durationMs > run.elapsedMs && isScreenAction(action) && action.execution?.phase !== "release")) startEarlyRead(run, hoop);
     if (!run.earlyReadInterrupted) run.nextEarlyReadMs += EARLY_READ_INTERVAL_MS;
@@ -3743,6 +3756,113 @@ function advanceStep(run: SimulationRun, stepMs: number, hoop: CourtPoint) {
   recordRouteHistory(run);
   run.frame = frameFor(run);
   executionAuditors.get(run)?.(inspectSimulationExecution(run));
+}
+
+function spacingGateUnavailableReason(run: SimulationRun, gate: SpacingGate) {
+  const action = run.actions.find((candidate) => candidate.arrow.id === gate.trigger.actionId);
+  if (!action) return "The linked action is unavailable in this path";
+  const phase = action.execution?.phase;
+  if (phase === "obstructed" || phase === "conflict" || phase === "interrupted") return action.execution?.notice ?? "The linked action did not reach this checkpoint";
+  if (gate.trigger.event === "catch" && action.transfer?.outcome.kind === "failed") return "The pass or handoff was not caught";
+  if (gate.trigger.event === "screen-set" && phase === "completed" && action.execution?.setAtMs == null) return "The linked screen was not set";
+  if (gate.trigger.event === "screen-use" && phase === "completed" && action.execution?.usedAtMs == null) return "The linked screen was not used";
+  return null;
+}
+
+function spacingGateEventTime(run: SimulationRun, gate: SpacingGate): number | null {
+  const action = run.actions.find((candidate) => candidate.arrow.id === gate.trigger.actionId);
+  const state = action?.execution;
+  if (!action || !state) return null;
+  switch (gate.trigger.event) {
+    case "start": return state.startedAtMs;
+    case "complete": return state.phase === "completed" ? state.completedAtMs : null;
+    case "catch": return caughtAt(action.transfer) ?? null;
+    case "screen-set": return state.setAtMs ?? null;
+    case "screen-use": return state.usedAtMs ?? null;
+    case "route-point": {
+      if (state.startedAtMs == null) return null;
+      const progress = state.routeProgress.get(`${gate.trigger.routePhase}:${gate.trigger.routePlayerId}`) ?? 0;
+      return progress + 1e-6 >= (gate.trigger.progress ?? 1) ? run.elapsedMs : null;
+    }
+  }
+}
+
+function sampleSpacingGatePosition(history: SimulationRun["spacingGateHistory"], playerId: number, atMs: number): CourtPoint | null {
+  let before: { atMs: number; point: PlaybookMarker } | null = null;
+  let after: { atMs: number; point: PlaybookMarker } | null = null;
+  for (const sample of history) {
+    const point = sample.players.find((player) => player.id === playerId);
+    if (!point) continue;
+    if (sample.atMs <= atMs + 1e-6) before = { atMs: sample.atMs, point };
+    if (sample.atMs >= atMs - 1e-6) { after = { atMs: sample.atMs, point }; break; }
+  }
+  // Never project a later recorded position backward into an interval for
+  // which no evidence exists. This matters when a gate is added mid-session
+  // or a requested hold begins before the retained replay history.
+  if (!before) return after && after.atMs <= atMs + 1e-6 ? { x: after.point.x, y: after.point.y } : null;
+  if (!after || after.atMs <= before.atMs + 1e-6) return { x: before.point.x, y: before.point.y };
+  const fraction = Math.max(0, Math.min(1, (atMs - before.atMs) / (after.atMs - before.atMs)));
+  return { x: before.point.x + (after.point.x - before.point.x) * fraction, y: before.point.y + (after.point.y - before.point.y) * fraction };
+}
+
+function updateSpacingGateResults(run: SimulationRun) {
+  for (const gate of run.source.spacingGates?.gates ?? []) {
+    const result = run.spacingGateResults.find((candidate) => candidate.gateId === gate.id);
+    if (!result || result.status === "met" || result.status === "missed" || result.status === "not-evaluated") continue;
+    const triggerAt = result.triggerAtMs ?? spacingGateEventTime(run, gate);
+    if (triggerAt == null) {
+      const reason = spacingGateUnavailableReason(run, gate);
+      if (reason) { result.status = "not-evaluated"; result.reason = reason; result.checkedAtMs = run.elapsedMs; }
+      else if (run.elapsedMs >= run.durationMs - 1e-6) { result.status = "not-evaluated"; result.reason = "The linked checkpoint did not occur"; result.checkedAtMs = run.elapsedMs; }
+      continue;
+    }
+    result.triggerAtMs = triggerAt;
+    const start = triggerAt - gate.beforeSeconds * 1000, end = triggerAt + gate.afterSeconds * 1000;
+    const checked = new Map<number, CourtPoint>();
+    for (const sample of run.spacingGateHistory) {
+      if (sample.atMs < start - 1e-6 || sample.atMs > Math.min(run.elapsedMs, end) + 1e-6) continue;
+      const point = sample.players.find((player) => player.id === gate.playerId);
+      if (point) checked.set(sample.atMs, { x: point.x, y: point.y });
+    }
+    for (const time of [start, triggerAt, Math.min(run.elapsedMs, end)].filter((value, index, values) => value >= 0 && values.indexOf(value) === index)) {
+      const point = sampleSpacingGatePosition(run.spacingGateHistory, gate.playerId, time);
+      if (point) checked.set(time, point);
+    }
+    const violation = [...checked.entries()].sort((a, b) => a[0] - b[0]).find(([, point]) => !spacingGateMet(gate, point));
+    if (violation) {
+      result.status = "missed"; result.firstViolationAtMs = violation[0]; result.actualPoint = violation[1]; result.checkedAtMs = run.elapsedMs; result.reason = null;
+      continue;
+    }
+    if (run.spacingGateHistory[0]?.atMs > start + 1e-6) {
+      result.status = "not-evaluated"; result.checkedAtMs = run.elapsedMs; result.reason = "The complete hold window is no longer available in this recording";
+      continue;
+    }
+    if (!checked.size) {
+      result.status = "not-evaluated"; result.checkedAtMs = run.elapsedMs; result.reason = "No recorded player position is available for this checkpoint";
+      continue;
+    }
+    if (start < -1e-6) {
+      result.status = "not-evaluated"; result.checkedAtMs = run.elapsedMs; result.reason = "The requested hold window begins before the possession";
+      continue;
+    }
+    if (end > run.durationMs + 1e-6) {
+      if (run.elapsedMs >= run.durationMs - 1e-6) { result.status = "not-evaluated"; result.checkedAtMs = run.elapsedMs; result.reason = "The full hold window extends beyond the possession"; }
+      else result.status = "checking";
+      continue;
+    }
+    if (run.elapsedMs + 1e-6 >= end) {
+      result.status = "met"; result.checkedAtMs = end; result.actualPoint = sampleSpacingGatePosition(run.spacingGateHistory, gate.playerId, end); result.reason = null;
+    } else result.status = "checking";
+  }
+}
+
+function recordSpacingGateStep(run: SimulationRun, atMs: number) {
+  if (!run.spacingGateResults.length) return;
+  run.spacingGateHistory.push({ atMs, players: run.players.map((player) => ({ ...player })) });
+  const maxWindowMs = Math.max(0, ...((run.source.spacingGates?.gates ?? []).map((gate) => (gate.beforeSeconds + gate.afterSeconds) * 1000)));
+  const earliest = Math.max(0, atMs - maxWindowMs - 20);
+  while (run.spacingGateHistory.length > 2 && run.spacingGateHistory[1].atMs < earliest) run.spacingGateHistory.shift();
+  updateSpacingGateResults(run);
 }
 
 /** Advance execution and recorded state without copying an interpolated display frame. */
@@ -3889,6 +4009,15 @@ function transactPausedSimulation(run: SimulationRun, draft: PlaybookDraft, hoop
   validatePlaybookDocument(draft);
   const next = stagePausedRun(run), source = run.source;
   next.source = structuredClone(draft);
+  const previousGates = new Map((source.spacingGates?.gates ?? []).map((gate) => [gate.id, gate]));
+  const previousResults = new Map(run.spacingGateResults.map((result) => [result.gateId, result]));
+  const gates = next.source.spacingGates?.gates ?? [];
+  next.spacingGateResults = gates.map((gate) => {
+    const before = previousGates.get(gate.id), previous = previousResults.get(gate.id);
+    return before && previous && JSON.stringify(before) === JSON.stringify(gate) ? copySpacingGateResult(previous) : newSpacingGateResult(gate.id);
+  });
+  if (!gates.length) next.spacingGateHistory = [];
+  else if (!next.spacingGateHistory.length) next.spacingGateHistory = [{ atMs: next.elapsedMs, players: next.players.map((player) => ({ ...player })) }];
   const movedPlayers = new Set<number>(), movedDefenders = new Set<number>();
   const changedPlayers = new Set<number>(), changedDefenders = new Set<number>();
   const attributes = ({ x: _x, y: _y, ...rest }: PlaybookMarker) => JSON.stringify(rest);
@@ -3980,6 +4109,10 @@ function transactPausedSimulation(run: SimulationRun, draft: PlaybookDraft, hoop
   for (const action of next.actions) if (action.execution?.congestion && (affectedKeys.has(velocityKey("player", action.execution.congestion.playerId)) || action.execution.congestion.blockers.some(id => affectedKeys.has(id)))) delete action.execution.congestion;
   next.routeHistory = ballPoint ? [] : next.routeHistory?.map(sample => ({ ...sample, players: sample.players.filter(p => !movedPlayers.has(p.id)) }));
   invalidateRunRoutes(next);
+  // Gate-only edits reuse the fixed-step evidence already recorded by this
+  // session. A changed expectation is reevaluated from that evidence, while
+  // unchanged expectations retain their settled result.
+  updateSpacingGateResults(next);
   const beforeFrame = next.frame, previous = next.previousFrame;
   next.frame = frameFor(next);
   const samePlaybackPhase = (a: SimulationFrame, b: SimulationFrame) => a.activeSequence === b.activeSequence
