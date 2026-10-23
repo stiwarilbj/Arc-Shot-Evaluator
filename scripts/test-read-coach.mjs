@@ -6,6 +6,7 @@ import { captureSimulationSession, captureSimulationSessionPrefix, restoreSimula
 import { READY_SETUP } from '../frontend/src/features/playbook/data.ts';
 import { DEFAULT_SIMULATION_SETTINGS } from '../frontend/src/features/playbook/types.ts';
 import { validatePlaybookDocument, validateReadCoachLesson } from '../frontend/src/features/playbook/documentValidation.ts';
+import { normalizePlaybookPrecision } from '../frontend/src/features/playbook/documentPrecision.ts';
 import { flattenPlaybookPath } from '../frontend/src/features/playbook/playbookBranches.ts';
 import { validateHostedLibrary, upgradeHostedLibrary, verifyHostedLibrary } from '../frontend/src/features/playbook/hostedLibrary.ts';
 
@@ -13,6 +14,7 @@ const clone = structuredClone;
 const source = clone(READY_SETUP);
 source.defenders = []; // Exercise deterministic generated defenders in a frozen lesson
 source.arrows = [];
+source.players[0].x = 45.1234567; // Force a meaningful save-time coordinate normalization
 const settings = { ...clone(DEFAULT_SIMULATION_SETTINGS), defenseScheme: 'man-to-man', defenseStrategy: 'help', offenseOffBall: 'off', offenseMode: 'scripted', automaticActions: { screen: false, handoff: false, pickRoll: false, offBallScreen: false } };
 
 function runToCapture() {
@@ -46,6 +48,19 @@ const lesson = { version: 1, checkpoints: [checkpoint] };
 validateReadCoachLesson(lesson);
 const document = { ...clone(source), readCoach: lesson };
 validatePlaybookDocument(document);
+
+// A real save rounds visible court coordinates to four decimal places while
+// keeping the compact replay journal at full precision. Reloaded lessons must
+// accept that documented storage difference without weakening identity or
+// possession validation.
+const savedDocument = JSON.parse(JSON.stringify(normalizePlaybookPrecision(document)));
+const savedCheckpoint = savedDocument.readCoach.checkpoints[0];
+assert.ok(Math.abs(savedCheckpoint.snapshot.players[0].x - checkpoint.snapshot.players[0].x) > 1e-5,
+  'fixture exercises save-time coordinate rounding beyond the former comparison tolerance');
+assert.ok(Math.abs(savedCheckpoint.snapshot.players[0].x - checkpoint.snapshot.players[0].x) <= 5.1e-5,
+  'rounded snapshot remains within the four-decimal storage precision');
+assertReadCoachSnapshot(restoreSimulationSession(savedCheckpoint.session), savedCheckpoint.snapshot);
+validatePlaybookDocument(savedDocument);
 
 // Captured inputs are independent and restore to the exact held court
 const sessionCopy = clone(checkpoint.session);

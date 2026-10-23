@@ -1584,13 +1584,17 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
  * possession, motion, and defensive responsibilities. */
 export function assertReadCoachSnapshot(run: SimulationRun, snapshot: ReadCoachCourtSnapshot) {
   const frame = getAuthoritativeSimulationFrame(run);
+  // Saved play coordinates are normalized to four decimal places. A valid
+  // snapshot can therefore differ from its replayed state by up to half of
+  // that last stored digit after save/reload.
+  const coordinateTolerance = 5.1e-5;
   const matchesRoster = (actual: PlaybookMarker[], expected: PlaybookMarker[]) => actual.length === expected.length
     && actual.every((marker) => {
       const recorded = expected.find((candidate) => candidate.id === marker.id);
-      return recorded && Math.abs(recorded.x - marker.x) <= 1e-5 && Math.abs(recorded.y - marker.y) <= 1e-5;
+      return recorded && Math.abs(recorded.x - marker.x) <= coordinateTolerance && Math.abs(recorded.y - marker.y) <= coordinateTolerance;
     });
   const ballMatches = frame.ball === null ? snapshot.ball === null : snapshot.ball !== null
-    && Math.abs(frame.ball.x - snapshot.ball.x) <= 1e-5 && Math.abs(frame.ball.y - snapshot.ball.y) <= 1e-5;
+    && Math.abs(frame.ball.x - snapshot.ball.x) <= coordinateTolerance && Math.abs(frame.ball.y - snapshot.ball.y) <= coordinateTolerance;
   if (Math.abs(run.elapsedMs + run.accumulatorMs - snapshot.atMs) > 1e-5
       || frame.ballHandlerId !== snapshot.ballHandlerId || !ballMatches
       || !matchesRoster(frame.players, snapshot.players) || !matchesRoster(frame.defenders, snapshot.defenders)) {
