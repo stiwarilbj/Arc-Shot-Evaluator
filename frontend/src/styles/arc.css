@@ -1262,6 +1262,86 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .playbook-action-list button { display: flex; flex-wrap: wrap; gap: 6px; min-height: 40px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--surface-2); text-align: left; cursor: pointer; font: inherit; }
 .playbook-action-list button[aria-pressed="true"] { border-color: var(--orange); }
 .playbook-action-list p { color: var(--muted); line-height: 1.5; }
+.pocket-actions-drawer { position: relative; grid-column: 1 / -1; min-width: 0; margin: 3px 0; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
+.pocket-drawer-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; padding: 6px 8px; border: 0; border-radius: inherit; background: transparent; color: var(--text); cursor: pointer; text-align: left; font: inherit; font-size: 11px; font-weight: 700; }
+.pocket-drawer-toggle svg { color: var(--orange); }
+.pocket-drawer-toggle small { margin-left: auto; color: var(--dim); font-size: 9px; }
+.pocket-actions-drawer.is-open { border-color: color-mix(in srgb, var(--orange) 50%, var(--line)); }
+.pocket-drawer-content { display: grid; gap: 7px; max-height: min(62vh, 520px); overflow-y: auto; padding: 8px; border-top: 1px solid var(--line); scrollbar-width: thin; }
+.pocket-drawer-heading { display: flex; align-items: center; justify-content: space-between; color: var(--text); font-size: 10px; }
+.pocket-drawer-heading .icon-button { width: 25px; min-width: 25px; height: 25px; min-height: 25px; }
+.pocket-select-mode, .pocket-library-footer button, .pocket-card-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 29px; padding: 4px 7px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--muted); cursor: pointer; font: inherit; font-size: 9px; font-weight: 650; }
+.pocket-select-mode:hover, .pocket-library-footer button:hover, .pocket-card-actions button:hover { border-color: var(--orange); color: var(--orange); }
+.pocket-select-mode.is-active { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 10%, var(--surface)); color: var(--orange); }
+.pocket-capture-box { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 9px; }
+.pocket-capture-box > strong { color: var(--text); font-size: 10px; }
+.pocket-capture-actions { display: grid; gap: 3px; max-height: 88px; overflow-y: auto; padding: 5px 6px; border-radius: 4px; background: var(--surface-2); }
+.pocket-capture-actions p { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pocket-name-preview { display: grid; gap: 6px; padding: 7px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-2); }
+.pocket-name-preview > strong { color: var(--text); font-size: 9px; }
+.pocket-name-preview > div { display: flex; justify-content: flex-end; gap: 5px; }
+.pocket-name-preview > div > button:not(.button) { min-height: 29px; padding: 4px 7px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--muted); cursor: pointer; font: inherit; font-size: 9px; }
+.pocket-capture-box p { margin: 0; line-height: 1.45; }
+.pocket-capture-box > small { color: var(--miss); line-height: 1.4; }
+.pocket-name-field, .pocket-role-assignments label, .pocket-placement-controls label, .pocket-subdialog label { display: grid; gap: 4px; color: var(--dim); font-size: 9px; }
+.pocket-name-field input, .pocket-role-assignments select, .pocket-placement-controls input, .pocket-placement-controls select, .pocket-subdialog input { width: 100%; min-width: 0; min-height: 30px; padding: 4px 7px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 10px; }
+.pocket-confirm-remove { display: flex; align-items: flex-start; gap: 6px; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.pocket-confirm-remove input, .pocket-action-checkbox input { flex: 0 0 auto; width: 14px; height: 14px; margin: 0; accent-color: var(--orange); }
+.pocket-capture-box .button { min-height: 31px; font-size: 10px; }
+.pocket-library-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.pocket-library-tabs button { min-height: 27px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 9px; font-weight: 700; }
+.pocket-library-tabs button.is-active { background: color-mix(in srgb, var(--orange) 14%, var(--surface-2)); color: var(--orange); }
+.pocket-search { display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--dim); background: var(--surface); }
+.pocket-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 9px; }
+.pocket-library-list { display: grid; gap: 5px; min-height: 34px; max-height: 255px; overflow-y: auto; scrollbar-width: thin; }
+.pocket-card { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.pocket-place { display: grid; grid-template-columns: 48px minmax(0,1fr); align-items: center; gap: 7px; width: 100%; padding: 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; text-align: left; }
+.pocket-place > span { display: grid; gap: 3px; min-width: 0; }
+.pocket-place strong { color: var(--text); font-size: 9px; line-height: 1.3; }
+.pocket-place small { overflow: hidden; color: var(--dim); font-size: 8px; line-height: 1.35; text-overflow: ellipsis; }
+.pocket-mini-preview { width: 48px; height: 48px; border-radius: 4px; overflow: hidden; }
+.pocket-mini-preview rect { fill: var(--surface-2); stroke: var(--line-strong); }
+.pocket-mini-preview path { fill: none; stroke: var(--orange); stroke-width: 1.4; stroke-dasharray: 3 2; }
+.pocket-mini-preview circle { fill: var(--text); stroke: var(--orange); stroke-width: .7; }
+.pocket-card-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.pocket-card-actions button:first-child { flex: 1 1 auto; }
+.pocket-card-actions button:not(:first-child) { min-width: 27px; padding: 3px; }
+.pocket-empty { margin: 0; padding: 8px 4px; color: var(--dim); font-size: 9px; line-height: 1.45; }
+.pocket-library-footer { display: flex; align-items: center; gap: 5px; }
+.pocket-library-footer button { flex: 1; }
+.pocket-file-input { display: none; }
+.pocket-action-checkbox { display: flex; align-items: center; gap: 5px; padding: 3px 7px; color: var(--orange); font-size: 9px; cursor: pointer; }
+.pocket-subdialog { position: absolute; z-index: 5; inset: 35px 7px auto; display: grid; gap: 8px; padding: 9px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); box-shadow: 0 12px 35px #0008; }
+.pocket-subdialog > div { display: flex; justify-content: flex-end; gap: 5px; }
+.pocket-subdialog button { min-height: 28px; padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); color: var(--text); cursor: pointer; font-size: 9px; }
+.pocket-placement-modal-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 18px; background: #0009; }
+.pocket-placement-modal { display: grid; gap: 12px; width: min(540px, 100%); max-height: min(90dvh, 760px); overflow: auto; padding: 18px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 22px 70px #0009; }
+.pocket-placement-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.pocket-placement-modal h2 { margin: 2px 0 0; font-size: 20px; }
+.pocket-placement-modal > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.pocket-role-assignments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pocket-placement-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
+.pocket-placement-controls label:first-child { grid-column: 1 / -1; }
+.pocket-placement-controls .pocket-mirror-check { display: flex; align-items: center; gap: 6px; align-self: end; min-height: 30px; }
+.pocket-placement-controls .pocket-mirror-check input { width: 15px; min-height: 15px; accent-color: var(--orange); }
+.pocket-preview-summary { display: grid; gap: 4px; padding: 9px; border-left: 2px solid var(--orange); background: color-mix(in srgb, var(--orange) 7%, var(--surface)); }
+.pocket-preview-summary strong { font-size: 11px; }
+.pocket-preview-summary span, .pocket-preview-summary small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.pocket-placement-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.pocket-preview-route { opacity: .82; }
+.pocket-preview-route path { fill: none; stroke: var(--orange); stroke-width: 3; stroke-dasharray: 7 5; }
+.pocket-preview-route circle { fill: var(--surface); stroke: var(--orange); stroke-width: 3; }
+.pocket-preview-route text { fill: var(--text); stroke: var(--surface); stroke-width: 3px; paint-order: stroke; font: 700 10px sans-serif; text-anchor: middle; }
+.offense-marker-group.pocket-assigned-preview .offense-marker { stroke: var(--orange); stroke-width: 5; filter: drop-shadow(0 0 7px color-mix(in srgb, var(--orange) 70%, transparent)); }
+.pocket-placement-modal :focus-visible, .pocket-actions-drawer :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.playbook-action-row:has(.pocket-action-checkbox) { padding: 3px; border: 1px dashed color-mix(in srgb, var(--orange) 45%, var(--line)); border-radius: 5px; }
+
+@media (max-width: 620px) {
+  .pocket-role-assignments { grid-template-columns: 1fr; }
+  .pocket-placement-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pocket-placement-modal-backdrop { place-items: end center; padding: 8px; }
+  .pocket-placement-modal { width: 100%; max-height: 88dvh; padding: 14px; }
+}
 
 @media (max-width: 1100px) {
   .saved-plays-panel:not(.is-open) { visibility: hidden; pointer-events: none; }

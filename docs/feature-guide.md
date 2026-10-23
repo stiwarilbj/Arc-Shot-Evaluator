@@ -77,6 +77,33 @@ Customize offensive shooting/finishing ratings and badges, defender skills, and
 simulation settings · Player strengths, defensive strategies, cuts, spacing, and
 enabled automatic actions affect the simulator's decisions
 
+### Pocket actions
+
+Open **Pocket actions** beside the starter-play controls to reuse a small
+combination inside the current play · The **Starter** shelf includes Handoff into
+rescreen, Corner cut plus replacement, Give and go, and Staggered screen · Copy a
+starter to **My pockets** before renaming or editing its labels
+
+Choose **Select combination**, then tap or Shift-click routes on the court or use
+the action-list checkboxes · Review selected moves and recorded participants before
+saving, and provide a name plus editable role labels · If the selection omits a
+simultaneous move, pinned action, or wait source, include the missing connection or
+confirm that the saved copy should remove it
+
+Drag a pocket onto the court or choose **Place on court** to assign every role to a different offensive player ·
+Select a move boundary or the end of the play, then adjust the anchor, rotation, or
+mirror option while checking the dashed court preview · Setup routes and a required
+possession pass are shown before insertion; confirm the pass when requested ·
+**Insert combination** adds ordinary editable actions as one undoable change and
+opens Timing when needed · Inserting at a branch fork can update only that ending
+or the shared opening, which also affects its inheriting endings
+
+Personal pockets are private to the device · The hosted site stores them in browser
+IndexedDB; the downloaded app stores them through its local API · Search, rename,
+duplicate, delete, or export pocket JSON, and import a pocket file to make a new
+independent copy · Later pocket edits never change actions already inserted into a
+play
+
 ### Simulate and save
 
 Play, pause, seek, or pause to edit before continuing · The shared fixed-step engine

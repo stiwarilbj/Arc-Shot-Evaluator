@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.analysis.pipeline import analyze_video, probe_video, refresh_saved_analysis
 from backend.api.playbooks import router as playbooks_router
+from backend.api.pocket_actions import router as pocket_actions_router
 from backend.api import jumper as jumper_api
 from backend.config import (
     ANALYSIS_SESSIONS_DIR,
@@ -50,6 +51,7 @@ EXAMPLE_FILES = (
 
 app = FastAPI(title="ARCade Hoops Local Shot Analysis", version="3.1.0")
 app.include_router(playbooks_router)
+app.include_router(pocket_actions_router)
 app.include_router(jumper_api.router)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()

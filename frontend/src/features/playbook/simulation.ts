@@ -476,12 +476,14 @@ function offBallCutterTarget(screenPoint: CourtPoint, hoop = HOOP_POINT) {
   return pointToward(screenPoint, hoop, 8);
 }
 
-function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDurationMs: number; ballHandlerId: number | null; finalPositions: PlaybookMarker[] } {
+function buildActions(source: PlaybookDraft, includePositionSnapshots = false): { actions: BoundAction[]; actionDurationMs: number; ballHandlerId: number | null; finalPositions: PlaybookMarker[]; positionsAfterSequence?: Map<number, PlaybookMarker[]>; handlerAfterSequence?: Map<number, number | null> } {
   const positions = source.players.map((player) => ({ ...player }));
   let ballHandlerId = source.players[nearestPointIndex(source.players, source.ball ?? source.players[0] ?? HOOP_POINT)]?.id ?? null;
   let cursor = 0;
   const ordered = orderedArrows(source.arrows);
   const actions: BoundAction[] = [];
+  const positionsAfterSequence = includePositionSnapshots ? new Map<number, PlaybookMarker[]>() : undefined;
+  const handlerAfterSequence = includePositionSnapshots ? new Map<number, number | null>() : undefined;
   for (let phaseStart = 0; phaseStart < ordered.length;) {
     let phaseEnd = phaseStart + 1;
     while (phaseEnd < ordered.length && ordered[phaseEnd].sequence === ordered[phaseStart].sequence) phaseEnd += 1;
@@ -596,6 +598,10 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
     }
     cursor += phaseDuration;
     ballHandlerId = nextHandlerId;
+    if (positionsAfterSequence && handlerAfterSequence) {
+      positionsAfterSequence.set(phase[0].sequence, positions.map((player) => ({ ...player })));
+      handlerAfterSequence.set(phase[0].sequence, ballHandlerId);
+    }
     phaseStart = phaseEnd;
   }
   // Untouched version-1 plays retain their original sequence-derived schedule.
@@ -606,7 +612,7 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
     cursor = Math.max(0, ...actions.map((action) => action.startTime + action.durationMs));
   }
   attachActionPlans(actions, source.players[nearestPointIndex(source.players, source.ball ?? source.players[0] ?? HOOP_POINT)]?.id ?? null);
-  return { actions, actionDurationMs: Math.max(MIN_PLAY_DURATION_MS, cursor), ballHandlerId, finalPositions: positions };
+  return { actions, actionDurationMs: Math.max(MIN_PLAY_DURATION_MS, cursor), ballHandlerId, finalPositions: positions, ...(positionsAfterSequence ? { positionsAfterSequence, handlerAfterSequence } : {}) };
 }
 
 
@@ -1550,6 +1556,19 @@ function createInitialFrame(): SimulationFrame {
 /** Inspect authored bindings with the engine's rules, without initializing execution or defense. */
 export function bindAuthoredActions(source: PlaybookDraft): BoundAction[] {
   return buildActions(structuredClone(source)).actions;
+}
+
+/** Read the planned possession and locations before a move group using the same authored bindings as simulation. */
+export function authoredStateBeforeSequence(source: PlaybookDraft, beforeSequence: number | null) {
+  const built = buildActions(structuredClone(source), true);
+  const initialHandler = source.players[nearestPointIndex(source.players, source.ball ?? source.players[0] ?? HOOP_POINT)]?.id ?? null;
+  if (beforeSequence == null) return { players: built.finalPositions.map((player) => ({ ...player })), ballHandlerId: built.ballHandlerId };
+  const priorSequences = [...(built.positionsAfterSequence?.keys() ?? [])].filter((sequence) => sequence < beforeSequence).sort((a, b) => b - a);
+  const sequence = priorSequences[0];
+  return {
+    players: sequence == null ? source.players.map((player) => ({ ...player })) : (built.positionsAfterSequence?.get(sequence) ?? source.players).map((player) => ({ ...player })),
+    ballHandlerId: sequence == null ? initialHandler : built.handlerAfterSequence?.get(sequence) ?? null,
+  };
 }
 
 export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT, options: { recordSession?: boolean; seed?: number } = {}): SimulationRun {

@@ -3,6 +3,12 @@ import { clonePlaybook } from "./types.ts";
 
 export const MAX_PLAYBOOK_BRANCHES = 8;
 
+/** Pocket insertions before an ending's fork belong to its shared opening. */
+export function pocketInsertionBranchTarget(branchId: string | null, sharedBoundary: number | null, beforeSequence: number | null, insertShared: boolean): string | null {
+  if (!branchId || insertShared || sharedBoundary !== null && beforeSequence !== null && beforeSequence < sharedBoundary) return null;
+  return branchId;
+}
+
 export function sequenceOf(arrow: PlaybookArrow, index: number) {
   return Number.isInteger(arrow.sequence) ? arrow.sequence! : index + 1;
 }

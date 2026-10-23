@@ -8,7 +8,9 @@ import { authoredCourtRoutes } from "./simulation";
 import { TimingMixerPanel } from "./TimingMixerPanel";
 import { hasTimingPlan, moveTimingGroup, projectPointToRoute, resizeActionMinimum, sampleAuthoredCourtRoute, shiftConnectedTiming, snapTimingMs } from "./timingMixer.ts";
 import type { PlaybookTimingWait } from "./types";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { PocketActionsPanel, type PocketPlacementRequest } from "./PocketActionsPanel.tsx";
+import { buildPocketInsertion } from "./pocketActions.ts";
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDownToLine,
   ArrowUpRight,
@@ -46,7 +48,7 @@ import { editPlaybookPoint } from "./editPlaybookPoint";
 import { exportPlaybookPng } from "./exportPlaybookPng";
 import { clamp, markerPoint, arrowSequence, lerpPoint, defaultArrowControl, arrowControl, actionPointAt, actionPath, screenCutterPath } from "./playbookPaths";
 import { prepareMiniCourt } from "./miniCourtGeometry";
-import { applyEditedPath, branchActionStatus, createBranchFromAction, flattenPlaybookPath, MAX_PLAYBOOK_BRANCHES, orderedActions as orderBranchActions, resolvePlaybookPath } from "./playbookBranches.ts";
+import { applyEditedPath, branchActionStatus, createBranchFromAction, flattenPlaybookPath, MAX_PLAYBOOK_BRANCHES, orderedActions as orderBranchActions, pocketInsertionBranchTarget, resolvePlaybookPath } from "./playbookBranches.ts";
 import { ArcSelect } from "../../components/ArcSelect";
 import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
@@ -57,6 +59,7 @@ import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./typ
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
   bindAuthoredActions,
+  authoredStateBeforeSequence,
   pausedDraftIsCompatible,
   placeDefendersGoalSide,
   SIMULATION_SHOT_MS,
@@ -311,6 +314,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [history, setHistory] = useState<DraftHistoryEntry[]>([]);
   const [future, setFuture] = useState<DraftHistoryEntry[]>([]);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+  const [pocketSelectionMode, setPocketSelectionMode] = useState(false);
+  const [pocketSelectedIds, setPocketSelectedIds] = useState<string[]>([]);
+  const [pocketPreviewArrows, setPocketPreviewArrows] = useState<PlaybookArrow[]>([]);
+  const [pocketPreviewBallHandlerId, setPocketPreviewBallHandlerId] = useState<number | null>(null);
+  const [pocketPreviewPlayerIds, setPocketPreviewPlayerIds] = useState<number[]>([]);
   const [renamingBranchId, setRenamingBranchId] = useState<string | null>(null);
   const [branchLabelValue, setBranchLabelValue] = useState("");
   const [compareMain, setCompareMain] = useState(false);
@@ -395,6 +403,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const selectedSkillsDefender = draft.defenders.find((defender) => defender.id === defenderSkillsId) ?? draft.defenders[0] ?? null;
   const selectedParticipants = useMemo(() => selectedArrow ? bindAuthoredActions(activeDraft).find((action) => action.arrow.id === selectedArrow.id) : null, [activeDraft, selectedArrow?.id]);
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, activeDraft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
+  const sharedBoundarySequence = activeBranchId
+    ? Math.min(...activeDraft.arrows.filter((arrow) => !activePath.sharedIds.has(arrow.id)).map((arrow, index) => arrowSequence(arrow, index)), Math.max(0, ...activeDraft.arrows.map((arrow, index) => arrowSequence(arrow, index))) + 1)
+    : null;
   const starterCategories = useMemo(() => ["All plays", ...new Set(STARTER_PLAYS.map((play) => STARTER_PLAY_DETAILS[play.name]?.category ?? "Other"))], []);
   const filteredStarterPlays = useMemo(() => {
     const query = starterSearch.trim().toLowerCase();
@@ -490,6 +501,63 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         ? { ...arrow, timingPlan: { ...(arrow.timingPlan ?? { startAtMs }), startAtMs, syncId } }
         : arrow);
     });
+  }
+
+  function togglePocketSelection(actionId: string, extend = false) {
+    setPocketSelectedIds((current) => {
+      const selectedIds = extend || pocketSelectionMode ? current : [];
+      return selectedIds.includes(actionId) ? selectedIds.filter((id) => id !== actionId) : [...selectedIds, actionId];
+    });
+    setPocketSelectionMode(true);
+  }
+
+  function insertPocket(request: PocketPlacementRequest): boolean {
+    try {
+      const targetBranchId = pocketInsertionBranchTarget(activeBranchId, sharedBoundarySequence, request.beforeSequence, request.insertShared);
+      const timingBase = timingActive ? clonePlaybook(draft) : initializeTimingFamily(draft);
+      const oldPath = resolvePlaybookPath(timingBase, targetBranchId);
+      const state = authoredStateBeforeSequence(oldPath.play, request.beforeSequence);
+      const bindings = bindAuthoredActions(oldPath.play);
+      const boundary = request.beforeSequence == null ? null : bindings.filter((action) => action.sequence === request.beforeSequence);
+      const baseStartAtMs = boundary?.length
+        ? Math.min(...boundary.map((action) => action.startTime))
+        : Math.max(0, ...bindings.map((action) => action.startTime + action.durationMs));
+      const insertion = buildPocketInsertion({
+        source: oldPath.play,
+        pocket: request.pocket,
+        assignments: request.assignments,
+        transform: request.transform,
+        beforeSequence: request.beforeSequence,
+        currentPositions: state.players,
+        currentBallHandlerId: state.ballHandlerId,
+        includeConnectionPass: request.includeConnectionPass,
+        baseStartAtMs,
+      });
+      const inserted = new Set(insertion.insertedIds);
+      const authoredBindings = bindAuthoredActions({ ...oldPath.play, arrows: insertion.arrows });
+      const shifted = shiftConnectedTiming(insertion.arrows, authoredBindings, insertion.insertedIds, insertion.durationMs)
+        .map((arrow) => inserted.has(arrow.id) ? insertion.arrows.find((candidate) => candidate.id === arrow.id)! : arrow);
+      const edited = clonePlaybook(oldPath.play);
+      edited.arrows = shifted;
+      const next = applyEditedPath(timingBase, targetBranchId, edited, oldPath);
+      validatePlaybookDocument(next);
+      if (!commitCanonical(next, draft, activeBranchId)) return false;
+      setSimulationPlaying(false);
+      resetSimulation();
+      setTimingOpen(true);
+      setPocketSelectedIds([]);
+      setPocketSelectionMode(false);
+      setPocketPreviewArrows([]);
+      setPocketPreviewBallHandlerId(null);
+      setPocketPreviewPlayerIds([]);
+      setSelected({ type: "arrow", id: insertion.firstActionId });
+      setTool("select");
+      setError(null);
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Pocket combination could not be inserted");
+      return false;
+    }
   }
 
   function addTimingWait(actionId: string, wait: PlaybookTimingWait) {
@@ -1285,11 +1353,31 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     interruptPointerInteraction(event.pointerId);
   }
 
+  function onPocketDragOver(event: ReactDragEvent<SVGSVGElement>) {
+    if (!event.dataTransfer.types.includes("application/x-arc-pocket-action")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function onPocketDrop(event: ReactDragEvent<SVGSVGElement>) {
+    const id = event.dataTransfer.getData("application/x-arc-pocket-action");
+    if (!id) return;
+    event.preventDefault();
+    const anchor = pointFromPointer(event, event.currentTarget);
+    if (!anchor) return;
+    window.dispatchEvent(new CustomEvent("arc-pocket-action-drop", { detail: { id, anchor } }));
+  }
+
   function onMarkerPointerDown(event: ReactPointerEvent<SVGElement>, selection: Selection) {
     event.stopPropagation();
     if (dragRef.current || drawingRef.current) return;
     focusBoard();
     if (!selection) return;
+    if (selection.type === "arrow" && (pocketSelectionMode || event.shiftKey)) {
+      event.preventDefault();
+      togglePocketSelection(String(selection.id), event.shiftKey || pocketSelectionMode);
+      return;
+    }
     if (tool === "delete") {
       commit(removeSelection(cloneActiveDraft(), selection));
       setSelected(null);
@@ -1389,7 +1477,20 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") interruptPointerInteraction();
+    if (event.key === "Escape") {
+      interruptPointerInteraction();
+      if (pocketSelectionMode) {
+        event.preventDefault();
+        setPocketSelectionMode(false);
+        setPocketSelectedIds([]);
+        setPocketPreviewArrows([]);
+        setPocketPreviewBallHandlerId(null);
+        setPocketPreviewPlayerIds([]);
+        setSelected(null);
+        setTool("select");
+        return;
+      }
+    }
     const target = event.target as HTMLElement;
     if (target.closest("input, textarea, select, [contenteditable='true']") || event.nativeEvent.isComposing) return;
     const modifier = event.metaKey || event.ctrlKey;
@@ -1522,12 +1623,14 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           <PresetButton active={draft.name === "Ready setup" && !draft.arrows.length} icon={<Shield size={17} />} label="Ready setup" onClick={() => requestLoad(clonePlaybook(READY_SETUP))} />
           <PresetButton active={starterOpen} icon={<FolderOpen size={17} />} label="Starter plays" onClick={() => setStarterOpen(true)} />
           <PresetButton active={!draft.players.length && !draft.ball} icon={<Circle size={17} />} label="Empty court" onClick={() => requestLoad(clonePlaybook(EMPTY_COURT))} />
+          <PocketActionsPanel source={activeDraft} selectedIds={pocketSelectedIds} selectionMode={pocketSelectionMode} onSelectionModeChange={(value) => { setPocketSelectionMode(value); if (!value) setPocketSelectedIds([]); }} onSelectionChange={setPocketSelectedIds} onInsert={insertPocket} onBeginPlacement={pauseSimulation} onPreview={(arrows, ballHandlerId) => { setPocketPreviewArrows(arrows); setPocketPreviewBallHandlerId(ballHandlerId); setPocketPreviewPlayerIds([...new Set(arrows.flatMap((arrow) => [arrow.actor_id, arrow.recipient_id, arrow.screener_id, arrow.handler_id, arrow.cutter_id].filter((id): id is number => id != null)))]); }} onError={setError} sharedBoundarySequence={sharedBoundarySequence} />
           <details className="playbook-action-list"><summary>Actions · {activeDraft.arrows.length}</summary><div role="group" aria-label="Edit play actions">{activeDraft.arrows.map((arrow, index) => {
             const sharedIn = (draft.branches ?? []).filter((branch) => resolvePlaybookPath(draft, branch.id).sharedIds.has(arrow.id)).length;
             const isShared = activeBranchId ? activePath.sharedIds.has(arrow.id) : sharedIn > 0;
             const affected = sharedIn + 1;
             const branchStatus = activeBranchId ? branchActionStatus(activeDraft.arrows, draft.arrows, arrow.id) : null;
             return <div className="playbook-action-row" key={arrow.id}>
+              {pocketSelectionMode ? <label className="pocket-action-checkbox"><input type="checkbox" checked={pocketSelectedIds.includes(arrow.id)} onChange={() => togglePocketSelection(arrow.id)} aria-label={`Select Move ${arrowSequence(arrow, index)} for a pocket action`} />Include</label> : null}
               <button type="button" aria-pressed={selected?.type === "arrow" && selected.id === arrow.id} onClick={() => { setSimulationPlaying(false); chooseTool("select"); setSelected({ type: "arrow", id: arrow.id }); }}><strong>Move {arrowSequence(arrow, index)}</strong><span>{actionLabel(arrow.kind)}</span>{branchStatus ? <em className={`branch-action-badge branch-action-${branchStatus}`}>{branchStatus === "added" ? "Added" : "Changed"}</em> : null}{isShared ? <small>Shared opening · edits affect Main + {sharedIn} ending{sharedIn === 1 ? "" : "s"}</small> : null}</button>
               {!activeBranchId ? <button type="button" className="branch-create-action" disabled={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES} title={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES ? "A play can have at most eight endings" : `Create a branch before Move ${arrowSequence(arrow, index)}`} onClick={() => createBranch(arrow.id)}>Create a branch here</button> : null}
             </div>;
@@ -1734,7 +1837,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior</span>
           </div> : null}
           <div className="court-frame">
-            <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onPointerDownCapture={onTimingRoutePointPointerDown} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
+            <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onDragOver={onPocketDragOver} onDrop={onPocketDrop} onPointerDownCapture={onTimingRoutePointPointerDown} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
               <defs>
                 <pattern id="court-boards" width="80" height="80" patternUnits="userSpaceOnUse"><rect width="80" height="80" fill="var(--surface)" /><path d="M0 0h80M0 40h80" stroke="rgba(255,255,255,.022)" strokeWidth="1" /><path d="M40 0v80" stroke="rgba(255,255,255,.014)" strokeWidth="1" /></pattern>
                 <marker id="movement-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--text)" /></marker>
@@ -1745,6 +1848,14 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               {simulationActive ? <CourtRoutes routes={simulationFrame.routes.filter((route) => route.actionId !== editingArrowId || editingArrowId == null)} visibility={arrowVisibility} labels /> : <CourtRoutes routes={authoredRoutes.filter((route) => !route.id.endsWith(":actor") && route.kind === "handler-support")} visibility={arrowVisibility} />}
               {!simulationActive && compareRoutes.length ? <CourtRoutes routes={compareRoutes} visibility={arrowVisibility} compare /> : null}
               {timingPreviewRoute ? <g className={`timing-court-preview ${routePointPick ? "is-picking" : ""}`} pointerEvents="none"><CourtRoutes routes={[timingPreviewRoute]} visibility="all" /><circle cx={markerPoint(timingPreviewRoute.start).x} cy={markerPoint(timingPreviewRoute.start).y} r="16" /><text x={markerPoint(timingPreviewRoute.start).x} y={markerPoint(timingPreviewRoute.start).y - 24}>START</text><circle cx={markerPoint(timingPreviewRoute.end).x} cy={markerPoint(timingPreviewRoute.end).y} r="16" /><text x={markerPoint(timingPreviewRoute.end).x} y={markerPoint(timingPreviewRoute.end).y - 24}>END</text></g> : null}
+              {pocketPreviewArrows.map((arrow) => {
+                const participants = [arrow.actor_id, arrow.recipient_id, arrow.screener_id, arrow.handler_id, arrow.cutter_id].filter((id): id is number => id != null);
+                const resolved = bindAuthoredActions({ ...activeDraft, arrows: [arrow] })[0];
+                const route = { scope: arrow.kind === "pass" || arrow.kind === "handoff" || resolved?.actorId === pocketPreviewBallHandlerId ? "on-ball" as const : "off-ball" as const, importance: "main" as const };
+                if (!routeVisible(route, arrowVisibility)) return null;
+                const start = markerPoint(arrow.start), end = markerPoint(arrow.end);
+                return <g key={`pocket-preview-${arrow.id}`} className="pocket-preview-route" pointerEvents="none"><path d={actionPath(arrow)} markerEnd={`url(#${actionMarker(arrow.kind)})`} /><circle cx={start.x} cy={start.y} r="11" /><circle cx={end.x} cy={end.y} r="11" /><text x={start.x} y={start.y - 14}>ENTRY</text><text x={end.x} y={end.y - 14}>EXIT</text><title>{participants.length ? `Player ${participants.join(", Player ")}` : "Pocket route"}</title></g>;
+              })}
               {visibleArrows.map((arrow) => {
                 const start = markerPoint(arrow.start);
                 const end = markerPoint(arrow.end);
@@ -1774,7 +1885,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 const point = markerPoint(marker);
                 const active = selected?.type === "player" && selected.id === marker.id;
                 const role = offBallScreenSelection.screenerId === marker.id ? "is-screen-screener" : offBallScreenSelection.cutterId === marker.id ? "is-screen-cutter" : pickPopSelection.screenerId === marker.id ? "is-screen-screener" : pickPopSelection.handlerId === marker.id ? "is-screen-cutter" : backdoorCutterId === marker.id ? "is-screen-cutter" : "";
-                return <g key={`player-${marker.id}`} className={`offense-marker-group ${active ? "is-selected" : ""} ${role}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "player", id: marker.id })}>
+                return <g key={`player-${marker.id}`} className={`offense-marker-group ${active ? "is-selected" : ""} ${role} ${pocketPreviewPlayerIds.includes(marker.id) ? "pocket-assigned-preview" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "player", id: marker.id })}>
                   <circle cx={point.x} cy={point.y} r="30" className="marker-hit-target" /><circle cx={point.x} cy={point.y} r={simulationActive ? 18 : 25} className="offense-marker" /><text x={point.x} y={point.y + 1} className="marker-number">{marker.id}</text>
                 </g>;
               })}

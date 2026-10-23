@@ -44,14 +44,14 @@ export function moveTimingGroup(arrows: PlaybookArrow[], actionId: string, start
 
 /** Shift only downstream actions that share an execution participant or the
  * same ball-transfer chain. Independent lanes keep their authored start. */
-export function shiftConnectedTiming(arrows: PlaybookArrow[], bindings: Array<{ arrow: PlaybookArrow; sequence: number; actorId: number | null; recipientId: number | null; partnerId?: number | null }>, actionId: string, deltaMs: number) {
+export function shiftConnectedTiming(arrows: PlaybookArrow[], bindings: Array<{ arrow: PlaybookArrow; sequence: number; actorId: number | null; recipientId: number | null; partnerId?: number | null }>, actionId: string | string[], deltaMs: number) {
   if (!deltaMs) return arrows;
   const bindingById = new Map(bindings.map((binding) => [binding.arrow.id, binding]));
   const ordered = arrows.map((arrow, index) => ({ arrow, index, sequence: arrow.sequence ?? index + 1 }))
     .sort((a, b) => a.sequence - b.sequence || a.index - b.index);
-  const selected = ordered.find((entry) => entry.arrow.id === actionId);
-  if (!selected) return arrows;
-  const affected = new Set([actionId]);
+  const seeds = new Set(Array.isArray(actionId) ? actionId : [actionId]);
+  if (![...seeds].some((id) => ordered.some((entry) => entry.arrow.id === id))) return arrows;
+  const affected = new Set(seeds);
   let changed = true;
   while (changed) {
     changed = false;
@@ -61,6 +61,7 @@ export function shiftConnectedTiming(arrows: PlaybookArrow[], bindings: Array<{ 
       const candidatePeople = new Set(actionParticipants(candidate.arrow, candidateBinding?.actorId ?? null, candidateBinding?.recipientId ?? null, candidateBinding?.partnerId ?? null));
       const connected = ordered.some((prior) => affected.has(prior.arrow.id) && (
         candidate.arrow.timingPlan?.waits?.some((wait) => wait.actionId === prior.arrow.id)
+        || candidate.arrow.timingPlan?.syncId !== undefined && candidate.arrow.timingPlan.syncId === prior.arrow.timingPlan?.syncId
         || prior.sequence < candidate.sequence && (() => {
         const priorBinding = bindingById.get(prior.arrow.id);
         const priorPeople = actionParticipants(prior.arrow, priorBinding?.actorId ?? null, priorBinding?.recipientId ?? null, priorBinding?.partnerId ?? null);
