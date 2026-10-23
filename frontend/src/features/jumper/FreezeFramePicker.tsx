@@ -105,8 +105,8 @@ export default function FreezeFramePicker({
         <section aria-label="Nearby freeze frames">
           <p className="jumper-caption">
             Recorded masked frames within ±0.20s of {(anchor / 30).toFixed(2)}s,
-            kept inside its piece. Edge clarity is relative to these previews,
-            not a measure of pose quality or original motion blur. Choose a
+            kept inside its piece · Edge clarity is relative to these previews,
+            not a measure of pose quality or original motion blur · Choose a
             readable pose, then Freeze at playhead
           </p>
           <button disabled={!active} onClick={() => setAnchor(frame)}>
@@ -116,8 +116,8 @@ export default function FreezeFramePicker({
             <p role="status">Loading nearby recorded frames…</p>
           ) : current.error ? (
             <p role="status">
-              Nearby previews unavailable. You can still freeze the playhead
-              frame.{" "}
+              Nearby previews unavailable · You can still freeze the playhead
+              frame ·{" "}
               <button
                 disabled={!active}
                 onClick={() => {
@@ -167,7 +167,7 @@ export default function FreezeFramePicker({
               </div>
               {candidates.length === 1 ? (
                 <p className="jumper-caption">
-                  Only one distinct recorded frame is available here. Move into
+                  Only one distinct recorded frame is available here · Move into
                   a motion piece to compare nearby poses
                 </p>
               ) : null}

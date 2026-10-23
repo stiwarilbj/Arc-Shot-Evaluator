@@ -5,8 +5,8 @@ import numpy as np
 class InvalidModelOutputError(ValueError):
     def __init__(self, name):
         super().__init__(
-            f"The masking model returned an invalid {name}. Processing stopped. "
-            "Retry processing; if it repeats, restart the editor or use a shorter segment."
+            f"The masking model returned an invalid {name} · Processing stopped · "
+            "Retry processing; if it repeats, restart the editor or use a shorter segment"
         )
 
 

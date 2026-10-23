@@ -67,5 +67,5 @@ export function parseCounterLabRequest(value: unknown): CounterLabRequest {
 export function counterLabRequestError(value: unknown, error: unknown): Extract<CounterLabMessage, { type: "error" }> {
   return { type: "error", id: record(value) && identifier(value.id) ? value.id : "",
     ...(record(value) && value.type === "details" && identifier(value.detailId) ? { detailId: value.detailId } : {}),
-    message: error instanceof Error ? error.message : "Invalid Counter Lab request. Try again" };
+    message: error instanceof Error ? error.message : "Invalid Counter Lab request · Try again" };
 }

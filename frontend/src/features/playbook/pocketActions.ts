@@ -172,13 +172,13 @@ export function inspectPocketCapture(arrows: PlaybookArrow[], selectedIds: strin
   const issues: PocketCaptureIssue[] = [];
   for (const arrow of arrows.filter((item) => selected.has(item.id))) {
     const sameMove = arrows.filter((item) => (item.sequence ?? 1) === (arrow.sequence ?? 1));
-    if (sameMove.length > 1 && sameMove.some((item) => !selected.has(item.id))) issues.push({ kind: "simultaneous", actionIds: sameMove.map((item) => item.id), message: `Move ${arrow.sequence ?? 1} runs together. Include every action in the move or confirm removing the unselected action` });
+    if (sameMove.length > 1 && sameMove.some((item) => !selected.has(item.id))) issues.push({ kind: "simultaneous", actionIds: sameMove.map((item) => item.id), message: `Move ${arrow.sequence ?? 1} runs together · Include every action in the move or confirm removing the unselected action` });
     const sync = arrow.timingPlan?.syncId;
     if (sync) {
       const members = arrows.filter((item) => item.timingPlan?.syncId === sync);
-      if (members.some((item) => !selected.has(item.id))) issues.push({ kind: "sync", actionIds: members.map((item) => item.id), message: "A pinned action group is only partly selected. Include the full group or remove its pin in the pocket copy" });
+      if (members.some((item) => !selected.has(item.id))) issues.push({ kind: "sync", actionIds: members.map((item) => item.id), message: "A pinned action group is only partly selected · Include the full group or remove its pin in the pocket copy" });
     }
-    for (const wait of arrow.timingPlan?.waits ?? []) if (!selected.has(wait.actionId)) issues.push({ kind: "external-wait", actionIds: [arrow.id, wait.actionId], message: "A selected action waits on a move outside this combination. Include that move or remove the external wait in the pocket copy" });
+    for (const wait of arrow.timingPlan?.waits ?? []) if (!selected.has(wait.actionId)) issues.push({ kind: "external-wait", actionIds: [arrow.id, wait.actionId], message: "A selected action waits on a move outside this combination · Include that move or remove the external wait in the pocket copy" });
   }
   return issues.filter((issue, index) => issues.findIndex((candidate) => candidate.kind === issue.kind && candidate.actionIds.slice().sort().join("|") === issue.actionIds.slice().sort().join("|")) === index);
 }
@@ -299,7 +299,7 @@ export function transformPocketActions(pocket: PocketActionDocument, assignments
   });
   const boundary = physicalBoundary();
   const points = [...arrows.flatMap((arrow) => [arrow.start, arrow.end, ...(arrow.control ? [arrow.control] : []), ...(arrow.exit_target ? [arrow.exit_target] : [])]), ...pocket.roles.map((role) => transformPoint(role.entry, anchorRole.entry, anchorPoint, rotation, transform.mirrored))];
-  if (points.some((point) => point.x < boundary.left || point.x > boundary.right || point.y < boundary.top || point.y > boundary.bottom)) throw new Error("This rotation or placement extends outside the playable court. Adjust the anchor or angle");
+  if (points.some((point) => point.x < boundary.left || point.x > boundary.right || point.y < boundary.top || point.y > boundary.bottom)) throw new Error("This rotation or placement extends outside the playable court · Adjust the anchor or angle");
   return { arrows, roleMap, entries: new Map(pocket.roles.map((role) => [role.id, transformPoint(role.entry, anchorRole.entry, anchorPoint, rotation, transform.mirrored)])) };
 }
 
@@ -339,9 +339,9 @@ export function buildPocketInsertion(options: {
   const holderRoleId = pocket.requiredBallRole;
   const requiredHolder = holderRoleId ? roleMap.get(holderRoleId) ?? null : null;
   let connectionPass: PlaybookArrow | null = null;
-  if (requiredHolder != null && options.currentBallHandlerId == null) throw new Error("The ball handler is unresolved at this insertion point. Choose a different boundary or repair the preceding pass");
+  if (requiredHolder != null && options.currentBallHandlerId == null) throw new Error("The ball handler is unresolved at this insertion point · Choose a different boundary or repair the preceding pass");
   if (requiredHolder != null && options.currentBallHandlerId != null && requiredHolder !== options.currentBallHandlerId) {
-    if (!options.includeConnectionPass) throw new Error(`This combination starts with Player ${requiredHolder} on the ball. Confirm the setup pass from Player ${options.currentBallHandlerId}`);
+    if (!options.includeConnectionPass) throw new Error(`This combination starts with Player ${requiredHolder} on the ball · Confirm the setup pass from Player ${options.currentBallHandlerId}`);
     const recipient = entryActions.find((entry) => entry.playerId === requiredHolder)!;
     const handler = options.currentPositions.find((player) => player.id === options.currentBallHandlerId)!;
     connectionPass = { id: idFactory(), kind: "pass", start: { x: handler.x, y: handler.y }, end: { x: recipient.position!.x, y: recipient.position!.y }, actor_id: handler.id, recipient_id: recipient.playerId, sequence: insertAt, timing: 1, timingPlan: { startAtMs: baseStartAtMs } };

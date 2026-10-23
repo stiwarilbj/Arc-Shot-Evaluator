@@ -2299,7 +2299,7 @@ def analyze_video(
     if not any(rim is not None for rim in rims):
         warnings.append("No stable rim track was found; use a clearer side-on clip")
     if not shots:
-        warnings.append("No complete shot trajectory was found. Keep the ball, shooter, and rim visible")
+        warnings.append("No complete shot trajectory was found · Keep the ball, shooter, and rim visible")
     if shot_mode == "jump_shot":
         warnings.append("Jump-shot probabilities remain unavailable until the validated jump model is installed")
     warnings.extend(quality["messages"])

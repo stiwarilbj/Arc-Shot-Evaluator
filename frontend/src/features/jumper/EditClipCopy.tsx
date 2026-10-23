@@ -39,7 +39,7 @@ export default function EditClipCopy({
     void (async () => {
       if (!clip.presentation?.startsWith("silhouette") && !clip.quiz)
         throw Error(
-          "This legacy highlight contains original player colors. Upload it in Create and mask it before editing a silhouette copy",
+          "This legacy highlight contains original player colors · Upload it in Create and mask it before editing a silhouette copy",
         );
       const base = await videoBlob(
         clip.id,
@@ -134,7 +134,7 @@ export default function EditClipCopy({
           Return to upload editor
         </button>
       </div>
-      <p>Your saved original stays unchanged. Saving creates a new clip</p>
+      <p>Your saved original stays unchanged · Saving creates a new clip</p>
       {base ? (
         <>
           <VideoEditPanel

@@ -22,7 +22,7 @@ export function buildFrameMap(
     const time = micros(s.timestamp), next = sorted[index+1];
     const duration = next ? micros(next.timestamp)-time : micros(s.duration);
     if (!Number.isSafeInteger(time) || !Number.isSafeInteger(duration) || duration < 0 || (duration === 0 && next))
-      throw Error("The video has duplicate or invalid frame timestamps. Try another export");
+      throw Error("The video has duplicate or invalid frame timestamps · Try another export");
     return { source_index: index, source_us: time, duration_us: duration };
   });
   const origin = frames[0].source_us, startUS = micros(start), endUS = micros(end);
@@ -66,7 +66,7 @@ export function sourceFrameTime(map: SourceFrameMap, frame: number) {
 }
 export function verifySourceFrame(map: SourceFrameMap, frame: number, sample: {timestamp:number}|null) {
   if(!sample || Math.abs(micros(sample.timestamp)-map.frames[frame].source_us)>2)
-    throw Error(`Source frame ${frame+1} decoded at a different timestamp. Reload the video and retry`);
+    throw Error(`Source frame ${frame+1} decoded at a different timestamp · Reload the video and retry`);
 }
 
 export function sameFrameMap(a: SourceFrameMap | undefined, b: SourceFrameMap | undefined) {

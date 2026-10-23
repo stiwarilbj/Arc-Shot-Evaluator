@@ -401,7 +401,7 @@ def track(
         detector_path = MODEL_WEIGHTS_DIR / "yolo11n-pose.pt"
         if not detector_path.is_file():
             raise ValueError(
-                "Local person detector is missing. Run the downloaded app setup again."
+                "Local person detector is missing · Run the downloaded app setup again"
             )
         detector = YOLO(str(detector_path))
         from importlib.metadata import version
@@ -429,7 +429,7 @@ def track(
         boxes = detections.boxes.xyxy.cpu().numpy() / [width, height, width, height]
         if len(boxes) > 20:
             raise ValueError(
-                "More than 20 people detected. Trim to a closer view or use manual selection."
+                "More than 20 people detected · Trim to a closer view or use manual selection"
             )
         frame_hands = []
         keypoints = getattr(detections, "keypoints", None)
@@ -577,12 +577,12 @@ def track(
                     for box in additions:
                         if len(job["objects"]) >= 20:
                             raise ValueError(
-                                "More than 20 tracks needed. Remove spectators or use manual selection."
+                                "More than 20 tracks needed · Remove spectators or use manual selection"
                             )
                         identity = max(o["id"] for o in job["objects"]) + 1
                         if identity > 255:
                             raise ValueError(
-                                "Too many selections. Start a fresh selection."
+                                "Too many selections · Start a fresh selection"
                             )
                         prompt = {"frame": index, "box": box}
                         job["objects"].append({"id": identity, "prompts": [prompt]})

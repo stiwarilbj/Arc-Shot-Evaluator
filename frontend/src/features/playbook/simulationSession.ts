@@ -77,7 +77,7 @@ export function beginSimulationSession(run: SimulationRun, hoop: CourtPoint, see
 
 export function assertSimulationSessionHoop(run: SimulationRun, hoop: CourtPoint) {
   const session = sessions.get(run);
-  if (session && (hoop.x !== session.record.hoop.x || hoop.y !== session.record.hoop.y)) throw new Error("Keep the recorded session's hoop fixed. Start a new session to change courts");
+  if (session && (hoop.x !== session.record.hoop.x || hoop.y !== session.record.hoop.y)) throw new Error("Keep the recorded session's hoop fixed · Start a new session to change courts");
 }
 
 /** Editing after seeking creates a new future. Seeking alone preserves it. */

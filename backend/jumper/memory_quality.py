@@ -138,7 +138,7 @@ class MemoryQualityGate:
             filtered['cond_frame_outputs'].setdefault(at, output)
             filtered['non_cond_frame_outputs'].pop(at, None)
         if not filtered['cond_frame_outputs']:
-            raise ValueError(f'No reliable player reference at frame {frame + 1}. Add an Include point on a clear frame and retry.')
+            raise ValueError(f'No reliable player reference at frame {frame + 1} · Add an Include point on a clear frame and retry')
         return original(**{**args, 'output_dict': filtered})
 
     def reset_object(self, state, identity):

@@ -25,7 +25,7 @@ def correction_prompt(prompt, track_id, source_size=None, context=""):
                 suffix = f" ({context})" if context else ""
                 raise CorrectionConflictError(
                     f"Include and Exclude points overlap on the same processing pixel at frame {prompt['frame']+1}, "
-                    f"track {track_id}{suffix}. Remove or move one of these correction points, then retry."
+                    f"track {track_id}{suffix} · Remove or move one of these correction points, then retry"
                 )
             continue
         cells[cell] = label

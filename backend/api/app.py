@@ -732,7 +732,7 @@ def serve_frontend_app(path: str):
     if not index.is_file():
         return JSONResponse(
             status_code=503,
-            content={"detail": "Frontend is not built. Run pnpm --dir frontend build."},
+            content={"detail": "Frontend is not built · Run pnpm --dir frontend build"},
         )
     return FileResponse(index)
 

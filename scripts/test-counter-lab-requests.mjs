@@ -63,7 +63,7 @@ for (const change of [
 }
 for (const field of ['detailId', 'repairId', 'key']) { const value = { ...details }; delete value[field]; invalid(value); }
 for (const key of ['switch', 'switch:other', ':scripted', 'switch:scripted:extra', 5]) invalid({ ...details, key });
-assert.deepEqual(counterLabRequestError(null, null), { type: 'error', id: '', message: 'Invalid Counter Lab request. Try again' });
+assert.deepEqual(counterLabRequestError(null, null), { type: 'error', id: '', message: 'Invalid Counter Lab request · Try again' });
 assert.deepEqual(counterLabRequestError({ ...details, key: 'broken' }, new Error('bad key')), { type: 'error', id: 'a', detailId: 'detail-1', message: 'bad key' }, 'detail errors retain request correlation');
 assert.equal(counterLabRequestError({ id: 9 }, new Error('bad id')).id, '', 'invalid IDs never target a real analysis');
 console.log(`Worker request validation passed: all 24 starters and defenses, legacy/partial plays, four request kinds, ${rejected} malformed payloads and correlated errors`);

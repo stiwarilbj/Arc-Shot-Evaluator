@@ -342,7 +342,7 @@ def execute(identity, generation):
                 job["error"] = (
                     json.loads(path.read_text())["error"]
                     if path.exists()
-                    else f"Local masking operation interrupted (exit {process.returncode}). Retry a shorter clip or restart the downloaded app. Your previous finished video is preserved."
+                    else f"Local masking operation interrupted (exit {process.returncode}) · Retry a shorter clip or restart the downloaded app · Your previous finished video is preserved"
                 )
             else:
                 completed_result(directory)
@@ -402,7 +402,7 @@ def completed_result(directory):
         return result
     except (OSError, ValueError, TypeError, KeyError) as error:
         raise ValueError(
-            "Local export is incomplete. Retry processing; no clip was saved."
+            "Local export is incomplete · Retry processing; no clip was saved"
         ) from error
 
 
@@ -453,7 +453,7 @@ async def process(identity: str, request: Request):
                 job.update(
                     status="error",
                     termination_reason="failed",
-                    error="Local processing queue is unavailable; restart the downloaded app.",
+                    error="Local processing queue is unavailable; restart the downloaded app",
                 )
                 raise HTTPException(503, job["error"]) from error
         return {"id": identity, "status": "queued"}
@@ -810,7 +810,7 @@ async def create_edit(request: Request):
                         if job["cancel"].is_set():
                             job["termination_reason"] = "cancelled"
                         elif not job["done"] and not job.get("error"):
-                            job.update(termination_reason="interrupted", error="Local rendering interrupted. Your previous finished video is preserved.")
+                            job.update(termination_reason="interrupted", error="Local rendering interrupted · Your previous finished video is preserved")
                 if acquired:
                     PROCESS_LOCK.release()
                 # release() waits for this future and any open response leases

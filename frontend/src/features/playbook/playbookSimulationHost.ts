@@ -14,18 +14,18 @@ export function createPlaybookSimulationHost() {
     try {
       const command = parseSimulationCommand(input);
       if (command.type === "start") {
-        if (run) throw new Error("This worker already owns a session. Restart playback to create another");
+        if (run) throw new Error("This worker already owns a session · Restart playback to create another");
         accepted = true;
         run = createSimulationRun(command.drawing, command.settings, undefined, { recordSession: true, seed: command.seed });
         sessionId = command.sessionId; revision = command.revision; lastRequest = command.requestId; playing = true; stopAtMs = null;
       } else if (command.type === "open-flipbook") {
-        if (run) throw new Error("This worker already owns a session. Restart walkthrough playback to create another");
+        if (run) throw new Error("This worker already owns a session · Restart walkthrough playback to create another");
         accepted = true;
         run = restoreSimulationSession(command.session);
         seekSimulationSession(run, 0);
         sessionId = command.sessionId; revision = command.revision; lastRequest = command.requestId; playing = false; stopAtMs = null;
       } else if (command.type === "read-opening") {
-        if (run) throw new Error("This worker already owns a session. Restart replay to create another");
+        if (run) throw new Error("This worker already owns a session · Restart replay to create another");
         accepted = true;
         const candidate = restoreSimulationSession({ ...command.checkpoint.session, positionMs: 0 });
         seekSimulationSession(candidate, command.checkpoint.session.positionMs);
@@ -35,7 +35,7 @@ export function createPlaybookSimulationHost() {
         sessionId = command.sessionId; revision = command.revision; lastRequest = command.requestId;
         stopAtMs = command.checkpoint.session.positionMs; playing = stopAtMs > 0;
       } else if (command.type === "read-choice") {
-        if (run) throw new Error("This worker already owns a session. Restart replay to create another");
+        if (run) throw new Error("This worker already owns a session · Restart replay to create another");
         accepted = true;
         const choice = command.checkpoint.choices.find((item) => item.id === command.choiceId);
         if (!choice) throw new Error("This answer continuation is unavailable");
@@ -74,14 +74,14 @@ export function createPlaybookSimulationHost() {
           playing = false;
           const r = command.relocation;
           if (r) editPausedSimulationMarker(run, r.type, r.id, r.point, command.drawing);
-          else if (!rebasePausedSimulation(run, command.drawing)) throw new Error("This edit changes the actions or participants. Restart playback to apply it");
+          else if (!rebasePausedSimulation(run, command.drawing)) throw new Error("This edit changes the actions or participants · Restart playback to apply it");
         }
       }
       if (run.elapsedMs >= run.durationMs) playing = false;
       return { ...envelope, type: "state", view: { frame: getSimulationFrame(run), settings: run.settings, durationMs: run.durationMs, session: getSimulationSessionInfo(run)!, playing } };
     } catch (error) {
       if (accepted) playing = false;
-      return { ...envelope, type: "error", message: error instanceof Error ? error.message.slice(0, 512) : "Playback was interrupted. Restart to try again" };
+      return { ...envelope, type: "error", message: error instanceof Error ? error.message.slice(0, 512) : "Playback was interrupted · Restart to try again" };
     }
   };
 }

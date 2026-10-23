@@ -2,7 +2,7 @@
 export type TerminationReason = "completed" | "cancelled" | "failed" | "interrupted";
 export class WorkerInterruptedError extends Error {
   readonly terminationReason = "interrupted";
-  constructor(message = "Video operation interrupted: the worker stopped responding. Retry; your previous finished video is preserved") {
+  constructor(message = "Video operation interrupted: the worker stopped responding · Retry; your previous finished video is preserved") {
     super(message);
     this.name = "WorkerInterruptedError";
   }
@@ -34,9 +34,9 @@ export class WorkerJob {
         catch { this.fail("interrupted", new WorkerInterruptedError()); }
       }
     }, 10000);
-    if (timeout) this.deadlineTimer = setTimeout(() => this.fail("interrupted", new WorkerInterruptedError("Rendering timed out. Your previous result is preserved")), timeout);
+    if (timeout) this.deadlineTimer = setTimeout(() => this.fail("interrupted", new WorkerInterruptedError("Rendering timed out · Your previous result is preserved")), timeout);
     worker.onerror = () => this.fail("interrupted", new WorkerInterruptedError());
-    worker.onmessageerror = () => this.fail("interrupted", new WorkerInterruptedError("The worker response could not be read. Retry; your previous result is preserved"));
+    worker.onmessageerror = () => this.fail("interrupted", new WorkerInterruptedError("The worker response could not be read · Retry; your previous result is preserved"));
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.visibility);
     signal.addEventListener("abort", this.abort, { once: true });
     if (signal.aborted) this.abort();
@@ -47,7 +47,7 @@ export class WorkerJob {
     if (!this.active || this.signal.aborted) return;
     this.started = true;
     try { this.worker.postMessage(message); }
-    catch { this.fail("interrupted", new WorkerInterruptedError("Could not send the video to the worker. Retry; your previous result is preserved")); }
+    catch { this.fail("interrupted", new WorkerInterruptedError("Could not send the video to the worker · Retry; your previous result is preserved")); }
   }
   private abort = () => {
     if (!this.active || this.cancelling) return;

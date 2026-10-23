@@ -5,7 +5,7 @@ export type DetailProof = { thin: Uint32Array; edge: Uint32Array };
 export class SilhouetteCompressionError extends Error {
   constructor() {
     super(
-      "Compression damaged silhouette details. Try a shorter or lower-resolution clip if higher-quality export also fails",
+      "Compression damaged silhouette details · Try a shorter or lower-resolution clip if higher-quality export also fails",
     );
     this.name = "SilhouetteCompressionError";
   }

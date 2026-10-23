@@ -114,7 +114,7 @@ export async function createPersonDetector() {
           if ([...box,...wrists].every(Number.isFinite)) hands.push([...box,...wrists]);
           if (kept.length > 20)
             throw Error(
-              "More than 20 people detected. Trim to a closer view or turn off automatic discovery and select court players manually",
+              "More than 20 people detected · Trim to a closer view or turn off automatic discovery and select court players manually",
             );
         }
         return kept;

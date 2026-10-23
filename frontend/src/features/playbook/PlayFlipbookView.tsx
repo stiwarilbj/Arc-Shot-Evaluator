@@ -224,7 +224,7 @@ export function PlayFlipbookView({ source, settings, visibility, endingId, endin
               workingStoryRef.current = structuredClone(next);
               setWorkingStory(structuredClone(next));
               setPersisted(true);
-            } else setError("This timing edit could not be saved. The previous panel remains intact");
+            } else setError("This timing edit could not be saved · The previous panel remains intact");
           }
           pendingPanelUpdateRef.current = null;
         }
@@ -300,7 +300,7 @@ export function PlayFlipbookView({ source, settings, visibility, endingId, endin
       setWorkingStory(structuredClone(story));
       setSelectedId(story.panels[0]?.id ?? null);
       if (story.recording.engineVersion === SIMULATION_ENGINE_VERSION) launch(story.recording, false, false);
-      else { setStatus("static"); setPositionMs(story.panels[0]?.atMs ?? 0); setDurationMs(story.recording.positionMs); setNotice("This frozen walkthrough is still available. Playback reconstruction needs the matching simulation engine"); }
+      else { setStatus("static"); setPositionMs(story.panels[0]?.atMs ?? 0); setDurationMs(story.recording.positionMs); setNotice("This frozen walkthrough is still available · Playback reconstruction needs the matching simulation engine"); }
     } else if (initialCapture && initialCapture.session.engineVersion === SIMULATION_ENGINE_VERSION) {
       launch(initialCapture.session, true, false);
     } else launch(null, true, false);
@@ -334,7 +334,7 @@ export function PlayFlipbookView({ source, settings, visibility, endingId, endin
     else {
       clientRef.current?.dispose(); clientRef.current = null;
       setCurrentFrame(null); setPositionMs(nextPanel?.atMs ?? 0); setDurationMs(story.recording.positionMs); setPlaying(false); setStatus("static");
-      setNotice("This frozen walkthrough is still available. Playback reconstruction needs the matching simulation engine");
+      setNotice("This frozen walkthrough is still available · Playback reconstruction needs the matching simulation engine");
     }
   }, [historyRevision, launch, selectedId, story]);
 
@@ -496,7 +496,7 @@ export function PlayFlipbookView({ source, settings, visibility, endingId, endin
     const recordingPanel = viewFrame ? panelFromFrame(viewFrame, positionMs, "Recording current moment") : null;
     return <main className="playbook-page playbook-flipbook">
       <header className="flipbook-header"><div><span className="section-kicker">Playbook · Play Flipbook</span><h1>Build a walkthrough</h1><p>{source.name} · {endingLabel}</p></div><button className="button button-subtle" onClick={onExit}><ArrowLeft size={15} />Back to editing</button></header>
-      <section className="flipbook-recording"><div className="flipbook-recording-court">{hasFrame && recordingPanel ? <PanelCourt panel={recordingPanel} visibility={visibility} /> : <div className="flipbook-recording-placeholder">Preparing the full possession recording</div>}</div><div className="flipbook-recording-copy"><span className="flipbook-recording-pulse" /><h2>Recording this ending</h2><p>Play Flipbook is capturing the complete simulation, including passes, screens, catches, and shots. This stays in your browser</p><div className="flipbook-progress"><span style={{ width: `${recordingProgress}%` }} /></div><small>{Math.round(recordingProgress)}% · {Math.max(0, durationMs - positionMs) / 1000 < 1 ? "Finalizing moments" : `${((durationMs - positionMs) / 1000).toFixed(1)} seconds remaining`}</small><div className="flipbook-recording-actions"><button className="button button-outline" onClick={() => { const resume = !playing; clientRef.current?.playback(resume); setPlaying(resume); }} disabled={status !== "recording"}>{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause recording" : "Resume recording"}</button><button className="button button-outline" onClick={() => { setError("Walkthrough recording cancelled"); setStatus("error"); setRebuilding(false); clientRef.current?.dispose(); clientRef.current = null; }}><X size={15} />Cancel</button></div>{error ? <p className="flipbook-error" role="alert">{error} <button type="button" onClick={() => launch(null, true, false)}>Retry recording</button></p> : null}</div></section>
+      <section className="flipbook-recording"><div className="flipbook-recording-court">{hasFrame && recordingPanel ? <PanelCourt panel={recordingPanel} visibility={visibility} /> : <div className="flipbook-recording-placeholder">Preparing the full possession recording</div>}</div><div className="flipbook-recording-copy"><span className="flipbook-recording-pulse" /><h2>Recording this ending</h2><p>Play Flipbook is capturing the complete simulation, including passes, screens, catches, and shots · This stays in your browser</p><div className="flipbook-progress"><span style={{ width: `${recordingProgress}%` }} /></div><small>{Math.round(recordingProgress)}% · {Math.max(0, durationMs - positionMs) / 1000 < 1 ? "Finalizing moments" : `${((durationMs - positionMs) / 1000).toFixed(1)} seconds remaining`}</small><div className="flipbook-recording-actions"><button className="button button-outline" onClick={() => { const resume = !playing; clientRef.current?.playback(resume); setPlaying(resume); }} disabled={status !== "recording"}>{playing ? <Pause size={15} /> : <Play size={15} />}{playing ? "Pause recording" : "Resume recording"}</button><button className="button button-outline" onClick={() => { setError("Walkthrough recording cancelled"); setStatus("error"); setRebuilding(false); clientRef.current?.dispose(); clientRef.current = null; }}><X size={15} />Cancel</button></div>{error ? <p className="flipbook-error" role="alert">{error} <button type="button" onClick={() => launch(null, true, false)}>Retry recording</button></p> : null}</div></section>
     </main>;
   }
 

@@ -18,7 +18,7 @@ export function correctionPrompt<T extends {frame:number; points?:number[][]; la
     const previous=cells.get(cell);
     if (previous!==undefined) {
       if (previous!==label) {
-        throw new CorrectionConflictError(`Include and Exclude points overlap on the same processing pixel at frame ${prompt.frame+1}, track ${trackId}${context ? ` (${context})` : ""}. Remove or move one of these correction points, then retry`);
+        throw new CorrectionConflictError(`Include and Exclude points overlap on the same processing pixel at frame ${prompt.frame+1}, track ${trackId}${context ? ` (${context})` : ""} · Remove or move one of these correction points, then retry`);
       }
       continue;
     }

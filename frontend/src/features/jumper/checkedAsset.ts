@@ -24,7 +24,7 @@ export async function checkedAsset(
       if (chunk.done) break;
       if (chunk.value.byteLength > asset.maxBytes - done) {
         try { await cache?.delete(url); } catch {}
-        throw Error("Model exceeds its pinned size limit. Retry to download a fresh copy");
+        throw Error("Model exceeds its pinned size limit · Retry to download a fresh copy");
       }
       done += chunk.value.byteLength;
       pieces.push(new Uint8Array(chunk.value));
@@ -43,7 +43,7 @@ export async function checkedAsset(
     .map(value => value.toString(16).padStart(2, "0")).join("");
   if (hash !== asset.sha) {
     await cache?.delete(url);
-    throw Error("Model integrity check failed. Retry to download a fresh copy");
+    throw Error("Model integrity check failed · Retry to download a fresh copy");
   }
   if (!cached) {
     try { await cache?.put(url, new Response(bytes)); } catch {

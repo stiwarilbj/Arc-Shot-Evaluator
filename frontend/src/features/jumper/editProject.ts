@@ -219,13 +219,13 @@ export function splitPoint(project: EditProject, frame: number) {
   const boundary =
     offset + Math.ceil((hit.source - hit.piece.start) / hit.piece.speed);
   const reason = hit.piece.freeze
-    ? "Freeze frames cannot be split. Adjust their duration instead"
+    ? "Freeze frames cannot be split · Adjust their duration instead"
     : hit.source <= hit.piece.start || hit.source >= hit.piece.end
       ? "Move inside this piece; splitting here would create an empty piece"
       : boundary !== frame
-        ? "This slow-motion frame repeats a source frame. Step back one frame for an exact split"
+        ? "This slow-motion frame repeats a source frame · Step back one frame for an exact split"
         : project.pieces.length >= 100
-          ? "The timeline has 100 pieces. Delete a piece before splitting"
+          ? "The timeline has 100 pieces · Delete a piece before splitting"
           : "";
   return { hit, index, boundary, reason };
 }
@@ -254,9 +254,9 @@ export function duplicatePieceReason(project: EditProject, id: string): string {
   const piece = project.pieces.find((p) => p.id === id);
   if (!piece) return "Select a piece to duplicate";
   if (project.pieces.length >= 100)
-    return "The timeline has 100 pieces. Delete a piece before duplicating";
+    return "The timeline has 100 pieces · Delete a piece before duplicating";
   if (projectFrames(project) + pieceFrames(piece) > 1800)
-    return "Duplicating this piece would exceed 60 seconds. Shorten the timeline first";
+    return "Duplicating this piece would exceed 60 seconds · Shorten the timeline first";
   return "";
 }
 export function duplicatePiece(project: EditProject, id: string): EditProject {

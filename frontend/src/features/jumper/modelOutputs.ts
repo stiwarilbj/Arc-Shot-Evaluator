@@ -1,7 +1,7 @@
 /** Contracts for the pinned SAM video graphs, checked before consuming outputs. */
 export class InvalidModelOutputError extends Error {
   constructor(name: string) {
-    super(`The masking model returned an invalid ${name}. Processing stopped. Retry processing; if it repeats, reload the editor or use a shorter segment`);
+    super(`The masking model returned an invalid ${name} · Processing stopped · Retry processing; if it repeats, reload the editor or use a shorter segment`);
     this.name = "InvalidModelOutputError";
   }
 }

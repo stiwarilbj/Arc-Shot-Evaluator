@@ -66,7 +66,7 @@ export function checkResources(
     estimate.largestBufferBytes > bufferLimit
   )
     throw Error(
-      `This tracking workload exceeds this device's GPU buffer limit. ${guidance}`,
+      `This tracking workload exceeds this device's GPU buffer limit · ${guidance}`,
     );
   // deviceMemory is rounded/capped physical capacity, NEVER available RAM. Only
   // reject clearly oversized jobs; unknown devices continue with normal errors.
@@ -78,6 +78,6 @@ export function checkResources(
     estimate.bytes > capacity * 1024 ** 3 * 0.75
   )
     throw Error(
-      `This clip needs an estimated ${(estimate.bytes / 1024 ** 3).toFixed(1)} GB of working memory, too much for this browser's reported capacity. ${guidance}`,
+      `This clip needs an estimated ${(estimate.bytes / 1024 ** 3).toFixed(1)} GB of working memory, too much for this browser's reported capacity · ${guidance}`,
     );
 }

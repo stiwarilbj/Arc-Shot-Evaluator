@@ -16,7 +16,7 @@ def _source_fps(path: Path) -> float:
     capture = cv2.VideoCapture(str(path))
     if not capture.isOpened():
         capture.release()
-        raise ValueError("The video could not be decoded. Try exporting it as an MP4 with H.264 video.")
+        raise ValueError("The video could not be decoded · Try exporting it as an MP4 with H.264 video")
     fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
     capture.release()
     return fps
@@ -50,7 +50,7 @@ def _compatible_h264(source: Path) -> bool:
     codec = "".join(chr((fourcc_value >> (8 * index)) & 0xFF) for index in range(4)).lower()
     duration = frames / max(1.0, fps)
     if duration > MAX_ANALYSIS_SECONDS:
-        raise ValueError("Videos longer than 20 minutes must be split into smaller sessions before analysis.")
+        raise ValueError("Videos longer than 20 minutes must be split into smaller sessions before analysis")
     return (
         codec in {"h264", "avc1"}
         and 1 <= fps <= 240.5
@@ -172,9 +172,9 @@ def normalize_video(source: Path, output: Path) -> Path:
     capture.release()
     if not opened or frames < 2:
         temporary.unlink(missing_ok=True)
-        raise ValueError("The normalized video did not contain enough decodable frames.")
+        raise ValueError("The normalized video did not contain enough decodable frames")
     if duration > MAX_ANALYSIS_SECONDS:
         temporary.unlink(missing_ok=True)
-        raise ValueError("Videos longer than 20 minutes must be split into smaller sessions before analysis.")
+        raise ValueError("Videos longer than 20 minutes must be split into smaller sessions before analysis")
     temporary.replace(output)
     return output

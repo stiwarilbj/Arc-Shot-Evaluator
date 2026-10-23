@@ -28,7 +28,7 @@ export function createPlaybookSimulationClient(options: {
     worker.terminate();
   }
   function fail(message: string) { if (!disposed) { dispose(); queueMicrotask(() => options.onFailure(message)); } }
-  function failed() { fail("Playback worker was interrupted. Your drawing and last frame are intact. Press Play to restart"); }
+  function failed() { fail("Playback worker was interrupted · Your drawing and last frame are intact · Press Play to restart"); }
   function pump() {
     if (disposed || inFlight) return;
     let next = controls.shift();
@@ -39,7 +39,7 @@ export function createPlaybookSimulationClient(options: {
     if (!next) return;
     inFlight = { ...next.body, sessionId: options.sessionId, revision: next.revision, requestId: ++requestId } as SimulationCommand;
     const sentRequest = inFlight.requestId;
-    timeout = setTimeout(() => { if (inFlight?.requestId === sentRequest) fail("Playback worker stopped responding. Your drawing and last frame are intact. Press Play to restart"); }, options.timeoutMs ?? 10000);
+    timeout = setTimeout(() => { if (inFlight?.requestId === sentRequest) fail("Playback worker stopped responding · Your drawing and last frame are intact · Press Play to restart"); }, options.timeoutMs ?? 10000);
     try { worker.postMessage(inFlight); } catch { failed(); }
   }
   function receive(event: Event) {
@@ -49,7 +49,7 @@ export function createPlaybookSimulationClient(options: {
     // request, clear its deadline, or overwrite an edited frame.
     if (!raw || !inFlight || raw.sessionId !== options.sessionId || raw.requestId !== inFlight.requestId || raw.revision !== inFlight.revision) return;
     let response: SimulationResponse;
-    try { response = parseSimulationResponse(raw); } catch { fail("Playback returned invalid data. Your drawing and last frame are intact. Press Play to restart"); return; }
+    try { response = parseSimulationResponse(raw); } catch { fail("Playback returned invalid data · Your drawing and last frame are intact · Press Play to restart"); return; }
     const current = response.revision === revision;
     const completedCommandType = inFlight.type;
     inFlight = null; clearTimeout(timeout);
@@ -62,7 +62,7 @@ export function createPlaybookSimulationClient(options: {
         pump();
         return;
       }
-      fail(`${response.message} Your drawing and last frame are intact. Press Play to restart`); return;
+      fail(`${response.message} Your drawing and last frame are intact · Press Play to restart`); return;
     }
     if (current) {
       if (response.type === "capture") {
@@ -83,7 +83,7 @@ export function createPlaybookSimulationClient(options: {
     const sameEdit = body.type === "edit" && last?.body.type === "edit" && body.relocation?.type === last.body.relocation?.type && body.relocation?.id === last.body.relocation?.id;
     if (last && (sameEdit || body.type !== "edit" && body.type !== "start" && last.body.type === body.type)) controls[controls.length - 1] = pending;
     else controls.push(pending);
-    if (controls.length > MAX_PENDING_CONTROLS) { fail("Too many pending playback edits. Your drawing is intact. Press Play to restart"); return; }
+    if (controls.length > MAX_PENDING_CONTROLS) { fail("Too many pending playback edits · Your drawing is intact · Press Play to restart"); return; }
     pump();
   }
   worker.addEventListener("message", receive); worker.addEventListener("error", failed); worker.addEventListener("messageerror", failed);

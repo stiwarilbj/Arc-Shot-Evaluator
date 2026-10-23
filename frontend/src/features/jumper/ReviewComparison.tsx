@@ -170,7 +170,7 @@ export default function ReviewComparison({
       aria-label="Synchronized video review"
     >
       <p className="jumper-caption">
-        Compare the same moment. Original footage is an editing reference only;
+        Compare the same moment · Original footage is an editing reference only;
         saved and downloaded videos stay masked
       </p>
       <div
@@ -243,13 +243,13 @@ export default function ReviewComparison({
       </div>
       {sourceFailed && (
         <p role="status">
-          Original reference could not play. You can still review and download
+          Original reference could not play · You can still review and download
           the masked clip
         </p>
       )}
       {failed && (
         <p role="alert">
-          Masked preview could not play. Retry loading the review; your result
+          Masked preview could not play · Retry loading the review; your result
           is retained
         </p>
       )}

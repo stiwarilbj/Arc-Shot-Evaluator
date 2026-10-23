@@ -68,7 +68,7 @@ def check_resources(estimate, available=None, previous_bytes=0):
     if available is not None and required + 512 * MIB > available:
         raise ValueError(
             f"This clip needs an estimated {estimate['bytes'] / 1024**3:.1f} GB of working memory; "
-            "there is not enough available memory to process it safely. "
+            "there is not enough available memory to process it safely · "
             "Close other applications, shorten the segment, or remove unnecessary tracks "
-            "or correction frames in Corrections, then retry."
+            "or correction frames in Corrections, then retry"
         )

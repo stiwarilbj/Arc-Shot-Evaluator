@@ -143,7 +143,7 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
         play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
           ? { ...candidate, timing: Math.max(0.5, Math.min(4, Math.round(((candidate.timing ?? 1.2) + change) * 100) / 100)) }
           : candidate);
-        repairs.push({ id: `timing-${arrow.id}-${change}`, name: `${change < 0 ? "Quicker" : "More time for"} ${arrow.kind.replaceAll("-", " ")} · Move ${move}`, reason: `${change < 0 ? "Shorten" : "Lengthen"} the action duration by ${Math.abs(change).toFixed(2)} seconds. Later moves shift with the sequence`, play });
+        repairs.push({ id: `timing-${arrow.id}-${change}`, name: `${change < 0 ? "Quicker" : "More time for"} ${arrow.kind.replaceAll("-", " ")} · Move ${move}`, reason: `${change < 0 ? "Shorten" : "Lengthen"} the action duration by ${Math.abs(change).toFixed(2)} seconds · Later moves shift with the sequence`, play });
       }
     }
     if (arrow.kind === "pass") {

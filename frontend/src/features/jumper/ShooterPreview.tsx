@@ -83,7 +83,7 @@ export default function ShooterPreview({
             )
           )
             throw Error(
-              "Small-player detail needs review. Add Include/Exclude points or choose a closer view; obscured details cannot be recovered",
+              "Small-player detail needs review · Add Include/Exclude points or choose a closer view; obscured details cannot be recovered",
             );
           if (result.warnings.some((w) => w.frame === 0))
             throw Error(
@@ -93,7 +93,7 @@ export default function ShooterPreview({
           if (!abort.signal.aborted) {
             setImage(frame);
             setStatus(
-              "Check the black outline is your shooter. Other players are hidden in this selection check. Full-clip tracking still needs review",
+              "Check the black outline is your shooter · Other players are hidden in this selection check · Full-clip tracking still needs review",
             );
           }
         } catch (error) {
@@ -101,7 +101,7 @@ export default function ShooterPreview({
             setStatus(
               error instanceof ShooterSelectionError
                 ? error.message
-                : `Selection check unavailable: ${String(error)}. You can adjust your selection or retry`,
+                : `Selection check unavailable: ${String(error)} · You can adjust your selection or retry`,
             );
         }
       })();
@@ -130,7 +130,7 @@ export default function ShooterPreview({
     <div className="jumper-selection-check">
       <p className="jumper-caption">
         A short starting-frame check confirms your selection before the full
-        clip. First use downloads the free masking model
+        clip · First use downloads the free masking model
       </p>
       <div className="jumper-toolbar">
         <strong>Confirm your shooter</strong>
@@ -152,7 +152,7 @@ export default function ShooterPreview({
       </div>
       {!requested ? (
         <p className="jumper-caption">
-          Check just the starting frame before processing the clip. The first
+          Check just the starting frame before processing the clip · The first
           check downloads the free masking model if needed
         </p>
       ) : (

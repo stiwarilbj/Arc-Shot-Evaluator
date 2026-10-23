@@ -16,12 +16,12 @@ import { checkPlaybookJsonText, MAX_PLAYBOOK_JSON_BYTES, MAX_PLAYBOOK_LIBRARY_BY
 export { IncompletePlaybookLibraryError } from "./libraryReadStatus.ts";
 
 const LOCAL_STORAGE_KEY = "arc-playbooks-v1";
-const SAVE_CONFLICT = "This play was changed by another tab or client. Your draft is still in memory. Save a copy or reopen the latest saved play before updating it";
+const SAVE_CONFLICT = "This play was changed by another tab or client · Your draft is still in memory · Save a copy or reopen the latest saved play before updating it";
 // All tabs on this origin must finish the entire transaction before another
 // writer reads the library. Never substitute an unsafe localStorage spin lock.
 function withLibraryWrite<T>(write: (signal: AbortSignal) => Promise<T>): Promise<T> {
   if (typeof navigator === "undefined" || !navigator.locks) {
-    return Promise.reject(new Error("Safe browser storage is unavailable. Use a current browser over HTTPS or localhost and retry; your play is still in memory"));
+    return Promise.reject(new Error("Safe browser storage is unavailable · Use a current browser over HTTPS or localhost and retry; your play is still in memory"));
   }
   return withPersistenceDeadline((signal) => navigator.locks.request(`${LOCAL_STORAGE_KEY}:write`, { mode: "exclusive", signal }, () => {
     signal.throwIfAborted();
@@ -70,8 +70,8 @@ async function readRemotePlaybooks(): Promise<PlaybookDocument[]> {
     return plays;
   });
 }
-const UNCERTAIN_SAVE = "The save response was interrupted and its outcome could not be confirmed. Your draft is still in memory. Retry when the server is available";
-const UNCERTAIN_DELETE = "The delete response was interrupted and its outcome could not be confirmed. Refresh the saved library before retrying";
+const UNCERTAIN_SAVE = "The save response was interrupted and its outcome could not be confirmed · Your draft is still in memory · Retry when the server is available";
+const UNCERTAIN_DELETE = "The delete response was interrupted and its outcome could not be confirmed · Refresh the saved library before retrying";
 
 async function checkRemotePlay(id: string): Promise<PlaybookDocument | null> {
   return withPersistenceDeadline(async (signal) => {
@@ -95,7 +95,7 @@ async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIde
         if (!capability.ok) await parse<never>(capability);
         const available = new Set((capability.headers.get("X-ARC-Playbook-Extensions") ?? "").split(",").map((value) => value.trim()).filter(Boolean));
         if (requiredExtensions.some((extension) => !available.has(extension))) {
-          throw new Error("This local server does not support every feature in this play yet. Update the downloaded app before saving it");
+          throw new Error("This local server does not support every feature in this play yet · Update the downloaded app before saving it");
         }
       }
       const response = await fetch(identity.operation === "create" ? "/api/playbooks" : `/api/playbooks/${encodeURIComponent(id)}`, {
@@ -154,7 +154,7 @@ function validateLibrary(value: unknown): PlaybookDocument[] {
   try {
     if (!Array.isArray(value)) throw new Error("Invalid library");
     value.forEach(validateSavedPlaybook);
-  } catch { throw new Error("Saved plays could not be read. Your stored data has been preserved"); }
+  } catch { throw new Error("Saved plays could not be read · Your stored data has been preserved"); }
   return value as PlaybookDocument[];
 }
 let verifiedHosted: { library: HostedLibrary; verification: Promise<void> } | undefined;
@@ -176,9 +176,9 @@ async function readLocalLibrary(): Promise<HostedLibrary> {
     }
     return library;
   } catch (error) {
-    if (error instanceof SyntaxError) throw new Error("Saved plays contain unreadable data. Your stored data has been preserved");
+    if (error instanceof SyntaxError) throw new Error("Saved plays contain unreadable data · Your stored data has been preserved");
     if (error instanceof Error && error.message.includes("preserved")) throw error;
-    throw new Error("Browser storage is unavailable. Allow site storage and retry; your play is still in memory");
+    throw new Error("Browser storage is unavailable · Allow site storage and retry; your play is still in memory");
   }
 }
 async function readLocalPlaybooks(): Promise<PlaybookDocument[]> {
@@ -193,9 +193,9 @@ async function writeLocalLibrary(library: HostedLibrary, signal: AbortSignal) {
   checkPlaybookJsonText(content, MAX_PLAYBOOK_LIBRARY_BYTES);
   signal.throwIfAborted();
   try { window.localStorage.setItem(LOCAL_STORAGE_KEY, content); }
-  catch { throw new Error("This play could not be saved: browser storage is unavailable or full. Free some space and retry"); }
+  catch { throw new Error("This play could not be saved: browser storage is unavailable or full · Free some space and retry"); }
   // Acknowledgements cover the exact head, history, tombstones and receipts.
-  if (window.localStorage.getItem(LOCAL_STORAGE_KEY) !== content) throw new Error("The save outcome could not be confirmed. Your draft is still in memory; refresh before retrying");
+  if (window.localStorage.getItem(LOCAL_STORAGE_KEY) !== content) throw new Error("The save outcome could not be confirmed · Your draft is still in memory; refresh before retrying");
   announceChange();
 }
 
@@ -337,7 +337,7 @@ export async function fetchPlaybookHistory(id: string): Promise<PlaybookRecovery
 export async function recoverPlaybookRevision(id: string, revision: string, creationId = newCreationId()): Promise<PlaybookDocument> {
   const history = await fetchPlaybookHistory(id);
   const entry = history.revisions.find(item => item.revision === revision && item.valid && item.document);
-  if (!entry?.document) throw new Error("This revision could not be verified. Your stored data has been preserved");
+  if (!entry?.document) throw new Error("This revision could not be verified · Your stored data has been preserved");
   const draft = { ...entry.document, name: `${[...entry.document.name].slice(0, 68).join("")} (recovered)` };
   if (IS_GITHUB_PAGES && history.integrity === "damaged") {
     return libraryReads.mutate(() => withLibraryWrite(async signal => {

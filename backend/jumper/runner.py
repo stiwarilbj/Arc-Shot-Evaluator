@@ -100,8 +100,8 @@ def run(directory: Path):
             )
             if shutil.disk_usage(directory).free < required + 256 * 1024 ** 2:
                 raise ValueError(
-                    "Not enough temporary disk space for detail frames. "
-                    "Shorten the segment or free disk space and retry."
+                    "Not enough temporary disk space for detail frames · "
+                    "Shorten the segment or free disk space and retry"
                 )
             refinement_frames = extract(
                 directory / "source", directory / "detail-frames",

@@ -39,8 +39,8 @@ MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
 MAX_JSON_DEPTH = 32
 HISTORY_LIMIT = 8
-HISTORY_ERROR = "Saved-play history failed its integrity check. Stored records have been preserved; use explicit recovery to copy a verified revision."
-SAVE_CONFLICT = "This play was changed by another tab or client. Your draft is still in memory. Save a copy or reopen the latest saved play before updating it."
+HISTORY_ERROR = "Saved-play history failed its integrity check · Stored records have been preserved; use explicit recovery to copy a verified revision"
+SAVE_CONFLICT = "This play was changed by another tab or client · Your draft is still in memory · Save a copy or reopen the latest saved play before updating it"
 # Version-1 save precision; Python round uses binary float, nearest/ties-to-even.
 COORDINATE_DECIMAL_PLACES = 4
 TIMING_DECIMAL_PLACES = 2
@@ -1089,7 +1089,7 @@ def _sync_file(path: Path) -> None:
 
 
 def _uncertain_file_operation(operation: str) -> HTTPException:
-    return HTTPException(503, f"The play may have been {operation}, but storage synchronization could not be confirmed. Refresh the saved library before retrying.", headers={"X-ARC-Playbook-Outcome": "uncertain"})
+    return HTTPException(503, f"The play may have been {operation}, but storage synchronization could not be confirmed · Refresh the saved library before retrying", headers={"X-ARC-Playbook-Outcome": "uncertain"})
 
 
 def _write(path: Path, value: dict) -> None:
@@ -1097,11 +1097,11 @@ def _write(path: Path, value: dict) -> None:
     replacing = False
     content = json.dumps(value, indent=2, allow_nan=False) + "\n"
     if len(content.encode("utf-8")) > MAX_SAVED_FILE_BYTES:
-        raise HTTPException(413, "Saved-play history exceeds the file byte limit. Stored data has been preserved.")
+        raise HTTPException(413, "Saved-play history exceeds the file byte limit · Stored data has been preserved")
     try:
         _check_json_depth(content)
     except ValueError as error:
-        raise HTTPException(400, "Saved-play history exceeds the nesting limit. Stored data has been preserved.") from error
+        raise HTTPException(400, "Saved-play history exceeds the nesting limit · Stored data has been preserved") from error
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=".playbook-", delete=False) as stream:
@@ -1537,34 +1537,34 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
         current_has_branches = bool(current.get("branches"))
         supported = _extension_set(extensions)
         if current_has_branches and ("branches-v1" not in supported or "branches" not in payload):
-            raise HTTPException(409, "This play contains endings and requires an explicit branch-aware update. The saved play is unchanged")
+            raise HTTPException(409, "This play contains endings and requires an explicit branch-aware update · The saved play is unchanged")
         if payload.get("branches") and "branches-v1" not in supported:
-            raise HTTPException(409, "This play contains endings and requires a branch-aware client. The saved play is unchanged")
+            raise HTTPException(409, "This play contains endings and requires a branch-aware client · The saved play is unchanged")
         current_has_timing = _has_timing(current)
         if current_has_timing and ("timing-v1" not in supported or not _has_timing(payload)):
-            raise HTTPException(409, "This play contains action timing and requires a timing-aware update. The saved play is unchanged")
+            raise HTTPException(409, "This play contains action timing and requires a timing-aware update · The saved play is unchanged")
         if _has_timing(payload) and "timing-v1" not in supported:
             raise HTTPException(409, "This server requires a timing-aware client before saving action schedules")
         current_has_read_coach = _has_read_coach(current)
         if current_has_read_coach and ("read-coach-v1" not in supported or not _has_read_coach(payload)):
-            raise HTTPException(409, "This play contains Read Coach lessons and requires an explicit Read Coach-aware update. The saved play is unchanged")
+            raise HTTPException(409, "This play contains Read Coach lessons and requires an explicit Read Coach-aware update · The saved play is unchanged")
         if _has_read_coach(payload) and "read-coach-v1" not in supported:
             raise HTTPException(409, "This server requires a Read Coach-aware client before saving lessons")
         current_has_role_cues = _has_role_cues(current)
         if current_has_role_cues and ("role-rehearsal-v1" not in supported or "roleCues" not in payload):
-            raise HTTPException(409, "This play contains My Role cue wording and requires an explicit My Role-aware update. The saved play is unchanged")
+            raise HTTPException(409, "This play contains My Role cue wording and requires an explicit My Role-aware update · The saved play is unchanged")
         if "roleCues" in payload and "role-rehearsal-v1" not in supported:
             raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
         if _has_role_cues(payload) and "role-rehearsal-v1" not in supported:
             raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
         current_has_spacing_gates = _has_spacing_gates(current)
         if current_has_spacing_gates and ("spacing-gates-v1" not in supported or "spacingGates" not in payload):
-            raise HTTPException(409, "This play contains spacing gates and requires an explicit spacing-gate-aware update. The saved play is unchanged")
+            raise HTTPException(409, "This play contains spacing gates and requires an explicit spacing-gate-aware update · The saved play is unchanged")
         if "spacingGates" in payload and "spacing-gates-v1" not in supported:
             raise HTTPException(409, "This server requires a spacing-gate-aware client before saving spacing instructions")
         current_has_flipbooks = _has_flipbooks(current)
         if current_has_flipbooks and ("play-flipbook-v1" not in supported or not _has_flipbooks(payload)):
-            raise HTTPException(409, "This play contains walkthroughs and requires an explicit Flipbook-aware update. The saved play is unchanged")
+            raise HTTPException(409, "This play contains walkthroughs and requires an explicit Flipbook-aware update · The saved play is unchanged")
         if "flipbooks" in payload and "play-flipbook-v1" not in supported:
             raise HTTPException(409, "This server requires a Play Flipbook-aware client before saving walkthroughs")
         if _has_flipbooks(payload) and "play-flipbook-v1" not in supported:
@@ -1572,7 +1572,7 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:
-            raise HTTPException(428, "A saved revision is required before updating this play. Reopen it and retry; your draft is still in memory.")
+            raise HTTPException(428, "A saved revision is required before updating this play · Reopen it and retry; your draft is still in memory")
         if not re.fullmatch(r'"(?:[0-9a-f]{32}|legacy)"', if_match):
             raise HTTPException(400, "Invalid saved revision precondition")
         if if_match != f'"{current.get("revision", "legacy")}"':
@@ -1663,7 +1663,7 @@ def playbook_history(playbook_id: str) -> dict:
         except OSError as error:
             raise HTTPException(503, "Playbook storage is temporarily unavailable; retry") from error
         if len(candidates) > HISTORY_LIMIT + 24:
-            raise HTTPException(500, "Too many abandoned revisions to inspect safely. Stored records have been preserved for manual recovery.")
+            raise HTTPException(500, "Too many abandoned revisions to inspect safely · Stored records have been preserved for manual recovery")
         for candidate in candidates:
             if candidate.stem in known:
                 continue

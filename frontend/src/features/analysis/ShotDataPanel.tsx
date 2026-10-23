@@ -103,7 +103,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
         </p>
         <section className="rail-panel correction-panel empty-correction-panel">
           <h3>Add a missed attempt</h3>
-          <p className="basis-note">Use the frame number where the ball leaves the hand. The detector evidence stays unchanged</p>
+          <p className="basis-note">Use the frame number where the ball leaves the hand · The detector evidence stays unchanged</p>
           <label className="correction-field">
             <span>Release frame</span>
             <input
@@ -324,7 +324,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
           <span>Shooter label (optional)</span>
           <input
             type="text"
-            placeholder="e.g. player-1"
+            placeholder="Example: player-1"
             value={shooterDraft}
             onChange={(event) => setShooterDraft(event.currentTarget.value)}
           />
@@ -366,7 +366,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
             </label>
             <label className="correction-field">
               <span>Shooter height (m, optional)</span>
-              <input type="number" min={0.5} max={2.8} step={0.01} placeholder="e.g. 1.98" value={playerHeightDraft} onChange={(event) => setPlayerHeightDraft(event.currentTarget.value)} />
+              <input type="number" min={0.5} max={2.8} step={0.01} placeholder="Example: 1.98" value={playerHeightDraft} onChange={(event) => setPlayerHeightDraft(event.currentTarget.value)} />
             </label>
           </>
         ) : null}
@@ -425,7 +425,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
       {isJumpShot ? (
         <section className="rail-panel correction-panel calibration-panel">
           <h3>Court setup</h3>
-          <p className="basis-note">Four floor landmarks let ARCade Hoops turn projected feet into a court-plane distance. Coordinates are source-video pixels and court metres</p>
+          <p className="basis-note">Four floor landmarks let ARCade Hoops turn projected feet into a court-plane distance · Coordinates are source-video pixels and court metres</p>
           <div className="correction-field">
             <span>Court rules</span>
             <ArcSelect ariaLabel="Court rules" className="arc-select--full" value={courtPreset} options={[

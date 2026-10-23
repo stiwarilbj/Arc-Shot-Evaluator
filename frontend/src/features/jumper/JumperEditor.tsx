@@ -454,7 +454,7 @@ export default function JumperEditor({
           setError(String(error));
         else
           setProgress({
-            stage: "Processing cancelled. Your selections are preserved",
+            stage: "Processing cancelled · Your selections are preserved",
             progress: 0,
           });
       }
@@ -514,7 +514,7 @@ export default function JumperEditor({
       onSaved();
     } catch (error) {
       setError(
-        `Could not save: ${String(error)}. Your result is still downloadable`,
+        `Could not save: ${String(error)} · Your result is still downloadable`,
       );
     } finally {
       saveLock.current = false;
@@ -578,13 +578,13 @@ export default function JumperEditor({
         <span className="jumper-eyebrow">MAKE A MYSTERY</span>
         <h2>One shot · No clues</h2>
         <p>
-          Aim at the shooter and press Place point to turn them black. Other
+          Aim at the shooter and press Place point to turn them black · Other
           players become gray, with a flat background and no original colors or
           audio
         </p>
         {!supported ? (
           <div className="jumper-notice">
-            Creating clips requires WebGPU and video encoding. Try Chrome or use
+            Creating clips requires WebGPU and video encoding · Try Chrome or use
             <a
               href="https://github.com/stiwarilbj/Arc-Shot-Evaluator#readme"
               target="_blank"
@@ -592,7 +592,7 @@ export default function JumperEditor({
             >
               the free downloaded app
             </a>
-            . Guess and saved clips remain available
+             · Guess and saved clips remain available
           </div>
         ) : null}
         <label className="jumper-upload">
@@ -647,8 +647,8 @@ export default function JumperEditor({
             <fieldset disabled={busy || saving || loading}>
               <legend>2 · Aim and place a point on the shooter</legend>
               <p className="jumper-caption">
-                Place one point inside the shooter to keep them black. Other
-                people are found automatically throughout the clip. Review the
+                Place one point inside the shooter to keep them black · Other
+                people are found automatically throughout the clip · Review the
                 whole result before saving
               </p>
               <button
@@ -705,15 +705,15 @@ export default function JumperEditor({
                 </button>
               </div>
               <p className="jumper-caption">
-                Up to 50 corrections. Undo/redo requires processing again before
-                saving. Replacing or trimming the video clears this history
+                Up to 50 corrections · Undo/redo requires processing again before
+                saving · Replacing or trimming the video clears this history
               </p>
               <label>
                 Player name (optional until adding to quiz)
                 <input
                   value={name}
                   maxLength={100}
-                  placeholder="e.g. Stephen Curry"
+                  placeholder="Example: Stephen Curry"
                   onChange={(event) => {
                     setName(event.target.value);
                     setSaved(false);
@@ -736,8 +736,8 @@ export default function JumperEditor({
                   Find other people automatically, including later entrants
                 </label>
                 <p className="jumper-caption">
-                  Remove spectators or false detections. Select a track and add
-                  Include/Exclude points on problem frames, then process again.
+                  Remove spectators or false detections · Select a track and add
+                  Include/Exclude points on problem frames, then process again ·
                   Use manual selection if automatic discovery is unsuitable
                 </p>
                 <button
@@ -854,7 +854,7 @@ export default function JumperEditor({
                   </button>
                 </div>
                 <p className="jumper-caption">
-                  Include the body; exclude the ball, shadows, and background.
+                  Include the body; exclude the ball, shadows, and background ·
                   At a later frame, points correct that same track
                 </p>
               </details>
@@ -881,7 +881,7 @@ export default function JumperEditor({
               </button>
               <p className="jumper-caption">
                 Choose a clear frame, aim at the same shooter and Place point with Include selected,
-                then confirm it. Tracking restarts from each confirmed frame.
+                then confirm it · Tracking restarts from each confirmed frame ·
                 Earlier frames still need review and are checked for backward mismatches
               </p>
               {anchors.length ? (
@@ -901,10 +901,10 @@ export default function JumperEditor({
                     </li>
                   ))}
                 </ul>
-              ) : <p className="jumper-caption">No intermediate anchors yet. Your starting selection stays in frame 1</p>}
+              ) : <p className="jumper-caption">No intermediate anchors yet · Your starting selection stays in frame 1</p>}
               <p className="jumper-caption">
                 {confirmedFrame !== undefined
-                  ? `Backward consistency check through frame ${confirmedFrame + 1}. Removing an anchor keeps its correction points`
+                  ? `Backward consistency check through frame ${confirmedFrame + 1} · Removing an anchor keeps its correction points`
                   : "Later Include selections also enable backward consistency checks"}
               </p>
             </div>
@@ -934,7 +934,7 @@ export default function JumperEditor({
                   setBusy(false);
                   setProgress({
                     stage:
-                      "Processing cancelled. Your selections are preserved",
+                      "Processing cancelled · Your selections are preserved",
                     progress: 0,
                   });
                 }}
@@ -1092,7 +1092,7 @@ export default function JumperEditor({
                   <div>
                     <p className="jumper-caption">
                       Click or tap to aim, adjust with the nudge buttons, then
-                      press Place point. Aiming does not add a point. Keyboard:
+                      press Place point · Aiming does not add a point · Keyboard:
                       arrows to aim, Enter to place one point
                     </p>
                     <div
@@ -1167,8 +1167,8 @@ export default function JumperEditor({
                   <p className="jumper-caption" role="status">
                     {dirty ? "Previous run · " : ""}
                     {result.tracking_check
-                      ? `Shooter checked in both directions through frame ${result.tracking_check.anchor_frame + 1}: ${result.tracking_check.disagreement_frames} mismatch frame${result.tracking_check.disagreement_frames === 1 ? "" : "s"}. ${result.tracking_check.checked_frames < count ? "Later frames have forward checks only. " : ""}Still review the full motion`
-                      : "Backward check not run. Add a tracking anchor on a clear later frame, then process again"}
+                      ? `Shooter checked in both directions through frame ${result.tracking_check.anchor_frame + 1}: ${result.tracking_check.disagreement_frames} mismatch frame${result.tracking_check.disagreement_frames === 1 ? "" : "s"} · ${result.tracking_check.checked_frames < count ? "Later frames have forward checks only " : ""}Still review the full motion`
+                      : "Backward check not run · Add a tracking anchor on a clear later frame, then process again"}
                   </p>
                   <MaskTimeline
                     warnings={result.warnings}
@@ -1252,11 +1252,11 @@ export default function JumperEditor({
                       new Set(result.warnings.map((warning) => warning.frame))
                         .size
                     }{" "}
-                    frame(s). Correct the selected track or shorten the segment
-                    before saving.
+                    frame(s) · Correct the selected track or shorten the segment
+                    before saving
                     <p>
                       Use the mask-quality timeline above to inspect every
-                      flagged frame. These hints do not detect every masking
+                      flagged frame · These hints do not detect every masking
                       error
                     </p>
                   </div>
@@ -1320,7 +1320,7 @@ export default function JumperEditor({
                   </a>
                 </div>
                 <p className="jumper-caption">
-                  Private to this device. No footage is added to the public NBA
+                  Private to this device · No footage is added to the public NBA
                   collection
                 </p>
               </section>

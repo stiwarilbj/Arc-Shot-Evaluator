@@ -108,7 +108,7 @@ export class ExportCheckpoint {
       index >= this.count
     )
       throw Error(
-        "Export checkpoint expired or incompatible. Process the clip again",
+        "Export checkpoint expired or incompatible · Process the clip again",
       );
     const mask = this.masks[index],
       pixels = this.width * this.height;

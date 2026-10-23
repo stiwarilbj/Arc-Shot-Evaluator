@@ -36,7 +36,7 @@ async function api(path: string, init: RequestInit = {}) {
   try {
     response = await fetch(`/api/pocket-actions${path}`, { ...init, signal: init.signal ?? AbortSignal.timeout(15000), cache: "no-store" });
   } catch (error) {
-    if (error instanceof DOMException && error.name === "TimeoutError") throw Error("Pocket storage took too long to respond. Retry when the local app is available");
+    if (error instanceof DOMException && error.name === "TimeoutError") throw Error("Pocket storage took too long to respond · Retry when the local app is available");
     throw error;
   }
   if (!response.ok) {
@@ -145,7 +145,7 @@ export async function updatePocketAction(value: PocketActionDocument, expectedRe
       let saved: PocketActionDocument | undefined;
       read.onsuccess = () => {
         const existing = read.result as PocketActionDocument | undefined;
-        if (!existing || existing.revision !== expectedRevision) { transaction.abort(); reject(Error("This pocket changed in another tab. Reload it before saving")); return; }
+        if (!existing || existing.revision !== expectedRevision) { transaction.abort(); reject(Error("This pocket changed in another tab · Reload it before saving")); return; }
         saved = { ...candidate, createdAt: existing.createdAt, updatedAt: new Date().toISOString(), revision: crypto.randomUUID().replaceAll("-", "") };
         store.put(saved);
       };
@@ -168,7 +168,7 @@ export async function deletePocketAction(id: string): Promise<void> {
     await requestValue(STORE, "readwrite", (store) => store.delete(id));
   } else {
     const value: unknown = await (await api(`/${encodeURIComponent(id)}`, { method: "DELETE" })).json();
-    if (!value || typeof value !== "object" || (value as { deleted?: unknown }).deleted !== true || (value as { id?: unknown }).id !== id) throw Error("Pocket deletion could not be confirmed. Refresh the library before retrying");
+    if (!value || typeof value !== "object" || (value as { deleted?: unknown }).deleted !== true || (value as { id?: unknown }).id !== id) throw Error("Pocket deletion could not be confirmed · Refresh the library before retrying");
   }
   announceChange();
 }

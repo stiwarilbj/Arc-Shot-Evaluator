@@ -44,7 +44,7 @@ export default function PieceEffectsClipboard({
         onClick={() => {
           setCopied({ effects: copyPieceEffects(piece), name });
           setMessage(
-            `Copied effects from ${name}. Select another piece, choose settings, then paste`,
+            `Copied effects from ${name} · Select another piece, choose settings, then paste`,
           );
         }}
       >
@@ -52,7 +52,7 @@ export default function PieceEffectsClipboard({
       </button>
       {copied ? (
         <p className="jumper-caption">
-          Copied from {copied.name}. Choose what to apply to {name}:
+          Copied from {copied.name} · Choose what to apply to {name}:
         </p>
       ) : (
         <p className="jumper-caption">
@@ -85,7 +85,7 @@ export default function PieceEffectsClipboard({
       ))}
       {piece.freeze || copied?.effects.speed === null ? (
         <p className="jumper-caption">
-          Speed does not apply to freeze pieces. Freeze length stays unchanged
+          Speed does not apply to freeze pieces · Freeze length stays unchanged
         </p>
       ) : null}
       <button
@@ -93,7 +93,7 @@ export default function PieceEffectsClipboard({
         onClick={() => {
           if (onPaste(patch))
             setMessage(
-              `Pasted selected effects into ${name}. Cuts, source ranges, and captions were not copied`,
+              `Pasted selected effects into ${name} · Cuts, source ranges, and captions were not copied`,
             );
         }}
       >

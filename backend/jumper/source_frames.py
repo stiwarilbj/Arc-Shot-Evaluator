@@ -9,9 +9,9 @@ from pathlib import Path
 MAX_SOURCE_EDGE = 8192
 MAX_SOURCE_PIXELS = 32 * 1024 * 1024
 DIMENSION_ERRORS = {
-    'invalid': 'The video contains invalid frame dimensions. Re-export the video and retry.',
-    'oversized': 'The video contains an oversized frame. Re-export at a lower resolution and retry.',
-    'changed': 'The video changes frame dimensions. Re-export at a fixed resolution and retry.',
+    'invalid': 'The video contains invalid frame dimensions · Re-export the video and retry',
+    'oversized': 'The video contains an oversized frame · Re-export at a lower resolution and retry',
+    'changed': 'The video changes frame dimensions · Re-export at a fixed resolution and retry',
 }
 
 
@@ -164,7 +164,7 @@ def resolve_source(source, start, end, supplied=None):
             if (a['source_index'] != b['source_index']
                     or abs((a['source_us']-actual['origin_us'])-(b['source_us']-supplied['origin_us'])) > 2
                     or abs(a['duration_us']-b['duration_us']) > 2):
-                raise ValueError('The local decoder disagrees with the selected source frame. Re-export the source and retry')
+                raise ValueError('The local decoder disagrees with the selected source frame · Re-export the source and retry')
         actual = supplied
     return actual, timeline
 

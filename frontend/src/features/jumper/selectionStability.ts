@@ -1,7 +1,7 @@
 import { ShooterSelectionError } from "./discovery.ts";
 import type { PointPrompt } from "./domain.ts";
 
-export const CONFIRM_SELECTION = "Your starting shooter selection changes with nearby points. Add another Include point on a different visible part of the same shooter in the first frame, then retry. If the player is too small or obscured, use a closer or clearer segment";
+export const CONFIRM_SELECTION = "Your starting shooter selection changes with nearby points · Add another Include point on a different visible part of the same shooter in the first frame, then retry · If the player is too small or obscured, use a closer or clearer segment";
 
 /** Compare evidence only; never select, merge, or enlarge a predicted mask. */
 export function stableSelection(a: Float32Array, b: Float32Array) {

@@ -240,8 +240,8 @@ export function chooseDefenseScheme(
   }
   if (eligible.includes(requested)) return { scheme: requested, automatic: false, notice: null };
   const reason = defenderCount < MAX_COURT_PLAYERS
-    ? `${DEFENSE_SCHEME_LABELS[requested]} needs five defenders. Man-to-man is active for this possession`
-    : `${DEFENSE_SCHEME_LABELS[requested]} needs ${requested === "triangle-and-two" ? "two offensive players" : "one offensive player"}. Man-to-man is active for this possession`;
+    ? `${DEFENSE_SCHEME_LABELS[requested]} needs five defenders · Man-to-man is active for this possession`
+    : `${DEFENSE_SCHEME_LABELS[requested]} needs ${requested === "triangle-and-two" ? "two offensive players" : "one offensive player"} · Man-to-man is active for this possession`;
   return { scheme: "man-to-man", automatic: false, notice: reason };
 }
 
@@ -1613,7 +1613,7 @@ export function assertReadCoachSnapshot(run: SimulationRun, snapshot: ReadCoachC
   if (Math.abs(run.elapsedMs + run.accumulatorMs - snapshot.atMs) > 1e-5
       || frame.ballHandlerId !== snapshot.ballHandlerId || !ballMatches
       || !matchesRoster(frame.players, snapshot.players) || !matchesRoster(frame.defenders, snapshot.defenders)) {
-    throw new Error("This saved read does not match its recorded court snapshot. Edit and review the checkpoint again");
+    throw new Error("This saved read does not match its recorded court snapshot · Edit and review the checkpoint again");
   }
 }
 
@@ -4149,7 +4149,7 @@ function transactPausedSimulation(run: SimulationRun, draft: PlaybookDraft, hoop
 
 export function editPausedSimulationMarker(run: SimulationRun, type: "player" | "defender" | "ball", id: number | string, point: CourtPoint, draft: PlaybookDraft = run.source) {
   validatePlaybookDocument(draft);
-  if (!pausedDraftIsCompatible(run.source, draft)) throw new Error("The paused drawing changed its actions or participants. Restart playback to apply it");
+  if (!pausedDraftIsCompatible(run.source, draft)) throw new Error("The paused drawing changed its actions or participants · Restart playback to apply it");
   if (!["player", "defender", "ball"].includes(type) || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Choose a valid paused marker and court position");
   if (type !== "ball" && !(type === "player" ? run.players : run.defenders).some(marker => marker.id === Number(id))) throw new Error("The paused marker is no longer on the court");
   assertSimulationSessionHoop(run, HOOP_POINT);

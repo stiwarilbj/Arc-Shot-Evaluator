@@ -5,8 +5,8 @@ from .correction_points import correction_prompt
 
 CONFIRM_SELECTION = (
     'Your starting shooter selection changes with nearby points. Add another Include point '
-    'on a different visible part of the same shooter in the first frame, then retry. '
-    'If the player is too small or obscured, use a closer or clearer segment.'
+    'on a different visible part of the same shooter in the first frame, then retry · '
+    'If the player is too small or obscured, use a closer or clearer segment'
 )
 
 

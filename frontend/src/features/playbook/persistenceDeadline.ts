@@ -2,7 +2,7 @@ export const PERSISTENCE_TIMEOUT_MS = 15_000;
 export const PERSISTENCE_CHECK_TIMEOUT_MS = 5_000;
 
 export class PersistenceDeadlineError extends Error {
-  constructor() { super("The persistence request timed out. Your work is still in memory; retry when the server is available"); }
+  constructor() { super("The persistence request timed out · Your work is still in memory; retry when the server is available"); }
 }
 
 /** Includes body consumption; late noncooperative transports cannot settle the caller. */

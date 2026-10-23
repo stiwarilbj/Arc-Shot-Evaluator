@@ -221,7 +221,7 @@ function timingConnectionEditError(previous: PlaybookDraft, next: PlaybookDraft)
       const oldSource = oldById.get(wait.actionId), newSource = newById.get(wait.actionId);
       if (!oldSource) continue;
       if (!newSource || signature(oldSource) !== signature(newSource)) {
-        const message = `Move ${oldSource.sequence ?? "?"} is connected to a Wait until event. Remove or retarget that wait before changing or deleting this action`;
+        const message = `Move ${oldSource.sequence ?? "?"} is connected to a Wait until event · Remove or retarget that wait before changing or deleting this action`;
         return message;
       }
     }
@@ -238,16 +238,16 @@ function spacingGateEditError(previous: PlaybookDraft, next: PlaybookDraft) {
     const after = nextById.get(before.id);
     if (!after) continue; // Explicit gate deletion accompanies the destructive edit
     if (after.playerId !== before.playerId || JSON.stringify(after.trigger) !== JSON.stringify(before.trigger)) continue; // Explicit reassignment or retargeting
-    if (!next.players.some((player) => player.id === before.playerId)) return `Spacing gate ${before.id} is assigned to Player ${before.playerId}. Retarget or remove that gate before removing the player`;
+    if (!next.players.some((player) => player.id === before.playerId)) return `Spacing gate ${before.id} is assigned to Player ${before.playerId} · Retarget or remove that gate before removing the player`;
     const oldAction = findAction(previous, before), newAction = findAction(next, after);
-    if (!newAction) return `Spacing gate ${before.id} points to an action that no longer exists. Retarget or remove that gate first`;
+    if (!newAction) return `Spacing gate ${before.id} points to an action that no longer exists · Retarget or remove that gate first`;
     if (oldAction && (oldAction.kind !== newAction.kind || oldAction.actor_id !== newAction.actor_id || oldAction.recipient_id !== newAction.recipient_id
       || oldAction.screener_id !== newAction.screener_id || oldAction.handler_id !== newAction.handler_id || oldAction.cutter_id !== newAction.cutter_id)) {
-      return `Spacing gate ${before.id} depends on this action’s participants or type. Retarget or remove that gate before changing the action`;
+      return `Spacing gate ${before.id} depends on this action’s participants or type · Retarget or remove that gate before changing the action`;
     }
     if (before.trigger.event === "route-point" && oldAction && JSON.stringify({ start: oldAction.start, end: oldAction.end, control: oldAction.control, exit_target: oldAction.exit_target, path: oldAction.path })
       !== JSON.stringify({ start: newAction.start, end: newAction.end, control: newAction.control, exit_target: newAction.exit_target, path: newAction.path })) {
-      return `Spacing gate ${before.id} is pinned to this route. Choose a new route point or remove that gate before editing the route`;
+      return `Spacing gate ${before.id} is pinned to this route · Choose a new route point or remove that gate before editing the route`;
     }
   }
   return null;
@@ -725,7 +725,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   useEffect(() => {
     let mounted = true;
-    const refresh = () => { void fetchPlaybooks().then((plays) => { if (mounted) setSaved(plays); }).catch((caught: unknown) => { if (mounted) setError(caught instanceof Error ? caught.message : "Saved plays are unavailable. Retry when the server is running"); }); };
+    const refresh = () => { void fetchPlaybooks().then((plays) => { if (mounted) setSaved(plays); }).catch((caught: unknown) => { if (mounted) setError(caught instanceof Error ? caught.message : "Saved plays are unavailable · Retry when the server is running"); }); };
     refresh();
     const unsubscribe = subscribePlaybooks(refresh);
     return () => { mounted = false; unsubscribe(); };
@@ -810,7 +810,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   function captureReadCheckpoint(existing?: ReadCoachCheckpoint) {
     const client = simulationClientRef.current;
     if (!client) {
-      setError("Start a simulation, then pause while a player holds the ball. You can seek past a catch or back before a shot and try again");
+      setError("Start a simulation, then pause while a player holds the ball · You can seek past a catch or back before a shot and try again");
       return;
     }
     setReadCoachEditing(existing ?? null);
@@ -913,7 +913,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                   const status = diagnostics.get(arrow.id);
                   return status?.notice || `${arrow.kind.replaceAll("-", " ")} is ${status?.phase ?? "not bound"}`;
                 }).join(" · ");
-                finish(new Error(`This continuation did not execute cleanly: ${detail}. Adjust the route or participants and preview it again`));
+                finish(new Error(`This continuation did not execute cleanly: ${detail} · Adjust the route or participants and preview it again`));
               } else finish();
             }
           },
@@ -949,7 +949,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setError(null);
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The paused edit could not be applied. Your previous drawing is intact");
+      setError(cause instanceof Error ? cause.message : "The paused edit could not be applied · Your previous drawing is intact");
       return false;
     }
   }
@@ -1173,7 +1173,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     } catch (caught) {
       if (draftSession.failSave(request, caught instanceof CreationAttemptError && caught.retainAttempt)) {
         setStatus("error");
-        setError(caught instanceof Error ? caught.message : "Play could not be saved. Your draft is still here");
+        setError(caught instanceof Error ? caught.message : "Play could not be saved · Your draft is still here");
       }
       return false;
     }
@@ -1291,7 +1291,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setError(null);
     } catch {
       setSimulationPlaying(false);
-      setError("Playback worker could not start. Your drawing is intact. Press Play to retry");
+      setError("Playback worker could not start · Your drawing is intact · Press Play to retry");
     }
     focusBoard();
   }
@@ -1485,7 +1485,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     const gate = activeDraft.spacingGates?.gates.find((candidate) => candidate.id === spacingGateRoutePick);
     const playerId = gate?.trigger.routePlayerId ?? gate?.playerId;
     const route = gate && playerId != null ? authoredRoutes.find((candidate) => candidate.actionId === gate.trigger.actionId && candidate.playerId === playerId) : null;
-    if (!point || !gate || !route) { setSpacingGateRoutePick(null); setError("The linked route is no longer available. Choose it again"); return; }
+    if (!point || !gate || !route) { setSpacingGateRoutePick(null); setError("The linked route is no longer available · Choose it again"); return; }
     // Gate events use the engine's physical-foot route progress, so the point
     // picker projects with the same 50 ft × 47 ft court metric.
     const projected = projectPointToRoute(point, sampleAuthoredCourtRoute(route), { x: 0.5, y: 0.47 });
@@ -1568,7 +1568,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     }
     if (tool === "player") return addMarker(point, "player");
     if (tool === "ball") {
-      if (draft.ball) setError("This play already has a ball. Select it and press Delete to replace it");
+      if (draft.ball) setError("This play already has a ball · Select it and press Delete to replace it");
       else {
         const next = cloneActiveDraft();
         next.ball = point;
@@ -1594,13 +1594,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     const point = pointFromPointer(event, svgRef.current);
     const source = activeDraft.arrows.find((arrow) => arrow.id === routePointPick.sourceId);
     if (!point || !source) {
-      setError("The selected route is no longer available. Choose it again");
+      setError("The selected route is no longer available · Choose it again");
       setRoutePointPick(null);
       return;
     }
     const authoredRoute = authoredRoutes.find((candidate) => candidate.actionId === source.id && candidate.playerId === routePointPick.playerId);
     if (!authoredRoute) {
-      setError("The selected player has no authored route in this move. Choose a participant with a visible route");
+      setError("The selected player has no authored route in this move · Choose a participant with a visible route");
       return;
     }
     const route = sampleAuthoredCourtRoute(authoredRoute);
@@ -1994,7 +1994,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setError(null);
     try {
       const svg = svgRef.current;
-      if (!svg) throw new Error("PNG export could not find the court. Please try again");
+      if (!svg) throw new Error("PNG export could not find the court · Please try again");
       const clone = svg.cloneNode(true) as SVGSVGElement;
       clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
       clone.setAttribute("width", "1600");
@@ -2018,7 +2018,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       await exportPlaybookPng(clone, exportName);
     } catch (caught) {
       setError(caught instanceof Error && caught.message.startsWith("PNG export")
-        ? caught.message : "PNG export failed. Please try again");
+        ? caught.message : "PNG export failed · Please try again");
     }
   }
 
@@ -2213,7 +2213,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                   </button>;
                 })}
               </div>
-              <small>Badges guide assignments and reactions. Paused edits apply when you resume</small>
+              <small>Badges guide assignments and reactions · Paused edits apply when you resume</small>
             </> : null}
           </div> : null}
           <button type="button" className={`preset-button ${defenseSchemesOpen ? "is-active" : ""}`} aria-expanded={defenseSchemesOpen} aria-controls="defense-schemes-panel" onClick={() => setDefenseSchemesOpen((open) => !open)}>
@@ -2281,7 +2281,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                   </div>
                 </div>;
               }) : null}
-              <small>Ratings range from 1 (low) to 5 (high). New players start at 3</small>
+              <small>Ratings range from 1 (low) to 5 (high) · New players start at 3</small>
             </div> : <div id="player-badges-content" role="tabpanel" aria-labelledby="player-badges-tab" className="player-skill-tab-content">
               {selectedRatingsPlayer ? <>
                 <div className="ratings-panel-heading"><strong>Player {selectedRatingsPlayer.id} badges</strong><span>{selectedRatingsPlayer.badges?.length ?? 0} selected</span></div>
@@ -2295,11 +2295,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                     </button>;
                   })}
                 </div>
-                <small>Badges shape simulation decisions. Paused edits apply when you resume</small>
+                <small>Badges shape simulation decisions · Paused edits apply when you resume</small>
               </> : <p className="ratings-empty">Add an offensive player to assign badges</p>}
             </div>}
           </div> : null}
-          <p className="playbook-help">Drag markers to set positions. Select an arrow to adjust its endpoint. Use Delete or the toolbar to clean up</p>
+          <p className="playbook-help">Drag markers to set positions · Select an arrow to adjust its endpoint · Use Delete or the toolbar to clean up</p>
         </aside>
         <main className={`playbook-editor ${simulationActive ? "is-simulating" : ""}`}>
           {draft.branches?.length ? <div className="playbook-branch-bar">
@@ -2383,7 +2383,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               { value: "off", label: "Hold positions", description: "Stay in place; overlapping players still separate" },
             ]} onValueChange={(value) => changeSimulationSetting("defenseStrategy", value as SimulationSettings["defenseStrategy"])} /></div>
             <label className="simulation-setting simulation-setting-range"><span>Off-ball intensity <output>{simulationSettings.offBallIntensity}%</output></span><input aria-label="Off-ball intensity" type="range" min={0} max={100} step={1} value={simulationSettings.offBallIntensity} onChange={(event) => changeSimulationSetting("offBallIntensity", Number(event.currentTarget.value))} /></label>
-            <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior</span>
+            <span className="simulation-settings-note">The scheme sets the defensive shape · Coverage and emphasis change screen, help, pressure, and recovery behavior</span>
           </div> : null}
           <div className="court-frame">
             <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""} ${spacingGateRoutePick ? "is-spacing-gate-route-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onDragOver={onPocketDragOver} onDrop={onPocketDrop} onPointerDownCapture={(event) => spacingGateRoutePick ? onSpacingGateRoutePointPointerDown(event) : onTimingRoutePointPointerDown(event)} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
@@ -2468,7 +2468,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         <div className="starter-categories" role="group" aria-label="Filter starter plays by category">{starterCategories.map((category) => <button type="button" key={category} className={starterCategory === category ? "is-active" : ""} aria-pressed={starterCategory === category} onClick={() => setStarterCategory(category)}>{category}</button>)}</div>
         <div className="starter-grid">{filteredStarterPlays.map((play) => { const details = STARTER_PLAY_DETAILS[play.name]; return <button type="button" className="starter-card" key={play.name} onClick={() => { requestLoad(clonePlaybook(play)); setStarterOpen(false); }}><MiniCourt play={play} /><span className="starter-card-copy"><span className="starter-category-label">{details?.category}</span><strong>{play.name}</strong><span>{details?.description ?? "Edit this diagram"}</span></span></button>; })}{filteredStarterPlays.length === 0 ? <p className="starter-empty">No starter plays match that search</p> : null}</div>
       </section></div> : null}
-      {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes. Save it before opening the new starting point, or discard the draft</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave && draftSession.isCurrent(didSave) && replacementRef.current === next) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
+      {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes · Save it before opening the new starting point, or discard the draft</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave && draftSession.isCurrent(didSave) && replacementRef.current === next) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
     </div>
   );
 }

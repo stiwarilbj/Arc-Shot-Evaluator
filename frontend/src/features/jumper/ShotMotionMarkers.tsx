@@ -41,9 +41,9 @@ export default function ShotMotionMarkers({
     <details className="jumper-shot-markers">
       <summary>Protect shooting motion (optional)</summary>
       <p className="jumper-caption">
-        Mark Gather, Release, and Finish on the masked source timeline. These
-        reference frames stay fixed when pieces move or are cut. Warnings are
-        advice only; you can keep any edit. Source time begins at the masked
+        Mark Gather, Release, and Finish on the masked source timeline · These
+        reference frames stay fixed when pieces move or are cut · Warnings are
+        advice only; you can keep any edit · Source time begins at the masked
         segment, not the original upload
       </p>
       <label>
@@ -68,7 +68,7 @@ export default function ShotMotionMarkers({
         onChange={(event) => seek(Number(event.target.value))}
       />
       <p className="jumper-caption">
-        Source frame {source + 1} · {(source / 30).toFixed(2)}s. Preview before
+        Source frame {source + 1} · {(source / 30).toFixed(2)}s · Preview before
         marking
       </p>
       <button onClick={() => seek(editFrame(project, frame).source)}>
@@ -110,8 +110,8 @@ export default function ShotMotionMarkers({
         })}
       </div>
       <p className="jumper-caption">
-        Mark at least two stages to check cuts between them. These are your
-        reference points, not automatic pose detection. Markers never appear in
+        Mark at least two stages to check cuts between them · These are your
+        reference points, not automatic pose detection · Markers never appear in
         downloads or quizzes
       </p>
       <div aria-live="polite">
@@ -134,7 +134,7 @@ export default function ShotMotionMarkers({
         Object.keys(project.shotMarkers).length > 0 &&
         !warnings.length ? (
           <p className="jumper-caption">
-            No marker-based interruptions detected. Review the complete motion
+            No marker-based interruptions detected · Review the complete motion
             yourself
           </p>
         ) : null}

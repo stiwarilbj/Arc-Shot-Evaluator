@@ -136,7 +136,7 @@ export function ReadCoachAuthorPanel({ session, frame, base, existing, visibilit
 
   return <div className="read-coach-backdrop" role="presentation"><section className="read-coach-editor" role="dialog" aria-modal="true" aria-labelledby="read-editor-title">
     <header className="read-coach-editor-header"><div><span className="section-kicker">Read Coach · Authoring</span><h2 id="read-editor-title">{existing ? "Edit read checkpoint" : "Create a read checkpoint"}</h2></div><button type="button" className="icon-button" onClick={onCancel} aria-label="Cancel checkpoint editing"><X size={17} /></button></header>
-    <p className="read-coach-editor-intro">This is the exact paused situation. Draw each answer from these positions. The play’s Main path and endings stay unchanged</p>
+    <p className="read-coach-editor-intro">This is the exact paused situation · Draw each answer from these positions · The play’s Main path and endings stay unchanged</p>
     <div className="read-coach-editor-grid">
         <div className="read-coach-editor-court"><ReadCoachCourt frame={visibleFrame} arrows={previewFrame ? [] : selectedChoice?.arrows} visibility={visibility} showRoutes={Boolean(previewFrame)} onClick={handleCourtClick} drawing={drawMode} ariaLabel={drawMode ? "Draw a read continuation on the court" : "Captured checkpoint court"} svgRef={svgRef} />
         <div className="read-coach-court-caption">{previewFrame ? "Choice preview · recorded defense reacts" : drawMode ? screenExit ? "Click the screen exit target" : drawStart ? needsExit ? "Click the screen location" : "Click the route destination" : "Click to start from the selected player" : "Captured court · no future routes shown"}</div>

@@ -134,7 +134,7 @@ export default function CaptionTimeline({
         </button>
       </div>
       <p className="jumper-caption">
-        Drag a bar to move it; drag an edge to trim it. Arrow keys adjust one
+        Drag a bar to move it; drag an edge to trim it · Arrow keys adjust one
         frame; Shift adjusts ten
       </p>
       <p className="jumper-caption jumper-caption-snap-hint" role="status">

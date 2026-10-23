@@ -82,7 +82,7 @@ export class ShooterTrackingCheck {
   }
   finish(): { tracking_check: TrackingCheck; warnings: MaskWarning[] } {
     if (this.checked.size !== this.anchor + 1 || this.forward.size)
-      throw Error("Backward shooter check did not finish. Retry processing");
+      throw Error("Backward shooter check did not finish · Retry processing");
     const frames = [...this.disagreements].sort((a, b) => a - b);
     return {
       tracking_check: {

@@ -59,7 +59,7 @@ export async function detectPeople(
     const boxes = (await result.json()).boxes;
     if (!Array.isArray(boxes) || boxes.length > 20)
       throw Error(
-        "More than 20 people detected. Trim closer or select players manually",
+        "More than 20 people detected · Trim closer or select players manually",
       );
     return boxes;
   } finally {

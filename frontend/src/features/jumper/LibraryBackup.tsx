@@ -28,7 +28,7 @@ export function LibraryBackup({
       setError(
         caught instanceof Error
           ? caught.message
-          : "Backup operation failed. Your existing library was kept",
+          : "Backup operation failed · Your existing library was kept",
       );
     } finally {
       lock.current = false;
@@ -49,7 +49,7 @@ export function LibraryBackup({
       anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       setStatus(
-        "Backup download started. Keep the ZIP somewhere safe; it contains your private videos",
+        "Backup download started · Keep the ZIP somewhere safe; it contains your private videos",
       );
     });
   }
@@ -61,7 +61,7 @@ export function LibraryBackup({
       const backup = await inspectLibraryBackup(file, setStatus);
       setPending(backup);
       setRestoreHistory(true);
-      setStatus("Backup verified. Review the contents below before restoring");
+      setStatus("Backup verified · Review the contents below before restoring");
     });
   }
   async function restore() {
@@ -75,7 +75,7 @@ export function LibraryBackup({
       ).finally(onRestored);
       setPending(null);
       setStatus(
-        `Restored ${result.added} clip${result.added === 1 ? "" : "s"}; skipped ${result.skipped} existing. ${result.conflicts} conflicting clip${result.conflicts === 1 ? "" : "s"} kept as separate copies. ${result.historyAdded} answers restored; ${result.historySkipped} existing answers kept`,
+        `Restored ${result.added} clip${result.added === 1 ? "" : "s"}; skipped ${result.skipped} existing · ${result.conflicts} conflicting clip${result.conflicts === 1 ? "" : "s"} kept as separate copies · ${result.historyAdded} answers restored; ${result.historySkipped} existing answers kept`,
       );
     });
   }
@@ -86,8 +86,8 @@ export function LibraryBackup({
       </summary>
       <p>
         Move your personal clips between devices or protect them before clearing
-        browser data. One private ZIP contains finished videos, masked bases,
-        edit recipes, player labels, and quiz eligibility. No account or cloud
+        browser data · One private ZIP contains finished videos, masked bases,
+        edit recipes, player labels, and quiz eligibility · No account or cloud
         upload
       </p>
       <div className="jumper-toolbar">
@@ -133,8 +133,8 @@ export function LibraryBackup({
         </div>
       </div>
       <p className="jumper-caption">
-        ARCade Hoops backups only · Up to 512 MiB and 1,000 clips. Original
-        uploads, tracking data, and models are excluded. Older clips retain
+        ARCade Hoops backups only · Up to 512 MiB and 1,000 clips · Original
+        uploads, tracking data, and models are excluded · Older clips retain
         their legacy status
       </p>
       {status ? (
@@ -156,7 +156,7 @@ export function LibraryBackup({
             {new Date(pending.manifest.createdAt).toLocaleDateString()}
           </p>
           <p>
-            Identical clips are skipped. Conflicting IDs become separate copies.
+            Identical clips are skipped · Conflicting IDs become separate copies ·
             Existing videos, labels, and answers are never overwritten
           </p>
           {pending.manifest.history?.length ? (

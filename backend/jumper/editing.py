@@ -235,7 +235,7 @@ def draw_frame(image, p, index, clean=False):
             layout = caption_layout(width, height, c)
             if not layout["fits"]:
                 raise ValueError(
-                    "Caption cannot fit in the safe area. Use smaller text or shorten the caption."
+                    "Caption cannot fit in the safe area · Use smaller text or shorten the caption"
                 )
             font, lines, lh, bh, cy = (
                 layout[k] for k in ("font", "lines", "lineHeight", "boxHeight", "cy")
@@ -284,7 +284,7 @@ def _render(base: Path, project: dict, directory: Path, cancel, progress, high_q
         )
         for index, caption in enumerate(project["captions"]):
             if not caption_layout(width, height, caption)["fits"]:
-                raise ValueError(f"Caption {index + 1} cannot fit in the safe area. Use smaller text or shorten the caption.")
+                raise ValueError(f"Caption {index + 1} cannot fit in the safe area · Use smaller text or shorten the caption")
         count = length(project)
         for clean, kind in ((False, "highlight"), (True, "clean")):
             destination = directory / (kind + ".mp4")

@@ -471,7 +471,7 @@ export function validateSavedPlaybook(value: unknown): asserts value is Playbook
 }
 
 export type PlaybookSaveIdentity = { operation: "create"; sourceId: string } | { operation: "update"; id: string };
-export const INVALID_PLAYBOOK_SAVE = "The save returned an invalid play. Your draft is still in memory; retry saving";
+export const INVALID_PLAYBOOK_SAVE = "The save returned an invalid play · Your draft is still in memory; retry saving";
 
 /** Fresh save results must be complete. Legacy load defaults are deliberately
  * more permissive; never treat a missing version/identity as save success. */

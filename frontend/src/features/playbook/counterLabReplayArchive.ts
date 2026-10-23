@@ -57,7 +57,7 @@ export function unpackReplay(archive: ReplayArchive): CounterLabFrame[] {
   if (archive.version !== 1) throw new Error("Unsupported replay format");
   const offsets = new Uint32Array(archive.offsets), tokens = new Uint32Array(archive.tokens), numbers = new Float64Array(archive.numbers);
   const nodes: unknown[] = [];
-  const invalid = () => { throw new Error("Replay data is incomplete. Retry loading the replay"); };
+  const invalid = () => { throw new Error("Replay data is incomplete · Retry loading the replay"); };
   for (let id = 0; id < offsets.length; id++) {
     let cursor = offsets[id]; const end = offsets[id + 1] ?? tokens.length;
     const read = () => cursor < end ? tokens[cursor++] : invalid();

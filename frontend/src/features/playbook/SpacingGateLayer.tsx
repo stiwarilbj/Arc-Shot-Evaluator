@@ -46,7 +46,7 @@ export function SpacingGateLayer({ gates, results = [], visible = true, selected
         event.preventDefault(); event.stopPropagation();
         select(); onPointerStart(event, gate.id, kind);
       };
-      const description = `Gate ${index + 1}, Player ${gate.playerId}, stay ${gate.rule === "inside" ? "inside" : "outside"} ${gate.area.shape === "circle" ? `${gate.area.radiusFeet} foot radius` : `${gate.area.widthFeet} by ${gate.area.heightFeet} foot rectangle`}${gate.instruction ? `. ${gate.instruction}` : ""}`;
+      const description = `Gate ${index + 1}, Player ${gate.playerId}, stay ${gate.rule === "inside" ? "inside" : "outside"} ${gate.area.shape === "circle" ? `${gate.area.radiusFeet} foot radius` : `${gate.area.widthFeet} by ${gate.area.heightFeet} foot rectangle`}${gate.instruction ? ` · ${gate.instruction}` : ""}`;
       const instructionLines = (gate.instruction ?? "").match(/.{1,24}(?:\s|$)|\S+/g)?.map((line) => line.trim()).filter(Boolean).slice(0, 6) ?? [];
       return <g key={gate.id} className={`spacing-gate spacing-gate-${status} ${selected ? "is-selected" : ""}`} role={interactive ? "button" : undefined}
         tabIndex={interactive ? 0 : undefined} aria-label={description} aria-pressed={interactive ? selected : undefined}

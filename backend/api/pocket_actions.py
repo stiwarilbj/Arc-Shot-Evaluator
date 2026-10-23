@@ -349,7 +349,7 @@ async def update_pocket_action(pocket_id: str, request: Request, if_match: Annot
             raise HTTPException(404, "Pocket action not found")
         current = _read(path)
         if if_match is None or if_match.strip('"') != current["revision"]:
-            raise HTTPException(409, "This pocket changed elsewhere. Reload it before saving")
+            raise HTTPException(409, "This pocket changed elsewhere · Reload it before saving")
         value["revision"] = uuid.uuid4().hex
         value["createdAt"] = current["createdAt"]
         value["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

@@ -14,7 +14,7 @@ const clock = (value: unknown): value is number => finite(value) && value >= 0;
 const gap = (value: unknown) => typeof value === "number" && value >= 0;
 const phases = new Set(["pending", "approach", "set", "use", "release", "transfer", "completed", "obstructed", "conflict", "interrupted"]);
 function check(valid: unknown): asserts valid {
-  if (!valid) throw new Error("Replay data is damaged or incompatible. Retry loading the replay");
+  if (!valid) throw new Error("Replay data is damaged or incompatible · Retry loading the replay");
 }
 
 /** Decode once at playback ingress, then validate without changing samples or

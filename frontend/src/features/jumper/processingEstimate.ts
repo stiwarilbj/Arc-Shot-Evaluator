@@ -66,10 +66,10 @@ export class ProcessingEstimate {
     const gap = samples.length > 1 ? span / (samples.length - 1) : 0;
     if (now - this.changedAt >= Math.max(15000, gap * 3)) {
       if (download)
-        return "No new download progress yet. Network or model verification may be taking longer; you can cancel and retry";
+        return "No new download progress yet · Network or model verification may be taking longer; you can cancel and retry";
       if (tracking)
-        return "No new frame progress yet. Model setup, overlapping players, or device load can take longer. You can cancel without losing selections";
-      return "No new progress yet. Preparing models or finishing video encoding can take longer on this device. You can cancel without losing selections";
+        return "No new frame progress yet · Model setup, overlapping players, or device load can take longer · You can cancel without losing selections";
+      return "No new progress yet · Preparing models or finishing video encoding can take longer on this device · You can cancel without losing selections";
     }
     if (
       first &&
@@ -87,20 +87,20 @@ export class ProcessingEstimate {
         rounded < 60
           ? `${rounded} seconds`
           : `${Math.ceil(rounded / 60)} minute${rounded > 60 ? "s" : ""}`;
-      return `About ${duration} left for ${download ? "this model download" : tracking ? (this.phase === "browser-tracking" ? "tracking and rendering" : "tracking") : "this stage"}. Updates with measured speed; later stages are separate`;
+      return `About ${duration} left for ${download ? "this model download" : tracking ? (this.phase === "browser-tracking" ? "tracking and rendering" : "tracking") : "this stage"} · Updates with measured speed; later stages are separate`;
     }
     if (download)
-      return "First-time model downloads are separate from video processing. Cached models are reused when available; estimating this download as data arrives…";
+      return "First-time model downloads are separate from video processing · Cached models are reused when available; estimating this download as data arrives…";
     if (
       /automatic player detection|Detecting the selected shooter/i.test(
         this.phase,
       )
     )
-      return "Preparing player detection. First use may download a model; cached models are reused when available. Tracking starts after setup";
+      return "Preparing player detection · First use may download a model; cached models are reused when available · Tracking starts after setup";
     if (tracking)
-      return "Measuring this device’s speed over several frames. Tracking time varies with the number of players; export follows";
+      return "Measuring this device’s speed over several frames · Tracking time varies with the number of players; export follows";
     if (exporting)
-      return "Exporting the masked video. Encoding and final checks are separate from tracking; waiting for measurable progress";
-    return "Preparing this stage. A time estimate appears once enough progress has been measured";
+      return "Exporting the masked video · Encoding and final checks are separate from tracking; waiting for measurable progress";
+    return "Preparing this stage · A time estimate appears once enough progress has been measured";
   }
 }

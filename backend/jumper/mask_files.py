@@ -27,7 +27,7 @@ def publish_mask(path: Path, labels):
 def check_mask_inventory(directory: Path, count: int):
     """Check names against the timeline without reading any prediction arrays."""
     if count <= 0:
-        raise ValueError("Cannot export an empty processing timeline. Retry processing.")
+        raise ValueError("Cannot export an empty processing timeline · Retry processing")
     expected = {f"{index:06d}.npy" for index in range(count)}
     entries = [path for path in directory.iterdir() if path.suffix.lower() == ".npy"]
     present = {path.name for path in entries if path.is_file()}
@@ -44,4 +44,4 @@ def check_mask_inventory(directory: Path, count: int):
             if values:
                 details.append(f"{label}: {', '.join(values[:5])}" +
                                (f" (+{len(values) - 5} more)" if len(values) > 5 else ""))
-        raise ValueError("Mask inventory mismatch; " + "; ".join(details) + ". Retry processing.")
+        raise ValueError("Mask inventory mismatch; " + "; ".join(details) + " · Retry processing")

@@ -552,7 +552,7 @@ export default function VideoEditPanel({
     } catch (e) {
       if (id === generation.current && !abort.signal.aborted)
         setError(
-          `${String(e)} Your previous successful download is preserved. Retry without masking again`,
+          `${String(e)} Your previous successful download is preserved · Retry without masking again`,
         );
     } finally {
       if (id === generation.current) setBusy(false);
@@ -665,7 +665,7 @@ export default function VideoEditPanel({
           </div>
           <p id={previewHelpId} className="jumper-caption">
             Clean quiz keeps cuts, speeds, and freezes, without text, zoom/pan,
-            or fades. Switching previews does not change your download
+            or fades · Switching previews does not change your download
           </p>
           <div className="jumper-preview-stage">
             <canvas
@@ -753,9 +753,9 @@ export default function VideoEditPanel({
                       {risk.upper >= 0.15
                         ? "the upper silhouette (which may obscure shooting motion)"
                         : "a substantial part of the shooter"}{" "}
-                      around {(risk.frame / 30).toFixed(2)}s. This is an
+                      around {(risk.frame / 30).toFixed(2)}s · This is an
                       approximate mask-overlap hint, not hand or release
-                      detection. Placement is your choice
+                      detection · Placement is your choice
                     </p>
                     <div className="jumper-toolbar">
                       <button
@@ -776,7 +776,7 @@ export default function VideoEditPanel({
                         </button>
                       ) : (
                         <span>
-                          No clearly better supported position. Try shorter text
+                          No clearly better supported position · Try shorter text
                           or a different interval
                         </span>
                       )}
@@ -828,7 +828,7 @@ export default function VideoEditPanel({
               </label>
               <p className="jumper-caption" role="status">
                 Looping Piece {project.pieces.indexOf(piece) + 1} ·{" "}
-                {time(playbackRange.start)}–{time(playbackRange.end)}s. Preview
+                {time(playbackRange.start)}–{time(playbackRange.end)}s · Preview
                 only; downloads are unchanged
               </p>
             </div>
@@ -892,7 +892,7 @@ export default function VideoEditPanel({
             onEnd={endOverlayDrag}
           />
           <p className="jumper-caption">
-            One 30 fps timeline · {time(count)}s / 60s. Quiz copies keep cuts,
+            One 30 fps timeline · {time(count)}s / 60s · Quiz copies keep cuts,
             speed, and freezes; captions, framing, and fades stay in your
             viewing version
           </p>
@@ -944,7 +944,7 @@ export default function VideoEditPanel({
               role="status"
             >
               {splitReason
-                ? `Playhead: frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1}. ${splitReason}`
+                ? `Playhead: frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1} · ${splitReason}`
                 : `Split before frame ${frame + 1} · ${time(frame)}s · Piece ${split.index + 1} · source frame ${split.hit.source + 1}`}
             </p>
             <div className="jumper-toolbar">
@@ -1172,9 +1172,9 @@ export default function VideoEditPanel({
                   Add at current time
                 </button>
                 <p className="jumper-caption">
-                  Click a visible caption in the preview to select it. Drag it
-                  to the top, center, or bottom guides, or use Placement below.{" "}
-                  Long captions wrap within the outlined safe area. Use a
+                  Click a visible caption in the preview to select it · Drag it
+                  to the top, center, or bottom guides, or use Placement below ·{" "}
+                  Long captions wrap within the outlined safe area · Use a
                   smaller size or shorter text if a caption cannot fit
                 </p>
                 {project.captions.map((c, index) => (
@@ -1205,13 +1205,13 @@ export default function VideoEditPanel({
                     />
                     {c.outside ? (
                       <p role="status">
-                        This caption was clamped after a cut. Check its timing
+                        This caption was clamped after a cut · Check its timing
                       </p>
                     ) : null}
                     {captionFits?.[index] === false ? (
                       <p role="alert" className="jumper-notice">
                         Caption {index + 1} cannot fit in the safe area at this
-                        size. Choose a smaller size or shorten the text before
+                        size · Choose a smaller size or shorten the text before
                         updating the finished video
                       </p>
                     ) : null}
@@ -1344,7 +1344,7 @@ export default function VideoEditPanel({
                 <p className="jumper-caption jumper-freeze-preview">
                   Hold the frame shown in the video preview: frame {frame + 1} ·{" "}
                   {time(frame)}s (masked source frame {split.hit.source + 1} ·{" "}
-                  {time(split.hit.source)}s). A new freeze starts at 1 second
+                  {time(split.hit.source)}s) · A new freeze starts at 1 second
                 </p>
                 <button
                   disabled={
@@ -1467,11 +1467,11 @@ export default function VideoEditPanel({
                   />
                 </label>
                 <p className="jumper-caption">
-                  While paused, the preview shows the full masked frame. Drag
+                  While paused, the preview shows the full masked frame · Drag
                   the
                   {framingEnd ? " end" : " start"} rectangle or use arrow keys
-                  to pan; zoom above 1× to move it. Play to see the finished
-                  crop. Clean quiz has no framing guide or zoom
+                  to pan; zoom above 1× to move it · Play to see the finished
+                  crop · Clean quiz has no framing guide or zoom
                 </p>
                 {(["x", "y"] as const).map((axis) => (
                   <label key={axis}>
@@ -1541,8 +1541,8 @@ export default function VideoEditPanel({
       ) : null}
       {captionOverflow ? (
         <p role="alert" className="jumper-notice">
-          Caption text exceeds the safe area. Open Text to shorten it or choose
-          a smaller size. Your previous finished download is preserved
+          Caption text exceeds the safe area · Open Text to shorten it or choose
+          a smaller size · Your previous finished download is preserved
         </p>
       ) : null}
       <div className="jumper-toolbar">

@@ -333,12 +333,12 @@ def import_archive(root: Path, source: Path, lock):
                         for kind in kinds(value)
                     ):
                         raise FileExistsError(
-                            "The library changed during restore. Retry this backup; existing clips were not replaced."
+                            "The library changed during restore · Retry this backup; existing clips were not replaced"
                         )
                     skipped += 1
                 elif (saved / ("." + value["id"])).exists():
                     raise FileExistsError(
-                        "A clip save is pending. Retry the backup after it completes."
+                        "A clip save is pending · Retry the backup after it completes"
                     )
             try:
                 for value, refs, directory in records:

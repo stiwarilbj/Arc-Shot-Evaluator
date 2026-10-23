@@ -596,7 +596,7 @@ async function process(
               raw[c * 4096 + i] += weights.no_mem_embed[c];
           const prediction = await predict(feats, raw, prompt, object.id);
           if (!object.ignored && !reliableMask(prediction.low, undefined, prediction.score[0]))
-            throw Error(`The player selection at frame ${frame + 1} is too uncertain to seed tracking. Adjust the selection on a clear frame and retry`);
+            throw Error(`The player selection at frame ${frame + 1} is too uncertain to seed tracking · Adjust the selection on a clear frame and retry`);
           if (frame === 0 && object.id === target_id && prompt.box && prompt.labels?.includes(1)) {
             report("Checking starting shooter selection", 0);
             const compared = [prediction.low];
@@ -810,12 +810,12 @@ async function process(
           for (const box of resolution.unmatched) {
             if (objects.length >= 20)
               throw Error(
-                "More than 20 tracks are needed. Remove spectators or use manual selection in corrections",
+                "More than 20 tracks are needed · Remove spectators or use manual selection in corrections",
               );
             const id = Math.max(0, ...objects.map((o) => o.id)) + 1;
             if (id > 255)
               throw Error(
-                "Too many player selections. Start a fresh selection",
+                "Too many player selections · Start a fresh selection",
               );
             const prompt = { frame, box };
             const object = { id, prompts: [prompt] };
@@ -832,7 +832,7 @@ async function process(
                   raw[c * 4096 + i] += weights.no_mem_embed[c];
               const prediction = await predict(sampleFeatures, raw, prompt, id);
               if (!reliableMask(prediction.low, undefined, prediction.score[0]))
-                throw Error(`A newly detected player at frame ${frame + 1} is too uncertain to seed tracking. Select court players manually and retry`);
+                throw Error(`A newly detected player at frame ${frame + 1} is too uncertain to seed tracking · Select court players manually and retry`);
               trustedMasks.set(id, prediction.low);
               conditions
                 .get(id)!

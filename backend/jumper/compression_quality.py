@@ -5,8 +5,8 @@ import numpy as np
 class SilhouetteCompressionError(ValueError):
     def __init__(self):
         super().__init__(
-            "Compression damaged silhouette details. Try a shorter or lower-resolution "
-            "clip if higher-quality export also fails."
+            "Compression damaged silhouette details · Try a shorter or lower-resolution "
+            "clip if higher-quality export also fails"
         )
 
 

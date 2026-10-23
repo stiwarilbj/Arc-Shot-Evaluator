@@ -115,7 +115,7 @@ export function useCaptionOcclusion(
               project,
               risks,
               status:
-                "Silhouette overlap checked. Review hints only: hands and release are not identified",
+                "Silhouette overlap checked · Review hints only: hands and release are not identified",
             });
         } catch {
           if (!abort.signal.aborted)
@@ -123,7 +123,7 @@ export function useCaptionOcclusion(
               base,
               project,
               risks: [],
-              status: "Caption overlap check unavailable. Review manually",
+              status: "Caption overlap check unavailable · Review manually",
               failed: true,
             });
         }
@@ -138,7 +138,7 @@ export function useCaptionOcclusion(
     return {
       risks: [],
       status:
-        "Caption overlap check unavailable. Review the shooting motion manually",
+        "Caption overlap check unavailable · Review the shooting motion manually",
       retry: () => {
         setDecodeFailure(null);
         setRetry((value) => value + 1);
@@ -148,7 +148,7 @@ export function useCaptionOcclusion(
     return {
       risks: [],
       status:
-        "Automatic caption checks are unavailable for legacy bases. Review placement manually",
+        "Automatic caption checks are unavailable for legacy bases · Review placement manually",
       retry: undefined,
     };
   return {

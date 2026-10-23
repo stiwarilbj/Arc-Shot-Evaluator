@@ -344,8 +344,8 @@ export default memo(function TimelinePieces({
       </div>
       {failed ? (
         <p className="jumper-caption" role="status">
-          Some thumbnails are unavailable. You can still select and preview each
-          piece.{" "}
+          Some thumbnails are unavailable · You can still select and preview each
+          piece ·{" "}
           <button type="button" onClick={() => setRetry((value) => value + 1)}>
             Retry thumbnails
           </button>

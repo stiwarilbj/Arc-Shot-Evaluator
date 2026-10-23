@@ -150,7 +150,7 @@ export default function JumperLab({
         <div>
           <span className="jumper-eyebrow">THE SHOT IS THE CLUE</span>
           <h1>Guess the Jumper</h1>
-          <p>Recognize the release. Make your own mystery clips</p>
+          <p>Recognize the release · Make your own mystery clips</p>
         </div>
         <span className="jumper-private">Device-local · No accounts</span>
       </header>
@@ -458,7 +458,7 @@ function Guess({
       ]);
       setError("");
     } catch (error) {
-      setError(`Your answer was not recorded. Retry: ${String(error)}`);
+      setError(`Your answer was not recorded · Retry: ${String(error)}`);
     } finally {
       lock.current = false;
       setBusy(false);
@@ -623,8 +623,8 @@ function Guess({
                 ) : null}
                 <p>
                   {submitted.outcome
-                    ? "Correct. You recognized the release"
-                    : `You picked ${submitted.selected.name}. Watch the follow-through again`}
+                    ? "Correct · You recognized the release"
+                    : `You picked ${submitted.selected.name} · Watch the follow-through again`}
                 </p>
                 <button
                   type="button"
@@ -682,7 +682,7 @@ function Guess({
                   Lock answer
                 </button>
                 <p className="jumper-caption">
-                  One answer per round. Spelling suggestions help; you choose
+                  One answer per round · Spelling suggestions help; you choose
                   the player
                 </p>
               </form>
@@ -758,7 +758,7 @@ function Library({
     <>
       <div className="jumper-toolbar">
         <p>
-          Finished videos stay on this device. Browser data can be cleared; keep
+          Finished videos stay on this device · Browser data can be cleared; keep
           a library backup to protect your collection
         </p>
         <button
@@ -854,7 +854,7 @@ function Library({
               ) : (
                 <p className="jumper-notice">
                   Legacy download · this older file may contain original player
-                  colors. Create a new silhouette to anonymize it
+                  colors · Create a new silhouette to anonymize it
                 </p>
               )}
               <a

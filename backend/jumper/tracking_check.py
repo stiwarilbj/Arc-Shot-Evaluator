@@ -85,7 +85,7 @@ class ShooterTrackingCheck:
 
     def finish(self):
         if len(self.checked) != self.anchor + 1 or self.forward:
-            raise ValueError("Backward shooter check did not finish. Retry processing.")
+            raise ValueError("Backward shooter check did not finish · Retry processing")
         return dict(
             tracking_check=dict(
                 anchor_frame=self.anchor, target_id=self.target,

@@ -235,7 +235,7 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
       if (video.paused) await video.play();
       else video.pause();
     } catch {
-      setMediaError("This video could not be played in the browser. Try the annotated MP4 export");
+      setMediaError("This video could not be played in the browser · Try the annotated MP4 export");
     }
   }
 

@@ -139,7 +139,7 @@ export async function restoreLibrary(
     ));
   } catch (error) {
     throw Error(
-      `Clips were restored, but guessing history could not be restored. Retry this backup; existing clips and answers will be skipped. ${error instanceof Error ? error.message : error}`,
+      `Clips were restored, but guessing history could not be restored · Retry this backup; existing clips and answers will be skipped · ${error instanceof Error ? error.message : error}`,
     );
   }
   return {

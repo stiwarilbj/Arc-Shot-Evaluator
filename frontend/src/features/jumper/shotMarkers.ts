@@ -50,7 +50,7 @@ export function shotMotionWarnings(project: EditProject): ShotMotionWarning[] {
     warnings.push({
       id: "order",
       message:
-        "Check marker order: Gather should come before Release, then Finish. Mark distinct source frames; edits remain unrestricted",
+        "Check marker order: Gather should come before Release, then Finish · Mark distinct source frames; edits remain unrestricted",
     });
     return warnings;
   }

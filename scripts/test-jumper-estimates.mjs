@@ -76,7 +76,7 @@ for (let i = 0; i <= 3; i++)
     { stage: "Tracking players · MPS", progress: i / 10 },
     i * 1000,
   );
-assert.match(native.hint(3000), /left for tracking\./);
+assert.match(native.hint(3000), /left for tracking/);
 assert.doesNotMatch(native.hint(3000), /tracking and rendering/);
 
 const compressed = new ProcessingEstimate();
