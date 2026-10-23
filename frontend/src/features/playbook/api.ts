@@ -215,6 +215,7 @@ async function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identit
     arrows: structuredClone(playbook.arrows),
     ...(playbook.branches !== undefined ? { branches: structuredClone(playbook.branches) } : {}),
     ...(playbook.readCoach !== undefined ? { readCoach: structuredClone(playbook.readCoach) } : {}),
+    ...(playbook.roleCues !== undefined ? { roleCues: structuredClone(playbook.roleCues) } : {}),
   };
   validatePlaybookSaveResult(saved, identity);
   const library = await upgradeHostedLibrary(await readLocalLibrary());

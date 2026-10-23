@@ -9,6 +9,8 @@ export type RoleCue = {
   phase: RoleCuePhase;
   text: string;
   signature: string;
+  /** Accepts wording authored before signatures were narrowed to instruction meaning */
+  legacySignature?: string;
   startAtMs: number;
   endAtMs: number;
   status: "waiting" | "active" | "completed" | "blocked";
@@ -68,16 +70,26 @@ function actionRoleCues(play: PlaybookDraft): Template[] {
       return source ? `Move ${source.sequence} ${event}` : `the required action ${event}`;
     };
     const dependency = waits.length ? ` · after ${waits.map(waitDescription).join(" and ")}` : "";
-    const actionSignature = signature({ arrow: { ...arrow, sequence: undefined }, actorId, recipientId, partnerId,
+    // Wording needs review when its action, bound players, or prerequisites
+    // change. Geometry and derived travel time can normalize slightly at save
+    // time without changing the instruction, so they are excluded here.
+    const actionSignature = signature({ kind, actorId, recipientId, partnerId,
+      screenerId: arrow.screener_id ?? null, handlerId: arrow.handler_id ?? null, cutterId: arrow.cutter_id ?? null,
+      syncId: arrow.timingPlan?.syncId ?? null,
+      waits: waits.map((wait) => ({ actionId: wait.actionId, event: wait.event, playerId: wait.playerId ?? null,
+        routeSegment: wait.routeSegment ?? null, progress: wait.progress ?? null })) });
+    // Existing saved wording can keep its previous signature if the complete
+    // authored action still matches its persisted source.
+    const legacySignature = signature({ arrow: { ...arrow, sequence: undefined }, actorId, recipientId, partnerId,
       startAtMs: action.startAtMs, durationMs: action.durationMs, waits });
     for (const [playerId, role] of participants) {
       const text = `${role.text}${dependency}`;
       output.push({ key: `${playerId}:${action.actionId}:${role.phase}`, playerId, actionId: action.actionId, sequence: action.sequence,
-        phase: role.phase, text, signature: actionSignature, startAtMs: action.startAtMs, endAtMs: action.startAtMs + action.durationMs });
+        phase: role.phase, text, signature: actionSignature, legacySignature, startAtMs: action.startAtMs, endAtMs: action.startAtMs + action.durationMs });
       if (waits.length) {
         const waitText = `Wait until ${waits.map(waitDescription).join(" and ")}`;
         output.push({ key: `${playerId}:${action.actionId}:wait`, playerId, actionId: action.actionId, sequence: action.sequence,
-          phase: "wait", text: waitText, signature: actionSignature, startAtMs: action.startAtMs, endAtMs: action.startAtMs + action.durationMs });
+          phase: "wait", text: waitText, signature: actionSignature, legacySignature, startAtMs: action.startAtMs, endAtMs: action.startAtMs + action.durationMs });
       }
     }
   }
@@ -122,7 +134,7 @@ export function buildRoleCues(play: PlaybookDraft, playerId: number, branchId: s
     const startAtMs = template.phase === "receive" && transferAt !== undefined ? transferAt : diagnostic?.startedAtMs ?? template.startAtMs;
     const endAtMs = diagnostic?.completedAtMs ?? (template.phase === "receive" && transferAt !== undefined ? transferAt : template.endAtMs);
     return { ...template, text: override?.text ?? template.text, startAtMs, endAtMs, status,
-      reviewWording: Boolean(override && override.signature !== template.signature), ...(diagnostic ? { diagnostic } : {}) };
+      reviewWording: Boolean(override && override.signature !== template.signature && override.signature !== template.legacySignature), ...(diagnostic ? { diagnostic } : {}) };
   });
 }
 

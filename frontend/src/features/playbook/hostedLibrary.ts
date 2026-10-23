@@ -121,7 +121,9 @@ async function upgradeToRoleRehearsalAware(library: ReadCoachAwareLibrary): Prom
 }
 const hasTiming = (plays: PlaybookDocument[]) => plays.some((play) => [...play.arrows, ...(play.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined));
 const hasReadCoach = (plays: PlaybookDocument[]) => plays.some((play) => Boolean(play.readCoach?.checkpoints.length));
-const hasRoleCues = (plays: PlaybookDocument[]) => plays.some((play) => Boolean(play.roleCues?.cues.length));
+// Even an empty lesson records that a client understands this extension. An
+// older tab must not be allowed to rewrite the library and silently drop it.
+const hasRoleCues = (plays: PlaybookDocument[]) => plays.some((play) => play.roleCues !== undefined);
 async function addRequiredLibraryLayers(library: RevisionedLibrary): Promise<RevisionedLibrary> {
   const timed = hasTiming(library.plays), lesson = hasReadCoach(library.plays), role = hasRoleCues(library.plays);
   let current: RevisionedLibrary = library;

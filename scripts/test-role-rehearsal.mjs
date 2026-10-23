@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { buildRoleCues, authoredRoleCueTemplates } from '../frontend/src/features/playbook/roleRehearsal.ts';
 import { authoredCourtRoutes } from '../frontend/src/features/playbook/simulation.ts';
 import { validatePlaybookDocument } from '../frontend/src/features/playbook/documentValidation.ts';
+import { normalizePlaybookPrecision } from '../frontend/src/features/playbook/documentPrecision.ts';
 import { playbookContentKey } from '../frontend/src/features/playbook/playbookDraftSession.ts';
 
 const play = {
@@ -37,6 +38,13 @@ const wait = templates.find((cue) => cue.playerId === 2 && cue.phase === 'wait')
 play.roleCues = { version: 1, cues: [{ playerId: 2, actionId: pass.actionId, phase: pass.phase, scope: 'shared', text: 'Secure the ball', signature: pass.signature }] };
 validatePlaybookDocument(play);
 assert.notEqual(playbookContentKey(play), playbookContentKey({ ...play, roleCues: undefined }), 'custom cue wording is saved content');
+const savedPrecision = normalizePlaybookPrecision(play);
+const savedPrecisionCues = buildRoleCues(savedPrecision, 2, null, new Set(['pass-one', 'cut-two']), [], 0);
+assert.equal(savedPrecisionCues.find((cue) => cue.actionId === pass.actionId && cue.phase === pass.phase).reviewWording, false, 'save precision does not flag unchanged custom wording for review');
+const legacyWording = structuredClone(play);
+legacyWording.roleCues.cues[0].signature = pass.legacySignature;
+const legacyCues = buildRoleCues(legacyWording, 2, null, new Set(['pass-one', 'cut-two']), [], 0);
+assert.equal(legacyCues.find((cue) => cue.actionId === pass.actionId && cue.phase === pass.phase).reviewWording, false, 'existing full-action signatures remain compatible');
 
 const pending = { actionId: 'cut-two', sequence: 2, actorId: 2, recipientId: null, partnerId: null,
   phase: 'pending', startedAtMs: null, completedAtMs: null, progress: 0, notice: null };
@@ -54,8 +62,19 @@ assert.equal(cues.find((cue) => cue.phase === 'cut').status, 'waiting');
 const changed = structuredClone(play);
 changed.arrows[0].end.x = 39;
 cues = buildRoleCues(changed, 2, null, new Set(['pass-one', 'cut-two']), [], 0);
-assert.equal(cues.find((cue) => cue.phase === 'receive').reviewWording, true, 'custom wording is flagged when the bound action changes');
+assert.equal(cues.find((cue) => cue.phase === 'receive').reviewWording, false, 'route coordinates do not invalidate role wording');
 assert.equal(cues.find((cue) => cue.phase === 'receive').text, 'Secure the ball', 'review never discards saved wording');
+const changedKind = structuredClone(play);
+changedKind.arrows[0].kind = 'handoff';
+changedKind.arrows[0].actor_id = 1;
+changedKind.arrows[0].recipient_id = 2;
+cues = buildRoleCues(changedKind, 2, null, new Set(['pass-one', 'cut-two']), [], 0);
+assert.equal(cues.find((cue) => cue.phase === 'receive').reviewWording, true, 'custom wording is flagged when its action type changes');
+const changedWait = structuredClone(play);
+changedWait.roleCues.cues.push({ playerId: 2, actionId: 'cut-two', phase: 'cut', scope: 'shared', text: 'Cut after the pass', signature: templates.find((cue) => cue.playerId === 2 && cue.actionId === 'cut-two' && cue.phase === 'cut').signature });
+changedWait.arrows[1].timingPlan.waits[0].event = 'complete';
+cues = buildRoleCues(changedWait, 2, null, new Set(['pass-one', 'cut-two']), [], 0);
+assert.equal(cues.find((cue) => cue.actionId === 'cut-two' && cue.phase === 'cut').reviewWording, true, 'custom wording is flagged when its prerequisite changes');
 
 const stationary = buildRoleCues(play, 3, null, new Set(['pass-one', 'cut-two']), [], 0);
 assert.equal(stationary[0].text, 'Hold position');

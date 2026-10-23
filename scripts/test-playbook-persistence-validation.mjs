@@ -15,7 +15,7 @@ for (const target of ['github-pages', 'local']) {
   globalThis.window = window;
   globalThis.fetch = async (_url, options) => {
     calls++;
-    if (!options?.method) return new Response(content);
+    if (!options?.method) return new Response(content, { headers: target === 'local' ? { 'X-ARC-Playbook-Extensions': 'branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1' } : {} });
     const value = { ...JSON.parse(options.body), id: options.headers?.['X-ARC-Create-ID'] ?? JSON.parse(options.body).id, created_at: '2026-10-15', updated_at: '2026-10-15' };
     content = JSON.stringify([value]); writes++;
     return Response.json(value);
@@ -33,6 +33,16 @@ for (const target of ['github-pages', 'local']) {
   const updated = await api.updatePlaybook({ ...saved, name: 'Updated drawing' });
   assert.equal(updated.name, 'Updated drawing');
   assert.equal((await api.fetchPlaybooks())[0].name, 'Updated drawing');
+  const roleCueLesson = { version: 1, cues: [{ playerId: 1, actionId: 'stationary', phase: 'hold', scope: 'shared', text: 'Hold the corner', signature: '1234abcd' }] };
+  const savedWithRoleCue = await api.createPlaybook({ ...play, name: 'Role cue round trip', roleCues: roleCueLesson });
+  assert.deepEqual(savedWithRoleCue.roleCues, roleCueLesson, `${target}: role cue wording survives create`);
+  const updatedWithRoleCue = await api.updatePlaybook({ ...savedWithRoleCue, name: 'Role cue update round trip' });
+  assert.deepEqual(updatedWithRoleCue.roleCues, roleCueLesson, `${target}: role cue wording survives update`);
+  const reopenedWithRoleCue = (await api.fetchPlaybooks()).find((item) => item.id === updatedWithRoleCue.id);
+  assert.deepEqual(reopenedWithRoleCue?.roleCues, roleCueLesson, `${target}: role cue wording survives library reload`);
+  const savedWithEmptyRoleCueLesson = await api.createPlaybook({ ...play, name: 'Empty role cue extension', roleCues: { version: 1, cues: [] } });
+  assert.deepEqual(savedWithEmptyRoleCueLesson.roleCues, { version: 1, cues: [] }, `${target}: an empty role cue extension is preserved`);
+  if (target === 'github-pages') assert.equal(JSON.parse(content).version, 6, 'the hosted envelope retains role cue capability even when the extension is empty');
   const corrupt = { ...saved, players: [{ id: 1, x: 101, y: 50 }] };
   content = JSON.stringify([corrupt]);
   const badContent = content;
