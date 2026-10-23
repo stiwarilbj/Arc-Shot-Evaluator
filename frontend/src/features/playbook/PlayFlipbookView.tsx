@@ -260,6 +260,7 @@ export function PlayFlipbookView({ source, settings, visibility, endingId, endin
         else if (endMs > 0) proposed.push({ atMs: endMs, frame: endFrame, caption: "Finish" });
         const panels = proposed.slice(0, 12).map((item, index) => panelFromFrame(item.frame, item.atMs, item.caption, item.actionIds,
           index > 0 ? proposed[index - 1].atMs : 0));
+        const openingFrame = candidates[0]?.frame ?? endFrame;
         const generated: PlayFlipbookStory = { id: rebuild && workingStory ? workingStory.id : newId("flipbook"), playName: source.name, endingId,
           endingLabel, recording: capture.session, panels };
         if (rebuild && workingStory) { setStagedStory(generated); setNotice("Review the rebuilt panels, then accept to replace the frozen story"); }
@@ -268,7 +269,10 @@ export function PlayFlipbookView({ source, settings, visibility, endingId, endin
           setWorkingStory(generated); setPersisted(false); setSelectedId(panels[0]?.id ?? null);
           setNotice("Review the suggested moments, then save the walkthrough to this play");
         }
-        setStatus("ready"); setPlaying(false); setPositionMs(endMs); setDurationMs(endMs); setRecordingProgress(100);
+        currentFrameRef.current = openingFrame;
+        acknowledgedPositionRef.current = panels[0]?.atMs ?? 0;
+        setCurrentFrame(openingFrame); setStatus("ready"); setPlaying(false); setPositionMs(panels[0]?.atMs ?? 0); setDurationMs(endMs); setRecordingProgress(100);
+        client.seek(panels[0]?.atMs ?? 0);
       },
       onFailure: (message) => {
         if (clientRef.current !== client) return;
