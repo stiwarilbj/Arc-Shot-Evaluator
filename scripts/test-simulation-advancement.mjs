@@ -17,7 +17,7 @@ for (const advance of [advanceSimulationState, advanceSimulationRun]) {
     const before = structuredClone(run);
     const frame = run.frame, previousFrame = run.previousFrame, normalized = run.settings;
     assert.throws(() => advance(run, delta, changedSettings), {
-      name: 'TypeError', message: 'Simulation elapsed time must be finite.',
+      name: 'TypeError', message: 'Simulation elapsed time must be finite',
     });
     assert.deepEqual(run, before, `${advance.name}: invalid time must not mutate any run state`);
     assert.strictEqual(run.frame, frame);

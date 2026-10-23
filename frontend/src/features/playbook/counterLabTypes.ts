@@ -80,6 +80,41 @@ export function eligibleCounterLabSchemes(defenderCount: number, offensivePlayer
   return COUNTER_LAB_EXTRA_SCHEMES.filter((profile) => profile.scheme !== "triangle-and-two" || offensivePlayerCount >= 2);
 }
 
+/** Keep a generated repair from silently changing the contract of an authored timing wait. */
+export function preservesTimingContracts(original: PlaybookDraft, candidate: PlaybookDraft) {
+  const originals = new Map(original.arrows.map((arrow) => [arrow.id, arrow]));
+  const candidates = new Map(candidate.arrows.map((arrow) => [arrow.id, arrow]));
+  const originalBindings = new Map(bindAuthoredActions(original).map((action) => [action.arrow.id, action]));
+  const candidateBindings = new Map(bindAuthoredActions(candidate).map((action) => [action.arrow.id, action]));
+  const screenEvents = new Set(["screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"]);
+  const routeSignature = (arrow: PlaybookDraft["arrows"][number]) => JSON.stringify({
+    kind: arrow.kind, start: arrow.start, end: arrow.end, control: arrow.control ?? null,
+    exit: arrow.exit_target ?? null, path: arrow.path ?? "straight", actor: arrow.actor_id ?? null,
+    recipient: arrow.recipient_id ?? null, screener: arrow.screener_id ?? null,
+    cutter: arrow.cutter_id ?? null, handler: arrow.handler_id ?? null,
+  });
+
+  for (const source of original.arrows) {
+    for (const wait of source.timingPlan?.waits ?? []) {
+      const before = originals.get(wait.actionId);
+      const after = candidates.get(wait.actionId);
+      if (!before || !after) return false;
+      if (wait.event === "catch") {
+        const beforeBinding = originalBindings.get(before.id), afterBinding = candidateBindings.get(after.id);
+        if (!["pass", "handoff"].includes(after.kind) || beforeBinding?.actorId !== afterBinding?.actorId || beforeBinding?.recipientId !== afterBinding?.recipientId) return false;
+      }
+      if ((wait.event === "screen-set" || wait.event === "screen-use") && !screenEvents.has(after.kind)) return false;
+      if (wait.event === "route-point") {
+        const beforeBinding = originalBindings.get(before.id), afterBinding = candidateBindings.get(after.id);
+        const participant = wait.playerId;
+        const roles = (binding: typeof beforeBinding) => binding ? [binding.actorId, binding.recipientId, binding.partnerId] : [];
+        if (routeSignature(before) !== routeSignature(after) || !roles(beforeBinding).includes(participant) || !roles(afterBinding).includes(participant)) return false;
+      }
+    }
+  }
+  return true;
+}
+
 const point = (x: number, y: number): CourtPoint => ({ x, y });
 const clamp = (value: number) => Math.max(4, Math.min(96, value));
 
@@ -142,7 +177,7 @@ export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<Counte
   repairs.forEach((repair) => { if (!unique.has(JSON.stringify(repair.play.arrows))) unique.set(JSON.stringify(repair.play.arrows), repair); });
   const signature = (play: PlaybookDraft) => JSON.stringify(bindAuthoredActions(play).map((action) => ({ kind: action.arrow.kind, actor: action.actorId, recipient: action.recipientId, start: action.startTime, duration: action.durationMs, end: action.arrow.end, exit: action.arrow.exit_target, control: action.arrow.control })));
   const original = signature(draft);
-  const effective = [...unique.values()].filter((repair) => signature(repair.play) !== original);
+  const effective = [...unique.values()].filter((repair) => signature(repair.play) !== original && preservesTimingContracts(draft, repair.play));
   // Reserve space for different edit families instead of filling the budget
   // with duration edits from the first few moves.
   const families = ["slip-", "roll-pop-", "pass-", "space-", "timing-"];

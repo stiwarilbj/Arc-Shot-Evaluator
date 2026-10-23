@@ -868,7 +868,7 @@ def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_pat
         "continuation": [payload["arrows"][0]],
     }]
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
 
@@ -907,3 +907,97 @@ def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_pat
     })
     assert rejected.status_code == 400
     assert client.get(f"/api/playbooks/{saved['id']}").json() == cleared_response.json()
+
+
+def test_timing_documents_require_and_preserve_timing_aware_local_writes(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Timed actions")
+    payload["players"].append({"id": 2, "x": 38, "y": 64})
+    payload["players"].append({"id": 3, "x": 62, "y": 64})
+    payload["arrows"][0]["actor_id"] = 3
+    payload["arrows"][0]["timingPlan"] = {"startAtMs": 300, "syncId": "pin-a"}
+    payload["arrows"][1]["actor_id"] = 1
+    payload["arrows"][1]["recipient_id"] = 2
+    payload["arrows"][1]["timingPlan"] = {"startAtMs": 300, "syncId": "pin-a"}
+    assert client.post("/api/playbooks", json=payload).status_code == 409
+    created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "timing-v1"})
+    assert created.status_code == 200
+    saved = created.json()
+    assert saved["arrows"][0]["timingPlan"] == {"startAtMs": 300, "syncId": "pin-a"}
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["arrows"] == saved["arrows"]
+    stale = {key: value for key, value in saved.items() if key not in {"revision", "id", "created_at", "updated_at"}}
+    stale["arrows"] = [{key: value for key, value in arrow.items() if key != "timingPlan"} for arrow in stale["arrows"]]
+    refused = client.put(f"/api/playbooks/{saved['id']}", json=stale, headers={"If-Match": _match(saved)})
+    assert refused.status_code == 409
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["arrows"] == saved["arrows"]
+    updated = client.put(f"/api/playbooks/{saved['id']}", json=saved, headers={
+        "If-Match": _match(saved), "X-ARC-Playbook-Extensions": "timing-v1",
+    })
+    assert updated.status_code == 200
+    assert updated.json()["arrows"] == saved["arrows"]
+
+
+def test_timing_wait_graph_and_pin_validation(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Timing validation")
+    payload["players"].append({"id": 2, "x": 38, "y": 64})
+    payload["arrows"][0]["actor_id"] = 1
+    payload["arrows"][1].update(actor_id=1, recipient_id=2)
+    payload["arrows"][0]["timingPlan"] = {"startAtMs": 1000, "waits": [{"id": "wait-a", "actionId": "arrow-two", "event": "catch"}]}
+    payload["arrows"][1]["timingPlan"] = {"startAtMs": 0, "waits": [{"id": "wait-b", "actionId": "arrow-one", "event": "start"}]}
+    cyclic = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "timing-v1"})
+    assert cyclic.status_code == 400
+    assert "cycle" in cyclic.json()["detail"].lower()
+
+    through_pin = _payload("Timing cycle through pin")
+    through_pin["players"].extend([{"id": 2, "x": 38, "y": 64}, {"id": 3, "x": 62, "y": 64}])
+    through_pin["arrows"] = [
+        {"id": "pinned-a", "kind": "movement", "sequence": 1, "actor_id": 1, "start": {"x": 20, "y": 70}, "end": {"x": 24, "y": 64}, "timingPlan": {"startAtMs": 0, "syncId": "same-pin", "waits": [{"id": "wait-x", "actionId": "outside-pin", "event": "start"}]}},
+        {"id": "pinned-b", "kind": "movement", "sequence": 1, "actor_id": 2, "start": {"x": 35, "y": 70}, "end": {"x": 38, "y": 64}, "timingPlan": {"startAtMs": 0, "syncId": "same-pin"}},
+        {"id": "outside-pin", "kind": "movement", "sequence": 2, "actor_id": 3, "start": {"x": 50, "y": 70}, "end": {"x": 54, "y": 64}, "timingPlan": {"startAtMs": 0, "waits": [{"id": "wait-b", "actionId": "pinned-b", "event": "start"}]}},
+    ]
+    grouped_cycle = client.post("/api/playbooks", json=through_pin, headers={"X-ARC-Playbook-Extensions": "timing-v1"})
+    assert grouped_cycle.status_code == 400
+    assert "cycle" in grouped_cycle.json()["detail"].lower()
+
+    payload = _payload("Pinned transfers")
+    payload["players"].append({"id": 2, "x": 38, "y": 64})
+    payload["arrows"][0].update(actor_id=1, timingPlan={"startAtMs": 0, "syncId": "same"})
+    payload["arrows"][1].update(actor_id=1, recipient_id=2, timingPlan={"startAtMs": 0, "syncId": "same"})
+    conflict = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "timing-v1"})
+    assert conflict.status_code == 400
+    assert "movement owner" in conflict.json()["detail"]
+
+    valid = _payload("Route wait")
+    valid["players"].append({"id": 2, "x": 38, "y": 64})
+    valid["arrows"][0].update(actor_id=1, timingPlan={"startAtMs": 0})
+    valid["arrows"][1].update(actor_id=1, recipient_id=2, timingPlan={"startAtMs": 0, "waits": [{"id": "route-a", "actionId": "arrow-one", "event": "route-point", "playerId": 1, "routePhase": "main", "routeSegment": 20, "progress": 0.55556}]})
+    stored = client.post("/api/playbooks", json=valid, headers={"X-ARC-Playbook-Extensions": "timing-v1"})
+    assert stored.status_code == 200
+    assert stored.json()["arrows"][1]["timingPlan"]["waits"][0]["progress"] == 0.5556
+
+
+def test_timing_waits_require_retarget_when_source_routes_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Retarget route waits")
+    payload["players"].append({"id": 2, "x": 38, "y": 64})
+    payload["arrows"][0].update(actor_id=2, timingPlan={"startAtMs": 0})
+    payload["arrows"][1].update(actor_id=1, recipient_id=2, timingPlan={"startAtMs": 0, "waits": [{
+        "id": "wait-route", "actionId": "arrow-one", "event": "route-point", "playerId": 2,
+        "routePhase": "main", "routeSegment": 12, "progress": 0.4,
+    }]})
+    headers = {"X-ARC-Playbook-Extensions": "timing-v1"}
+    saved = client.post("/api/playbooks", json=payload, headers=headers).json()
+    changed = json.loads(json.dumps(saved))
+    changed["arrows"][0]["end"] = {"x": 75, "y": 40}
+    rejected = client.put(f"/api/playbooks/{saved['id']}", json=changed, headers={**headers, "If-Match": _match(saved)})
+    assert rejected.status_code == 409
+    assert "retarget" in rejected.json()["detail"].lower()
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["arrows"][0]["end"] == saved["arrows"][0]["end"]
+    changed["arrows"][1]["timingPlan"]["waits"][0]["progress"] = 0.65
+    retargeted = client.put(f"/api/playbooks/{saved['id']}", json=changed, headers={**headers, "If-Match": _match(saved)})
+    assert retargeted.status_code == 200
+    assert retargeted.json()["arrows"][0]["end"] == {"x": 75.0, "y": 40.0}

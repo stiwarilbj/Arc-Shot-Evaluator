@@ -655,6 +655,79 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .is-screen-cutter .offense-marker { stroke: #f3f1ec; stroke-width: 5; stroke-dasharray: 4 3; }
 .playbook-help { margin: 15px 7px 5px; color: var(--dim); font-size: 10px; line-height: 1.5; }
 .playbook-editor { min-width: 0; }
+.timing-mixer { margin-top: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.timing-mixer-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 43px; padding: 7px 11px; border: 0; background: transparent; color: var(--text); cursor: pointer; text-align: left; }
+.timing-mixer-toggle > span:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.timing-mixer-toggle strong { font-size: 12px; }
+.timing-mixer-toggle small, .timing-toggle-meta { color: var(--dim); font-size: 10px; }
+.timing-chevron { color: var(--orange); transition: transform 150ms ease; }
+.timing-mixer.is-open .timing-chevron { transform: rotate(180deg); }
+.timing-mixer-content { display: flex; flex-direction: column; gap: 8px; max-height: min(28vh, 260px); overflow: auto; padding: 0 9px 9px; border-top: 1px solid var(--line); scrollbar-width: thin; }
+.timing-mixer-toolbar { order: 0; }
+.timing-detail-row, .timing-mixer-content > .timing-empty { order: 1; }
+.timing-lane-viewport { order: 2; }
+.timing-waits-panel { order: 3; }
+.timing-mixer-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-width: 0; padding-top: 8px; }
+.timing-mixer-toolbar label, .timing-detail-row label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.timing-mixer select, .timing-mixer input { min-height: 28px; max-width: 170px; padding: 3px 7px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 10px; }
+.timing-mixer select:focus-visible, .timing-mixer input:focus-visible, .timing-mixer button:focus-visible, .timing-block:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.timing-quiet-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 29px; padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-2); color: var(--text); cursor: pointer; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.timing-quiet-button:hover:not(:disabled) { border-color: var(--orange); color: var(--orange); }
+.timing-quiet-button:disabled { opacity: .46; cursor: not-allowed; }
+.timing-help { flex: 1 1 220px; color: var(--dim); font-size: 9px; }
+.timing-detail-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 32px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.timing-detail-row > strong { color: var(--text); font-size: 10px; }
+.timing-detail-row input { width: 64px; }
+.timing-travel-estimate { color: var(--dim); font-size: 9px; }
+.timing-empty { margin: 4px 0; color: var(--dim); font-size: 10px; }
+.timing-waits-panel { display: grid; gap: 6px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.timing-waits-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.timing-waits-heading strong { color: var(--text); font-size: 10px; }
+.timing-waits-heading small, .timing-event-hint { color: var(--dim); font-size: 9px; }
+.timing-wait-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.timing-wait-controls select { max-width: 148px; }
+.timing-wait-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.timing-wait-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 5px 3px 8px; border: 1px solid color-mix(in srgb, var(--orange) 45%, var(--line)); border-radius: 999px; color: var(--muted); font-size: 9px; }
+.timing-wait-chip button { width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; }
+.timing-wait-chip button:hover { color: var(--miss); }
+.timing-lane-viewport { min-height: 94px; max-height: 176px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); scrollbar-width: thin; }
+.timing-lane-board { min-width: 100%; }
+.timing-ruler, .timing-lane { display: grid; grid-template-columns: 102px max-content; min-height: 38px; }
+.timing-ruler { position: sticky; top: 0; z-index: 4; min-height: 27px; background: var(--surface); }
+.timing-lane-name { position: sticky; left: 0; z-index: 3; display: flex; align-items: center; gap: 6px; width: 102px; padding: 4px 8px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 9px; }
+.timing-ruler .timing-lane-name { color: var(--dim); font-size: 8px; font-weight: 750; letter-spacing: .08em; }
+.timing-lane-name b { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in srgb, var(--orange) 15%, var(--surface)); color: var(--orange); font-size: 10px; }
+.timing-ruler-track { position: relative; height: 27px; border-bottom: 1px solid var(--line); background-image: repeating-linear-gradient(90deg, transparent 0 91px, color-mix(in srgb, var(--line-strong) 70%, transparent) 91px 92px); }
+.timing-ruler-track > span { position: absolute; top: 6px; transform: translateX(4px); color: var(--dim); font-size: 8px; font-variant-numeric: tabular-nums; }
+.timing-lane-track { position: relative; min-height: 38px; border-bottom: 1px solid var(--line); background-image: repeating-linear-gradient(90deg, transparent 0 91px, color-mix(in srgb, var(--line) 55%, transparent) 91px 92px); }
+.timing-block { position: absolute; top: 6px; display: flex; align-items: stretch; height: 26px; min-width: 43px; overflow: visible; border: 1px solid color-mix(in srgb, var(--orange) 65%, var(--line)); border-radius: 5px; background: color-mix(in srgb, var(--orange) 11%, var(--surface)); color: var(--text); cursor: grab; touch-action: none; user-select: none; }
+.timing-block:active { cursor: grabbing; }
+.timing-block.is-linked { top: 9px; height: 20px; border-color: var(--line-strong); background: color-mix(in srgb, var(--muted) 7%, var(--surface)); opacity: .8; }
+.timing-block.is-selected { z-index: 2; box-shadow: 0 0 0 2px color-mix(in srgb, var(--orange) 70%, transparent); }
+.timing-block.is-active:not(.is-selected) { border-color: color-mix(in srgb, var(--make) 65%, var(--line)); }
+.timing-block.is-waiting { border-style: dashed; animation: timing-wait-pulse 1.3s ease-in-out infinite alternate; }
+.timing-block.is-completed { border-color: var(--make); background: color-mix(in srgb, var(--make) 17%, var(--surface)); }
+.timing-block.is-obstructed { border-color: var(--miss); background: color-mix(in srgb, var(--miss) 14%, var(--surface)); }
+.timing-block-minimum { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; min-width: 38px; overflow: hidden; padding: 0 5px; border-radius: 3px 0 0 3px; background: color-mix(in srgb, var(--orange) 28%, var(--surface)); white-space: nowrap; }
+.timing-block-minimum b { color: var(--orange); font-size: 8px; }
+.timing-block-minimum > span { overflow: hidden; color: var(--text); font-size: 8px; text-overflow: ellipsis; }
+.timing-block.is-linked .timing-block-minimum { background: color-mix(in srgb, var(--muted) 15%, var(--surface)); }
+.timing-block.is-linked .timing-block-minimum b { color: var(--muted); }
+.timing-travel-tail { display: flex; align-items: center; overflow: hidden; padding: 0 4px; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--line-strong) 50%, transparent) 0 3px, transparent 3px 6px); color: var(--dim); font-size: 7px; white-space: nowrap; }
+.timing-block-resize { position: absolute; z-index: 3; top: -3px; right: auto; width: 9px; height: 30px; border: 1px solid var(--surface); border-radius: 5px; background: var(--orange); cursor: ew-resize; touch-action: none; }
+.timing-block-wait-pin, .timing-block-sync-pin { position: absolute; z-index: 4; top: -7px; right: 5px; color: var(--orange); font-size: 9px; }
+.timing-block-sync-pin { right: 18px; color: var(--text); }
+.sequence-timing-link { display: flex; align-items: center; gap: 7px; }
+.sequence-timing-link output { color: var(--text); font-weight: 750; }
+.sequence-timing-link button { min-height: 26px; padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-2); color: var(--orange); cursor: pointer; font-size: 9px; }
+.timing-court-preview { opacity: .95; }
+.timing-court-preview path { fill: none; stroke: var(--orange); stroke-width: 7; stroke-dasharray: 12 8; stroke-linecap: round; }
+.timing-court-preview circle { fill: color-mix(in srgb, var(--orange) 15%, transparent); stroke: var(--orange); stroke-width: 4; }
+.timing-court-preview text { fill: var(--orange); font: 750 14px sans-serif; text-anchor: middle; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; }
+.timing-court-preview.is-picking path { stroke-width: 12; stroke-dasharray: 2 7; }
+.court-svg.is-route-point-pick { cursor: crosshair; }
+@keyframes timing-wait-pulse { to { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .timing-block.is-waiting { animation: none; } }
 .playbook-branch-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 5px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0; background: var(--surface); }
 .playbook-branch-tabs { display: flex; align-items: center; gap: 5px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
 .playbook-branch-tab-item { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; min-height: 32px; padding: 2px 4px 2px 2px; border: 1px solid transparent; border-radius: 6px; background: var(--surface-2); }

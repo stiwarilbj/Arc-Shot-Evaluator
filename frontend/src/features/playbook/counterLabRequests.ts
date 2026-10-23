@@ -1,6 +1,7 @@
 import type { CounterLabMessage, CounterLabRequest } from "./counterLabTypes.ts";
 import { COUNTER_LAB_DEFAULT_PROFILES, COUNTER_LAB_EXTRA_SCHEMES, COUNTER_LAB_EXTRA_STRATEGIES } from "./counterLabTypes.ts";
 import { validateCounterLabInput } from "./counterLabEngine.ts";
+import { validatePlaybookDocument } from "./documentValidation.ts";
 
 const strategies = new Set<string>([...COUNTER_LAB_DEFAULT_PROFILES, ...COUNTER_LAB_EXTRA_STRATEGIES].map((profile) => profile.strategy));
 const schemes = new Set(["man-to-man", ...COUNTER_LAB_EXTRA_SCHEMES.map((profile) => profile.scheme)]);
@@ -52,6 +53,9 @@ export function parseCounterLabRequest(value: unknown): CounterLabRequest {
         requireField((arrow.control == null || point(arrow.control)) && (arrow.exit_target == null || point(arrow.exit_target)), "action route is invalid");
       }
       const request = value as Extract<CounterLabRequest, { type: "analyze" }>;
+      // Timing constraints are executable input. Validate them at the worker
+      // boundary before binding or preparing a deterministic trial.
+      validatePlaybookDocument(request.draft);
       validateCounterLabInput(request.draft, request.profiles, request.modes);
       return request;
     }

@@ -48,6 +48,169 @@ ALLOWED_PLAYER_BADGES = {
     "rim-finisher", "cutter", "screen-setter", "roll-threat", "post-scorer",
 }
 ALLOWED_DEFENDER_BADGES = {"lockdown", "paint-protector", "helper"}
+TIMING_EVENTS = {"start", "complete", "catch", "screen-set", "screen-use", "route-point"}
+TIMING_PHASES = {"main", "approach", "use", "release"}
+
+
+def _validate_timing_path(arrows: list[dict]) -> None:
+    timed = ["timingPlan" in arrow for arrow in arrows]
+    if any(timed) and not all(timed):
+        raise HTTPException(400, "Timing must be initialized for every action in this play path")
+    if not any(timed):
+        return
+    by_id = {arrow["id"]: arrow for arrow in arrows}
+    graph: dict[str, list[str]] = {arrow["id"]: [] for arrow in arrows}
+    sync: dict[str, list[dict]] = {}
+    for arrow in arrows:
+        plan = arrow["timingPlan"]
+        if plan.get("syncId"):
+            sync.setdefault(plan["syncId"], []).append(arrow)
+        for wait in plan.get("waits", []):
+            source = by_id.get(wait["actionId"])
+            if source is None:
+                raise HTTPException(400, "Timing wait points outside this play ending")
+            if wait["event"] == "catch" and source["kind"] not in {"pass", "handoff"}:
+                raise HTTPException(400, "Catch waits require a pass or handoff")
+            screen_kinds = {"screen", "slip-screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"}
+            if wait["event"] in {"screen-set", "screen-use"} and source["kind"] not in screen_kinds:
+                raise HTTPException(400, "Screen waits require an action that uses a screen")
+            graph[arrow["id"]].append(source["id"])
+    state: dict[str, int] = {}
+
+    def visit(action_id: str) -> None:
+        if state.get(action_id) == 1:
+            raise HTTPException(400, "Timing waits cannot form a cycle")
+        if state.get(action_id) == 2:
+            return
+        state[action_id] = 1
+        for dependency in graph[action_id]:
+            visit(dependency)
+        state[action_id] = 2
+
+    for action_id in graph:
+        visit(action_id)
+    sync_id_by_action = {
+        arrow["id"]: arrow["timingPlan"].get("syncId")
+        for arrow in arrows
+        if arrow["timingPlan"].get("syncId")
+    }
+
+    def timing_node(action_id: str) -> str:
+        return f"sync:{sync_id_by_action[action_id]}" if action_id in sync_id_by_action else f"action:{action_id}"
+
+    event_graph: dict[str, list[str]] = {}
+    for arrow in arrows:
+        event_graph.setdefault(timing_node(arrow["id"]), [])
+    for arrow in arrows:
+        source_node = timing_node(arrow["id"])
+        for dependency in graph[arrow["id"]]:
+            target_node = timing_node(dependency)
+            if source_node == target_node:
+                raise HTTPException(400, "Pinned actions cannot wait on one another")
+            event_graph[source_node].append(target_node)
+    event_state: dict[str, int] = {}
+
+    def visit_event(node: str) -> None:
+        if event_state.get(node) == 1:
+            raise HTTPException(400, "Timing waits cannot form a cycle through synchronized actions")
+        if event_state.get(node) == 2:
+            return
+        event_state[node] = 1
+        for dependency in event_graph[node]:
+            visit_event(dependency)
+        event_state[node] = 2
+
+    for node in event_graph:
+        visit_event(node)
+    for members in sync.values():
+        if len({arrow["timingPlan"]["startAtMs"] for arrow in members}) != 1:
+            raise HTTPException(400, "Pinned actions must share one planned start time")
+        ids = {arrow["id"] for arrow in members}
+        owners: set[int] = set()
+        transfers = 0
+        for arrow in members:
+            if arrow["kind"] in {"pass", "handoff"}:
+                transfers += 1
+            kind = arrow["kind"]
+            if kind in {"off-ball-screen", "pin-down"}:
+                participants = (arrow.get("screener_id"), arrow.get("cutter_id"))
+            elif kind in {"screen", "slip-screen", "pick-roll", "pick-pop"}:
+                participants = (arrow.get("screener_id"), arrow.get("handler_id"))
+            elif kind in {"movement", "backdoor-cut"}:
+                participants = (arrow.get("actor_id"),)
+            elif kind == "handoff":
+                participants = (arrow.get("actor_id"), arrow.get("recipient_id"))
+            elif kind == "pass":
+                # A receiver follows the pass preparation route from its start
+                # until the catch, so that route owns the receiver during a pin
+                participants = (arrow.get("recipient_id"),)
+            else:
+                participants = ()
+            for participant in participants:
+                if participant is not None:
+                    if participant in owners:
+                        raise HTTPException(400, "Pinned actions cannot claim the same movement owner")
+                    owners.add(participant)
+            if any(dependency in ids for dependency in graph[arrow["id"]]):
+                raise HTTPException(400, "Pinned actions cannot wait on one another")
+        if transfers > 1:
+            raise HTTPException(400, "A pinned group cannot start competing ball transfers")
+
+
+def _extension_set(value: str | None) -> set[str]:
+    return {item.strip() for item in (value or "").split(",") if item.strip()}
+
+
+def _has_timing(value: dict) -> bool:
+    arrows = list(value.get("arrows") or [])
+    arrows.extend(arrow for branch in (value.get("branches") or []) for arrow in (branch.get("continuation") or []))
+    return any("timingPlan" in arrow for arrow in arrows)
+
+
+def _resolved_action_paths(value: dict) -> dict[str, list[dict]]:
+    main = list(value.get("arrows") or [])
+    paths = {"__main__": main}
+    for branch in value.get("branches") or []:
+        ordered = sorted(enumerate(main), key=lambda entry: (entry[1].get("sequence", entry[0] + 1), entry[0]))
+        anchors = set(branch["fork"]["actionIds"])
+        anchor_sequences = [arrow.get("sequence", index + 1) for index, arrow in ordered if arrow["id"] in anchors]
+        if anchor_sequences:
+            cutoff = min(anchor_sequences)
+        else:
+            later = [arrow.get("sequence", index + 1) for index, arrow in ordered if arrow.get("sequence", index + 1) >= branch["fork"]["sequence"]]
+            cutoff = min(later) if later else None
+        shared_entries = [(index, arrow) for index, arrow in ordered if cutoff is None or arrow.get("sequence", index + 1) < cutoff]
+        shared = [arrow for _, arrow in shared_entries]
+        shared_ids = {arrow["id"] for arrow in shared}
+        max_shared = max((arrow.get("sequence", index + 1) for index, arrow in shared_entries), default=0)
+        continuation = sorted(enumerate(branch.get("continuation") or []), key=lambda entry: (entry[1].get("sequence", entry[0] + 1), entry[0]))
+        continuation = [(index, arrow) for index, arrow in continuation if arrow["id"] not in shared_ids]
+        groups = list(dict.fromkeys(arrow.get("sequence", index + 1) for index, arrow in continuation))
+        rebased = {sequence: max_shared + index + 1 for index, sequence in enumerate(groups)}
+        paths[branch["id"]] = shared + [{**arrow, "sequence": rebased[arrow.get("sequence", index + 1)]} for index, arrow in continuation]
+    return paths
+
+
+def _timing_source_change(current: dict, candidate: dict) -> str | None:
+    signature_fields = ("id", "kind", "sequence", "path", "start", "end", "control", "exit_target", "actor_id", "recipient_id", "screener_id", "handler_id", "cutter_id")
+    old_paths, new_paths = _resolved_action_paths(current), _resolved_action_paths(candidate)
+    for path_id, new_path in new_paths.items():
+        old_path = old_paths.get(path_id)
+        if old_path is None:
+            continue
+        old_by_id = {arrow["id"]: arrow for arrow in old_path}
+        new_by_id = {arrow["id"]: arrow for arrow in new_path}
+        for dependent in new_path:
+            old_dependent = old_by_id.get(dependent["id"])
+            old_waits = {wait["id"]: wait for wait in (old_dependent or {}).get("timingPlan", {}).get("waits", [])}
+            for wait in dependent.get("timingPlan", {}).get("waits", []):
+                source_id = wait["actionId"]
+                old_source, new_source = old_by_id.get(source_id), new_by_id.get(source_id)
+                if old_source is None or new_source is None or old_waits.get(wait["id"]) != wait:
+                    continue  # A new or edited wait is an explicit retarget
+                if any(old_source.get(field) != new_source.get(field) for field in signature_fields):
+                    return f"Move {old_source.get('sequence', '?')} is referenced by a timing wait. Remove or retarget that wait before changing the action"
+    return None
 
 
 def _now() -> str:
@@ -115,7 +278,7 @@ def _markers(
     return result
 
 
-def _document(payload: object, *, playbook_id: str, created_at: str | None = None) -> dict:
+def _document(payload: object, *, playbook_id: str, created_at: str | None = None, validate_timing_edges: bool = True) -> dict:
     if not isinstance(payload, dict):
         raise HTTPException(400, "Playbook must be an object")
     if "version" in payload and (not _integer(payload["version"]) or payload["version"] != 1):
@@ -154,6 +317,53 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         control_value = arrow.get("control")
         control = None if control_value is None else _point(control_value, "Arrow control")
         clean_arrow = {"id": arrow["id"], "kind": arrow["kind"], "sequence": sequence, "path": path, "timing": round(float(timing), TIMING_DECIMAL_PLACES), "control": control, "start": _point(arrow.get("start"), "Arrow start"), "end": _point(arrow.get("end"), "Arrow end")}
+        if "timingPlan" in arrow:
+            plan = arrow["timingPlan"]
+            if not isinstance(plan, dict) or not _integer(plan.get("startAtMs")) or not 0 <= plan["startAtMs"] <= 120_000:
+                raise HTTPException(400, "Action start time must be 0–120 seconds")
+            clean_plan = {"startAtMs": plan["startAtMs"]}
+            if "syncId" in plan:
+                sync_id = plan["syncId"]
+                if not isinstance(sync_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", sync_id):
+                    raise HTTPException(400, "Synchronization identity is invalid")
+                clean_plan["syncId"] = sync_id
+            if "waits" in plan:
+                waits = plan["waits"]
+                if not isinstance(waits, list) or len(waits) > MAX_ARROWS:
+                    raise HTTPException(400, "An action can have at most 30 timing waits")
+                clean_waits = []
+                wait_ids: set[str] = set()
+                for wait in waits:
+                    if not isinstance(wait, dict) or not isinstance(wait.get("id"), str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", wait["id"]) or wait["id"] in wait_ids:
+                        raise HTTPException(400, "Timing wait identities must be unique")
+                    if set(wait) - {"id", "actionId", "event", "playerId", "routePhase", "routeSegment", "progress"}:
+                        raise HTTPException(400, "Timing wait contains unsupported fields")
+                    wait_ids.add(wait["id"])
+                    source_id, event = wait.get("actionId"), wait.get("event")
+                    if not isinstance(source_id, str) or not re.fullmatch(r"[a-z0-9-]{1,64}", source_id) or source_id == arrow["id"]:
+                        raise HTTPException(400, "Timing wait must name a different action")
+                    if event not in TIMING_EVENTS:
+                        raise HTTPException(400, "Timing wait event is not supported")
+                    clean_wait = {"id": wait["id"], "actionId": source_id, "event": event}
+                    player_id = wait.get("playerId")
+                    if player_id is not None:
+                        if not _integer(player_id) or player_id not in {marker["id"] for marker in players}:
+                            raise HTTPException(400, "Timing wait player must be on the court")
+                        clean_wait["playerId"] = player_id
+                    if event == "route-point":
+                        phase, segment, progress = wait.get("routePhase"), wait.get("routeSegment"), wait.get("progress")
+                        if player_id is None or phase not in TIMING_PHASES or not _integer(segment) or not 0 <= segment <= 63 or not isinstance(progress, (int, float)) or isinstance(progress, bool) or not math.isfinite(progress) or not 0 < progress < 1:
+                            raise HTTPException(400, "Route-point waits need a player, route phase, segment, and interior progress value")
+                        clean_wait["routePhase"] = phase
+                        clean_wait["routeSegment"] = segment
+                        clean_wait["progress"] = round(float(progress), 4)
+                    elif any(key in wait for key in ("playerId", "routePhase", "routeSegment", "progress")):
+                        raise HTTPException(400, "Only route-point waits can specify a player or route progress")
+                    clean_waits.append(clean_wait)
+                clean_plan["waits"] = clean_waits
+            if set(plan) - {"startAtMs", "syncId", "waits"}:
+                raise HTTPException(400, "Action timing contains unsupported fields")
+            clean_arrow["timingPlan"] = clean_plan
         player_ids = {marker["id"] for marker in players}
         for field in ("actor_id", "recipient_id", "screener_id", "handler_id", "cutter_id"):
             participant = arrow.get(field)
@@ -244,7 +454,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             continuation_value = branch.get("continuation")
             if not isinstance(continuation_value, list) or len(continuation_value) > MAX_ARROWS:
                 raise HTTPException(400, "Ending actions must contain at most 30 actions")
-            continuation = _document({**payload, "arrows": continuation_value, "branches": []}, playbook_id=playbook_id, created_at=created_at)["arrows"]
+            continuation = _document({**payload, "arrows": continuation_value, "branches": []}, playbook_id=playbook_id, created_at=created_at, validate_timing_edges=False)["arrows"]
             ordered_main = sorted(enumerate(arrows), key=lambda entry: (entry[1]["sequence"], entry[0]))
             anchor_ids = set(fork_ids)
             anchor_sequences = [arrow["sequence"] for _, arrow in ordered_main if arrow["id"] in anchor_ids]
@@ -262,9 +472,18 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             if len(resolved) > MAX_ARROWS:
                 raise HTTPException(400, "Each resolved ending must contain at most 30 actions")
             _document({**payload, "arrows": resolved, "branches": []}, playbook_id=playbook_id, created_at=created_at)
+            if validate_timing_edges:
+                _validate_timing_path(resolved)
+                shared_ids = {arrow["id"] for arrow in shared}
+                shared_sync = {arrow["timingPlan"]["syncId"] for arrow in shared if arrow.get("timingPlan", {}).get("syncId")}
+                continuation_sync = {arrow["timingPlan"]["syncId"] for arrow in continuation if arrow.get("timingPlan", {}).get("syncId") and arrow["id"] not in shared_ids}
+                if shared_sync & continuation_sync:
+                    raise HTTPException(400, "Pinned actions cannot cross a shared-opening boundary")
             branches.append({"id": branch_id, "label": label.strip(NAME_WHITESPACE), "fork": {"actionIds": list(fork_ids), "sequence": fork_sequence}, "continuation": continuation})
         if branches:
             result["branches"] = branches
+    if validate_timing_edges:
+        _validate_timing_path(result["arrows"])
     return result
 
 
@@ -698,7 +917,7 @@ def _saved_play_instant(value: object) -> int | float:
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
-    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1"
+    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1"
     try:
         PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
         paths = sorted(PLAYBOOKS_DIR.iterdir())
@@ -754,8 +973,11 @@ def _replay_creation(path: Path, request: str) -> dict:
 
 @router.post("")
 def create_playbook(payload: Annotated[dict, Depends(_request_document)], create_id: Annotated[str | None, Header(alias="X-ARC-Create-ID")] = None, extensions: Annotated[str | None, Header(alias="X-ARC-Playbook-Extensions")] = None) -> dict:
-    if payload.get("branches") and extensions != "branches-v1":
+    supported = _extension_set(extensions)
+    if payload.get("branches") and "branches-v1" not in supported:
         raise HTTPException(409, "This server requires a branch-aware client before saving endings")
+    if _has_timing(payload) and "timing-v1" not in supported:
+        raise HTTPException(409, "This server requires a timing-aware client before saving action schedules")
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -795,10 +1017,16 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(404, "Playbook not found")
         current = _read(path, include_creation=True)
         current_has_branches = bool(current.get("branches"))
-        if current_has_branches and (extensions != "branches-v1" or "branches" not in payload):
+        supported = _extension_set(extensions)
+        if current_has_branches and ("branches-v1" not in supported or "branches" not in payload):
             raise HTTPException(409, "This play contains endings and requires an explicit branch-aware update. The saved play is unchanged")
-        if payload.get("branches") and extensions != "branches-v1":
+        if payload.get("branches") and "branches-v1" not in supported:
             raise HTTPException(409, "This play contains endings and requires a branch-aware client. The saved play is unchanged")
+        current_has_timing = _has_timing(current)
+        if current_has_timing and ("timing-v1" not in supported or not _has_timing(payload)):
+            raise HTTPException(409, "This play contains action timing and requires a timing-aware update. The saved play is unchanged")
+        if _has_timing(payload) and "timing-v1" not in supported:
+            raise HTTPException(409, "This server requires a timing-aware client before saving action schedules")
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:
@@ -807,7 +1035,11 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(400, "Invalid saved revision precondition")
         if if_match != f'"{current.get("revision", "legacy")}"':
             raise HTTPException(409, SAVE_CONFLICT)
-        value = {**_document(payload, playbook_id=playbook_id, created_at=str(current.get("created_at", _now()))), "revision": uuid.uuid4().hex}
+        value = _document(payload, playbook_id=playbook_id, created_at=str(current.get("created_at", _now())))
+        connection_error = _timing_source_change(current, value)
+        if connection_error:
+            raise HTTPException(409, connection_error)
+        value["revision"] = uuid.uuid4().hex
         stored = {**value, "_creation": current["_creation"]} if "_creation" in current else value
         _commit_revision(path, stored, current)
         return value

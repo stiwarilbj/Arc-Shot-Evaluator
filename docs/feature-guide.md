@@ -93,7 +93,38 @@ graph: catches gate the receiver's next on-ball action, screen use gates rolls,
 and a delayed action holds its dependents while unrelated movement retains its
 planned start · Conflicting ownership and circular dependencies are diagnosed before
 execution; failed prerequisites explain why dependent moves cannot start · Saved
-plays remain version 1 · See [action dependencies](playbook-action-dependencies.md)
+plays keep the version-1 document format · See [action dependencies](playbook-action-dependencies.md)
+
+### Choreograph timing
+
+Expand **Timing** below the court to see a lane for each offensive player · Each
+action appears in its primary player's lane, with linked views for its receiver,
+screener, or other participant · Select a block to select its court route and action
+list entry · The ruler uses seconds, while block moves snap to 0.1 seconds · Drag a
+block, edit its start time, or focus it and use the arrow keys; **Shift + Arrow**
+changes its minimum duration · Press **Escape** during a drag to cancel it
+
+The orange portion marks the action's 0.5–4 second minimum duration · A hatched
+tail is estimated travel time, so making the minimum shorter does not force a player
+to reach a distant destination unnaturally quickly · Focus or hover a block to preview
+its authored route and start/end markers without running a simulation
+
+Use **Start together** to pin compatible actions into one group · Every member waits
+until its own possession and timing requirements are satisfied, then the group starts
+as one unit · **Wait until** can connect an action to another move's start, completion,
+confirmed catch, screen set, screen use, or a player's actual progress to a point you
+pick on that move's court route · A start can never happen before its planned time,
+and all listed events must occur · If an event fails or becomes impossible, the move
+is marked obstructed rather than released by a fallback timer
+
+The first timing edit captures the current action starts as one undoable document
+change · Plays that are never edited in Timing keep their existing schedule and
+simulation behavior · Later actions added to a timed play begin after the current
+planned finish · Timing changes follow the same Main/shared-opening and private-ending
+rules as other branch edits; Counter Lab receives the selected path with its schedule
+intact · Removing an action that another move waits on, changing that source action,
+or joining a pinned group with conflicting movement or transfers is blocked until the
+affected connection is removed or retargeted
 
 Congested routes use short passage and destination reservations · Players can
 briefly yield or take a small detour while a teammate passes, then continue to

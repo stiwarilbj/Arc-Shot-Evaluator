@@ -64,6 +64,25 @@ export interface PlaybookMarker extends CourtPoint {
   badges?: PlayerBadge[];
 }
 
+export type PlaybookTimingWait = {
+  id: string;
+  actionId: string;
+  event: "start" | "complete" | "catch" | "screen-set" | "screen-use" | "route-point";
+  playerId?: number;
+  routePhase?: "main" | "approach" | "use" | "release";
+  routeSegment?: number;
+  progress?: number;
+};
+
+export interface PlaybookActionTiming {
+  /** Earliest authored start, in milliseconds from the beginning of the play */
+  startAtMs: number;
+  /** Actions sharing this identity begin atomically when all are ready */
+  syncId?: string;
+  /** Every listed event must occur before this action can begin */
+  waits?: PlaybookTimingWait[];
+}
+
 export interface PlaybookArrow {
   id: string;
   kind: ArrowKind;
@@ -77,6 +96,8 @@ export interface PlaybookArrow {
   control?: CourtPoint;
   /** Time in seconds reserved for this action. */
   timing?: number;
+  /** Optional timing-mixer schedule. Absent on untouched legacy plays. */
+  timingPlan?: PlaybookActionTiming;
   /** Player who sets an off-ball screen. */
   screener_id?: number;
   /** Player who uses an off-ball screen. */
@@ -90,6 +111,7 @@ export interface PlaybookArrow {
   /** Destination after a pick-and-pop or pin-down screen. */
   exit_target?: CourtPoint;
 }
+
 
 export interface PlaybookBranch {
   id: string;

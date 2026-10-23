@@ -56,7 +56,7 @@ export type ActionDiagnostic = {
   startedAtMs: number | null; completedAtMs: number | null; progress: number; notice: string | null;
 };
 type ExecutionPath = { points: CourtPoint[]; feetPoints: CourtPoint[]; lengths: number[]; length: number; progress: number; closest: CourtPoint };
-type ActionRuntime = ActionDiagnostic & { paths: Map<number, ExecutionPath>; waitMs: number };
+type ActionRuntime = ActionDiagnostic & { paths: Map<number, ExecutionPath>; routeProgress: Map<string, number>; waitMs: number };
 type BoundAction = {
   plan?: PlannedAction;
   execution?: ActionRuntime;
@@ -75,6 +75,8 @@ type BoundAction = {
   partnerId?: number | null;
   partnerStart?: CourtPoint | null;
   transfer?: TransferRecord;
+  timingWaits?: NonNullable<PlaybookArrow["timingPlan"]>["waits"];
+  timingSyncId?: string;
 };
 
 type Velocity = { x: number; y: number };
@@ -562,6 +564,8 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
         controlOffset,
         partnerId,
         partnerStart: partnerId == null ? null : { ...handler! },
+        timingWaits: arrow.timingPlan?.waits ?? [],
+        timingSyncId: arrow.timingPlan?.syncId,
       };
       actions.push(boundAction);
       phaseDuration = Math.max(phaseDuration, durationMs);
@@ -593,6 +597,13 @@ function buildActions(source: PlaybookDraft): { actions: BoundAction[]; actionDu
     cursor += phaseDuration;
     ballHandlerId = nextHandlerId;
     phaseStart = phaseEnd;
+  }
+  // Untouched version-1 plays retain their original sequence-derived schedule.
+  // Once Timing is activated, each action's stable identity owns its earliest
+  // start. Runtime dependencies can delay connected actions from this point.
+  if (actions.some((action) => action.arrow.timingPlan !== undefined)) {
+    for (const action of actions) action.startTime = action.arrow.timingPlan?.startAtMs ?? action.startTime;
+    cursor = Math.max(0, ...actions.map((action) => action.startTime + action.durationMs));
   }
   attachActionPlans(actions, source.players[nearestPointIndex(source.players, source.ball ?? source.players[0] ?? HOOP_POINT)]?.id ?? null);
   return { actions, actionDurationMs: Math.max(MIN_PLAY_DURATION_MS, cursor), ballHandlerId, finalPositions: positions };
@@ -1073,6 +1084,9 @@ function routesForAction(action: BoundAction, run?: SimulationRun, hoop = HOOP_P
   const routes: CourtRoute[] = [{ ...common, id: `${arrow.id}:${action.sequence}:actor`, kind: arrow.kind, scope, playerId: action.actorId, start: { ...start }, end: { ...end }, ...(control ? { control } : {}), ...(twoLegs ? { via: { ...arrow.end } } : {}) }];
   if (action.partnerId != null && action.partnerStart) {
     routes.push({ ...common, id: `${arrow.id}:${action.sequence}:handler`, kind: "handler-support", scope: "on-ball", playerId: action.partnerId, start: { ...action.partnerStart }, end: pointToward(arrow.end, hoop, arrow.kind === "pick-roll" || arrow.kind === "slip-screen" ? 10 : 8) });
+  }
+  if (arrow.timingPlan && (arrow.kind === "pass" || arrow.kind === "handoff") && action.recipientId != null && action.recipientStart) {
+    routes.push({ ...common, id: `${arrow.id}:${action.sequence}:receiver`, kind: "receiver-prep", scope: "on-ball", playerId: action.recipientId, start: { ...action.recipientStart }, end: { ...arrow.end } });
   }
   if ((arrow.kind === "off-ball-screen" || arrow.kind === "pin-down") && action.recipientId != null && action.recipientStart) {
     routes.push({ ...common, id: `${arrow.id}:${action.sequence}:cutter`, kind: "cutter", scope: "off-ball", playerId: action.recipientId, start: { ...action.recipientStart }, via: { ...arrow.end }, end: { ...(arrow.exit_target ?? offBallCutterTarget(arrow.end, hoop)) } });
@@ -2611,7 +2625,7 @@ function integrateBall(run: SimulationRun, target: CourtPoint, dt: number) {
 function executionFor(action: BoundAction): ActionRuntime {
   return action.execution ??= { actionId: action.arrow.id, sequence: action.sequence, actorId: action.actorId,
     recipientId: action.recipientId, partnerId: action.partnerId ?? null,
-    phase: "pending", startedAtMs: null, completedAtMs: null, progress: 0, notice: null, paths: new Map(), waitMs: 0 };
+    phase: "pending", startedAtMs: null, completedAtMs: null, progress: 0, notice: null, paths: new Map(), routeProgress: new Map(), waitMs: 0 };
 }
 function transferFor(action: BoundAction): TransferRecord {
   if (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") throw new Error("Only transfers have ball evidence");
@@ -2721,8 +2735,34 @@ function blockAction(run: SimulationRun, action: BoundAction, phase: "conflict" 
   }
   invalidateRunRoutes(run);
 }
+function hasTimingMetadata(run: SimulationRun) { return run.actions.some((action) => action.arrow.timingPlan !== undefined); }
 /** Move only unstarted descendants; independent authored start times stay intact. */
 function refreshActionSchedule(run: SimulationRun) {
+  if (!hasTimingMetadata(run)) {
+    // Keep the pre-Timing schedule byte-for-byte compatible for untouched
+    // version-1 plays. The event-aware scheduler below only activates after
+    // the user commits the first Timing edit.
+    for (let pass = 0; pass < run.actions.length; pass++) {
+      let changed = false;
+      for (const action of run.actions) {
+        if (!action.plan || action.execution?.startedAtMs != null || !actionIsMoving(action)) continue;
+        let start = action.plan.nominalStartMs;
+        for (const edge of action.plan.dependencies) {
+          const prior = run.actionGraph.get(edge.key);
+          if (prior) start = Math.max(start, edge.milestone === "catch"
+            ? caughtAt(prior.transfer) ?? prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs
+            : prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs);
+        }
+        start = Math.max(start, action.execution?.notice ? run.elapsedMs : 0);
+        if (Math.abs(action.startTime - start) > 1e-6) { action.startTime = start; changed = true; }
+      }
+      if (!changed) break;
+    }
+    run.actionDurationMs = Math.max(MIN_PLAY_DURATION_MS, ...run.actions.map((action) => action.startTime + action.durationMs));
+    if (run.adaptiveContinuationStartedAtMs == null) run.plannedActionDurationMs = run.actionDurationMs;
+    run.durationMs = run.actionDurationMs + run.shotDurationMs;
+    return;
+  }
   // Same-sequence catch edges need not follow array order. Cycles are rejected
   // during compilation; bounded relaxation settles every valid prediction.
   for (let pass = 0; pass < run.actions.length; pass++) {
@@ -2736,10 +2776,36 @@ function refreshActionSchedule(run: SimulationRun) {
           ? caughtAt(prior.transfer) ?? prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs
           : prior.execution?.completedAtMs ?? prior.startTime + prior.durationMs);
       }
+      for (const wait of action.timingWaits ?? []) {
+        const prior = run.actions.find((candidate) => candidate.arrow.id === wait.actionId);
+        if (!prior) continue;
+        const state = prior.execution;
+        const phaseTime = wait.event === "start" ? state?.startedAtMs
+          : wait.event === "complete" ? state?.completedAtMs
+            : wait.event === "catch" ? caughtAt(prior.transfer)
+              : wait.event === "screen-set" ? state?.setAtMs
+                : wait.event === "screen-use" ? state?.usedAtMs
+                  : (state?.routeProgress.get(`${wait.routePhase}:${wait.playerId}`) ?? 0) >= (wait.progress ?? 1) ? run.elapsedMs : undefined;
+        const estimatedTime = wait.event === "start" ? prior.startTime
+          : wait.event === "route-point" ? prior.startTime + prior.durationMs * (wait.progress ?? 0)
+            : wait.event === "screen-set" || wait.event === "screen-use" ? prior.startTime + prior.durationMs * 0.55
+              : prior.startTime + prior.durationMs;
+        start = Math.max(start, phaseTime ?? estimatedTime);
+      }
       start = Math.max(start, action.execution?.notice ? run.elapsedMs : 0);
       if (Math.abs(action.startTime - start) > 1e-6) { action.startTime = start; changed = true; }
     }
     if (!changed) break;
+  }
+  // A synchronized group shares one actual earliest start. Keep members that
+  // are waiting on different prerequisites from drifting into separate times.
+  const groups = new Map<string, BoundAction[]>();
+  for (const action of run.actions) if (action.timingSyncId && actionIsMoving(action) && action.execution?.startedAtMs == null) {
+    const group = groups.get(action.timingSyncId) ?? []; group.push(action); groups.set(action.timingSyncId, group);
+  }
+  for (const group of groups.values()) {
+    const sharedStart = Math.max(...group.map((action) => action.startTime));
+    for (const action of group) action.startTime = sharedStart;
   }
   run.actionDurationMs = Math.max(MIN_PLAY_DURATION_MS, ...run.actions.map((action) => action.startTime + action.durationMs));
   if (run.adaptiveContinuationStartedAtMs == null) run.plannedActionDurationMs = run.actionDurationMs;
@@ -2748,39 +2814,112 @@ function refreshActionSchedule(run: SimulationRun) {
 function startReadyActions(run: SimulationRun, atMs: number) {
   if (run.shotStart) return;
   refreshActionSchedule(run);
-  let movementStarted = false;
-  for (const action of run.actions) {
-    if (!actionIsMoving(action) || action.execution?.startedAtMs != null) continue;
-    let waiting: BoundAction | null = null;
-    for (const edge of action.plan?.dependencies ?? []) {
-      const prior = run.actionGraph.get(edge.key);
-      if (!prior || !actionIsMoving(prior) && prior.execution?.phase !== "completed") {
-        blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: prerequisite ${prior ? `move ${prior.sequence}` : edge.key} did not complete`, atMs);
-        break;
+  if (!hasTimingMetadata(run)) {
+    let movementStarted = false;
+    for (const action of run.actions) {
+      if (!actionIsMoving(action) || action.execution?.startedAtMs != null) continue;
+      let waiting: BoundAction | null = null;
+      for (const edge of action.plan?.dependencies ?? []) {
+        const prior = run.actionGraph.get(edge.key);
+        if (!prior || !actionIsMoving(prior) && prior.execution?.phase !== "completed") {
+          blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: prerequisite ${prior ? `move ${prior.sequence}` : edge.key} did not complete`, atMs);
+          break;
+        }
+        if (edge.milestone === "catch" ? caughtAt(prior.transfer) == null : prior.execution?.phase !== "completed") waiting ??= prior;
       }
-      if (edge.milestone === "catch" ? caughtAt(prior.transfer) == null : prior.execution?.phase !== "completed") waiting ??= prior;
-    }
-    if (action.startTime > atMs + 1e-6) {
-      if (waiting && action.plan!.nominalStartMs <= atMs + 1e-6 && actionIsMoving(action)) {
+      if (action.startTime > atMs + 1e-6) {
+        if (waiting && action.plan!.nominalStartMs <= atMs + 1e-6 && actionIsMoving(action)) {
+          executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}`;
+        }
+        continue;
+      }
+      if (!actionIsMoving(action)) continue;
+      if (waiting) {
         executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}`;
+        action.startTime = atMs + SIMULATION_FIXED_STEP_MS;
+        continue;
       }
+      const holder = action.plan?.requiresPossessionId;
+      if (holder != null && holder !== run.ballHandlerId) {
+        blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: player ${holder} does not hold the ball`, atMs);
+        continue;
+      }
+      action.startTime = Math.max(action.startTime, atMs);
+      executionFor(action).notice = null;
+      processActionStart(run, action);
+      if (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") movementStarted = true;
+    }
+    if (movementStarted) resolveMovementOwners(run, run.actions, atMs);
+    refreshActionSchedule(run);
+    return;
+  }
+  let movementStarted = false;
+  const pending = run.actions.filter((action) => actionIsMoving(action) && action.execution?.startedAtMs == null);
+  const groups = new Map<string, BoundAction[]>();
+  for (const action of pending) {
+    const key = action.timingSyncId ? `sync:${action.timingSyncId}` : `action:${action.plan?.key ?? action.arrow.id}`;
+    const group = groups.get(key) ?? []; group.push(action); groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    if (group.some((action) => action.startTime > atMs + 1e-6)) continue;
+    let waiting: BoundAction | null = null;
+    let failure: { action: BoundAction; message: string } | null = null;
+    const statusFor = (prior: BoundAction | undefined, event: string): "ready" | "waiting" | "impossible" => {
+      if (!prior) return "impossible";
+      const state = prior.execution;
+      if (state?.phase === "obstructed" || state?.phase === "conflict" || state?.phase === "interrupted") return "impossible";
+      if (event === "start") return state?.startedAtMs != null ? "ready" : "waiting";
+      if (event === "complete") return state?.phase === "completed" ? "ready" : state?.phase === "pending" || state?.startedAtMs == null ? "waiting" : "waiting";
+      if (event === "catch") return caughtAt(prior.transfer) != null ? "ready"
+        : prior.transfer?.outcome.kind === "failed" ? "impossible" : "waiting";
+      if (event === "screen-set") return state?.setAtMs != null ? "ready" : state?.phase === "completed" ? "impossible" : "waiting";
+      if (event === "screen-use") return state?.usedAtMs != null ? "ready" : state?.phase === "completed" ? "impossible" : "waiting";
+      return "waiting";
+    };
+    for (const action of group) {
+      for (const edge of action.plan?.dependencies ?? []) {
+        const prior = run.actionGraph.get(edge.key);
+        const status = statusFor(prior, edge.milestone === "catch" ? "catch" : "complete");
+        if (status === "impossible") failure ??= { action, message: `Move ${action.sequence} cannot start: prerequisite ${prior ? `move ${prior.sequence}` : edge.key} did not complete` };
+        else if (status === "waiting") waiting ??= prior ?? null;
+      }
+      for (const timingWait of action.timingWaits ?? []) {
+        const prior = run.actions.find((candidate) => candidate.arrow.id === timingWait.actionId);
+        if (!prior) { failure ??= { action, message: `Move ${action.sequence} cannot start: a required timing event is missing` }; continue; }
+        let status = statusFor(prior, timingWait.event);
+        if (timingWait.event === "route-point") {
+          const progress = prior.execution?.routeProgress.get(`${timingWait.routePhase}:${timingWait.playerId}`) ?? 0;
+          status = progress + 1e-6 >= (timingWait.progress ?? 1) ? "ready"
+            : prior.execution?.phase === "completed" ? "impossible"
+              : prior.execution?.phase === "obstructed" || prior.execution?.phase === "conflict" || prior.execution?.phase === "interrupted" ? "impossible" : "waiting";
+        }
+        if (status === "impossible") failure ??= { action, message: `Move ${action.sequence} cannot start: required ${timingWait.event.replaceAll("-", " ")} from move ${prior.sequence} did not occur` };
+        else if (status === "waiting") waiting ??= prior;
+      }
+      const holder = action.plan?.requiresPossessionId;
+      if (holder != null && holder !== run.ballHandlerId) {
+        const receivePending = run.actions.some((prior) => prior.recipientId === holder && (prior.arrow.kind === "pass" || prior.arrow.kind === "handoff") && prior.transfer?.outcome.kind === "pending");
+        if (!receivePending) failure ??= { action, message: `Move ${action.sequence} cannot start: player ${holder} does not hold the ball` };
+      }
+    }
+    if (failure) {
+      for (const action of group) blockAction(run, action, "obstructed", failure.message, atMs);
       continue;
     }
-    if (!actionIsMoving(action)) continue;
     if (waiting) {
-      executionFor(action).notice = `Waiting for move ${waiting.sequence}${waiting.arrow.kind === "pass" || waiting.arrow.kind === "handoff" ? " to complete its catch" : " to finish"}`;
-      action.startTime = atMs + SIMULATION_FIXED_STEP_MS;
+      const notice = `Waiting for move ${waiting.sequence} to reach its required event`;
+      for (const action of group) executionFor(action).notice = notice;
       continue;
     }
-    const holder = action.plan?.requiresPossessionId;
-    if (holder != null && holder !== run.ballHandlerId) {
-      blockAction(run, action, "obstructed", `Move ${action.sequence} cannot start: player ${holder} does not hold the ball`, atMs);
-      continue;
+    // A pin begins atomically at the first step where every member's event,
+    // possession, and compiled dependency constraints are satisfied.
+    const actualStart = Math.max(atMs, ...group.map((action) => action.startTime));
+    for (const action of group) {
+      action.startTime = actualStart;
+      executionFor(action).notice = null;
+      processActionStart(run, action);
+      if (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") movementStarted = true;
     }
-    action.startTime = Math.max(action.startTime, atMs);
-    executionFor(action).notice = null;
-    processActionStart(run, action);
-    if (action.arrow.kind !== "pass" && action.arrow.kind !== "handoff") movementStarted = true;
   }
   if (movementStarted) resolveMovementOwners(run, run.actions, atMs);
   refreshActionSchedule(run);
@@ -2822,6 +2961,12 @@ function followPath(run: SimulationRun, action: BoundAction, player: PlaybookMar
     acceleration: OFFENSE_ACCELERATION_FT_PER_SECOND, priority: pointDistanceFeet(player, path.points.at(-1)!) < .8 ? 8 : priority, corridor: { point: toCourtFeet(closest), radius: 3 },
     navigation: { id: `${action.arrow.id}:${action.sequence}:${player.id}:${state.phase}`, goal: path.feetPoints.at(-1)!, points: path.feetPoints, progress: path.progress, remaining: Math.max(0, path.length - path.progress) } });
   state.progress = Math.max(state.progress, path.length ? Math.min(1, path.progress / path.length) : 1);
+  const phaseKey = `${state.phase}:${player.id}`;
+  state.routeProgress.set(phaseKey, Math.max(state.routeProgress.get(phaseKey) ?? 0, path.length ? Math.min(1, path.progress / path.length) : 1));
+  // Retain the overall authored-route progress as well as phase-specific
+  // progress. Screen actions keep their approach/use/release clocks separate,
+  // while a point selected on the drawn route still has a stable event source.
+  state.routeProgress.set(`main:${player.id}`, Math.max(state.routeProgress.get(`main:${player.id}`) ?? 0, path.length ? Math.min(1, path.progress / path.length) : 1));
   return target;
 }
 function routeSpeed(run: SimulationRun, action: BoundAction, playerId: number, maximum: number) {

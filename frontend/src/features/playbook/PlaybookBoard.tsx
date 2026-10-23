@@ -5,6 +5,9 @@ import { ArrowVisibilityControl, useArrowVisibility } from "./ArrowVisibilityCon
 import { routeVisible } from "./arrowVisibility";
 import { CourtRoutes } from "./CourtRoutes";
 import { authoredCourtRoutes } from "./simulation";
+import { TimingMixerPanel } from "./TimingMixerPanel";
+import { hasTimingPlan, moveTimingGroup, projectPointToRoute, resizeActionMinimum, sampleAuthoredCourtRoute, shiftConnectedTiming, snapTimingMs } from "./timingMixer.ts";
+import type { PlaybookTimingWait } from "./types";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDownToLine,
@@ -129,6 +132,10 @@ function clampTiming(value: number) {
   return Math.max(0.5, Math.min(4, Number.isFinite(value) ? value : 1.2));
 }
 
+function timingIdentity(prefix: string) {
+  return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`}`;
+}
+
 function removeSelection(draft: PlaybookDraft, selection: Selection): PlaybookDraft {
   if (!selection) return draft;
   const next = clonePlaybook(draft);
@@ -142,6 +149,31 @@ function removeSelection(draft: PlaybookDraft, selection: Selection): PlaybookDr
   if (selection.type === "ball") next.ball = null;
   if (selection.type === "arrow") next.arrows = next.arrows.filter((arrow) => arrow.id !== selection.id);
   return next;
+}
+
+function timingConnectionEditError(previous: PlaybookDraft, next: PlaybookDraft) {
+  const paths = [null, ...(next.branches ?? []).map((branch) => branch.id)];
+  const signature = (arrow: PlaybookArrow | undefined) => arrow ? JSON.stringify({
+    id: arrow.id, kind: arrow.kind, sequence: arrow.sequence ?? 1, path: arrow.path ?? "straight",
+    start: arrow.start, end: arrow.end, control: arrow.control ?? null, exit_target: arrow.exit_target ?? null,
+    actor_id: arrow.actor_id ?? null, recipient_id: arrow.recipient_id ?? null,
+    screener_id: arrow.screener_id ?? null, handler_id: arrow.handler_id ?? null, cutter_id: arrow.cutter_id ?? null,
+  }) : null;
+  for (const branchId of paths) {
+    const before = resolvePlaybookPath(previous, branchId).play.arrows;
+    const after = resolvePlaybookPath(next, branchId).play.arrows;
+    const oldById = new Map(before.map((arrow) => [arrow.id, arrow]));
+    const newById = new Map(after.map((arrow) => [arrow.id, arrow]));
+    for (const dependent of after) for (const wait of dependent.timingPlan?.waits ?? []) {
+      const oldSource = oldById.get(wait.actionId), newSource = newById.get(wait.actionId);
+      if (!oldSource) continue;
+      if (!newSource || signature(oldSource) !== signature(newSource)) {
+        const message = `Move ${oldSource.sequence ?? "?"} is connected to a Wait until event. Remove or retarget that wait before changing or deleting this action`;
+        return message;
+      }
+    }
+  }
+  return null;
 }
 
 function isSameDraft(a: PlaybookDraft, b: PlaybookDraft) {
@@ -282,6 +314,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [renamingBranchId, setRenamingBranchId] = useState<string | null>(null);
   const [branchLabelValue, setBranchLabelValue] = useState("");
   const [compareMain, setCompareMain] = useState(false);
+  const [timingOpen, setTimingOpen] = useState(false);
+  const [timingPreviewActionId, setTimingPreviewActionId] = useState<string | null>(null);
+  const [routePointPick, setRoutePointPick] = useState<{ actionId: string; sourceId: string; playerId: number; routePhase: "main" | "approach" | "use" | "release" } | null>(null);
   const branchLabelInput = useRef<HTMLInputElement>(null);
   const [dirty, setDirty] = useState(false);
   const [selected, setSelected] = useState<Selection>(null);
@@ -353,6 +388,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   const activePath = useMemo(() => resolvePlaybookPath(draft, activeBranchId), [draft, activeBranchId]);
   const activeDraft = activePath.play;
+  const timingActive = hasTimingPlan(activeDraft);
+  const timingBindings = useMemo(() => bindAuthoredActions(activeDraft), [activeDraft]);
   const selectedArrow = selected?.type === "arrow" ? activeDraft.arrows.find((arrow) => arrow.id === selected.id) : null;
   const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
   const selectedSkillsDefender = draft.defenders.find((defender) => defender.id === defenderSkillsId) ?? draft.defenders[0] ?? null;
@@ -391,6 +428,89 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     canonical.arrows = removeUnbound(canonical.arrows);
     canonical.branches = canonical.branches?.map((branch) => ({ ...branch, continuation: removeUnbound(branch.continuation) }));
     return canonical;
+  }
+
+  function initializeTimingFamily(source: PlaybookDraft) {
+    const original = clonePlaybook(source);
+    const mainStarts = new Map(bindAuthoredActions(resolvePlaybookPath(original, null).play).map((action) => [action.arrow.id, snapTimingMs(action.startTime)]));
+    const branchStarts = new Map((original.branches ?? []).map((branch) => [branch.id,
+      new Map(bindAuthoredActions(resolvePlaybookPath(original, branch.id).play).map((action) => [action.arrow.id, snapTimingMs(action.startTime)]))]));
+    const next = clonePlaybook(source);
+    next.arrows = next.arrows.map((arrow) => ({ ...arrow, timingPlan: arrow.timingPlan ?? { startAtMs: Math.min(120_000, mainStarts.get(arrow.id) ?? 0) } }));
+    next.branches = next.branches?.map((branch) => {
+      const starts = branchStarts.get(branch.id) ?? new Map<string, number>();
+      return { ...branch, continuation: branch.continuation.map((arrow) => ({ ...arrow, timingPlan: arrow.timingPlan ?? { startAtMs: Math.min(120_000, starts.get(arrow.id) ?? mainStarts.get(arrow.id) ?? 0) } })) };
+    });
+    return next;
+  }
+
+  function commitTimingEdit(edit: (arrows: PlaybookArrow[], bindings: ReturnType<typeof bindAuthoredActions>) => PlaybookArrow[]) {
+    const base = timingActive ? clonePlaybook(draft) : initializeTimingFamily(draft);
+    const oldPath = resolvePlaybookPath(base, activeBranchId);
+    const edited = clonePlaybook(oldPath.play);
+    edited.arrows = edit(edited.arrows, bindAuthoredActions(edited));
+    const next = applyEditedPath(base, activeBranchId, edited, oldPath);
+    return commitCanonical(next, draft, activeBranchId);
+  }
+
+  function changeTimingStart(actionId: string, requestedStartAtMs: number) {
+    if (!Number.isFinite(requestedStartAtMs)) return;
+    commitTimingEdit((arrows, bindings) => {
+      const previous = arrows.find((arrow) => arrow.id === actionId)?.timingPlan?.startAtMs ?? 0;
+      const delta = snapTimingMs(requestedStartAtMs) - previous;
+      const moved = moveTimingGroup(arrows, actionId, requestedStartAtMs);
+      return shiftConnectedTiming(moved, bindings, actionId, delta);
+    });
+  }
+
+  function changeTimingDuration(actionId: string, seconds: number) {
+    if (!Number.isFinite(seconds)) return;
+    commitTimingEdit((arrows, bindings) => {
+      const arrow = arrows.find((candidate) => candidate.id === actionId);
+      if (!arrow) return arrows;
+      const nextDuration = Math.max(.5, Math.min(4, seconds));
+      const delta = Math.round((nextDuration - (arrow.timing ?? 1.2)) * 1000);
+      const resized = arrows.map((candidate) => candidate.id === actionId ? resizeActionMinimum(candidate, nextDuration) : candidate);
+      return shiftConnectedTiming(resized, bindings, actionId, delta);
+    });
+  }
+
+  function toggleTimingSync(firstId: string, secondId?: string) {
+    commitTimingEdit((arrows) => {
+      if (!secondId) {
+        const current = arrows.find((arrow) => arrow.id === firstId)?.timingPlan?.syncId;
+        return current ? arrows.map((arrow) => arrow.timingPlan?.syncId === current ? { ...arrow, timingPlan: { ...arrow.timingPlan!, syncId: undefined } } : arrow) : arrows;
+      }
+      const first = arrows.find((arrow) => arrow.id === firstId), second = arrows.find((arrow) => arrow.id === secondId);
+      if (!first || !second) return arrows;
+      const oldGroups = new Set([first.timingPlan?.syncId, second.timingPlan?.syncId].filter((value): value is string => Boolean(value)));
+      const startAtMs = first.timingPlan?.startAtMs ?? second.timingPlan?.startAtMs ?? 0;
+      const syncId = timingIdentity("sync");
+      return arrows.map((arrow) => arrow.id === firstId || arrow.id === secondId || oldGroups.has(arrow.timingPlan?.syncId ?? "")
+        ? { ...arrow, timingPlan: { ...(arrow.timingPlan ?? { startAtMs }), startAtMs, syncId } }
+        : arrow);
+    });
+  }
+
+  function addTimingWait(actionId: string, wait: PlaybookTimingWait) {
+    const committed = commitTimingEdit((arrows) => arrows.map((arrow) => arrow.id === actionId
+      ? { ...arrow, timingPlan: { ...(arrow.timingPlan ?? { startAtMs: 0 }), waits: [...(arrow.timingPlan?.waits ?? []), wait] } }
+      : arrow));
+    setRoutePointPick(null);
+    return committed;
+  }
+
+  function removeTimingWait(actionId: string, waitId: string) {
+    commitTimingEdit((arrows) => arrows.map((arrow) => arrow.id === actionId && arrow.timingPlan
+      ? { ...arrow, timingPlan: { ...arrow.timingPlan, waits: arrow.timingPlan.waits?.filter((wait) => wait.id !== waitId) } }
+      : arrow));
+  }
+
+  function beginRoutePointWait(actionId: string, sourceId: string, playerId: number, routePhase: "main" | "approach" | "use" | "release") {
+    if (simulationPlaying) pauseSimulation();
+    setRoutePointPick({ actionId, sourceId, playerId, routePhase });
+    setError(null);
+    focusBoard();
   }
 
   function recordHistory(snapshot: PlaybookDraft, branchId: string | null) {
@@ -542,11 +662,14 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   }
 
   function commitCanonical(next: PlaybookDraft, previous = draft, branchId = activeBranchId) {
-    if (isSameDraft(next, previous)) return;
+    if (isSameDraft(next, previous)) return true;
+    const connectionError = timingConnectionEditError(previous, next);
+    if (connectionError) { setError(connectionError); return false; }
     const before = clonePlaybook(previous);
     const preserveSimulation = simulationClientRef.current !== null && !simulationPlaying;
-    if (!handoffCanonicalDraft(next, preserveSimulation, branchId)) return;
+    if (!handoffCanonicalDraft(next, preserveSimulation, branchId)) return false;
     recordHistory(before, activeBranchId);
+    return true;
   }
 
   function undo() {
@@ -591,6 +714,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setActiveBranchId(null);
     setRenamingBranchId(null);
     setCompareMain(false);
+    setRoutePointPick(null);
+    setTimingPreviewActionId(null);
     setSelected(null);
     setTool("select");
     setDrawStart(null);
@@ -611,6 +736,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setSelected(null);
     setRenamingBranchId(null);
     setCompareMain(false);
+    setRoutePointPick(null);
+    setTimingPreviewActionId(null);
     setActiveBranchId(branchId);
   }
 
@@ -806,7 +933,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function addAuthoredArrow(arrow: PlaybookArrow) {
     const next = cloneActiveDraft();
-    next.arrows = [...next.arrows, arrow];
+    const latestFinish = timingActive
+      ? Math.max(0, ...timingBindings.map((action) => action.startTime + action.durationMs))
+      : 0;
+    const authored = timingActive
+      ? { ...arrow, timingPlan: { startAtMs: Math.min(120_000, snapTimingMs(latestFinish)) } }
+      : arrow;
+    next.arrows = [...next.arrows, authored];
     commit(next);
     setSelected({ type: "arrow", id: arrow.id });
     setOffBallScreenSelection({ screenerId: null, cutterId: null, screenPoint: null });
@@ -988,6 +1121,40 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       return;
     }
     if (tool === "select") setSelected(null);
+  }
+
+  function onTimingRoutePointPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    if (!routePointPick) return;
+    event.preventDefault(); event.stopPropagation();
+    const point = pointFromPointer(event, svgRef.current);
+    const source = activeDraft.arrows.find((arrow) => arrow.id === routePointPick.sourceId);
+    if (!point || !source) {
+      setError("The selected route is no longer available. Choose it again");
+      setRoutePointPick(null);
+      return;
+    }
+    const authoredRoute = authoredRoutes.find((candidate) => candidate.actionId === source.id && candidate.playerId === routePointPick.playerId);
+    if (!authoredRoute) {
+      setError("The selected player has no authored route in this move. Choose a participant with a visible route");
+      return;
+    }
+    const route = sampleAuthoredCourtRoute(authoredRoute);
+    const projected = projectPointToRoute(point, route);
+    if (projected.distance > 5) {
+      setError("Click closer to the selected player's route to place the wait point");
+      return;
+    }
+    const committed = addTimingWait(routePointPick.actionId, {
+      id: timingIdentity("wait"),
+      actionId: source.id,
+      event: "route-point",
+      playerId: routePointPick.playerId,
+      routePhase: routePointPick.routePhase,
+      routeSegment: projected.segment,
+      progress: Math.max(.001, Math.min(.999, Math.round(projected.progress * 10000) / 10000)),
+    });
+    setSelected({ type: "arrow", id: routePointPick.actionId });
+    if (committed) setError(null);
   }
 
   function onPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
@@ -1314,6 +1481,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       : "The fork now follows the deleted Main move group"
     : null;
   const editingArrowId = !simulationPlaying && selected?.type === "arrow" ? selected.id : null;
+  const timingPreviewRoute = authoredRoutes.find((route) => route.actionId === (routePointPick?.sourceId ?? timingPreviewActionId)
+    && (routePointPick ? route.playerId === routePointPick.playerId : route.id.endsWith(":actor"))) ?? null;
   const visibleArrows = activeDraft.arrows.filter((arrow) => arrow.id === editingArrowId || (!simulationActive && authoredRoutes.some((route) => route.actionId === arrow.id && route.id.endsWith(":actor") && routeVisible(route, arrowVisibility))));
   const currentDefenseSchemeLabel = simulationFrame.activeDefenseScheme
     ? `${simulationFrame.defenseSchemeWasAutomatic ? "Auto · " : ""}${DEFENSE_SCHEME_LABELS[simulationFrame.activeDefenseScheme]}`
@@ -1538,11 +1707,12 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               seekSimulation(event.key === "Home" ? 0 : event.key === "End" ? simulationSession.recordedUntilMs : Math.max(0, Math.min(simulationSession.recordedUntilMs, simulationSession.positionMs + offsets[event.key])));
             }} /><output>{(simulationSession.positionMs / 1000).toFixed(2)} / {(simulationSession.recordedUntilMs / 1000).toFixed(2)}s</output></label> : null}
             {selectedArrow ? <>
-              <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={30} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => { const value = event.currentTarget.value; setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: value })); }} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>Same number runs together</small></label>
+              {timingActive ? <div className="sequence-editor sequence-timing-link"><span>Move number</span><output>{selectedArrowSequence ?? "?"}</output><button type="button" onClick={() => { setTimingOpen(true); requestAnimationFrame(() => document.getElementById("timing-mixer")?.scrollIntoView({ block: "nearest", behavior: "smooth" })); }}>Open Timing block</button></div>
+                : <label className="sequence-editor"><span>Move order</span><input aria-label="Move order" type="number" min={1} max={30} value={arrowFields.id === selectedArrow.id ? arrowFields.sequence : String(selectedArrowSequence ?? 1)} onChange={(event) => { const value = event.currentTarget.value; setArrowFields((current) => ({ ...current, id: selectedArrow.id, sequence: value })); }} onBlur={() => { const value = Number(arrowFields.sequence); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.sequence.trim()) changeArrowSequence(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>Same number runs together</small></label>}
               {["movement", "backdoor-cut", "pass", "handoff"].includes(selectedArrow.kind) ? <div className="sequence-editor"><span>{selectedArrow.kind === "pass" || selectedArrow.kind === "handoff" ? "Passer" : "Player"}</span><ArcSelect ariaLabel="Action player" className="arc-select--compact playbook-path-select" value={String(selectedArrow.actor_id ?? "auto")} options={[...(selectedArrow.kind === "backdoor-cut" ? [] : [{ value: "auto", label: `Auto · Player ${selectedParticipants?.actorId ?? "?"}` }]), ...draft.players.map((player) => ({ value: String(player.id), label: `Player ${player.id}` }))]} onValueChange={(value) => changeArrowParticipant(selectedArrow.id, "actor_id", value)} /></div> : null}
               {selectedArrow.kind === "pass" || selectedArrow.kind === "handoff" ? <div className="sequence-editor"><span>Receiver</span><ArcSelect ariaLabel="Action receiver" className="arc-select--compact playbook-path-select" value={String(selectedArrow.recipient_id ?? "auto")} options={[{ value: "auto", label: `Auto · Player ${selectedParticipants?.recipientId ?? "?"}` }, ...draft.players.filter((player) => player.id !== (selectedArrow.actor_id ?? selectedParticipants?.actorId)).map((player) => ({ value: String(player.id), label: `Player ${player.id}` }))]} onValueChange={(value) => changeArrowParticipant(selectedArrow.id, "recipient_id", value)} /></div> : null}
               <div className="sequence-editor"><span>Path</span><ArcSelect ariaLabel="Arrow path" className="arc-select--compact playbook-path-select" value={selectedArrow.path ?? "straight"} options={[{ value: "straight", label: "Straight" }, { value: "curve", label: "Curved" }]} onValueChange={(value) => changeArrowPath(selectedArrow.id, value as "straight" | "curve")} /></div>
-              <label className="sequence-editor"><span>Min. seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => { const value = event.currentTarget.value; setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: value })); }} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
+              {!timingActive ? <label className="sequence-editor"><span>Min. seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => { const value = event.currentTarget.value; setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: value })); }} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label> : null}
             </> : null}
           </div>
           {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
@@ -1564,7 +1734,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="simulation-settings-note">The scheme sets the defensive shape. Coverage and emphasis change screen, help, pressure, and recovery behavior</span>
           </div> : null}
           <div className="court-frame">
-            <svg ref={svgRef} className="court-svg" viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
+            <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onPointerDownCapture={onTimingRoutePointPointerDown} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
               <defs>
                 <pattern id="court-boards" width="80" height="80" patternUnits="userSpaceOnUse"><rect width="80" height="80" fill="var(--surface)" /><path d="M0 0h80M0 40h80" stroke="rgba(255,255,255,.022)" strokeWidth="1" /><path d="M40 0v80" stroke="rgba(255,255,255,.014)" strokeWidth="1" /></pattern>
                 <marker id="movement-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--text)" /></marker>
@@ -1574,6 +1744,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               <CourtMarkings />
               {simulationActive ? <CourtRoutes routes={simulationFrame.routes.filter((route) => route.actionId !== editingArrowId || editingArrowId == null)} visibility={arrowVisibility} labels /> : <CourtRoutes routes={authoredRoutes.filter((route) => !route.id.endsWith(":actor") && route.kind === "handler-support")} visibility={arrowVisibility} />}
               {!simulationActive && compareRoutes.length ? <CourtRoutes routes={compareRoutes} visibility={arrowVisibility} compare /> : null}
+              {timingPreviewRoute ? <g className={`timing-court-preview ${routePointPick ? "is-picking" : ""}`} pointerEvents="none"><CourtRoutes routes={[timingPreviewRoute]} visibility="all" /><circle cx={markerPoint(timingPreviewRoute.start).x} cy={markerPoint(timingPreviewRoute.start).y} r="16" /><text x={markerPoint(timingPreviewRoute.start).x} y={markerPoint(timingPreviewRoute.start).y - 24}>START</text><circle cx={markerPoint(timingPreviewRoute.end).x} cy={markerPoint(timingPreviewRoute.end).y} r="16" /><text x={markerPoint(timingPreviewRoute.end).x} y={markerPoint(timingPreviewRoute.end).y - 24}>END</text></g> : null}
               {visibleArrows.map((arrow) => {
                 const start = markerPoint(arrow.start);
                 const end = markerPoint(arrow.end);
@@ -1619,8 +1790,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 </g>;
               })()}
             </svg>
-            <div className="court-hint">{tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "pick-pop" ? pickPopSelection.screenerId == null ? "Select the screener" : pickPopSelection.handlerId == null ? "Select the ball handler" : pickPopSelection.screenPoint == null ? "Click the screen location" : "Click the pop destination" : tool === "pin-down" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : offBallScreenSelection.screenPoint == null ? "Click the screen location" : "Click the cutter destination" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : tool === "backdoor-cut" ? backdoorCutterId == null ? "Select the cutter" : "Click the basket route destination" : "Drag across the court to draw"}</div>
+            <div className="court-hint">{routePointPick ? `Click Player ${routePointPick.playerId}'s highlighted route to place the wait point` : tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "pick-pop" ? pickPopSelection.screenerId == null ? "Select the screener" : pickPopSelection.handlerId == null ? "Select the ball handler" : pickPopSelection.screenPoint == null ? "Click the screen location" : "Click the pop destination" : tool === "pin-down" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : offBallScreenSelection.screenPoint == null ? "Click the screen location" : "Click the cutter destination" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : tool === "backdoor-cut" ? backdoorCutterId == null ? "Select the cutter" : "Click the basket route destination" : "Drag across the court to draw"}</div>
           </div>
+          <TimingMixerPanel id="timing-mixer" actions={activeDraft.arrows} players={activeDraft.players} bindings={timingBindings} routes={authoredRoutes} sharedActionIds={activePath.sharedIds} diagnostics={simulationFrame.execution} selectedActionId={selectedArrow?.id ?? null} routePickPending={routePointPick !== null} open={timingOpen} onOpenChange={setTimingOpen} onSelect={(id) => { if (simulationPlaying) pauseSimulation(); setTool("select"); setSelected({ type: "arrow", id }); }} onChangeStart={changeTimingStart} onChangeDuration={changeTimingDuration} onToggleSync={toggleTimingSync} onAddWait={addTimingWait} onRemoveWait={removeTimingWait} onStartRoutePick={beginRoutePointWait} onPreviewAction={setTimingPreviewActionId} />
           <div className="playbook-statusbar"><span><Hand size={14} /> {selected ? `${selected.type === "ball" ? "Ball" : selected.type === "arrow" ? `Move ${selectedArrowSequence ?? ""}` : `${selected.type === "defender" ? "Defender" : "Player"} ${selected.id}`} selected` : "Nothing selected"}</span><span>Arrows stay draggable · Arrow keys nudge · Shift for larger steps · Cmd/Ctrl Z to undo</span></div>
         </main>
         <aside className={`saved-plays-panel ${savedOpen ? "is-open" : ""}`} aria-label="Saved plays">

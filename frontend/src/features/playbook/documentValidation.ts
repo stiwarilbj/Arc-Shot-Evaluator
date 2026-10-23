@@ -1,4 +1,4 @@
-import type { PlaybookDocument, PlaybookDraft } from "./types.ts";
+import type { PlaybookArrow, PlaybookDocument, PlaybookDraft } from "./types.ts";
 import { resolvePlaybookPath } from "./playbookBranches.ts";
 
 // Version-1 persistence contract. Keep in sync with backend/api/playbooks.py;
@@ -6,6 +6,8 @@ import { resolvePlaybookPath } from "./playbookBranches.ts";
 const kinds = new Set(["movement", "pass", "screen", "slip-screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"]);
 const offenseBadges = new Set(["playmaker", "off-dribble-creator", "deep-range", "catch-and-shoot", "slasher", "rim-finisher", "cutter", "screen-setter", "roll-threat", "post-scorer"]);
 const defenseBadges = new Set(["lockdown", "paint-protector", "helper"]);
+const timingEvents = new Set(["start", "complete", "catch", "screen-set", "screen-use", "route-point"]);
+const routePhases = new Set(["main", "approach", "use", "release"]);
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 function check(valid: unknown, message: string): asserts valid { if (!valid) throw new Error(message); }
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value);
@@ -14,7 +16,7 @@ function point(value: unknown) {
 }
 
 /** Validate without normalizing or mutating valid drawings, including legacy v1 defaults. */
-export function validatePlaybookDocument(value: unknown): void {
+export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdges = true): void {
   check(object(value), "Playbook must be an object");
   check(value.version === undefined || value.version === 1, "Only version-1 plays are supported");
   check(value.revision === undefined || typeof value.revision === "string" && /^[0-9a-f]{32}(?![\s\S])/.test(value.revision), "Invalid saved revision");
@@ -70,7 +72,103 @@ export function validatePlaybookDocument(value: unknown): void {
     if (arrow.kind === "backdoor-cut") check(arrow.actor_id != null, "Backdoor cuts need an actor");
     if (arrow.recipient_id != null) check(["pass", "handoff"].includes(arrow.kind) && arrow.recipient_id !== arrow.actor_id, "Transfers need distinct participants");
     if (["pick-pop", "pin-down"].includes(arrow.kind)) point(arrow.exit_target);
+    if (arrow.timingPlan !== undefined) {
+      const plan = arrow.timingPlan;
+      check(object(plan) && integer(plan.startAtMs) && plan.startAtMs >= 0 && plan.startAtMs <= 120_000, "Action start time must be 0–120 seconds");
+      check(plan.syncId === undefined || typeof plan.syncId === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(plan.syncId), "Synchronization identity is invalid");
+      if (plan.waits !== undefined) {
+        check(Array.isArray(plan.waits) && plan.waits.length <= 30, "An action can have at most 30 timing waits");
+        const waitIds = new Set<string>();
+        for (const rawWait of plan.waits) {
+          check(object(rawWait), "Timing wait must be an object");
+          const wait = rawWait as Record<string, unknown>;
+          check(Object.keys(wait).every((key) => ["id", "actionId", "event", "playerId", "routePhase", "routeSegment", "progress"].includes(key)), "Timing wait contains unsupported fields");
+          check(typeof wait.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(wait.id) && !waitIds.has(wait.id), "Timing wait identities must be unique");
+          waitIds.add(wait.id);
+          check(typeof wait.actionId === "string" && /^[a-z0-9-]{1,64}$/.test(wait.actionId) && wait.actionId !== arrow.id, "Timing wait must name a different action");
+          check(typeof wait.event === "string" && timingEvents.has(wait.event), "Timing wait event is not supported");
+          check(wait.playerId === undefined || integer(wait.playerId) && playerIds.has(wait.playerId), "Timing wait player must be on the court");
+          if (wait.event === "route-point") {
+            check(wait.playerId !== undefined && wait.routePhase !== undefined && typeof wait.routePhase === "string" && routePhases.has(wait.routePhase)
+              && integer(wait.routeSegment) && wait.routeSegment >= 0 && wait.routeSegment <= 63
+              && typeof wait.progress === "number" && Number.isFinite(wait.progress) && wait.progress > 0 && wait.progress < 1,
+            "Route-point waits need a player, route phase, segment, and interior progress value");
+          } else check(wait.routePhase === undefined && wait.routeSegment === undefined && wait.progress === undefined && wait.playerId === undefined, "Only route-point waits can specify a player or route progress");
+        }
+      }
+    }
   }
+  if (shouldValidateTimingEdges) {
+    const timedCount = (arrows as Array<Record<string, unknown>>).filter((arrow) => arrow.timingPlan !== undefined).length;
+    check(timedCount === 0 || timedCount === arrows.length, "Timing must be initialized for every action in this play path");
+  }
+  const validateTimingEdges = (path: unknown) => {
+    check(object(path) && (path.arrows === undefined || Array.isArray(path.arrows)), "Timing path is invalid");
+    const pathActions = (path.arrows ?? []) as Array<Record<string, unknown>>;
+    const byId = new Map(pathActions.map((action) => [action.id as string, action]));
+    const graph = new Map<string, string[]>();
+    const syncMembers = new Map<string, Array<Record<string, unknown>>>();
+    for (const action of pathActions) {
+      const plan = action.timingPlan as { syncId?: string; waits?: Array<{ id: string; actionId: string; event: string }> } | undefined;
+      graph.set(action.id as string, []);
+      if (plan?.syncId) { const group = syncMembers.get(plan.syncId) ?? []; group.push(action); syncMembers.set(plan.syncId, group); }
+      for (const wait of plan?.waits ?? []) {
+        const source = byId.get(wait.actionId);
+        check(source, "Timing wait points to an action outside this play ending");
+        check(wait.event !== "catch" || ["pass", "handoff"].includes(String(source.kind)), "Catch waits require a pass or handoff");
+        check(wait.event !== "screen-set" || ["screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"].includes(String(source.kind)), "Screen-set waits require an action that sets a screen");
+        check(wait.event !== "screen-use" || ["screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"].includes(String(source.kind)), "Screen-use waits require an action that uses a screen");
+        graph.get(action.id as string)!.push(wait.actionId);
+      }
+    }
+    const timingNode = (id: string) => {
+      const action = byId.get(id)!;
+      const syncId = (action.timingPlan as { syncId?: string } | undefined)?.syncId;
+      return syncId ? `sync:${syncId}` : `action:${id}`;
+    };
+    const eventGraph = new Map<string, string[]>();
+    for (const action of pathActions) eventGraph.set(timingNode(action.id as string), []);
+    for (const action of pathActions) for (const dependency of graph.get(action.id as string) ?? []) {
+      const from = timingNode(action.id as string), to = timingNode(dependency);
+      check(from !== to, "Pinned actions cannot wait on one another");
+      eventGraph.get(from)!.push(to);
+    }
+    const state = new Map<string, number>();
+    const visit = (id: string) => {
+      if (state.get(id) === 1) throw new Error("Timing waits cannot form a cycle");
+      if (state.get(id) === 2) return;
+      state.set(id, 1);
+      for (const dependency of eventGraph.get(id) ?? []) visit(dependency);
+      state.set(id, 2);
+    };
+    for (const id of eventGraph.keys()) visit(id);
+    for (const members of syncMembers.values()) {
+      const ids = new Set(members.map((action) => action.id as string));
+      const startTimes = new Set(members.map((action) => (action.timingPlan as { startAtMs: number }).startAtMs));
+      check(startTimes.size === 1, "Pinned actions must share one planned start time");
+      let transferCount = 0;
+      const owners = new Set<number>();
+      for (const action of members) {
+        if (["pass", "handoff"].includes(String(action.kind))) transferCount += 1;
+        const kind = String(action.kind);
+        const participants = kind === "off-ball-screen" || kind === "pin-down"
+          ? [action.screener_id, action.cutter_id]
+          : ["screen", "slip-screen", "pick-roll", "pick-pop"].includes(kind)
+            ? [action.screener_id, action.handler_id]
+            : kind === "handoff" ? [action.actor_id, action.recipient_id]
+              : kind === "pass" ? [action.recipient_id]
+            : kind === "movement" || kind === "backdoor-cut" ? [action.actor_id] : [];
+        for (const participant of participants) {
+          if (typeof participant !== "number") continue;
+          check(!owners.has(participant), "Pinned actions cannot claim the same movement owner");
+          owners.add(participant);
+        }
+        for (const dependency of graph.get(action.id as string) ?? []) check(!ids.has(dependency), "Pinned actions cannot wait on one another");
+      }
+      check(transferCount <= 1, "A pinned group cannot start competing ball transfers");
+    }
+  };
+  if (shouldValidateTimingEdges) validateTimingEdges(value);
   if (value.branches !== undefined) {
     check(Array.isArray(value.branches) && value.branches.length <= 8, "A play can have at most eight endings");
     const branchIds = new Set<string>();
@@ -82,9 +180,19 @@ export function validatePlaybookDocument(value: unknown): void {
         && branch.fork.actionIds.every((id) => typeof id === "string" && /^[a-z0-9-]{1,64}$/.test(id))
         && new Set(branch.fork.actionIds).size === branch.fork.actionIds.length
         && integer(branch.fork.sequence) && branch.fork.sequence >= 1 && branch.fork.sequence <= 30, "Ending fork reference is invalid");
-      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined });
+      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined }, false);
       const resolved = resolvePlaybookPath(value as unknown as PlaybookDraft, branch.id);
       validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined });
+      validateTimingEdges(resolved.play);
+      const sharedSyncMembers = new Map<string, Set<string>>();
+      const endingSyncMembers = new Map<string, Set<string>>();
+      for (const action of resolved.play.arrows) {
+        const syncId = (action as PlaybookArrow).timingPlan?.syncId;
+        if (!syncId) continue;
+        const target = resolved.sharedIds.has(action.id as string) ? sharedSyncMembers : endingSyncMembers;
+        const ids = target.get(syncId) ?? new Set<string>(); ids.add(action.id as string); target.set(syncId, ids);
+      }
+      for (const syncId of sharedSyncMembers.keys()) check(!endingSyncMembers.has(syncId), "Pinned actions cannot cross a shared-opening boundary");
     }
   }
 }

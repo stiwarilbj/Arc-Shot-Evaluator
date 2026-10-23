@@ -95,6 +95,7 @@ export function branchActionStatus(path: PlaybookArrow[], main: PlaybookArrow[],
     start: arrow.start, end: arrow.end, control: arrow.control ?? null, exit_target: arrow.exit_target ?? null,
     actor_id: arrow.actor_id ?? null, recipient_id: arrow.recipient_id ?? null, screener_id: arrow.screener_id ?? null,
     handler_id: arrow.handler_id ?? null, cutter_id: arrow.cutter_id ?? null,
+    timingPlan: arrow.timingPlan ?? null,
   });
   return signature(current) === signature(original) ? null : "changed";
 }
@@ -103,9 +104,12 @@ export function createBranchFromAction(source: PlaybookDraft, selectedActionId: 
   const ordered = orderedActions(source.arrows);
   const selected = ordered.find((arrow) => arrow.id === selectedActionId);
   if (!selected) throw new Error("Choose a Main action before creating an ending");
-  const selectedSequence = sequenceOf(selected, ordered.indexOf(selected));
-  const group = ordered.filter((arrow, index) => sequenceOf(arrow, index) === selectedSequence);
-  const continuation = ordered.filter((arrow, index) => sequenceOf(arrow, index) >= selectedSequence);
+  const selectedSyncId = selected.timingPlan?.syncId;
+  const syncMembers = selectedSyncId ? ordered.filter((arrow) => arrow.timingPlan?.syncId === selectedSyncId) : [selected];
+  const selectedSequence = Math.min(...syncMembers.map((arrow) => sequenceOf(arrow, ordered.indexOf(arrow))));
+  const group = ordered.filter((arrow, index) => sequenceOf(arrow, index) === selectedSequence || selectedSyncId && arrow.timingPlan?.syncId === selectedSyncId);
+  const groupIds = new Set(group.map((arrow) => arrow.id));
+  const continuation = ordered.filter((arrow, index) => sequenceOf(arrow, index) >= selectedSequence || groupIds.has(arrow.id));
   return {
     id: `ending-${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`}`,
     label: `Ending ${branchNumber}`,

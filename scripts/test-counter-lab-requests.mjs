@@ -49,9 +49,21 @@ for (const change of [
   v => { v.draft.arrows[0].control = {}; }, v => { v.draft.arrows[0].timing = '1'; },
   v => { v.draft.arrows[0].actor_id = 999; }, v => { v.draft.arrows[0].sequence = NaN; },
 ]) { const value = request(); change(value); invalid(value); }
+{
+  const value = request(); value.draft.arrows[0].timingPlan = { startAtMs: NaN }; invalid(value);
+}
+{
+  const value = request(); value.draft.arrows[0].timingPlan = { startAtMs: 0, waits: [{ id: 'wait-orphan', actionId: 'missing-action', event: 'complete' }] }; invalid(value);
+}
+{
+  const value = request(), [first, second] = value.draft.arrows;
+  first.timingPlan = { startAtMs: 0, waits: [{ id: 'wait-first', actionId: second.id, event: 'complete' }] };
+  second.timingPlan = { startAtMs: 100, waits: [{ id: 'wait-second', actionId: first.id, event: 'complete' }] };
+  invalid(value);
+}
 for (const field of ['detailId', 'repairId', 'key']) { const value = { ...details }; delete value[field]; invalid(value); }
 for (const key of ['switch', 'switch:other', ':scripted', 'switch:scripted:extra', 5]) invalid({ ...details, key });
-assert.deepEqual(counterLabRequestError(null, null), { type: 'error', id: '', message: 'Invalid Counter Lab request. Try again.' });
+assert.deepEqual(counterLabRequestError(null, null), { type: 'error', id: '', message: 'Invalid Counter Lab request. Try again' });
 assert.deepEqual(counterLabRequestError({ ...details, key: 'broken' }, new Error('bad key')), { type: 'error', id: 'a', detailId: 'detail-1', message: 'bad key' }, 'detail errors retain request correlation');
 assert.equal(counterLabRequestError({ id: 9 }, new Error('bad id')).id, '', 'invalid IDs never target a real analysis');
 console.log(`Worker request validation passed: all 24 starters and defenses, legacy/partial plays, four request kinds, ${rejected} malformed payloads and correlated errors`);

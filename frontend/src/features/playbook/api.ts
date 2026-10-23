@@ -54,7 +54,7 @@ const CHANGE_EVENT = "arc-playbooks-changed";
 const parseLibrary = createParsedLibraryCache(validateLibrary);
 const parseHostedLibrary = createParsedLibraryCache(validateHostedLibrary);
 function hasRevisionHistory(library: HostedLibrary): library is Exclude<HostedLibrary, { version: 1 }> {
-  return library.version === 2 || library.version === 3;
+  return library.version === 2 || library.version === 3 || library.version === 4;
 }
 const libraryReads = createSharedLibraryRead(async () => {
   const plays = IS_GITHUB_PAGES ? await readLocalPlaybooks() : await readRemotePlaybooks();
@@ -86,18 +86,21 @@ async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIde
   // was saved or repeats a write. The backend replays matching create receipts.
   const id = identity.operation === "create" ? creationId! : identity.id;
   const usesBranchExtension = playbook.branches !== undefined;
+  const usesTimingExtension = [...playbook.arrows, ...(playbook.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined);
+  const requiredExtensions = [usesBranchExtension ? "branches-v1" : null, usesTimingExtension ? "timing-v1" : null].filter((value): value is string => value !== null);
   try {
     return await withPersistenceDeadline(async (signal) => {
-      if (usesBranchExtension) {
+      if (requiredExtensions.length) {
         const capability = await fetch("/api/playbooks", { signal, cache: "no-store" });
         if (!capability.ok) await parse<never>(capability);
-        if (capability.headers.get("X-ARC-Playbook-Extensions") !== "branches-v1") {
-          throw new Error("This local server does not support Playbook endings yet. Update the downloaded app before saving this branched play");
+        const available = new Set((capability.headers.get("X-ARC-Playbook-Extensions") ?? "").split(",").map((value) => value.trim()).filter(Boolean));
+        if (requiredExtensions.some((extension) => !available.has(extension))) {
+          throw new Error("This local server does not support every feature in this play yet. Update the downloaded app before saving it");
         }
       }
       const response = await fetch(identity.operation === "create" ? "/api/playbooks" : `/api/playbooks/${encodeURIComponent(id)}`, {
         method: identity.operation === "create" ? "POST" : "PUT", signal,
-        headers: { "Content-Type": "application/json", ...(usesBranchExtension ? { "X-ARC-Playbook-Extensions": "branches-v1" } : {}), ...(identity.operation === "create" ? { "X-ARC-Create-ID": id } : { "If-Match": `"${playbook.revision ?? "legacy"}"` }) },
+        headers: { "Content-Type": "application/json", ...(requiredExtensions.length ? { "X-ARC-Playbook-Extensions": requiredExtensions.join(",") } : {}), ...(identity.operation === "create" ? { "X-ARC-Create-ID": id } : { "If-Match": `"${playbook.revision ?? "legacy"}"` }) },
         body: JSON.stringify(playbook),
       });
       const saved = await parseSave(response, identity);
