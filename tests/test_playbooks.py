@@ -868,7 +868,7 @@ def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_pat
         "continuation": [payload["arrows"][0]],
     }]
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
 
@@ -1033,7 +1033,7 @@ def test_read_coach_lessons_require_capability_and_round_trip(tmp_path, monkeypa
     }]}
     payload["readCoach"] = lesson
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
     created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "read-coach-v1"})
@@ -1062,3 +1062,57 @@ def test_read_coach_lessons_require_capability_and_round_trip(tmp_path, monkeypa
     })
     assert rejected.status_code == 400
     assert client.get(f"/api/playbooks/{saved['id']}").json()["readCoach"] == lesson
+
+
+def test_role_rehearsal_cues_require_capability_and_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Role cues")
+    cues = {"version": 1, "cues": [{
+        "playerId": 1, "actionId": "arrow-one", "phase": "move", "scope": "shared",
+        "text": "Hold the corner", "signature": "1234abcd",
+    }]}
+    payload["roleCues"] = cues
+
+    capabilities = client.get("/api/playbooks")
+    assert "role-rehearsal-v1" in capabilities.headers["X-ARC-Playbook-Extensions"]
+    assert client.post("/api/playbooks", json=payload).status_code == 409
+    created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "role-rehearsal-v1"})
+    assert created.status_code == 200
+    saved = created.json()
+    assert saved["roleCues"] == cues
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["roleCues"] == cues
+
+    stale = {key: value for key, value in saved.items() if key not in {"id", "created_at", "updated_at", "revision", "roleCues"}}
+    refused = client.put(f"/api/playbooks/{saved['id']}", json=stale, headers={"If-Match": _match(saved)})
+    assert refused.status_code == 409
+    updated = client.put(f"/api/playbooks/{saved['id']}", json={**stale, "roleCues": cues}, headers={
+        "If-Match": _match(saved), "X-ARC-Playbook-Extensions": "role-rehearsal-v1",
+    })
+    assert updated.status_code == 200
+    assert updated.json()["roleCues"] == cues
+
+    for bad_cue in [
+        {**cues["cues"][0], "playerId": 99},
+        {**cues["cues"][0], "phase": "guess"},
+        {**cues["cues"][0], "signature": "broken"},
+        {**cues["cues"][0], "actionId": "missing-action"},
+    ]:
+        rejected = client.put(f"/api/playbooks/{saved['id']}", json={**stale, "roleCues": {"version": 1, "cues": [bad_cue]}}, headers={
+            "If-Match": _match(updated.json()), "X-ARC-Playbook-Extensions": "role-rehearsal-v1",
+        })
+        assert rejected.status_code == 400
+        assert client.get(f"/api/playbooks/{saved['id']}").json()["roleCues"] == cues
+
+    empty_lesson = {"version": 1, "cues": []}
+    omitted_clear = client.put(f"/api/playbooks/{saved['id']}", json=stale, headers={"If-Match": _match(updated.json())})
+    assert omitted_clear.status_code == 409
+    unsupported_clear = client.put(f"/api/playbooks/{saved['id']}", json={**stale, "roleCues": empty_lesson}, headers={
+        "If-Match": _match(updated.json()),
+    })
+    assert unsupported_clear.status_code == 409
+    cleared = client.put(f"/api/playbooks/{saved['id']}", json={**stale, "roleCues": empty_lesson}, headers={
+        "If-Match": _match(updated.json()), "X-ARC-Playbook-Extensions": "role-rehearsal-v1",
+    })
+    assert cleared.status_code == 200
+    assert cleared.json()["roleCues"] == empty_lesson

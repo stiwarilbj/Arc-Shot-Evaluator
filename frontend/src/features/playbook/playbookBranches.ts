@@ -67,6 +67,7 @@ export function resolvePlaybookPath(source: PlaybookDraft, branchId: string | nu
 export function flattenPlaybookPath(source: PlaybookDraft, branchId: string | null = null, label?: string): PlaybookDraft {
   const resolved = resolvePlaybookPath(source, branchId).play;
   delete resolved.readCoach;
+  delete resolved.roleCues;
   if (label) resolved.name = `${source.name} — ${label}`.slice(0, 80);
   return resolved;
 }

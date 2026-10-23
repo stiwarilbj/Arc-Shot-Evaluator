@@ -152,6 +152,10 @@ export type ReadCoachCheckpoint = {
 };
 export type ReadCoachLesson = { version: 1; checkpoints: ReadCoachCheckpoint[] };
 
+export type RoleCuePhase = "hold" | "perform" | "receive" | "screen" | "screen-use" | "roll" | "pop" | "cut" | "pass" | "handoff" | "move" | "wait";
+export type RoleCueOverride = { playerId: number; actionId: string; phase: RoleCuePhase; scope: "shared" | "ending"; branchId?: string; text: string; signature: string };
+export type RoleCueLesson = { version: 1; cues: RoleCueOverride[] };
+
 export interface PlaybookDocument {
   version: 1;
   /** Opaque save precondition; absent only on legacy version-1 documents. */
@@ -169,6 +173,8 @@ export interface PlaybookDocument {
   branches?: PlaybookBranch[];
   /** Optional version-1 extension containing independent, frozen read lessons */
   readCoach?: ReadCoachLesson;
+  /** Optional version-1 extension for authored My Role cue wording */
+  roleCues?: RoleCueLesson;
 }
 
 export type PlaybookDraft = Omit<PlaybookDocument, "id" | "created_at" | "updated_at"> & {

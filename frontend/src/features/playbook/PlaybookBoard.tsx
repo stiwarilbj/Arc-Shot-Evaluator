@@ -11,6 +11,8 @@ import type { PlaybookTimingWait } from "./types";
 import { PocketActionsPanel, type PocketPlacementRequest } from "./PocketActionsPanel.tsx";
 import { buildPocketInsertion } from "./pocketActions.ts";
 import { ReadCoachAuthorPanel, ReadCoachPracticeView, readCoachSnapshotFrame } from "./ReadCoachViews.tsx";
+import { RoleRehearsalView } from "./RoleRehearsalView.tsx";
+import { authoredRoleCueTemplates } from "./roleRehearsal.ts";
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDownToLine,
@@ -56,7 +58,7 @@ import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, ReadCoachCheckpoint, SimulationSettings } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, ReadCoachCheckpoint, RoleCuePhase, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -294,13 +296,14 @@ const EMPTY_SIMULATION_FRAME: SimulationFrame = {
   shotTarget: null,
 };
 
-export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay, active = true, view = "edit", onViewChange }: {
+export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay, active = true, view = "edit", rolePlayerId = null, onViewChange }: {
   onTestInCounterLab?: (play: PlaybookDraft) => void;
   onDraftChange?: (play: PlaybookDraft) => void;
   requestedPlay?: { requestId: string; play: PlaybookDraft } | null;
   active?: boolean;
-  view?: "edit" | "practice";
-  onViewChange?: (view: "edit" | "practice") => void;
+  view?: "edit" | "practice" | "role";
+  rolePlayerId?: number | null;
+  onViewChange?: (view: "edit" | "practice" | "role", playerId?: number | null) => void;
 }) {
   const arrowVisibility = useArrowVisibility();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -662,7 +665,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (!active && simulationPlaying) pauseSimulation();
   }, [active, simulationPlaying]);
   useEffect(() => {
-    if (!active || view === "practice") pauseSimulation();
+    if (!active || view !== "edit") pauseSimulation();
   }, [active, view]);
   useEffect(() => () => {
     previewCancelRef.current?.();
@@ -844,6 +847,27 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     return true;
   }
 
+  function saveRoleCue(cue: { playerId: number; actionId: string; phase: RoleCuePhase; text: string | null; signature: string }) {
+    try {
+      const next = clonePlaybook(draft);
+      const scope = activeBranchId && !activePath.sharedIds.has(cue.actionId) ? "ending" : "shared";
+      const branchId = scope === "ending" ? activeBranchId! : undefined;
+      const key = (item: { playerId: number; actionId: string; phase: RoleCuePhase; scope: string; branchId?: string }) => item.playerId === cue.playerId && item.actionId === cue.actionId && item.phase === cue.phase && item.scope === scope && item.branchId === branchId;
+      const cues = (next.roleCues?.cues ?? []).filter((item) => !key(item));
+      if (cue.text !== null) cues.push({ playerId: cue.playerId, actionId: cue.actionId, phase: cue.phase, scope, ...(branchId ? { branchId } : {}), text: cue.text, signature: cue.signature });
+      // Keep an explicit empty lesson after Reset wording so storage can tell
+      // this feature-aware removal from an older client omitting the field.
+      next.roleCues = { version: 1, cues };
+      validatePlaybookDocument(next);
+      recordHistory(clonePlaybook(draft), activeBranchId);
+      setDraftState(draftSession.edit(next));
+      setDirty(draftSession.dirty);
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Cue wording could not be saved");
+    }
+  }
+
   function undo() {
     const previous = history.at(-1);
     if (!previous) return;
@@ -926,6 +950,14 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       const branch = createBranchFromAction(draft, actionId, labelNumber);
       const next = clonePlaybook(draft);
       next.branches = [...(next.branches ?? []), branch];
+      const copiedIds = new Set(branch.continuation.map((arrow) => arrow.id));
+      const branchTemplates = authoredRoleCueTemplates(resolvePlaybookPath(next, branch.id).play);
+      const copiedCues = (next.roleCues?.cues ?? []).flatMap((cue) => {
+        if (cue.scope !== "shared" || !copiedIds.has(cue.actionId)) return [];
+        const template = branchTemplates.find((item) => item.actionId === cue.actionId && item.playerId === cue.playerId && item.phase === cue.phase);
+        return template ? [{ ...cue, scope: "ending" as const, branchId: branch.id, signature: template.signature }] : [];
+      });
+      if (copiedCues.length) next.roleCues = { version: 1, cues: [...(next.roleCues?.cues ?? []), ...copiedCues] };
       commitCanonical(next, draft, null);
       selectBranch(branch.id);
       setRenamingBranchId(branch.id);
@@ -959,6 +991,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (!branch || !window.confirm(`Delete ${branch.label}?`)) return;
     const next = clonePlaybook(draft);
     next.branches = (next.branches ?? []).filter((item) => item.id !== branchId);
+    if (next.roleCues) {
+      const cues = next.roleCues.cues.filter((cue) => cue.scope !== "ending" || cue.branchId !== branchId);
+      next.roleCues = { version: 1, cues };
+    }
     commitCanonical(next, draft, activeBranchId);
     if (activeBranchId === branchId) selectBranch(null);
   }
@@ -1705,6 +1741,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? `Saved · ${activeDraft.arrows.length} actions` : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
 
   if (view === "practice") return <ReadCoachPracticeView lesson={draft.readCoach} visibility={arrowVisibility} onExit={() => onViewChange?.("edit")} active={active} />;
+  if (view === "role") return <RoleRehearsalView play={flattenPlaybookPath(draft, activeBranchId)} cueSource={draft} branchId={activeBranchId}
+    branchLabel={activePath.branch?.label ?? null} sharedIds={activePath.sharedIds} playerId={rolePlayerId} settings={simulationSettings}
+    visibility={arrowVisibility} active={active} onViewChange={(nextView, playerId) => onViewChange?.(nextView, playerId)} onCueChange={saveRoleCue} />;
 
   return (
     <div ref={rootRef} className="playbook-page" tabIndex={-1} onKeyDown={onKeyDown} onBlur={(event) => {
@@ -1831,6 +1870,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 setSelected({ type: "player", id: player.id });
               }}>Player {player.id}</button>)}
             </div> : <p className="ratings-empty">Add an offensive player to set ratings and badges</p>}
+            {selectedRatingsPlayer ? <button type="button" className="button button-outline role-rehearse-entry" onClick={() => { pauseSimulation(); onViewChange?.("role", selectedRatingsPlayer.id); }}><UserRound size={15} />Rehearse this role</button> : null}
             {playerSkillsTab === "ratings" ? <div id="player-ratings-content" role="tabpanel" aria-labelledby="player-ratings-tab" className="player-skill-tab-content">
               <div className="ratings-panel-heading"><strong>Team adjustment</strong><span>All players</span></div>
               {([

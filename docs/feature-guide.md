@@ -122,6 +122,29 @@ planned start · Conflicting ownership and circular dependencies are diagnosed b
 execution; failed prerequisites explain why dependent moves cannot start · Saved
 plays keep the version-1 document format · See [action dependencies](playbook-action-dependencies.md)
 
+### Rehearse a player’s role
+
+Select a player in **Player skills**, then choose **Rehearse this role** to open a
+focused playback view · The full offense runs in scripted mode against the
+selected defense, while the chosen player and their routes stay prominent · Use
+**Show whole team** for context or switch **Role routes** off without changing
+the shared arrow display setting
+
+The cue strip follows authored action participants and recorded execution · It
+shows passing, receiving, cutting, screening, screen use, rolling, popping, and
+explicit timing waits · A pass is marked complete for the receiver only after a
+confirmed catch; obstructed actions stay blocked · Select a cue to pause and seek
+to its recorded or planned start, then use **Loop role** or **Loop current cue**
+to practice it · Simultaneous responsibilities retain their shared timing
+
+Choose **Edit cues** to adjust the teaching wording, or **Reset wording** to
+restore its generated instruction · Cue wording is saved with the play, supports
+the Playbook undo and redo history, and displays a review reminder when its
+action, participants, timing, or prerequisites change · The route uses
+`#playbook/role/{playerId}` · **Back to editing** returns to the same draft,
+ending, selection, and paused editor session · Rehearsal pauses when the browser
+tab or workspace is hidden
+
 ### Choreograph timing
 
 Expand **Timing** below the court to see a lane for each offensive player · Each

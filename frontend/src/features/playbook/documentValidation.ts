@@ -8,6 +8,7 @@ const offenseBadges = new Set(["playmaker", "off-dribble-creator", "deep-range",
 const defenseBadges = new Set(["lockdown", "paint-protector", "helper"]);
 const timingEvents = new Set(["start", "complete", "catch", "screen-set", "screen-use", "route-point"]);
 const routePhases = new Set(["main", "approach", "use", "release"]);
+const roleCuePhases = new Set(["hold", "perform", "receive", "screen", "screen-use", "roll", "pop", "cut", "pass", "handoff", "move", "wait"]);
 const defenseSchemes = new Set(["man-to-man", "pack-line", "zone-2-3", "zone-3-2", "zone-1-3-1", "zone-2-1-2", "zone-1-2-2", "matchup-1-1-3", "box-and-one", "triangle-and-two"]);
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 function check(valid: unknown, message: string): asserts valid { if (!valid) throw new Error(message); }
@@ -196,6 +197,36 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
       for (const syncId of sharedSyncMembers.keys()) check(!endingSyncMembers.has(syncId), "Pinned actions cannot cross a shared-opening boundary");
     }
   }
+  if (value.roleCues !== undefined) {
+    const lesson = value.roleCues;
+    check(object(lesson) && lesson.version === 1 && Array.isArray(lesson.cues) && lesson.cues.length <= 600, "Role rehearsal cues are invalid");
+    const branches = new Map(((value.branches ?? []) as Array<Record<string, unknown>>).map((branch) => [String(branch.id), branch]));
+    const cueKeys = new Set<string>();
+    for (const rawCue of lesson.cues) {
+      check(object(rawCue) && Object.keys(rawCue).every((key) => ["playerId", "actionId", "phase", "scope", "branchId", "text", "signature"].includes(key))
+        && integer(rawCue.playerId) && playerIds.has(rawCue.playerId)
+        && typeof rawCue.actionId === "string" && (rawCue.actionId === "stationary" || /^[a-z0-9-]{1,64}$/.test(rawCue.actionId))
+        && typeof rawCue.phase === "string" && roleCuePhases.has(rawCue.phase)
+        && (rawCue.scope === "shared" || rawCue.scope === "ending")
+        && typeof rawCue.text === "string" && rawCue.text.trim().length > 0 && Array.from(rawCue.text).length <= 240
+        && typeof rawCue.signature === "string" && /^[0-9a-f]{8}$/.test(rawCue.signature), "Role rehearsal cue fields are invalid");
+      const cue = rawCue as Record<string, unknown>;
+      if (cue.actionId === "stationary") {
+        check(cue.phase === "hold", "Stationary cues must describe holding position");
+        if (cue.scope === "ending") check(typeof cue.branchId === "string" && branches.has(cue.branchId), "Ending stationary cue must reference an existing ending");
+        else check(cue.branchId === undefined, "Shared stationary cues cannot name an ending");
+      }
+      else if (cue.scope === "shared") check((arrows as Array<Record<string, unknown>>).some((arrow) => arrow.id === cue.actionId), "Shared role cue must reference a Main action");
+      else {
+        check(typeof cue.branchId === "string" && branches.has(cue.branchId), "Ending role cue must reference an existing ending");
+        const branch = branches.get(String(cue.branchId))!;
+        check(Array.isArray(branch.continuation) && (branch.continuation as Array<Record<string, unknown>>).some((arrow) => arrow.id === cue.actionId), "Ending role cue must reference an action in that ending");
+      }
+      check(cue.scope !== "shared" || cue.branchId === undefined, "Shared role cues cannot name an ending");
+      const key = `${cue.scope}:${String(cue.branchId ?? "")}:${cue.playerId}:${cue.actionId}:${cue.phase}`;
+      check(!cueKeys.has(key), "Role cue identities must be unique"); cueKeys.add(key);
+    }
+  }
   if (value.readCoach !== undefined) validateReadCoach(value.readCoach);
 }
 
@@ -206,7 +237,7 @@ export function validateReadCoachSessionRecord(raw: unknown) {
     && Array.isArray(raw.events) && raw.events.length <= 200000, "Read checkpoint session is invalid");
   check(object(raw.hoop), "Read checkpoint court is invalid"); point(raw.hoop);
   const source = raw.initialDrawing;
-  check(object(source) && source.readCoach === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
+  check(object(source) && source.readCoach === undefined && source.roleCues === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
   validatePlaybookDocument(source);
   const settings = raw.initialSettings;
   check(object(settings) && ["off", "spacing", "cuts", "read-react"].includes(String(settings.offenseOffBall))
@@ -225,7 +256,7 @@ export function validateReadCoachSessionRecord(raw: unknown) {
     } else if (event.kind === "settings") {
       check(object(event.settings), "Read checkpoint replay settings are invalid");
     } else if (event.kind === "edit") {
-      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
+      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.roleCues === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
       validatePlaybookDocument(event.drawing);
     } else throw new Error("Read checkpoint replay event is unsupported");
   }

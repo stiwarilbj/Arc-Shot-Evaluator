@@ -31,6 +31,7 @@ MAX_DEFENDERS = 5
 MAX_ARROWS = 30
 MAX_BRANCHES = 8
 MAX_READ_CHECKPOINTS = 8
+MAX_ROLE_CUES = 600
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
 MAX_JSON_DEPTH = 32
@@ -54,6 +55,7 @@ ALLOWED_PLAYER_BADGES = {
 ALLOWED_DEFENDER_BADGES = {"lockdown", "paint-protector", "helper"}
 TIMING_EVENTS = {"start", "complete", "catch", "screen-set", "screen-use", "route-point"}
 TIMING_PHASES = {"main", "approach", "use", "release"}
+ROLE_CUE_PHASES = {"hold", "perform", "receive", "screen", "screen-use", "roll", "pop", "cut", "pass", "handoff", "move", "wait"}
 
 
 def _validate_timing_path(arrows: list[dict]) -> None:
@@ -174,6 +176,62 @@ def _has_timing(value: dict) -> bool:
 def _has_read_coach(value: dict) -> bool:
     lesson = value.get("readCoach")
     return isinstance(lesson, dict) and bool(lesson.get("checkpoints"))
+
+
+def _has_role_cues(value: dict) -> bool:
+    lesson = value.get("roleCues")
+    return isinstance(lesson, dict) and bool(lesson.get("cues"))
+
+
+def _role_cues(value: object, players: list[dict], arrows: list[dict], branches: list[dict]) -> dict:
+    if not isinstance(value, dict) or set(value) != {"version", "cues"} or value.get("version") != 1:
+        raise HTTPException(400, "Role rehearsal cue data is invalid")
+    cues = value.get("cues")
+    if not isinstance(cues, list) or len(cues) > MAX_ROLE_CUES:
+        raise HTTPException(400, f"Role rehearsal may contain at most {MAX_ROLE_CUES} cues")
+    player_ids = {marker["id"] for marker in players}
+    main_ids = {arrow["id"] for arrow in arrows}
+    branch_by_id = {branch["id"]: branch for branch in branches}
+    keys: set[tuple] = set()
+    clean: list[dict] = []
+    for cue in cues:
+        if not isinstance(cue, dict) or set(cue) - {"playerId", "actionId", "phase", "scope", "branchId", "text", "signature"}:
+            raise HTTPException(400, "Role rehearsal cue fields are invalid")
+        player_id, action_id, phase, scope = cue.get("playerId"), cue.get("actionId"), cue.get("phase"), cue.get("scope")
+        text, signature = cue.get("text"), cue.get("signature")
+        if not _integer(player_id) or player_id not in player_ids:
+            raise HTTPException(400, "Role rehearsal cues must reference an offensive player")
+        if not isinstance(action_id, str) or not (action_id == "stationary" or re.fullmatch(r"[a-z0-9-]{1,64}", action_id)):
+            raise HTTPException(400, "Role rehearsal cue action identity is invalid")
+        if phase not in ROLE_CUE_PHASES or scope not in {"shared", "ending"}:
+            raise HTTPException(400, "Role rehearsal cue phase or scope is invalid")
+        if not isinstance(text, str) or not text.strip() or len(text) > 240:
+            raise HTTPException(400, "Role rehearsal cue wording must contain 1-240 characters")
+        if not isinstance(signature, str) or not re.fullmatch(r"[0-9a-f]{8}", signature):
+            raise HTTPException(400, "Role rehearsal cue signature is invalid")
+        branch_id = cue.get("branchId")
+        if action_id == "stationary":
+            if phase != "hold":
+                raise HTTPException(400, "Stationary role cues must describe holding position")
+            if scope == "shared":
+                if branch_id is not None:
+                    raise HTTPException(400, "Shared role cues cannot name an ending")
+            elif not isinstance(branch_id, str) or branch_id not in branch_by_id:
+                raise HTTPException(400, "Ending stationary cue must reference an existing ending")
+        elif scope == "shared":
+            if branch_id is not None or action_id not in main_ids:
+                raise HTTPException(400, "Shared role cues must reference a Main action")
+        else:
+            branch = branch_by_id.get(branch_id) if isinstance(branch_id, str) else None
+            if branch is None or action_id not in {arrow["id"] for arrow in branch["continuation"]}:
+                raise HTTPException(400, "Ending role cues must reference an action in that ending")
+        key = (scope, branch_id or "", player_id, action_id, phase)
+        if key in keys:
+            raise HTTPException(400, "Role rehearsal cue identities must be unique")
+        keys.add(key)
+        clean.append({"playerId": player_id, "actionId": action_id, "phase": phase, "scope": scope,
+            **({"branchId": branch_id} if branch_id is not None else {}), "text": text.strip(), "signature": signature})
+    return {"version": 1, "cues": clean}
 
 
 def _resolved_action_paths(value: dict) -> dict[str, list[dict]]:
@@ -332,7 +390,7 @@ def _read_coach(value: object, playbook_id: str) -> dict:
                 or not valid_settings(session.get("initialSettings")):
             raise HTTPException(400, "Read checkpoint replay session is invalid")
         source = session["initialDrawing"]
-        if not isinstance(source, dict) or "readCoach" in source or "branches" in source:
+        if not isinstance(source, dict) or "readCoach" in source or "roleCues" in source or "branches" in source:
             raise HTTPException(400, "Read checkpoint snapshots must be flattened and cannot contain lessons")
         _document(source, playbook_id=playbook_id, validate_timing_edges=True)
         _point(session.get("hoop"), "Read checkpoint hoop")
@@ -359,7 +417,7 @@ def _read_coach(value: object, playbook_id: str) -> dict:
                 if set(event) - {"kind", "atMs", "elapsedMs", "accumulatorMs", "drawing", "relocation"} or "drawing" not in event:
                     raise HTTPException(400, "Read checkpoint replay edit is invalid")
                 drawing = event["drawing"]
-                if not isinstance(drawing, dict) or "readCoach" in drawing or "branches" in drawing:
+                if not isinstance(drawing, dict) or "readCoach" in drawing or "roleCues" in drawing or "branches" in drawing:
                     raise HTTPException(400, "Read checkpoint replay edits must be flattened")
                 _document(drawing, playbook_id=playbook_id)
                 relocation = event.get("relocation")
@@ -574,6 +632,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         "arrows": arrows,
     }
     raw_branches = payload.get("branches")
+    nested_payload = {key: value for key, value in payload.items() if key != "roleCues"}
     if raw_branches is not None:
         if not isinstance(raw_branches, list) or len(raw_branches) > MAX_BRANCHES:
             raise HTTPException(400, f"A play can have at most {MAX_BRANCHES} endings")
@@ -601,7 +660,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             continuation_value = branch.get("continuation")
             if not isinstance(continuation_value, list) or len(continuation_value) > MAX_ARROWS:
                 raise HTTPException(400, "Ending actions must contain at most 30 actions")
-            continuation = _document({**payload, "arrows": continuation_value, "branches": []}, playbook_id=playbook_id, created_at=created_at, validate_timing_edges=False)["arrows"]
+            continuation = _document({**nested_payload, "arrows": continuation_value, "branches": []}, playbook_id=playbook_id, created_at=created_at, validate_timing_edges=False)["arrows"]
             ordered_main = sorted(enumerate(arrows), key=lambda entry: (entry[1]["sequence"], entry[0]))
             anchor_ids = set(fork_ids)
             anchor_sequences = [arrow["sequence"] for _, arrow in ordered_main if arrow["id"] in anchor_ids]
@@ -618,7 +677,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             resolved = shared + [{**arrow, "sequence": rebased_sequence[arrow["sequence"]]} for _, arrow in ordered_continuation]
             if len(resolved) > MAX_ARROWS:
                 raise HTTPException(400, "Each resolved ending must contain at most 30 actions")
-            _document({**payload, "arrows": resolved, "branches": []}, playbook_id=playbook_id, created_at=created_at)
+            _document({**nested_payload, "arrows": resolved, "branches": []}, playbook_id=playbook_id, created_at=created_at)
             if validate_timing_edges:
                 _validate_timing_path(resolved)
                 shared_ids = {arrow["id"] for arrow in shared}
@@ -631,6 +690,8 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             result["branches"] = branches
     if "readCoach" in payload:
         result["readCoach"] = _read_coach(payload["readCoach"], playbook_id)
+    if "roleCues" in payload:
+        result["roleCues"] = _role_cues(payload["roleCues"], players, arrows, result.get("branches", []))
     if validate_timing_edges:
         _validate_timing_path(result["arrows"])
     return result
@@ -1066,7 +1127,7 @@ def _saved_play_instant(value: object) -> int | float:
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
-    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1"
+    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1"
     try:
         PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
         paths = sorted(PLAYBOOKS_DIR.iterdir())
@@ -1129,6 +1190,8 @@ def create_playbook(payload: Annotated[dict, Depends(_request_document)], create
         raise HTTPException(409, "This server requires a timing-aware client before saving action schedules")
     if _has_read_coach(payload) and "read-coach-v1" not in supported:
         raise HTTPException(409, "This server requires a Read Coach-aware client before saving lessons")
+    if _has_role_cues(payload) and "role-rehearsal-v1" not in supported:
+        raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -1183,6 +1246,13 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(409, "This play contains Read Coach lessons and requires an explicit Read Coach-aware update. The saved play is unchanged")
         if _has_read_coach(payload) and "read-coach-v1" not in supported:
             raise HTTPException(409, "This server requires a Read Coach-aware client before saving lessons")
+        current_has_role_cues = _has_role_cues(current)
+        if current_has_role_cues and ("role-rehearsal-v1" not in supported or "roleCues" not in payload):
+            raise HTTPException(409, "This play contains My Role cue wording and requires an explicit My Role-aware update. The saved play is unchanged")
+        if "roleCues" in payload and "role-rehearsal-v1" not in supported:
+            raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
+        if _has_role_cues(payload) and "role-rehearsal-v1" not in supported:
+            raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:

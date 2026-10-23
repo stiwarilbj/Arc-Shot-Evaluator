@@ -1559,6 +1559,15 @@ export function bindAuthoredActions(source: PlaybookDraft): BoundAction[] {
   return buildActions(structuredClone(source)).actions;
 }
 
+/** Stable, serializable authored roles for focused rehearsal views. */
+export function authoredRoleActions(source: PlaybookDraft) {
+  return buildActions(structuredClone(source)).actions.map((action) => ({
+    actionId: action.arrow.id, sequence: action.sequence, kind: action.arrow.kind,
+    actorId: action.actorId, recipientId: action.recipientId, partnerId: action.partnerId ?? null,
+    startAtMs: action.startTime, durationMs: action.durationMs, arrow: structuredClone(action.arrow),
+  }));
+}
+
 /** Read the planned possession and locations before a move group using the same authored bindings as simulation. */
 export function authoredStateBeforeSequence(source: PlaybookDraft, beforeSequence: number | null) {
   const built = buildActions(structuredClone(source), true);

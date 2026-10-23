@@ -18,6 +18,7 @@ const routes = [
   ],
   ["#playbook", { workspace: "playbook" }],
   ["#playbook/practice", { workspace: "playbook", playbookView: "practice" }],
+  ["#playbook/role/2", { workspace: "playbook", playbookView: "role", rolePlayerId: 2 }],
   ["#counter-lab", { workspace: "counterlab" }],
   ["#jumper", { workspace: "jumper", jumperView: "guess" }],
   ["#jumper/create", { workspace: "jumper", jumperView: "create" }],
@@ -35,6 +36,8 @@ for (const hash of [
   "#jumper/unknown",
   "#%E0%A4%A",
   "#playbook?bad=1",
+  "#playbook/role/0",
+  "#playbook/role/not-a-player",
 ])
   assert.deepEqual(readWorkspaceHash(hash), DEFAULT_LOCATION);
 assert.equal(workspaceHash(readWorkspaceHash("#jumper/guess")), "#jumper");

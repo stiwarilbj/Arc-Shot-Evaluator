@@ -20,8 +20,9 @@ export function useWorkspaceNavigation() {
     if (
       next.workspace === current.current.workspace &&
       next.analysisView === current.current.analysisView &&
-      next.jumperView === current.current.jumperView
-      && next.playbookView === current.current.playbookView
+      next.jumperView === current.current.jumperView &&
+      next.playbookView === current.current.playbookView &&
+      next.rolePlayerId === current.current.rolePlayerId
     )
       return;
     current.current = next;
@@ -49,7 +50,7 @@ export function useWorkspaceNavigation() {
     const titles: Record<AppWorkspace, string> = {
       home: "Basketball tools & games",
       analyzer: "Shot Analyzer",
-      playbook: location.playbookView === "practice" ? "Practice reads · Playbook" : "Playbook",
+      playbook: location.playbookView === "practice" ? "Practice reads · Playbook" : location.playbookView === "role" ? "My Role · Playbook" : "Playbook",
       counterlab: "Counter Lab",
       jumper:
         location.jumperView === "create"
@@ -79,6 +80,6 @@ export function useWorkspaceNavigation() {
     changeAnalysisView: (analysisView: AnalysisView) =>
       navigate({ analysisView }),
     changeJumperView: (jumperView: JumperView) => navigate({ jumperView }),
-    changePlaybookView: (playbookView: PlaybookView) => navigate({ playbookView }),
+    changePlaybookView: (playbookView: PlaybookView, rolePlayerId: number | null = null) => navigate({ playbookView, rolePlayerId }),
   };
 }

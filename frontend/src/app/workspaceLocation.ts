@@ -6,12 +6,13 @@ export type AppWorkspace =
   | "jumper";
 export type AnalysisView = "overview" | "shot" | "tracking";
 export type JumperView = "guess" | "create" | "clips";
-export type PlaybookView = "edit" | "practice";
+export type PlaybookView = "edit" | "practice" | "role";
 export type WorkspaceLocation = {
   workspace: AppWorkspace;
   analysisView: AnalysisView;
   jumperView: JumperView;
   playbookView: PlaybookView;
+  rolePlayerId: number | null;
 };
 
 export const DEFAULT_LOCATION: WorkspaceLocation = {
@@ -19,6 +20,7 @@ export const DEFAULT_LOCATION: WorkspaceLocation = {
   analysisView: "shot",
   jumperView: "guess",
   playbookView: "edit",
+  rolePlayerId: null,
 };
 
 // Keep inactive views in memory while the fragment describes the visible view.
@@ -32,7 +34,7 @@ export function readWorkspaceHash(
     case "#playbook":
       return { ...current, workspace: "playbook", playbookView: "edit" };
     case "#playbook/practice":
-      return { ...current, workspace: "playbook", playbookView: "practice" };
+      return { ...current, workspace: "playbook", playbookView: "practice", rolePlayerId: null };
     case "#counter-lab":
       return { ...current, workspace: "counterlab" };
     case "#jumper":
@@ -46,14 +48,20 @@ export function readWorkspaceHash(
       return { ...current, workspace: "analyzer", analysisView: "overview" };
     case "#shot-analyzer/tracking":
       return { ...current, workspace: "analyzer", analysisView: "tracking" };
-    default:
+    default: {
+      const roleMatch = /^#playbook\/role\/(\d+)$/.exec(hash);
+      if (roleMatch) {
+        const rolePlayerId = Number(roleMatch[1]);
+        if (Number.isSafeInteger(rolePlayerId) && rolePlayerId > 0) return { ...current, workspace: "playbook", playbookView: "role", rolePlayerId };
+      }
       return { ...current, workspace: "home" };
+    }
   }
 }
 
 export function workspaceHash(value: WorkspaceLocation): string {
   if (value.workspace === "home") return "#home";
-  if (value.workspace === "playbook") return value.playbookView === "practice" ? "#playbook/practice" : "#playbook";
+  if (value.workspace === "playbook") return value.playbookView === "practice" ? "#playbook/practice" : value.playbookView === "role" && value.rolePlayerId ? `#playbook/role/${value.rolePlayerId}` : "#playbook";
   if (value.workspace === "counterlab") return "#counter-lab";
   if (value.workspace === "jumper") {
     return value.jumperView === "guess"
