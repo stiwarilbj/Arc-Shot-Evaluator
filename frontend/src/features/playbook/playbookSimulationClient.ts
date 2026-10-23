@@ -1,5 +1,5 @@
-import { parseSimulationResponse, type SimulationCommand, type SimulationResponse, type SimulationView, type SimulationRelocation } from "./playbookSimulationProtocol.ts";
-import type { PlaybookDraft, SimulationSettings } from "./types.ts";
+import { parseSimulationResponse, type SimulationCommand, type SimulationResponse, type SimulationView, type SimulationRelocation, type SimulationCapture } from "./playbookSimulationProtocol.ts";
+import type { PlaybookDraft, ReadCoachCheckpoint, SimulationSettings } from "./types.ts";
 
 type CommandBody = SimulationCommand extends infer C ? C extends SimulationCommand ? Omit<C, "sessionId" | "revision" | "requestId"> : never : never;
 type WorkerPort = Pick<Worker, "postMessage" | "terminate" | "addEventListener" | "removeEventListener">;
@@ -11,6 +11,8 @@ export const MAX_PENDING_ADVANCE_MS = 100;
  * and adjacent replaceable controls coalesced before structured cloning. */
 export function createPlaybookSimulationClient(options: {
   sessionId: string; onState: (view: SimulationView) => void; onFailure: (message: string) => void;
+  onCapture?: (capture: SimulationCapture) => void;
+  onCommandError?: (type: SimulationCommand["type"], message: string) => void;
   createWorker?: () => WorkerPort; timeoutMs?: number;
 }) {
   const worker = (options.createWorker ?? (() => new Worker(new URL("./playbookSimulation.worker.ts", import.meta.url), { type: "module" })))();
@@ -48,10 +50,25 @@ export function createPlaybookSimulationClient(options: {
     let response: SimulationResponse;
     try { response = parseSimulationResponse(raw); } catch { fail("Playback returned invalid data. Your drawing and last frame are intact. Press Play to restart"); return; }
     const current = response.revision === revision;
+    const completedCommandType = inFlight.type;
     inFlight = null; clearTimeout(timeout);
     // A failed superseded operation still makes future execution unsafe.
-    if (response.type === "error") { fail(`${response.message} Your drawing and last frame are intact. Press Play to restart`); return; }
+    if (response.type === "error") {
+      const commandType = completedCommandType;
+      if (current && commandType === "capture") {
+        wantedPlaying = false; debt = 0;
+        options.onCommandError?.(commandType, response.message);
+        pump();
+        return;
+      }
+      fail(`${response.message} Your drawing and last frame are intact. Press Play to restart`); return;
+    }
     if (current) {
+      if (response.type === "capture") {
+        options.onCapture?.(response.capture);
+        pump();
+        return;
+      }
       wantedPlaying = response.view.playing;
       if (!wantedPlaying) debt = 0;
       options.onState(response.view);
@@ -75,6 +92,9 @@ export function createPlaybookSimulationClient(options: {
     settings(settings: SimulationSettings) { control({ type: "settings", settings }); },
     edit(drawing: PlaybookDraft, relocation?: SimulationRelocation) { wantedPlaying = false; debt = 0; control({ type: "edit", drawing, relocation }); },
     seek(timeMs: number) { wantedPlaying = false; debt = 0; control({ type: "seek", timeMs }); },
+    capture() { wantedPlaying = false; debt = 0; control({ type: "capture" }); },
+    startReadOpening(checkpoint: ReadCoachCheckpoint) { wantedPlaying = true; control({ type: "read-opening", checkpoint }); },
+    startReadChoice(checkpoint: ReadCoachCheckpoint, choiceId: string) { wantedPlaying = true; control({ type: "read-choice", checkpoint, choiceId }); },
     advance(deltaMs: number) { if (!disposed && wantedPlaying && Number.isFinite(deltaMs) && deltaMs > 0) { debt = Math.min(MAX_PENDING_ADVANCE_MS, debt + Math.min(50, deltaMs)); pump(); } },
     dispose,
   };

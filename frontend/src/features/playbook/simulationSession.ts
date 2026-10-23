@@ -1,7 +1,7 @@
 import { advanceSimulationState, cloneSimulationExecution, createSimulationRun, editPausedSimulationMarker, getSimulationFrame, rebasePausedSimulation, restoreSimulationExecution, setSimulationRunSettings, type SimulationRun } from "./simulation.ts";
 import { validatePlaybookDocument } from "./documentValidation.ts";
 import { SIMULATION_ENGINE_VERSION } from "./simulationVersion.ts";
-import type { CourtPoint, PlaybookDraft, SimulationSettings } from "./types.ts";
+import type { CourtPoint, PlaybookDraft, ReadCoachSessionEvent, ReadCoachSessionRecord, SimulationSettings } from "./types.ts";
 
 const CHECKPOINT_INTERVAL_MS = 500;
 export const MAX_SIMULATION_CHECKPOINTS = 24;
@@ -9,22 +9,8 @@ export const MAX_SIMULATION_CHECKPOINT_BYTES = 16 * 1024 * 1024;
 const EPSILON = 1e-7;
 type Relocation = { type: "player" | "defender" | "ball"; id: number | string; point: CourtPoint };
 type EventTime = { atMs: number; elapsedMs: number; accumulatorMs: number };
-export type SimulationSessionEvent = EventTime & (
-  { kind: "advance"; deltaMs: number; endMs: number }
-  | { kind: "settings"; settings: SimulationSettings }
-  | { kind: "edit"; drawing: PlaybookDraft; relocation?: Relocation }
-);
-export type SimulationSessionRecord = {
-  version: 1;
-  engineVersion: number;
-  seed: number;
-  initialDrawing: PlaybookDraft;
-  initialSettings: SimulationSettings;
-  resolvedDefenseScheme: SimulationRun["activeDefenseScheme"];
-  hoop: CourtPoint;
-  positionMs: number;
-  events: SimulationSessionEvent[];
-};
+export type SimulationSessionEvent = ReadCoachSessionEvent;
+export type SimulationSessionRecord = ReadCoachSessionRecord;
 type Checkpoint = { cursor: number; atMs: number; bytes: number; state: SimulationRun };
 type Session = { record: SimulationSessionRecord; endMs: number; checkpoints: Checkpoint[]; bytes: number; eventCount: number; playbackBase?: Checkpoint };
 // Execution snapshots stay outside the run, so cloning a checkpoint never
@@ -168,6 +154,28 @@ export function captureSimulationSession(run: SimulationRun): SimulationSessionR
   const session = sessions.get(run);
   if (!session) throw new Error("This simulation was not started as a recorded session");
   return structuredClone(session.record);
+}
+
+/** Capture only the recorded history through the current playhead. Read Coach
+ * snapshots must not contain future events, while ordinary session exports
+ * retain the complete journal for deterministic seeking. */
+export function captureSimulationSessionPrefix(run: SimulationRun): SimulationSessionRecord {
+  const session = sessions.get(run);
+  if (!session) throw new Error("This simulation was not started as a recorded session");
+  const record = structuredClone(session.record);
+  const position = session.record.positionMs;
+  const events: SimulationSessionEvent[] = [];
+  for (const event of record.events) {
+    if (event.atMs > position + EPSILON) break;
+    if (event.kind === "advance" && event.endMs > position + EPSILON) {
+      if (position > event.atMs + EPSILON) events.push({ ...event, deltaMs: position - event.atMs,
+        endMs: position, elapsedMs: run.elapsedMs, accumulatorMs: run.accumulatorMs });
+      break;
+    }
+    events.push(event);
+  }
+  record.events = events;
+  return record;
 }
 
 export function seekSimulationSession(run: SimulationRun, timeMs: number) {

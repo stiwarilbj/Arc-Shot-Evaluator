@@ -8,7 +8,9 @@ type RevisionFields = { plays: PlaybookDocument[]; creations: CreationReceipt[];
 export type RevisionLibrary = RevisionFields & { version: 2; migration: { source: LegacyLibrary; checksum: string } };
 export type BranchAwareLibrary = RevisionFields & { version: 3; migration: { source: RevisionLibrary; checksum: string } };
 export type TimingAwareLibrary = RevisionFields & { version: 4; migration: { source: BranchAwareLibrary; checksum: string } };
-export type HostedLibrary = LegacyLibrary | RevisionLibrary | BranchAwareLibrary | TimingAwareLibrary;
+export type ReadCoachAwareLibrary = RevisionFields & { version: 5; migration: { source: TimingAwareLibrary; checksum: string } };
+export type HostedLibrary = LegacyLibrary | RevisionLibrary | BranchAwareLibrary | TimingAwareLibrary | ReadCoachAwareLibrary;
+type RevisionedLibrary = Exclude<HostedLibrary, LegacyLibrary>;
 
 function validateUniquePlays(plays: unknown[]): void {
   const ids = new Set<string>();
@@ -23,7 +25,7 @@ export function validateHostedLibrary(value: unknown): HostedLibrary {
   try {
     if (Array.isArray(value)) { validateUniquePlays(value); return { version: 1, plays: value, creations: [] }; }
     const library = value as HostedLibrary;
-    if (!library || ![1, 2, 3, 4].includes(library.version) || !Array.isArray(library.plays) || !Array.isArray(library.creations)) throw new Error();
+    if (!library || ![1, 2, 3, 4, 5].includes(library.version) || !Array.isArray(library.plays) || !Array.isArray(library.creations)) throw new Error();
     validateUniquePlays(library.plays);
     const ids = new Set<string>();
     for (const receipt of library.creations) {
@@ -32,12 +34,14 @@ export function validateHostedLibrary(value: unknown): HostedLibrary {
       if (playbookContentKey(receipt.result) !== receipt.request) throw new Error();
       ids.add(receipt.id);
     }
-    if (library.version === 2 || library.version === 3 || library.version === 4) {
-      if (!Array.isArray(library.histories) || !library.migration || !validChecksum(library.checksum)) throw new Error();
+    if (library.version !== 1) {
+      const revisioned = library as RevisionedLibrary;
+      if (!Array.isArray(revisioned.histories) || !revisioned.migration || !validChecksum(revisioned.checksum)) throw new Error();
     }
     if (library.version === 2 && validateHostedLibrary(library.migration.source).version !== 1) throw new Error();
     if (library.version === 3 && validateHostedLibrary(library.migration.source).version !== 2) throw new Error();
     if (library.version === 4 && validateHostedLibrary(library.migration.source).version !== 3) throw new Error();
+    if (library.version === 5 && validateHostedLibrary(library.migration.source).version !== 4) throw new Error();
     return library;
   } catch { throw new Error("Saved plays could not be read. Your stored data has been preserved"); }
 }
@@ -83,6 +87,9 @@ async function sealBranchAwareLibrary(library: Omit<BranchAwareLibrary, "checksu
 async function sealTimingAwareLibrary(library: Omit<TimingAwareLibrary, "checksum">): Promise<TimingAwareLibrary> {
   return { ...library, checksum: await contentChecksum(library) };
 }
+async function sealReadCoachAwareLibrary(library: Omit<ReadCoachAwareLibrary, "checksum">): Promise<ReadCoachAwareLibrary> {
+  return { ...library, checksum: await contentChecksum(library) };
+}
 async function upgradeToBranchAware(library: RevisionLibrary): Promise<BranchAwareLibrary> {
   return sealBranchAwareLibrary({ version: 3, plays: library.plays, creations: library.creations, histories: library.histories,
     migration: { source: library, checksum: await contentChecksum(library) },
@@ -95,14 +102,26 @@ async function upgradeToTimingAware(library: BranchAwareLibrary): Promise<Timing
     ...(library.preservedSources ? { preservedSources: library.preservedSources } : {}),
     ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}) });
 }
+async function upgradeToReadCoachAware(library: TimingAwareLibrary): Promise<ReadCoachAwareLibrary> {
+  return sealReadCoachAwareLibrary({ version: 5, plays: library.plays, creations: library.creations, histories: library.histories,
+    migration: { source: library, checksum: await contentChecksum(library) },
+    ...(library.preservedSources ? { preservedSources: library.preservedSources } : {}),
+    ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}) });
+}
 export async function upgradeHostedLibrary(library: HostedLibrary): Promise<Exclude<HostedLibrary, LegacyLibrary>> {
   const hasTiming = (plays: PlaybookDocument[]) => plays.some((play) => [...play.arrows, ...(play.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined));
-  if (library.version === 4) return library;
-  if (library.version === 3) return hasTiming(library.plays) ? upgradeToTimingAware(library) : library;
+  const hasReadCoach = (plays: PlaybookDocument[]) => plays.some((play) => Boolean(play.readCoach?.checkpoints.length));
+  if (library.version === 5) return library;
+  if (library.version === 4) return hasReadCoach(library.plays) ? upgradeToReadCoachAware(library) : library;
+  if (library.version === 3) {
+    const timed = hasTiming(library.plays) || hasReadCoach(library.plays) ? await upgradeToTimingAware(library) : null;
+    const current = timed ?? library;
+    return hasReadCoach(library.plays) && current.version === 4 ? upgradeToReadCoachAware(current) : current;
+  }
   if (library.version === 2) {
-    let upgraded: BranchAwareLibrary | RevisionLibrary = library.plays.some((play) => play.branches?.length) || hasTiming(library.plays) ? await upgradeToBranchAware(library) : library;
-    if (upgraded.version === 3 && hasTiming(upgraded.plays)) return upgradeToTimingAware(upgraded);
-    return upgraded;
+    let upgraded: RevisionedLibrary = library.plays.some((play) => play.branches?.length) || hasTiming(library.plays) || hasReadCoach(library.plays) ? await upgradeToBranchAware(library) : library;
+    if (upgraded.version === 3 && (hasTiming(upgraded.plays) || hasReadCoach(upgraded.plays))) upgraded = await upgradeToTimingAware(upgraded);
+    return hasReadCoach(library.plays) && upgraded.version === 4 ? upgradeToReadCoachAware(upgraded) : upgraded;
   }
   const histories: PlayHistory[] = [];
   // Migration and the first change are committed together; the validated source
@@ -115,9 +134,9 @@ export async function upgradeHostedLibrary(library: HostedLibrary): Promise<Excl
   }
   const source = library;
   const upgraded = await sealHostedLibrary({ version: 2, plays: source.plays, creations: source.creations, histories, migration: { source, checksum: await contentChecksum(source) } });
-  let branchAware: BranchAwareLibrary | RevisionLibrary = upgraded.plays.some((play) => play.branches?.length) || hasTiming(upgraded.plays) ? await upgradeToBranchAware(upgraded) : upgraded;
-  if (branchAware.version === 3 && hasTiming(branchAware.plays)) return upgradeToTimingAware(branchAware);
-  return branchAware;
+  let branchAware: RevisionedLibrary = upgraded.plays.some((play) => play.branches?.length) || hasTiming(upgraded.plays) || hasReadCoach(upgraded.plays) ? await upgradeToBranchAware(upgraded) : upgraded;
+  if (branchAware.version === 3 && (hasTiming(branchAware.plays) || hasReadCoach(branchAware.plays))) branchAware = await upgradeToTimingAware(branchAware);
+  return hasReadCoach(library.plays) && branchAware.version === 4 ? upgradeToReadCoachAware(branchAware) : branchAware;
 }
 export async function reviseHostedLibrary(library: Exclude<HostedLibrary, LegacyLibrary>, id: string, document: PlaybookDocument | null, creations = library.creations): Promise<Exclude<HostedLibrary, LegacyLibrary>> {
   const current = library.histories.find(history => history.id === id) ?? { id, anchor: null, entries: [] };
@@ -129,15 +148,23 @@ export async function reviseHostedLibrary(library: Exclude<HostedLibrary, Legacy
     ...(library.preservedSources ? { preservedSources: library.preservedSources } : {}),
     ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}),
   };
-  if (library.version === 4) return sealTimingAwareLibrary({ version: 4, plays, creations, histories, migration: library.migration, ...extras });
+  if (library.version === 5) return sealReadCoachAwareLibrary({ version: 5, plays, creations, histories, migration: library.migration, ...extras });
+  if (library.version === 4) return plays.some((play) => Boolean(play.readCoach?.checkpoints.length))
+    ? sealReadCoachAwareLibrary({ version: 5, plays, creations, histories, migration: { source: library, checksum: await contentChecksum(library) }, ...extras })
+    : sealTimingAwareLibrary({ version: 4, plays, creations, histories, migration: library.migration, ...extras });
   if (library.version === 3) {
     const revised = await sealBranchAwareLibrary({ version: 3, plays, creations, histories, migration: library.migration, ...extras });
-    return plays.some((play) => [...play.arrows, ...(play.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined)) ? upgradeToTimingAware(revised) : revised;
+    const timed = plays.some((play) => [...play.arrows, ...(play.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined));
+    const readCoach = plays.some((play) => Boolean(play.readCoach?.checkpoints.length));
+    const next = timed || readCoach ? await upgradeToTimingAware(revised) : revised;
+    return readCoach && next.version === 4 ? upgradeToReadCoachAware(next) : next;
   }
   const revised = await sealHostedLibrary({ version: 2, plays, creations, histories, migration: library.migration, ...extras });
-  let branchAware: BranchAwareLibrary | RevisionLibrary = plays.some((play) => play.branches?.length) || plays.some((play) => [...play.arrows, ...(play.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined)) ? await upgradeToBranchAware(revised) : revised;
-  if (branchAware.version === 3 && plays.some((play) => [...play.arrows, ...(play.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined))) return upgradeToTimingAware(branchAware);
-  return branchAware;
+  const hasTiming = plays.some((play) => [...play.arrows, ...(play.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined));
+  const hasReadCoach = plays.some((play) => Boolean(play.readCoach?.checkpoints.length));
+  let branchAware: RevisionedLibrary = plays.some((play) => play.branches?.length) || hasTiming || hasReadCoach ? await upgradeToBranchAware(revised) : revised;
+  if (branchAware.version === 3 && (hasTiming || hasReadCoach)) branchAware = await upgradeToTimingAware(branchAware);
+  return hasReadCoach && branchAware.version === 4 ? upgradeToReadCoachAware(branchAware) : branchAware;
 }
 /** Recovery never trusts a damaged head or silently selects an older drawing.
  * Independently checksummed revisions can only be copied to a fresh identity. */
@@ -145,7 +172,7 @@ export async function inspectHostedRecovery(value: unknown, id: string): Promise
   const library = value as RevisionLibrary;
   let verified = false;
   try { validateHostedLibrary(value); await verifyHostedLibrary(library); verified = true; } catch (error) { if (error instanceof HistoryVerificationUnavailableError) throw error; /* Preserve every damaged record in storage. */ }
-  if (library?.version !== 2 && library?.version !== 3 && library?.version !== 4 || !Array.isArray(library.histories)) throw new Error(HISTORY_ERROR);
+  if (library?.version !== 2 && library?.version !== 3 && library?.version !== 4 && library?.version !== 5 || !Array.isArray(library.histories)) throw new Error(HISTORY_ERROR);
   const history = library.histories.find(item => item?.id === id);
   if (!history || !Array.isArray(history.entries)) throw new Error("Saved-play history not found");
   if (history.entries.length > 32) throw new Error(HISTORY_ERROR);

@@ -10,6 +10,7 @@ import { hasTimingPlan, moveTimingGroup, projectPointToRoute, resizeActionMinimu
 import type { PlaybookTimingWait } from "./types";
 import { PocketActionsPanel, type PocketPlacementRequest } from "./PocketActionsPanel.tsx";
 import { buildPocketInsertion } from "./pocketActions.ts";
+import { ReadCoachAuthorPanel, ReadCoachPracticeView, readCoachSnapshotFrame } from "./ReadCoachViews.tsx";
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDownToLine,
@@ -17,6 +18,7 @@ import {
   BrainCircuit,
   Check,
   Circle,
+  CircleHelp,
   Copy,
   CornerDownRight,
   Download,
@@ -54,7 +56,7 @@ import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, SimulationSettings } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, ReadCoachCheckpoint, SimulationSettings } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -69,7 +71,7 @@ import {
 } from "./simulation";
 import type { SimulationFrame } from "./simulation";
 import { createPlaybookSimulationClient, type PlaybookSimulationClient } from "./playbookSimulationClient";
-import type { SimulationView } from "./playbookSimulationProtocol";
+import type { SimulationCapture, SimulationView } from "./playbookSimulationProtocol";
 
 type Selection = { type: "player" | "defender" | "ball" | "arrow"; id: number | string } | null;
 type PointerSample = { clientX: number; clientY: number; pointerId: number };
@@ -292,11 +294,13 @@ const EMPTY_SIMULATION_FRAME: SimulationFrame = {
   shotTarget: null,
 };
 
-export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay, active = true }: {
+export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay, active = true, view = "edit", onViewChange }: {
   onTestInCounterLab?: (play: PlaybookDraft) => void;
   onDraftChange?: (play: PlaybookDraft) => void;
   requestedPlay?: { requestId: string; play: PlaybookDraft } | null;
   active?: boolean;
+  view?: "edit" | "practice";
+  onViewChange?: (view: "edit" | "practice") => void;
 }) {
   const arrowVisibility = useArrowVisibility();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -361,6 +365,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const simulationFrameRef = useRef<number | null>(null);
   const simulationClientRef = useRef<PlaybookSimulationClient | null>(null);
   const [simulationView, setSimulationView] = useState<SimulationView | null>(null);
+  const [readCoachCapture, setReadCoachCapture] = useState<SimulationCapture | null>(null);
+  const [readCoachEditing, setReadCoachEditing] = useState<ReadCoachCheckpoint | null>(null);
+  const previewClientRef = useRef<PlaybookSimulationClient | null>(null);
+  const readCoachPreviewFrameRef = useRef<number | null>(null);
+  const previewCancelRef = useRef<(() => void) | null>(null);
   const lastSimulationViewRef = useRef<SimulationView | null>(null);
   const simulationDrawingRef = useRef<PlaybookDraft | null>(null);
   applyPointerRef.current = applyPointerPosition;
@@ -652,6 +661,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   useEffect(() => {
     if (!active && simulationPlaying) pauseSimulation();
   }, [active, simulationPlaying]);
+  useEffect(() => {
+    if (!active || view === "practice") pauseSimulation();
+  }, [active, view]);
+  useEffect(() => () => {
+    previewCancelRef.current?.();
+    previewClientRef.current?.dispose();
+  }, []);
 
   useEffect(() => {
     if (!dirty) return;
@@ -696,6 +712,94 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     simulationClientRef.current.seek(timeMs);
     setSimulationPlaying(false);
     setError(null);
+  }
+
+  function captureReadCheckpoint(existing?: ReadCoachCheckpoint) {
+    const client = simulationClientRef.current;
+    if (!client) {
+      setError("Start a simulation, then pause while a player holds the ball. You can seek past a catch or back before a shot and try again");
+      return;
+    }
+    setReadCoachEditing(existing ?? null);
+    setReadCoachCapture(null);
+    setError(null);
+    setSimulationPlaying(false);
+    client.capture();
+  }
+
+  function openSavedReadCheckpoint(checkpoint: ReadCoachCheckpoint) {
+    setReadCoachEditing(checkpoint);
+    setReadCoachCapture({ session: checkpoint.session, frame: readCoachSnapshotFrame(checkpoint.snapshot) });
+  }
+
+  function saveReadCheckpoint(checkpoint: ReadCoachCheckpoint, previousId?: string) {
+    const next = clonePlaybook(draft);
+    const current = next.readCoach?.checkpoints ?? [];
+    const checkpoints = previousId
+      ? current.map((item) => item.id === previousId ? checkpoint : item)
+      : [...current, checkpoint];
+    commit({ ...next, readCoach: { version: 1, checkpoints } });
+    setReadCoachCapture(null); setReadCoachEditing(null);
+  }
+
+  function deleteReadCheckpoint(checkpointId: string) {
+    const next = clonePlaybook(draft);
+    const checkpoints = (next.readCoach?.checkpoints ?? []).filter((item) => item.id !== checkpointId);
+    const updated = { ...next };
+    if (checkpoints.length) updated.readCoach = { version: 1, checkpoints };
+    else delete updated.readCoach;
+    commit(updated);
+  }
+
+  function previewReadChoice(checkpoint: ReadCoachCheckpoint, choiceId: string, onFrame: (frame: SimulationFrame) => void) {
+    return new Promise<void>((resolve, reject) => {
+      previewCancelRef.current?.();
+      previewClientRef.current?.dispose();
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (readCoachPreviewFrameRef.current != null) window.cancelAnimationFrame(readCoachPreviewFrameRef.current);
+        readCoachPreviewFrameRef.current = null;
+        previewClientRef.current?.dispose(); previewClientRef.current = null;
+        previewCancelRef.current = null;
+        if (error) reject(error); else resolve();
+      };
+      previewCancelRef.current = () => finish(new Error("Choice preview was cancelled · the lesson is unchanged"));
+      try {
+        const selectedChoice = checkpoint.choices.find((choice) => choice.id === choiceId);
+        let finalFrame: SimulationFrame | null = null;
+        const client = createPlaybookSimulationClient({ sessionId: crypto.randomUUID(),
+          onState: (simulation) => {
+            if (previewClientRef.current !== client) return;
+            finalFrame = simulation.frame;
+            onFrame(simulation.frame);
+            if (!simulation.playing) {
+              const diagnostics = new Map((finalFrame.execution ?? []).map((action) => [action.actionId, action]));
+              const failed = (selectedChoice?.arrows ?? []).filter((arrow) => diagnostics.get(arrow.id)?.phase !== "completed");
+              if (failed.length) {
+                const detail = failed.map((arrow) => {
+                  const status = diagnostics.get(arrow.id);
+                  return status?.notice || `${arrow.kind.replaceAll("-", " ")} is ${status?.phase ?? "not bound"}`;
+                }).join(" · ");
+                finish(new Error(`This continuation did not execute cleanly: ${detail}. Adjust the route or participants and preview it again`));
+              } else finish();
+            }
+          },
+          onFailure: (message) => finish(new Error(message)),
+        });
+        previewClientRef.current = client;
+        client.startReadChoice(checkpoint, choiceId);
+        let previous = performance.now();
+        const tick = (now: number) => {
+          if (settled || previewClientRef.current !== client) return;
+          if (!active || document.hidden) { finish(new Error("Choice preview paused because Playbook is hidden")); return; }
+          client.advance(Math.max(0, Math.min(50, now - previous))); previous = now;
+          readCoachPreviewFrameRef.current = window.requestAnimationFrame(tick);
+        };
+        readCoachPreviewFrameRef.current = window.requestAnimationFrame(tick);
+      } catch (cause) { finish(cause instanceof Error ? cause : new Error("Choice preview could not start")); }
+    });
   }
 
   // Validate the drawing synchronously. The worker stages compatible execution
@@ -968,6 +1072,16 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           setSimulationPlaying(view.playing);
           simulationSettingsRef.current = view.settings;
           setSimulationSettings(view.settings);
+        },
+        onCapture: (capture) => {
+          if (simulationClientRef.current !== client) return;
+          setReadCoachCapture(capture);
+          setSimulationFrameState(capture.frame);
+          setSimulationElapsed(capture.session.positionMs);
+        },
+        onCommandError: (_type, message) => {
+          setSimulationPlaying(false);
+          setError(message);
         },
         onFailure: (message) => {
           if (simulationClientRef.current !== client) return;
@@ -1590,6 +1704,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     : "No possession running";
   const titleStatus = status === "saving" ? "Saving…" : status === "saved" ? `Saved · ${activeDraft.arrows.length} actions` : status === "error" ? "Save failed" : dirty ? "Unsaved changes" : "Ready to edit";
 
+  if (view === "practice") return <ReadCoachPracticeView lesson={draft.readCoach} visibility={arrowVisibility} onExit={() => onViewChange?.("edit")} active={active} />;
+
   return (
     <div ref={rootRef} className="playbook-page" tabIndex={-1} onKeyDown={onKeyDown} onBlur={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) interruptPointerInteraction();
@@ -1611,6 +1727,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           <span className={`play-save-status play-status-${status}`}><i />{titleStatus}</span>
         </div>
         <div className="playbook-header-actions">
+          <button type="button" className="button button-outline" onClick={() => onViewChange?.("practice")}><BrainCircuit size={16} />Practice reads{draft.readCoach?.checkpoints.length ? ` · ${draft.readCoach.checkpoints.length}` : ""}</button>
           <button type="button" className="button button-subtle" onClick={() => setSavedOpen(true)}><FolderOpen size={16} />Saved plays</button>
           <button type="button" className="button button-outline" onClick={exportPng}><Download size={16} />Export PNG</button>
           {onTestInCounterLab ? <button type="button" className="button button-outline" onClick={() => onTestInCounterLab(flattenPlaybookPath(draft, activeBranchId, activePath.branch?.label))}><ShieldCheck size={16} />Test in Counter Lab</button> : null}
@@ -1635,6 +1752,14 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               {!activeBranchId ? <button type="button" className="branch-create-action" disabled={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES} title={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES ? "A play can have at most eight endings" : `Create a branch before Move ${arrowSequence(arrow, index)}`} onClick={() => createBranch(arrow.id)}>Create a branch here</button> : null}
             </div>;
           })}</div>{activePath.branch && !activePath.branch.continuation.length ? <p>No ending actions yet</p> : !activeDraft.arrows.length ? <p>No actions drawn yet</p> : <p>Select an action to edit it, even when its arrow is hidden</p>}</details>
+          <section className="read-coach-library" aria-label="Read Coach checkpoints">
+            <header><strong>Read Coach</strong><span>{draft.readCoach?.checkpoints.length ?? 0}</span></header>
+            {(draft.readCoach?.checkpoints ?? []).map((checkpoint, index) => <article className="read-coach-library-item" key={checkpoint.id}>
+              <strong>{index + 1}. {checkpoint.question}</strong>
+              <div><button type="button" onClick={() => openSavedReadCheckpoint(checkpoint)}>Edit lesson</button><button type="button" onClick={() => captureReadCheckpoint(checkpoint)}>Replace captured situation</button><button type="button" aria-label={`Delete checkpoint ${index + 1}`} onClick={() => deleteReadCheckpoint(checkpoint.id)}>Delete</button></div>
+            </article>)}
+            {!(draft.readCoach?.checkpoints.length) ? <p>Pause a live play while the ball is held to teach its next read</p> : null}
+          </section>
           <button type="button" className={`preset-button ${draft.defenders_visible ? "is-active" : ""}`} onClick={() => {
             const next = cloneActiveDraft();
             next.defenders_visible = !next.defenders_visible;
@@ -1802,6 +1927,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             {simulationActive && simulationFrame.defenseSchemeNotice ? <span className="simulation-scheme-notice" role="status">{simulationFrame.defenseSchemeNotice}</span> : null}
             <span className="simulation-quality" role="status">Off-ball quality <strong>{offBallQualityDisplay}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
+            <button type="button" className="button button-outline read-coach-capture-button" disabled={!simulationClientRef.current} title={!simulationClientRef.current ? "Start a simulation, then pause while the ball is held" : "Capture the acknowledged fixed-step court state"} onClick={() => captureReadCheckpoint()}><CircleHelp size={14} />Create a read checkpoint</button>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
             {simulationSession ? <label className="simulation-replay-control"><span>Replay</span><input aria-label="Playbook replay time" type="range" min={0} max={simulationSession.recordedUntilMs || 1} step="any" disabled={simulationSession.recordedUntilMs === 0 || simulationInterrupted} value={simulationSession.positionMs} aria-valuetext={`${(simulationSession.positionMs / 1000).toFixed(2)} seconds of ${(simulationSession.recordedUntilMs / 1000).toFixed(2)} recorded`} onChange={(event) => seekSimulation(Number(event.currentTarget.value))} onKeyDown={(event) => {
               const offsets: Record<string, number> = { ArrowLeft: -1000 / 30, ArrowDown: -1000 / 30, ArrowRight: 1000 / 30, ArrowUp: 1000 / 30, PageDown: -1000, PageUp: 1000 };
@@ -1818,6 +1944,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               {!timingActive ? <label className="sequence-editor"><span>Min. seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => { const value = event.currentTarget.value; setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: value })); }} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label> : null}
             </> : null}
           </div>
+        {readCoachCapture ? <ReadCoachAuthorPanel session={readCoachCapture.session} frame={readCoachCapture.frame} base={draft} existing={readCoachEditing ?? undefined} visibility={arrowVisibility} onCancel={() => { previewCancelRef.current?.(); setReadCoachCapture(null); setReadCoachEditing(null); }} onSave={saveReadCheckpoint} onPreview={previewReadChoice} /> : null}
           {settingsOpen ? <div id="simulation-settings" className="simulation-settings-panel" role="group" aria-label="Simulation settings">
             <div className="simulation-setting"><span>Offense off-ball</span><ArcSelect ariaLabel="Offense off-ball style" className="arc-select--compact playbook-offense-select" value={simulationSettings.offenseOffBall} options={[{ value: "read-react", label: "Read & react" }, { value: "cuts", label: "Structured cuts" }, { value: "spacing", label: "Spacing only" }, { value: "off", label: "Off" }]} onValueChange={(value) => changeSimulationSetting("offenseOffBall", value as SimulationSettings["offenseOffBall"])} /></div>
             <div className="simulation-setting simulation-defense-setting"><span>Coverage & emphasis</span><ArcSelect ariaLabel="Coverage and defensive emphasis" className="arc-select--compact playbook-defense-select" value={simulationSettings.defenseStrategy} options={[

@@ -30,6 +30,7 @@ MAX_PLAYERS = 5
 MAX_DEFENDERS = 5
 MAX_ARROWS = 30
 MAX_BRANCHES = 8
+MAX_READ_CHECKPOINTS = 8
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
 MAX_JSON_DEPTH = 32
@@ -43,6 +44,9 @@ PLAYBOOK_LOCK_TIMEOUT_SECONDS = 2.0
 PLAYBOOK_LOCK_POLL_SECONDS = 0.025
 ALLOWED_ARROW_KINDS = {"movement", "pass", "screen", "slip-screen", "handoff", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "backdoor-cut"}
 ALLOWED_ARROW_PATHS = {"straight", "curve"}
+ALLOWED_DEFENSE_SCHEMES = {"auto", "man-to-man", "pack-line", "zone-2-3", "zone-3-2", "zone-1-3-1", "zone-2-1-2", "zone-1-2-2", "matchup-1-1-3", "box-and-one", "triangle-and-two"}
+ALLOWED_DEFENSE_STRATEGIES = {"off", "contain", "help", "switch", "trap-rotate", "fight-over", "go-under", "drop", "hedge", "deny-lanes", "protect-paint"}
+ALLOWED_OFFBALL_STYLES = {"off", "spacing", "cuts", "read-react"}
 ALLOWED_PLAYER_BADGES = {
     "playmaker", "off-dribble-creator", "deep-range", "catch-and-shoot", "slasher",
     "rim-finisher", "cutter", "screen-setter", "roll-threat", "post-scorer",
@@ -167,6 +171,11 @@ def _has_timing(value: dict) -> bool:
     return any("timingPlan" in arrow for arrow in arrows)
 
 
+def _has_read_coach(value: dict) -> bool:
+    lesson = value.get("readCoach")
+    return isinstance(lesson, dict) and bool(lesson.get("checkpoints"))
+
+
 def _resolved_action_paths(value: dict) -> dict[str, list[dict]]:
     main = list(value.get("arrows") or [])
     paths = {"__main__": main}
@@ -276,6 +285,144 @@ def _markers(
             clean_marker["badges"] = list(badges)
         result.append(clean_marker)
     return result
+
+
+def _read_coach(value: object, playbook_id: str) -> dict:
+    if not isinstance(value, dict) or set(value) != {"version", "checkpoints"} or value.get("version") != 1:
+        raise HTTPException(400, "Read Coach lesson format is invalid")
+    checkpoints = value.get("checkpoints")
+    if not isinstance(checkpoints, list) or len(checkpoints) > MAX_READ_CHECKPOINTS:
+        raise HTTPException(400, f"Read Coach supports at most {MAX_READ_CHECKPOINTS} checkpoints")
+    ids: set[str] = set()
+    clean: list[dict] = []
+
+    def valid_settings(settings: object) -> bool:
+        if not isinstance(settings, dict) or settings.get("offenseOffBall") not in ALLOWED_OFFBALL_STYLES \
+                or settings.get("defenseScheme") not in ALLOWED_DEFENSE_SCHEMES \
+                or settings.get("defenseStrategy") not in ALLOWED_DEFENSE_STRATEGIES:
+            return False
+        intensity = settings.get("offBallIntensity")
+        automatic = settings.get("automaticActions")
+        return isinstance(intensity, (int, float)) and not isinstance(intensity, bool) and math.isfinite(intensity) \
+            and isinstance(automatic, dict) and set(automatic) == {"screen", "handoff", "pickRoll", "offBallScreen"} \
+            and all(isinstance(enabled, bool) for enabled in automatic.values()) \
+            and settings.get("offenseMode", "adaptive") in {"adaptive", "scripted"}
+
+    for checkpoint in checkpoints:
+        if not isinstance(checkpoint, dict) or set(checkpoint) != {"id", "question", "session", "snapshot", "choices", "correctChoiceId", "explanation"}:
+            raise HTTPException(400, "Read checkpoint fields are invalid")
+        checkpoint_id = checkpoint.get("id")
+        question, explanation = checkpoint.get("question"), checkpoint.get("explanation")
+        if not isinstance(checkpoint_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", checkpoint_id) or checkpoint_id in ids:
+            raise HTTPException(400, "Read checkpoint identities must be unique")
+        ids.add(checkpoint_id)
+        if not isinstance(question, str) or not question.strip() or len(question) > 240:
+            raise HTTPException(400, "Read checkpoint question must contain 1-240 characters")
+        if not isinstance(explanation, str) or not explanation.strip() or len(explanation) > 2000:
+            raise HTTPException(400, "Read checkpoint explanation must contain 1-2000 characters")
+        session = checkpoint.get("session")
+        required_session_fields = {"version", "engineVersion", "seed", "initialDrawing", "initialSettings", "resolvedDefenseScheme", "hoop", "positionMs", "events"}
+        if not isinstance(session, dict) or set(session) != required_session_fields or session.get("version") != 1 \
+                or not _integer(session.get("engineVersion")) or session["engineVersion"] < 1 \
+                or not _integer(session.get("seed")) or not 0 <= session["seed"] <= 0xFFFFFFFF \
+                or session.get("resolvedDefenseScheme") not in ALLOWED_DEFENSE_SCHEMES - {"auto"} \
+                or not isinstance(session.get("positionMs"), (int, float)) or isinstance(session.get("positionMs"), bool) \
+                or not math.isfinite(session["positionMs"]) or session["positionMs"] < 0 \
+                or not isinstance(session.get("events"), list) or len(session["events"]) > 200000 \
+                or not valid_settings(session.get("initialSettings")):
+            raise HTTPException(400, "Read checkpoint replay session is invalid")
+        source = session["initialDrawing"]
+        if not isinstance(source, dict) or "readCoach" in source or "branches" in source:
+            raise HTTPException(400, "Read checkpoint snapshots must be flattened and cannot contain lessons")
+        _document(source, playbook_id=playbook_id, validate_timing_edges=True)
+        _point(session.get("hoop"), "Read checkpoint hoop")
+        expected_time = 0.0
+        for event in session["events"]:
+            if not isinstance(event, dict) or not isinstance(event.get("kind"), str) or not isinstance(event.get("atMs"), (int, float)) \
+                    or isinstance(event.get("atMs"), bool) or not math.isfinite(event["atMs"]) \
+                    or abs(event["atMs"] - expected_time) >= 1e-5 \
+                    or not isinstance(event.get("elapsedMs"), (int, float)) or isinstance(event.get("elapsedMs"), bool) or not math.isfinite(event["elapsedMs"]) \
+                    or not isinstance(event.get("accumulatorMs"), (int, float)) or isinstance(event.get("accumulatorMs"), bool) or not math.isfinite(event["accumulatorMs"]):
+                raise HTTPException(400, "Read checkpoint replay timeline is invalid")
+            if event["kind"] == "advance":
+                if set(event) != {"kind", "atMs", "elapsedMs", "accumulatorMs", "deltaMs", "endMs"}:
+                    raise HTTPException(400, "Read checkpoint replay step is invalid")
+                delta, end = event.get("deltaMs"), event.get("endMs")
+                if not isinstance(delta, (int, float)) or isinstance(delta, bool) or not math.isfinite(delta) or not 0 < delta <= 50 \
+                        or not isinstance(end, (int, float)) or isinstance(end, bool) or not math.isfinite(end) or end <= event["atMs"]:
+                    raise HTTPException(400, "Read checkpoint replay step is invalid")
+                expected_time = end
+            elif event["kind"] == "settings":
+                if set(event) != {"kind", "atMs", "elapsedMs", "accumulatorMs", "settings"} or not valid_settings(event.get("settings")):
+                    raise HTTPException(400, "Read checkpoint replay settings are invalid")
+            elif event["kind"] == "edit":
+                if set(event) - {"kind", "atMs", "elapsedMs", "accumulatorMs", "drawing", "relocation"} or "drawing" not in event:
+                    raise HTTPException(400, "Read checkpoint replay edit is invalid")
+                drawing = event["drawing"]
+                if not isinstance(drawing, dict) or "readCoach" in drawing or "branches" in drawing:
+                    raise HTTPException(400, "Read checkpoint replay edits must be flattened")
+                _document(drawing, playbook_id=playbook_id)
+                relocation = event.get("relocation")
+                if relocation is not None:
+                    if not isinstance(relocation, dict) or set(relocation) != {"type", "id", "point"} or relocation.get("type") not in {"player", "defender", "ball"}:
+                        raise HTTPException(400, "Read checkpoint relocation is invalid")
+                    _point(relocation.get("point"), "Read checkpoint relocation")
+            else:
+                raise HTTPException(400, "Read checkpoint replay event kind is unsupported")
+        if abs(expected_time - session["positionMs"]) >= 1e-5:
+            raise HTTPException(400, "Read checkpoint replay must end at its captured time")
+        snapshot = checkpoint.get("snapshot")
+        if not isinstance(snapshot, dict) or set(snapshot) != {"players", "defenders", "ball", "ballHandlerId", "atMs"} \
+                or not isinstance(snapshot.get("atMs"), (int, float)) or isinstance(snapshot.get("atMs"), bool) \
+                or not math.isfinite(snapshot["atMs"]) or abs(snapshot["atMs"] - session["positionMs"]) >= 1e-5:
+            raise HTTPException(400, "Read checkpoint court snapshot is invalid")
+        captured_source = source
+        for event in reversed(session["events"]):
+            if event.get("kind") == "edit":
+                captured_source = event["drawing"]
+                break
+        snapshot_players = _markers(snapshot.get("players"), "Read checkpoint players", MAX_PLAYERS, player_ratings=True)
+        snapshot_defenders = _markers(snapshot.get("defenders"), "Read checkpoint defenders", MAX_DEFENDERS, badge_catalog=ALLOWED_DEFENDER_BADGES)
+        source_players = _markers(captured_source.get("players", []), "Captured players", MAX_PLAYERS, player_ratings=True)
+        source_defenders = _markers(captured_source.get("defenders", []), "Captured defenders", MAX_DEFENDERS, badge_catalog=ALLOWED_DEFENDER_BADGES)
+        expected_defender_ids = {marker["id"] for marker in source_defenders}
+        if not source_defenders:
+            # Simulations add deterministic goal-side defenders when a play
+            # has no authored defense. They are part of the captured court but
+            # do not rewrite the play's original roster.
+            expected_defender_ids = set(range(1, len(source_players) + 1))
+        if {marker["id"] for marker in snapshot_players} != {marker["id"] for marker in source_players} \
+                or {marker["id"] for marker in snapshot_defenders} != expected_defender_ids:
+            raise HTTPException(400, "Read checkpoint roster does not match its recorded situation")
+        clean_ball = None if snapshot.get("ball") is None else _point(snapshot.get("ball"), "Read checkpoint ball")
+        handler_id = snapshot.get("ballHandlerId")
+        if not _integer(handler_id) or handler_id not in {marker["id"] for marker in snapshot_players} or clean_ball is None:
+            raise HTTPException(400, "Read checkpoint must capture a held ball and its handler")
+        choices = checkpoint.get("choices")
+        if not isinstance(choices, list) or not 2 <= len(choices) <= 3:
+            raise HTTPException(400, "Read checkpoints need two or three choices")
+        choice_ids: set[str] = set()
+        clean_choices: list[dict] = []
+        for choice in choices:
+            if not isinstance(choice, dict) or set(choice) != {"id", "label", "arrows"}:
+                raise HTTPException(400, "Read choice fields are invalid")
+            choice_id, label, arrows = choice.get("id"), choice.get("label"), choice.get("arrows")
+            if not isinstance(choice_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", choice_id) or choice_id in choice_ids:
+                raise HTTPException(400, "Read choice identities must be unique")
+            choice_ids.add(choice_id)
+            if not isinstance(label, str) or not 1 <= len(label.strip(NAME_WHITESPACE)) <= 80 or not isinstance(arrows, list) or len(arrows) > MAX_ARROWS:
+                raise HTTPException(400, "Read choice label or actions are invalid")
+            candidate = {**source, "name": f"{source.get('name', 'Read choice')} · {label}"[:MAX_NAME_LENGTH], "arrows": arrows}
+            _document(candidate, playbook_id=playbook_id)
+            clean_choices.append({"id": choice_id, "label": label.strip(NAME_WHITESPACE), "arrows": arrows})
+        correct = checkpoint.get("correctChoiceId")
+        if not isinstance(correct, str) or correct not in choice_ids:
+            raise HTTPException(400, "Read Coach must mark one intended choice")
+        clean.append({"id": checkpoint_id, "question": question.strip(NAME_WHITESPACE), "session": session,
+            "snapshot": {"players": snapshot_players, "defenders": snapshot_defenders, "ball": clean_ball,
+                "ballHandlerId": handler_id, "atMs": snapshot["atMs"]},
+            "choices": clean_choices, "correctChoiceId": correct, "explanation": explanation.strip(NAME_WHITESPACE)})
+    return {"version": 1, "checkpoints": clean}
 
 
 def _document(payload: object, *, playbook_id: str, created_at: str | None = None, validate_timing_edges: bool = True) -> dict:
@@ -482,6 +629,8 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
             branches.append({"id": branch_id, "label": label.strip(NAME_WHITESPACE), "fork": {"actionIds": list(fork_ids), "sequence": fork_sequence}, "continuation": continuation})
         if branches:
             result["branches"] = branches
+    if "readCoach" in payload:
+        result["readCoach"] = _read_coach(payload["readCoach"], playbook_id)
     if validate_timing_edges:
         _validate_timing_path(result["arrows"])
     return result
@@ -917,7 +1066,7 @@ def _saved_play_instant(value: object) -> int | float:
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
-    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1"
+    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1"
     try:
         PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
         paths = sorted(PLAYBOOKS_DIR.iterdir())
@@ -978,6 +1127,8 @@ def create_playbook(payload: Annotated[dict, Depends(_request_document)], create
         raise HTTPException(409, "This server requires a branch-aware client before saving endings")
     if _has_timing(payload) and "timing-v1" not in supported:
         raise HTTPException(409, "This server requires a timing-aware client before saving action schedules")
+    if _has_read_coach(payload) and "read-coach-v1" not in supported:
+        raise HTTPException(409, "This server requires a Read Coach-aware client before saving lessons")
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -1027,6 +1178,11 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(409, "This play contains action timing and requires a timing-aware update. The saved play is unchanged")
         if _has_timing(payload) and "timing-v1" not in supported:
             raise HTTPException(409, "This server requires a timing-aware client before saving action schedules")
+        current_has_read_coach = _has_read_coach(current)
+        if current_has_read_coach and ("read-coach-v1" not in supported or not _has_read_coach(payload)):
+            raise HTTPException(409, "This play contains Read Coach lessons and requires an explicit Read Coach-aware update. The saved play is unchanged")
+        if _has_read_coach(payload) and "read-coach-v1" not in supported:
+            raise HTTPException(409, "This server requires a Read Coach-aware client before saving lessons")
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:

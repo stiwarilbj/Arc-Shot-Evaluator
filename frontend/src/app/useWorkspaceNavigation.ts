@@ -6,6 +6,7 @@ import {
   type AppWorkspace,
   type AnalysisView,
   type JumperView,
+  type PlaybookView,
 } from "./workspaceLocation";
 
 export function useWorkspaceNavigation() {
@@ -20,6 +21,7 @@ export function useWorkspaceNavigation() {
       next.workspace === current.current.workspace &&
       next.analysisView === current.current.analysisView &&
       next.jumperView === current.current.jumperView
+      && next.playbookView === current.current.playbookView
     )
       return;
     current.current = next;
@@ -47,7 +49,7 @@ export function useWorkspaceNavigation() {
     const titles: Record<AppWorkspace, string> = {
       home: "Basketball tools & games",
       analyzer: "Shot Analyzer",
-      playbook: "Playbook",
+      playbook: location.playbookView === "practice" ? "Practice reads · Playbook" : "Playbook",
       counterlab: "Counter Lab",
       jumper:
         location.jumperView === "create"
@@ -57,7 +59,7 @@ export function useWorkspaceNavigation() {
             : "Guess the Jumper",
     };
     document.title = `ARCade Hoops · ${titles[location.workspace]}`;
-  }, [location.workspace, location.jumperView]);
+  }, [location.workspace, location.jumperView, location.playbookView]);
 
   const navigate = useCallback(
     (patch: Partial<WorkspaceLocation>) => {
@@ -77,5 +79,6 @@ export function useWorkspaceNavigation() {
     changeAnalysisView: (analysisView: AnalysisView) =>
       navigate({ analysisView }),
     changeJumperView: (jumperView: JumperView) => navigate({ jumperView }),
+    changePlaybookView: (playbookView: PlaybookView) => navigate({ playbookView }),
   };
 }

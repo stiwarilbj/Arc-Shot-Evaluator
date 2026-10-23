@@ -17,6 +17,7 @@ const routes = [
     { workspace: "analyzer", analysisView: "tracking" },
   ],
   ["#playbook", { workspace: "playbook" }],
+  ["#playbook/practice", { workspace: "playbook", playbookView: "practice" }],
   ["#counter-lab", { workspace: "counterlab" }],
   ["#jumper", { workspace: "jumper", jumperView: "guess" }],
   ["#jumper/create", { workspace: "jumper", jumperView: "create" }],

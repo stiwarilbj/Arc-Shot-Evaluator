@@ -183,6 +183,36 @@ in memory and are cleared by reloading or starting another play · Exact recover
 is supported within the same engine version and runtime; saved version-1 plays
 remain unchanged · See [simulation sessions](playbook-simulation-sessions.md)
 
+### Teach reads with Read Coach
+
+Pause a live simulation while a player holds the ball, then choose **Create a read
+checkpoint** · The capture uses the worker's fixed-step court state and records the
+flattened selected path, resolved defense, seed, settings changes, paused edits, and
+the replay inputs through that moment · A pass in flight or a shot already started
+cannot be captured; seek to a held-ball moment and try again
+
+Write the question, draw two or three independent continuations from the captured
+positions, mark one as the intended answer, and add its explanation · Assign an
+explicit player to every action · Preview and review every continuation before
+saving · A blocked or incomplete simulation is reported as an execution problem;
+the app does not decide which basketball read is best · The **Replace captured
+situation** action keeps the lesson's authored choices but requires preview review
+again
+
+Open **Practice reads** or visit `#playbook/practice` to work through checkpoints ·
+Before an answer, the opening stops at the checkpoint and the court hides future
+routes and explanations · Your first choice is locked until **Try again** · After
+answering, see the author's intended choice and explanation, then replay your choice
+or the intended continuation from the same frozen state · Replay does not add learner
+statistics · Leaving Practice reads returns to the same in-memory Playbook editor,
+branch selection, draft, and undo history
+
+Lessons are optional metadata on existing version-1 plays · Browser storage and the
+downloaded app retain their lesson-aware library format, and older clients cannot
+overwrite a saved lesson without the Read Coach capability · A checkpoint requires
+its recorded simulation engine version; if the engine changes, preserve and edit the
+lesson to capture and review a new situation · See the [Read Coach guide](playbook-read-coach.md)
+
 ### Branch one opening into endings
 
 Use **Create a branch here** on a Main action to fork before that move and copy

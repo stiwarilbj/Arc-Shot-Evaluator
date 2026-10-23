@@ -868,7 +868,7 @@ def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_pat
         "continuation": [payload["arrows"][0]],
     }]
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
 
@@ -1001,3 +1001,64 @@ def test_timing_waits_require_retarget_when_source_routes_change(tmp_path, monke
     retargeted = client.put(f"/api/playbooks/{saved['id']}", json=changed, headers={**headers, "If-Match": _match(saved)})
     assert retargeted.status_code == 200
     assert retargeted.json()["arrows"][0]["end"] == {"x": 75.0, "y": 40.0}
+
+
+def test_read_coach_lessons_require_capability_and_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Read Coach lesson")
+    default_ratings = {"threePoint": 3, "midrange": 3, "finishing": 3}
+    payload["players"] = [{**payload["players"][0], "ratings": default_ratings, "badges": []},
+        {"id": 2, "x": 36, "y": 60, "ratings": default_ratings, "badges": []}]
+    payload["defenders"] = [{**payload["defenders"][0], "badges": []}]
+    source = {key: value for key, value in payload.items() if key not in {"version", "id", "created_at", "updated_at", "revision"}}
+    settings = {
+        "offenseOffBall": "off", "defenseScheme": "man-to-man", "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {"screen": False, "handoff": False, "pickRoll": False, "offBallScreen": False},
+        "offenseMode": "scripted",
+    }
+    movement = {"id": "read-move", "kind": "movement", "sequence": 1, "actor_id": 1,
+        "timing": 1.2, "start": {"x": 50, "y": 70}, "end": {"x": 48, "y": 57}}
+    passed = {"id": "read-pass", "kind": "pass", "sequence": 1, "actor_id": 1, "recipient_id": 2,
+        "timing": 1.2, "start": {"x": 50, "y": 70}, "end": {"x": 36, "y": 60}}
+    lesson = {"version": 1, "checkpoints": [{
+        "id": "read-first", "question": "What should the handler do?", "explanation": "Move the ball before the help arrives",
+        "session": {"version": 1, "engineVersion": 9, "seed": 12, "initialDrawing": source,
+            "initialSettings": settings, "resolvedDefenseScheme": "man-to-man", "hoop": {"x": 50, "y": 5},
+            "positionMs": 0, "events": []},
+        "snapshot": {"players": payload["players"], "defenders": payload["defenders"], "ball": payload["ball"], "ballHandlerId": 1, "atMs": 0},
+        "choices": [{"id": "attack", "label": "Attack", "arrows": [movement]}, {"id": "pass", "label": "Pass", "arrows": [passed]}],
+        "correctChoiceId": "pass",
+    }]}
+    payload["readCoach"] = lesson
+
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1"
+    refused = client.post("/api/playbooks", json=payload)
+    assert refused.status_code == 409
+    created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "read-coach-v1"})
+    assert created.status_code == 200
+    saved = created.json()
+    assert saved["readCoach"] == lesson
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["readCoach"] == lesson
+
+    stale = {key: value for key, value in saved.items() if key not in {"id", "created_at", "updated_at", "revision", "readCoach"}}
+    refused_update = client.put(f"/api/playbooks/{saved['id']}", json=stale, headers={"If-Match": _match(saved)})
+    assert refused_update.status_code == 409
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["readCoach"] == lesson
+
+    updated_payload = {**stale, "name": "Read Coach lesson revised", "readCoach": lesson}
+    updated = client.put(f"/api/playbooks/{saved['id']}", json=updated_payload, headers={
+        "If-Match": _match(saved), "X-ARC-Playbook-Extensions": "read-coach-v1",
+    })
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "Read Coach lesson revised"
+    assert updated.json()["readCoach"] == lesson
+
+    malformed = json.loads(json.dumps(lesson))
+    malformed["checkpoints"][0]["snapshot"]["ballHandlerId"] = 999
+    rejected = client.put(f"/api/playbooks/{saved['id']}", json={**updated_payload, "readCoach": malformed}, headers={
+        "If-Match": _match(updated.json()), "X-ARC-Playbook-Extensions": "read-coach-v1",
+    })
+    assert rejected.status_code == 400
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["readCoach"] == lesson

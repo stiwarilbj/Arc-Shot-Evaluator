@@ -6,9 +6,9 @@ import { coordinateDefensiveDuties, createDefensiveTeamState, defensiveDutySnaps
 import { linearRoutePoint as lerpPoint, quadraticRoutePoint as quadraticPoint, perpendicularRouteControl } from "./routeGeometry.ts";
 import { coordinateMovement, createMovementBuffers, createMovementOrder, interpolatePosition, type MotionIntent, type MovementBuffers, type MovementOrder } from "./coordinatedMovement.ts";
 import { clearCongestionState } from "./congestionPlanning.ts";
-import { beginSimulationSession, simulationSeed, seededSimulationRandom, assertSimulationSessionHoop, recordSimulationSettings, recordSimulationEdit, recordSimulationAdvance, advanceRecordedSimulation } from "./simulationSession.ts";
+import { beginSimulationSession, simulationSeed, seededSimulationRandom, assertSimulationSessionHoop, recordSimulationSettings, recordSimulationEdit, recordSimulationAdvance, advanceRecordedSimulation, restoreSimulationSession } from "./simulationSession.ts";
 import type { CourtRoute } from "./arrowVisibility";
-import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, SimulationSettings } from "./types.ts";
+import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, ReadCoachChoice, ReadCoachCourtSnapshot, ReadCoachSessionRecord, SimulationSettings } from "./types.ts";
 import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating as playerRating, preparedHasBadge as playerHasBadge, preparedHasBadge as defenderHasBadge, type SimulationAttributes } from "./simulationAttributes.ts";
 import {
   COURT_SCALE,
@@ -146,6 +146,7 @@ export type SimulationRun = {
   readonly shotQualityAtRelease: number;
   previousFrame: SimulationFrame;
   frame: SimulationFrame;
+  readCoachInterruptedActions?: ActionDiagnostic[];
 };
 
 export const SIMULATION_STEP_MS = 1000 / 30;
@@ -1494,7 +1495,7 @@ function frameFor(run: SimulationRun): SimulationFrame {
       calculateOffBallQuality(run.players, run.ball, run.settings, run.defenders, shooter.id), HOOP_POINT, badgeShotContext(run, shooter, run.elapsedMs)) : 0;
   return {
     defensiveResponsibilities: defensiveDutySnapshot(run.defense),
-    execution: actionDiagnostics(run),
+    execution: [...actionDiagnostics(run), ...(run.readCoachInterruptedActions ?? []).map((item) => ({ ...item }))],
     ballHandlerId: run.ballHandlerId,
     ballPhase: run.ballState.kind,
     players: run.players.map((player) => ({ ...player })),
@@ -1576,6 +1577,77 @@ export function createSimulationRun(source: PlaybookDraft, settings: SimulationS
   const seed = options.recordSession || options.seed !== undefined ? simulationSeed(options.seed) : undefined;
   const run = initializeSimulationRun(structuredClone(source), runSettings, hoop, undefined, seed === undefined ? Math.random : seededSimulationRandom(seed));
   if (options.recordSession) beginSimulationSession(run, hoop, seed!);
+  return run;
+}
+
+/** Fork an authored answer from the frozen opening while preserving its live
+ * possession, motion, and defensive responsibilities. */
+export function assertReadCoachSnapshot(run: SimulationRun, snapshot: ReadCoachCourtSnapshot) {
+  const frame = getAuthoritativeSimulationFrame(run);
+  const matchesRoster = (actual: PlaybookMarker[], expected: PlaybookMarker[]) => actual.length === expected.length
+    && actual.every((marker) => {
+      const recorded = expected.find((candidate) => candidate.id === marker.id);
+      return recorded && Math.abs(recorded.x - marker.x) <= 1e-5 && Math.abs(recorded.y - marker.y) <= 1e-5;
+    });
+  const ballMatches = frame.ball === null ? snapshot.ball === null : snapshot.ball !== null
+    && Math.abs(frame.ball.x - snapshot.ball.x) <= 1e-5 && Math.abs(frame.ball.y - snapshot.ball.y) <= 1e-5;
+  if (Math.abs(run.elapsedMs + run.accumulatorMs - snapshot.atMs) > 1e-5
+      || frame.ballHandlerId !== snapshot.ballHandlerId || !ballMatches
+      || !matchesRoster(frame.players, snapshot.players) || !matchesRoster(frame.defenders, snapshot.defenders)) {
+    throw new Error("This saved read does not match its recorded court snapshot. Edit and review the checkpoint again");
+  }
+}
+
+export function createReadCoachChoiceRun(session: ReadCoachSessionRecord, choice: ReadCoachChoice, expectedSnapshot?: ReadCoachCourtSnapshot): SimulationRun {
+  const captured = restoreSimulationSession(session);
+  if (captured.ballState.kind !== "held") throw new Error("Read choices can only start while a player holds the ball");
+  if (expectedSnapshot) assertReadCoachSnapshot(captured, expectedSnapshot);
+  if (!choice || !Array.isArray(choice.arrows) || !choice.arrows.length) throw new Error("This read has no executable continuation");
+  const atMs = captured.elapsedMs;
+  const source: PlaybookDraft = {
+    ...structuredClone(captured.source),
+    branches: undefined,
+    readCoach: undefined,
+    players: captured.players.map((player) => ({ ...player })),
+    defenders: captured.defenders.map((defender) => ({ ...defender })),
+    ball: captured.ball ? { ...captured.ball } : null,
+    arrows: structuredClone(choice.arrows),
+  };
+  const settings: SimulationSettings = { ...captured.settings, defenseScheme: captured.activeDefenseScheme, offenseMode: "scripted",
+    automaticActions: { screen: false, handoff: false, pickRoll: false, offBallScreen: false }, offenseOffBall: "off" };
+  const seed = simulationSeed(session.seed);
+  const run = createSimulationRun(source, settings, session.hoop, { seed });
+  run.players = captured.players.map((player) => ({ ...player }));
+  run.defenders = captured.defenders.map((defender) => ({ ...defender }));
+  run.ballState = structuredClone(captured.ballState);
+  run.velocities.clear(); captured.velocities.forEach((velocity, key) => run.velocities.set(key, { ...velocity }));
+  run.assignments.clear(); captured.assignments.forEach((playerId, defenderId) => run.assignments.set(defenderId, playerId));
+  run.initialAssignments.clear(); captured.initialAssignments.forEach((playerId, defenderId) => run.initialAssignments.set(defenderId, playerId));
+  run.zoneAssignments.clear(); captured.zoneAssignments.forEach((slot, defenderId) => run.zoneAssignments.set(defenderId, slot));
+  run.zoneChaserAssignments.clear(); captured.zoneChaserAssignments.forEach((playerId, defenderId) => run.zoneChaserAssignments.set(defenderId, playerId));
+  Object.assign(run.defense, structuredClone(captured.defense));
+  run.zoneBallDefenderId = captured.zoneBallDefenderId;
+  run.zoneBallHandlerId = captured.zoneBallHandlerId;
+  run.zoneBallChangedAtMs = captured.zoneBallChangedAtMs - atMs;
+  run.defensiveDriveThreatUntilMs = captured.defensiveDriveThreatUntilMs - atMs;
+  run.defensiveDriveThreatHandlerId = captured.defensiveDriveThreatHandlerId;
+  // Coverage locks belong to opening actions that stop at the checkpoint.
+  run.screenCoverageLocks.clear(); run.switchedActions.clear(); run.actionStarts.clear();
+  run.actionStartOverrides.clear(); run.recipientStartOverrides.clear(); run.targetFilters.clear(); run.offBallAnchors.clear();
+  run.players.forEach((player) => run.offBallAnchors.set(player.id, { x: player.x, y: player.y }));
+  run.lastReceiveAtMs.clear(); captured.lastReceiveAtMs.forEach((time, playerId) => run.lastReceiveAtMs.set(playerId, time - atMs));
+  run.lastCatchEvidence.clear();
+  captured.lastCatchEvidence.forEach((evidence, playerId) => run.lastCatchEvidence.set(playerId, freezeShotRelease({ ...structuredClone(evidence), atMs: evidence.atMs - atMs })));
+  run.offBallDecisions?.clear(); run.routeHistory = [];
+  run.movementOrder = createMovementOrder([...run.players.map((player) => velocityKey("player", player.id)), ...run.defenders.map((defender) => velocityKey("defender", defender.id))]);
+  refreshSimulationAttributes(run.attributes, run.players, run.defenders);
+  run.readCoachInterruptedActions = captured.actions
+    .filter((action) => action.execution && !["completed", "obstructed", "conflict", "interrupted"].includes(action.execution.phase))
+    .map((action) => ({ actionId: action.arrow.id, sequence: action.sequence, actorId: action.actorId, recipientId: action.recipientId,
+      partnerId: action.partnerId ?? null, phase: "interrupted", startedAtMs: action.execution?.startedAtMs ?? null,
+      completedAtMs: 0, progress: action.execution?.progress ?? 0, notice: "Opening action ended at this read checkpoint" }));
+  run.frame = frameFor(run); run.previousFrame = run.frame;
+  beginSimulationSession(run, session.hoop, seed);
   return run;
 }
 
@@ -1786,6 +1858,12 @@ export function getSimulationFrame(run: SimulationRun) {
   });
   if (run.previousFrame.ball && current.ball && run.previousFrame.ballHandlerId === current.ballHandlerId && run.previousFrame.shotPhase === current.shotPhase) current.ball = interpolatePosition(run.previousFrame.ball, current.ball, progress);
   return current;
+}
+
+/** Exact engine frame for checkpoint capture; unlike the display frame this
+ * never blends the previous fixed step with the current executable state. */
+export function getAuthoritativeSimulationFrame(run: SimulationRun) {
+  return copyFrame(run.frame);
 }
 
 export function setSimulationRunSettings(run: SimulationRun, settings: SimulationSettings) {

@@ -8,6 +8,7 @@ const offenseBadges = new Set(["playmaker", "off-dribble-creator", "deep-range",
 const defenseBadges = new Set(["lockdown", "paint-protector", "helper"]);
 const timingEvents = new Set(["start", "complete", "catch", "screen-set", "screen-use", "route-point"]);
 const routePhases = new Set(["main", "approach", "use", "release"]);
+const defenseSchemes = new Set(["man-to-man", "pack-line", "zone-2-3", "zone-3-2", "zone-1-3-1", "zone-2-1-2", "zone-1-2-2", "matchup-1-1-3", "box-and-one", "triangle-and-two"]);
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 function check(valid: unknown, message: string): asserts valid { if (!valid) throw new Error(message); }
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value);
@@ -194,6 +195,99 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
       }
       for (const syncId of sharedSyncMembers.keys()) check(!endingSyncMembers.has(syncId), "Pinned actions cannot cross a shared-opening boundary");
     }
+  }
+  if (value.readCoach !== undefined) validateReadCoach(value.readCoach);
+}
+
+export function validateReadCoachSessionRecord(raw: unknown) {
+  check(object(raw) && raw.version === 1 && Number.isInteger(raw.engineVersion) && Number(raw.engineVersion) > 0
+    && Number.isInteger(raw.seed) && Number(raw.seed) >= 0 && Number(raw.seed) <= 0xffffffff
+    && defenseSchemes.has(String(raw.resolvedDefenseScheme)) && typeof raw.positionMs === "number" && Number.isFinite(raw.positionMs) && raw.positionMs >= 0
+    && Array.isArray(raw.events) && raw.events.length <= 200000, "Read checkpoint session is invalid");
+  check(object(raw.hoop), "Read checkpoint court is invalid"); point(raw.hoop);
+  const source = raw.initialDrawing;
+  check(object(source) && source.readCoach === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
+  validatePlaybookDocument(source);
+  const settings = raw.initialSettings;
+  check(object(settings) && ["off", "spacing", "cuts", "read-react"].includes(String(settings.offenseOffBall))
+    && ["auto", ...defenseSchemes].includes(String(settings.defenseScheme))
+    && ["off", "contain", "help", "switch", "trap-rotate", "fight-over", "go-under", "drop", "hedge", "deny-lanes", "protect-paint"].includes(String(settings.defenseStrategy))
+    && typeof settings.offBallIntensity === "number" && Number.isFinite(settings.offBallIntensity)
+    && object(settings.automaticActions) && ["screen", "handoff", "pickRoll", "offBallScreen"].every((key) => typeof (settings.automaticActions as Record<string, unknown>)[key] === "boolean"), "Read checkpoint settings are invalid");
+  let expectedTime = 0;
+  for (const event of raw.events) {
+    check(object(event) && Number.isFinite(event.atMs) && Number(event.atMs) >= 0 && Number.isFinite(event.elapsedMs)
+      && Number.isFinite(event.accumulatorMs) && Math.abs(Number(event.atMs) - expectedTime) < 1e-5, "Read checkpoint replay timeline is invalid");
+    if (event.kind === "advance") {
+      check(typeof event.deltaMs === "number" && Number.isFinite(event.deltaMs) && event.deltaMs > 0 && event.deltaMs <= 50
+        && typeof event.endMs === "number" && Number.isFinite(event.endMs) && event.endMs > Number(event.atMs), "Read checkpoint replay step is invalid");
+      expectedTime = event.endMs;
+    } else if (event.kind === "settings") {
+      check(object(event.settings), "Read checkpoint replay settings are invalid");
+    } else if (event.kind === "edit") {
+      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
+      validatePlaybookDocument(event.drawing);
+    } else throw new Error("Read checkpoint replay event is unsupported");
+  }
+  check(Math.abs(expectedTime - Number(raw.positionMs)) < 1e-5, "Read checkpoint must end at its recorded moment");
+}
+
+export function validateReadCoachLesson(raw: unknown) { validateReadCoach(raw); }
+
+function validateReadCoach(raw: unknown) {
+  check(object(raw) && raw.version === 1 && Array.isArray(raw.checkpoints) && raw.checkpoints.length <= 8, "Read Coach must contain at most eight checkpoints");
+  const ids = new Set<string>();
+  for (const item of raw.checkpoints) {
+    check(object(item) && typeof item.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(item.id) && !ids.has(item.id), "Read checkpoint identities must be unique");
+    ids.add(item.id);
+    check(typeof item.question === "string" && item.question.trim().length > 0 && Array.from(item.question).length <= 240, "Read checkpoint question must contain 1–240 characters");
+    check(typeof item.explanation === "string" && item.explanation.trim().length > 0 && Array.from(item.explanation).length <= 2000, "Read checkpoint explanation must contain 1–2000 characters");
+    validateReadCoachSessionRecord(item.session);
+    const source = (item.session as Record<string, unknown>).initialDrawing as Record<string, unknown>;
+    const snapshot = item.snapshot;
+    check(object(snapshot) && Array.isArray(snapshot.players) && Array.isArray(snapshot.defenders)
+      && snapshot.players.length <= 5 && snapshot.defenders.length <= 5
+      && Number.isFinite(snapshot.atMs) && Math.abs(Number(snapshot.atMs) - Number((item.session as Record<string, unknown>).positionMs)) < 1e-5,
+    "Read checkpoint court snapshot is invalid");
+    const validateSnapshotRoster = (rawMarkers: unknown[], sourceMarkers: unknown, label: string, allowGenerated = false) => {
+      check(Array.isArray(sourceMarkers), `Read checkpoint ${label} source is invalid`);
+      const generated = allowGenerated && sourceMarkers.length === 0;
+      check(generated ? rawMarkers.length <= 5 : rawMarkers.length === sourceMarkers.length, `Read checkpoint ${label} roster changed`);
+      const expected = generated
+        ? new Set(Array.from({ length: rawMarkers.length }, (_, index) => index + 1))
+        : new Set((sourceMarkers as Array<Record<string, unknown>>).map((marker) => marker.id));
+      const seen = new Set<number>();
+      for (const marker of rawMarkers) {
+        check(object(marker) && integer(marker.id) && expected.has(marker.id) && !seen.has(marker.id), `Read checkpoint ${label} identities are invalid`);
+        point(marker); seen.add(marker.id);
+      }
+    };
+    const lastEdit = [...((item.session as Record<string, unknown>).events as Array<Record<string, unknown>>)].reverse().find((event) => event.kind === "edit");
+    const capturedDrawing = (lastEdit?.drawing as Record<string, unknown> | undefined) ?? source;
+    validateSnapshotRoster(snapshot.players as unknown[], capturedDrawing.players, "player");
+    // The engine creates deterministic, goal-side defenders when a play has
+    // none authored. Their stable IDs are positional (1..N) and are recorded
+    // in the frozen snapshot, while the original drawing stays unchanged.
+    validateSnapshotRoster(snapshot.defenders as unknown[], capturedDrawing.defenders, "defender", true);
+    if (!(capturedDrawing.defenders as unknown[]).length) {
+      check(snapshot.defenders.length === snapshot.players.length, "Generated defender count must match the captured offense");
+    }
+    check(snapshot.ball === null || object(snapshot.ball), "Read checkpoint ball is invalid");
+    if (snapshot.ball !== null) point(snapshot.ball);
+    const snapshotPlayerIds = new Set((snapshot.players as Array<{ id: number }>).map((marker) => marker.id));
+    check(integer(snapshot.ballHandlerId) && snapshotPlayerIds.has(snapshot.ballHandlerId), "Read checkpoint must capture a held ball and its handler");
+    check(snapshot.ball !== null, "Read checkpoint held ball position is required");
+    check(Array.isArray(item.choices) && item.choices.length >= 2 && item.choices.length <= 3, "Read checkpoints need two or three choices");
+    const choiceIds = new Set<string>();
+    for (const choice of item.choices) {
+      check(object(choice) && typeof choice.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(choice.id) && !choiceIds.has(choice.id), "Read choice identities must be unique");
+      choiceIds.add(choice.id);
+      check(typeof choice.label === "string" && choice.label.trim().length > 0 && Array.from(choice.label).length <= 80
+        && Array.isArray(choice.arrows) && choice.arrows.length >= 1 && choice.arrows.length <= 30, "Read choice is invalid");
+      const path = { ...source, name: `${String(source.name)} · ${choice.label}`.slice(0, 80), id: String(source.id), arrows: choice.arrows, branches: undefined, readCoach: undefined };
+      validatePlaybookDocument(path);
+    }
+    check(typeof item.correctChoiceId === "string" && choiceIds.has(item.correctChoiceId), "Choose one intended read");
   }
 }
 

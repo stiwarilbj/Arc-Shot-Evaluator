@@ -122,6 +122,36 @@ export interface PlaybookBranch {
   continuation: PlaybookArrow[];
 }
 
+export type ReadCoachEventTime = { atMs: number; elapsedMs: number; accumulatorMs: number };
+export type ReadCoachSessionEvent = ReadCoachEventTime & (
+  { kind: "advance"; deltaMs: number; endMs: number }
+  | { kind: "settings"; settings: SimulationSettings }
+  | { kind: "edit"; drawing: PlaybookDraft; relocation?: { type: "player" | "defender" | "ball"; id: number | string; point: CourtPoint } }
+);
+export type ReadCoachSessionRecord = {
+  version: 1;
+  engineVersion: number;
+  seed: number;
+  initialDrawing: PlaybookDraft;
+  initialSettings: SimulationSettings;
+  resolvedDefenseScheme: Exclude<DefenseScheme, "auto">;
+  hoop: CourtPoint;
+  positionMs: number;
+  events: ReadCoachSessionEvent[];
+};
+export type ReadCoachChoice = { id: string; label: string; arrows: PlaybookArrow[] };
+export type ReadCoachCourtSnapshot = { players: PlaybookMarker[]; defenders: PlaybookMarker[]; ball: CourtPoint | null; ballHandlerId: number | null; atMs: number };
+export type ReadCoachCheckpoint = {
+  id: string;
+  question: string;
+  session: ReadCoachSessionRecord;
+  snapshot: ReadCoachCourtSnapshot;
+  choices: ReadCoachChoice[];
+  correctChoiceId: string;
+  explanation: string;
+};
+export type ReadCoachLesson = { version: 1; checkpoints: ReadCoachCheckpoint[] };
+
 export interface PlaybookDocument {
   version: 1;
   /** Opaque save precondition; absent only on legacy version-1 documents. */
@@ -137,6 +167,8 @@ export interface PlaybookDocument {
   arrows: PlaybookArrow[];
   /** Optional version-1 extension; absent on older unbranched plays */
   branches?: PlaybookBranch[];
+  /** Optional version-1 extension containing independent, frozen read lessons */
+  readCoach?: ReadCoachLesson;
 }
 
 export type PlaybookDraft = Omit<PlaybookDocument, "id" | "created_at" | "updated_at"> & {

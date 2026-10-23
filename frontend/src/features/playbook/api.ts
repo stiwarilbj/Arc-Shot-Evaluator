@@ -12,7 +12,7 @@ import { IS_GITHUB_PAGES } from "../../runtime";
 import { createSharedLibraryRead } from "./sharedLibraryRead.ts";
 import { createParsedLibraryCache } from "./parsedLibraryCache.ts";
 import { IncompletePlaybookLibraryError, readLibraryIssues } from "./libraryReadStatus.ts";
-import { checkPlaybookJsonText, MAX_PLAYBOOK_LIBRARY_BYTES, readPlaybookJson, readPlaybookJsonText } from "./jsonIntake.ts";
+import { checkPlaybookJsonText, MAX_PLAYBOOK_JSON_BYTES, MAX_PLAYBOOK_LIBRARY_BYTES, readPlaybookJson, readPlaybookJsonText } from "./jsonIntake.ts";
 export { IncompletePlaybookLibraryError } from "./libraryReadStatus.ts";
 
 const LOCAL_STORAGE_KEY = "arc-playbooks-v1";
@@ -54,7 +54,7 @@ const CHANGE_EVENT = "arc-playbooks-changed";
 const parseLibrary = createParsedLibraryCache(validateLibrary);
 const parseHostedLibrary = createParsedLibraryCache(validateHostedLibrary);
 function hasRevisionHistory(library: HostedLibrary): library is Exclude<HostedLibrary, { version: 1 }> {
-  return library.version === 2 || library.version === 3 || library.version === 4;
+  return library.version === 2 || library.version === 3 || library.version === 4 || library.version === 5;
 }
 const libraryReads = createSharedLibraryRead(async () => {
   const plays = IS_GITHUB_PAGES ? await readLocalPlaybooks() : await readRemotePlaybooks();
@@ -87,7 +87,7 @@ async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIde
   const id = identity.operation === "create" ? creationId! : identity.id;
   const usesBranchExtension = playbook.branches !== undefined;
   const usesTimingExtension = [...playbook.arrows, ...(playbook.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined);
-  const requiredExtensions = [usesBranchExtension ? "branches-v1" : null, usesTimingExtension ? "timing-v1" : null].filter((value): value is string => value !== null);
+  const requiredExtensions = [usesBranchExtension ? "branches-v1" : null, usesTimingExtension ? "timing-v1" : null, playbook.readCoach?.checkpoints.length ? "read-coach-v1" : null].filter((value): value is string => value !== null);
   try {
     return await withPersistenceDeadline(async (signal) => {
       if (requiredExtensions.length) {
@@ -214,6 +214,7 @@ async function persistLocalPlaybook(playbook: PlaybookDraft, id: string, identit
     ball: playbook.ball ? structuredClone(playbook.ball) : null,
     arrows: structuredClone(playbook.arrows),
     ...(playbook.branches !== undefined ? { branches: structuredClone(playbook.branches) } : {}),
+    ...(playbook.readCoach !== undefined ? { readCoach: structuredClone(playbook.readCoach) } : {}),
   };
   validatePlaybookSaveResult(saved, identity);
   const library = await upgradeHostedLibrary(await readLocalLibrary());
@@ -236,6 +237,7 @@ export async function createPlaybook(playbook: PlaybookDraft, creationId = newCr
   validatePlaybookDocument(playbook);
   if (!/^play-[a-f0-9]{32}$/.test(creationId) || creationId === playbook.id) throw new Error("Invalid creation identity");
   playbook = normalizePlaybookPrecision(playbook);
+  checkPlaybookJsonText(JSON.stringify(playbook), MAX_PLAYBOOK_JSON_BYTES);
   const identity: PlaybookSaveIdentity = { operation: "create", sourceId: playbook.id };
   try {
     return await libraryReads.mutate(async () => {
@@ -261,6 +263,7 @@ export async function createPlaybook(playbook: PlaybookDraft, creationId = newCr
 export async function updatePlaybook(playbook: PlaybookDraft) {
   validatePlaybookDocument(playbook);
   playbook = normalizePlaybookPrecision(playbook);
+  checkPlaybookJsonText(JSON.stringify(playbook), MAX_PLAYBOOK_JSON_BYTES);
   const identity: PlaybookSaveIdentity = { operation: "update", id: playbook.id };
   return libraryReads.mutate(() => queuePlayMutation(playbook.id, async () => {
     if (IS_GITHUB_PAGES) return withLibraryWrite(async (signal) => {

@@ -6,16 +6,19 @@ export type AppWorkspace =
   | "jumper";
 export type AnalysisView = "overview" | "shot" | "tracking";
 export type JumperView = "guess" | "create" | "clips";
+export type PlaybookView = "edit" | "practice";
 export type WorkspaceLocation = {
   workspace: AppWorkspace;
   analysisView: AnalysisView;
   jumperView: JumperView;
+  playbookView: PlaybookView;
 };
 
 export const DEFAULT_LOCATION: WorkspaceLocation = {
   workspace: "home",
   analysisView: "shot",
   jumperView: "guess",
+  playbookView: "edit",
 };
 
 // Keep inactive views in memory while the fragment describes the visible view.
@@ -27,7 +30,9 @@ export function readWorkspaceHash(
     case "#shot-analyzer":
       return { ...current, workspace: "analyzer", analysisView: "shot" };
     case "#playbook":
-      return { ...current, workspace: "playbook" };
+      return { ...current, workspace: "playbook", playbookView: "edit" };
+    case "#playbook/practice":
+      return { ...current, workspace: "playbook", playbookView: "practice" };
     case "#counter-lab":
       return { ...current, workspace: "counterlab" };
     case "#jumper":
@@ -48,7 +53,7 @@ export function readWorkspaceHash(
 
 export function workspaceHash(value: WorkspaceLocation): string {
   if (value.workspace === "home") return "#home";
-  if (value.workspace === "playbook") return "#playbook";
+  if (value.workspace === "playbook") return value.playbookView === "practice" ? "#playbook/practice" : "#playbook";
   if (value.workspace === "counterlab") return "#counter-lab";
   if (value.workspace === "jumper") {
     return value.jumperView === "guess"

@@ -1,13 +1,14 @@
-import { validatePlaybookDocument } from "./documentValidation.ts";
+import { validatePlaybookDocument, validateReadCoachLesson, validateReadCoachSessionRecord } from "./documentValidation.ts";
 import { validateSettings, DEFENSE_SCHEME_LABELS, type SimulationFrame } from "./simulation.ts";
 import { getSimulationSessionInfo } from "./simulationSession.ts";
 import { SIMULATION_ENGINE_VERSION } from "./simulationVersion.ts";
 import { BALL_PHASES } from "./ballState.ts";
 import { freezeShotRelease, validateShotRelease } from "./shotReleaseContext.ts";
-import type { CourtPoint, PlaybookDraft, SimulationSettings } from "./types.ts";
+import type { CourtPoint, PlaybookDraft, ReadCoachCheckpoint, ReadCoachSessionRecord, SimulationSettings } from "./types.ts";
 
 export type SimulationSessionInfo = NonNullable<ReturnType<typeof getSimulationSessionInfo>>;
 export type SimulationView = { frame: SimulationFrame; settings: SimulationSettings; durationMs: number; session: SimulationSessionInfo; playing: boolean };
+export type SimulationCapture = { frame: SimulationFrame; session: ReadCoachSessionRecord };
 export type SimulationRelocation = { type: "player" | "defender" | "ball"; id: number | string; point: CourtPoint };
 type Envelope = { sessionId: string; revision: number; requestId: number };
 export type SimulationCommand = Envelope & (
@@ -16,10 +17,14 @@ export type SimulationCommand = Envelope & (
   | { type: "settings"; settings: SimulationSettings }
   | { type: "edit"; drawing: PlaybookDraft; relocation?: SimulationRelocation }
   | { type: "seek"; timeMs: number }
+  | { type: "capture" }
+  | { type: "read-opening"; checkpoint: ReadCoachCheckpoint }
+  | { type: "read-choice"; checkpoint: ReadCoachCheckpoint; choiceId: string }
   | { type: "frame"; deltaMs: number }
 );
 export type SimulationResponse = Envelope & (
   | { type: "state"; view: SimulationView }
+  | { type: "capture"; capture: SimulationCapture }
   | { type: "error"; message: string }
 );
 
@@ -53,6 +58,17 @@ export function parseSimulationCommand(value: unknown): SimulationCommand {
       break;
     }
     case "seek": check(clock(value.timeMs), "seek time"); break;
+    case "capture": break;
+    case "read-opening":
+      validateReadCoachLesson({ version: 1, checkpoints: [value.checkpoint] });
+      check((value.checkpoint as ReadCoachCheckpoint).session.engineVersion === SIMULATION_ENGINE_VERSION, "read checkpoint engine version");
+      break;
+    case "read-choice": {
+      check(record(value.checkpoint) && text(value.checkpoint.id) && text(value.choiceId), "read choice identity");
+      validateReadCoachLesson({ version: 1, checkpoints: [value.checkpoint] });
+      check((value.checkpoint as ReadCoachCheckpoint).session.engineVersion === SIMULATION_ENGINE_VERSION, "read checkpoint engine version");
+      break;
+    }
     case "frame": check(clock(value.deltaMs) && value.deltaMs <= 50, "bounded elapsed time"); break;
     default: throw new Error("Invalid Playbook worker message: unknown command");
   }
@@ -64,6 +80,12 @@ export function parseSimulationCommand(value: unknown): SimulationCommand {
 export function parseSimulationResponse(value: unknown): SimulationResponse {
   envelope(value);
   if (value.type === "error") { check(text(value.message), "error message"); return value as SimulationResponse; }
+  if (value.type === "capture") {
+    check(record(value.capture) && record(value.capture.frame), "capture payload");
+    validateReadCoachSessionRecord(value.capture.session);
+    check(Array.isArray(value.capture.frame.players) && Array.isArray(value.capture.frame.defenders), "captured court frame");
+    return value as SimulationResponse;
+  }
   check(value.type === "state" && record(value.view), "response kind");
   const v = value.view;
   check(clock(v.durationMs) && typeof v.playing === "boolean", "playback state"); validateSettings(v.settings);
