@@ -33,6 +33,8 @@ MAX_BRANCHES = 8
 MAX_READ_CHECKPOINTS = 8
 MAX_ROLE_CUES = 600
 MAX_SPACING_GATES = 30
+MAX_FLIPBOOK_STORIES = 9
+MAX_FLIPBOOK_PANELS = 12
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
 MAX_JSON_DEPTH = 32
@@ -188,6 +190,203 @@ def _has_role_cues(value: dict) -> bool:
 def _has_spacing_gates(value: dict) -> bool:
     lesson = value.get("spacingGates")
     return isinstance(lesson, dict) and isinstance(lesson.get("gates"), list)
+
+
+def _has_flipbooks(value: dict) -> bool:
+    lesson = value.get("flipbooks")
+    return isinstance(lesson, dict) and isinstance(lesson.get("stories"), list)
+
+
+def _flipbook_point(value: object, label: str) -> dict[str, float]:
+    if not isinstance(value, dict) or any(not isinstance(value.get(axis), (int, float)) or isinstance(value.get(axis), bool)
+                                          or not math.isfinite(value[axis]) or not 0 <= value[axis] <= 100 for axis in ("x", "y")):
+        raise HTTPException(400, f"{label} must contain finite court coordinates")
+    return {"x": float(value["x"]), "y": float(value["y"])}
+
+
+def _flipbooks(value: object, playbook_id: str, players: list[dict], branches: list[dict]) -> dict:
+    if not isinstance(value, dict) or set(value) != {"version", "stories"} or value.get("version") != 1:
+        raise HTTPException(400, "Play Flipbook format is invalid")
+    stories = value.get("stories")
+    if not isinstance(stories, list) or len(stories) > MAX_FLIPBOOK_STORIES:
+        raise HTTPException(400, "A play can contain one walkthrough for Main and each ending")
+    branch_by_id = {branch["id"]: branch for branch in branches}
+    player_ids = {player["id"] for player in players}
+    story_keys: set[str] = set()
+    clean_stories = []
+    for story in stories:
+        if not isinstance(story, dict) or set(story) != {"id", "playName", "endingId", "endingLabel", "recording", "panels"}:
+            raise HTTPException(400, "Walkthrough fields are invalid")
+        story_id, play_name, ending_id, label = story.get("id"), story.get("playName"), story.get("endingId"), story.get("endingLabel")
+        if not isinstance(story_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", story_id):
+            raise HTTPException(400, "Walkthrough identity is invalid")
+        if not isinstance(play_name, str) or not play_name.strip() or len(play_name) > 80:
+            raise HTTPException(400, "Walkthrough play name must contain 1-80 characters")
+        if ending_id is not None and (not isinstance(ending_id, str) or ending_id not in branch_by_id):
+            raise HTTPException(400, "Walkthrough must belong to Main or an existing ending")
+        ending_key = ending_id or "main"
+        if ending_key in story_keys:
+            raise HTTPException(400, "A play can contain only one walkthrough per ending")
+        story_keys.add(ending_key)
+        if not isinstance(label, str) or not label.strip() or len(label) > 40:
+            raise HTTPException(400, "Walkthrough ending label must contain 1-40 characters")
+
+        session = story.get("recording")
+        required = {"version", "engineVersion", "seed", "initialDrawing", "initialSettings", "resolvedDefenseScheme", "hoop", "positionMs", "events"}
+        if not isinstance(session, dict) or set(session) != required or session.get("version") != 1 \
+                or not _integer(session.get("engineVersion")) or session["engineVersion"] < 1 \
+                or not _integer(session.get("seed")) or not 0 <= session["seed"] <= 0xFFFFFFFF \
+                or session.get("resolvedDefenseScheme") not in ALLOWED_DEFENSE_SCHEMES - {"auto"} \
+                or not isinstance(session.get("positionMs"), (int, float)) or isinstance(session.get("positionMs"), bool) \
+                or not math.isfinite(session["positionMs"]) or session["positionMs"] <= 0 \
+                or not isinstance(session.get("events"), list) or len(session["events"]) > 200000:
+            raise HTTPException(400, "Walkthrough replay session is invalid")
+        source = session["initialDrawing"]
+        if not isinstance(source, dict) or any(key in source for key in ("branches", "readCoach", "roleCues", "spacingGates", "flipbooks")):
+            raise HTTPException(400, "Walkthrough recording must use a flattened executable drawing")
+        _document(source, playbook_id=playbook_id)
+        if not isinstance(session.get("initialSettings"), dict):
+            raise HTTPException(400, "Walkthrough simulation settings are invalid")
+        settings = session["initialSettings"]
+        if settings.get("offenseOffBall") not in ALLOWED_OFFBALL_STYLES or settings.get("defenseScheme") not in ALLOWED_DEFENSE_SCHEMES \
+                or settings.get("defenseStrategy") not in ALLOWED_DEFENSE_STRATEGIES \
+                or not isinstance(settings.get("offBallIntensity"), (int, float)) or isinstance(settings.get("offBallIntensity"), bool) \
+                or not math.isfinite(settings["offBallIntensity"]) or not isinstance(settings.get("automaticActions"), dict) \
+                or set(settings["automaticActions"]) != {"screen", "handoff", "pickRoll", "offBallScreen"} \
+                or any(not isinstance(enabled, bool) for enabled in settings["automaticActions"].values()) \
+                or settings.get("offenseMode", "adaptive") not in {"adaptive", "scripted"}:
+            raise HTTPException(400, "Walkthrough simulation settings are invalid")
+        _flipbook_point(session.get("hoop"), "Walkthrough hoop")
+        expected_time = 0.0
+        action_ids = {arrow["id"] for arrow in source.get("arrows", [])}
+        for event in session["events"]:
+            if not isinstance(event, dict) or not isinstance(event.get("atMs"), (int, float)) or isinstance(event.get("atMs"), bool) \
+                    or not math.isfinite(event["atMs"]) or abs(event["atMs"] - expected_time) >= 1e-5 \
+                    or not isinstance(event.get("elapsedMs"), (int, float)) or isinstance(event.get("elapsedMs"), bool) or not math.isfinite(event["elapsedMs"]) \
+                    or not isinstance(event.get("accumulatorMs"), (int, float)) or isinstance(event.get("accumulatorMs"), bool) or not math.isfinite(event["accumulatorMs"]):
+                raise HTTPException(400, "Walkthrough replay timeline is invalid")
+            if event.get("kind") == "advance":
+                delta, end = event.get("deltaMs"), event.get("endMs")
+                if set(event) != {"kind", "atMs", "elapsedMs", "accumulatorMs", "deltaMs", "endMs"} \
+                        or not isinstance(delta, (int, float)) or isinstance(delta, bool) or not math.isfinite(delta) or not 0 < delta <= 50 \
+                        or not isinstance(end, (int, float)) or isinstance(end, bool) or not math.isfinite(end) or end <= event["atMs"]:
+                    raise HTTPException(400, "Walkthrough replay step is invalid")
+                expected_time = end
+            elif event.get("kind") == "settings":
+                if set(event) != {"kind", "atMs", "elapsedMs", "accumulatorMs", "settings"} or not isinstance(event.get("settings"), dict):
+                    raise HTTPException(400, "Walkthrough settings event is invalid")
+            elif event.get("kind") == "edit":
+                if set(event) - {"kind", "atMs", "elapsedMs", "accumulatorMs", "drawing", "relocation"} or not isinstance(event.get("drawing"), dict):
+                    raise HTTPException(400, "Walkthrough edit event is invalid")
+                drawing = event["drawing"]
+                if any(key in drawing for key in ("branches", "readCoach", "roleCues", "spacingGates", "flipbooks")):
+                    raise HTTPException(400, "Walkthrough edits must remain flattened")
+                normalized = _document(drawing, playbook_id=playbook_id)
+                action_ids.update(arrow["id"] for arrow in normalized["arrows"])
+            else:
+                raise HTTPException(400, "Walkthrough replay event kind is unsupported")
+        if abs(expected_time - session["positionMs"]) >= 1e-5:
+            raise HTTPException(400, "Walkthrough recording must contain its complete timeline")
+        captured = source
+        for event in reversed(session["events"]):
+            if event.get("kind") == "edit":
+                captured = event["drawing"]
+                break
+        expected_players = {marker["id"] for marker in captured.get("players", [])}
+        expected_defenders = {marker["id"] for marker in captured.get("defenders", [])} or set(range(1, len(expected_players) + 1))
+        panels = story.get("panels")
+        if not isinstance(panels, list) or not 1 <= len(panels) <= MAX_FLIPBOOK_PANELS:
+            raise HTTPException(400, "Walkthrough needs 1-12 panels")
+        panel_ids: set[str] = set()
+        previous_time = -1.0
+        clean_panels = []
+        for panel in panels:
+            if not isinstance(panel, dict) or set(panel) != {"id", "atMs", "caption", "focusPlayerIds", "routeIds", "snapshot"}:
+                raise HTTPException(400, "Walkthrough panel fields are invalid")
+            panel_id, at_ms, caption = panel.get("id"), panel.get("atMs"), panel.get("caption")
+            if not isinstance(panel_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", panel_id) or panel_id in panel_ids:
+                raise HTTPException(400, "Walkthrough panel identities must be unique")
+            panel_ids.add(panel_id)
+            if not isinstance(at_ms, (int, float)) or isinstance(at_ms, bool) or not math.isfinite(at_ms) or not previous_time < at_ms <= session["positionMs"]:
+                raise HTTPException(400, "Walkthrough panels must be in chronological order")
+            previous_time = at_ms
+            if not isinstance(caption, str) or len(caption) > 160:
+                raise HTTPException(400, "Walkthrough caption must be 160 characters or fewer")
+            focus = panel.get("focusPlayerIds")
+            if not isinstance(focus, list) or len(focus) > MAX_PLAYERS or any(not _integer(item) or item not in player_ids for item in focus) or len(set(focus)) != len(focus):
+                raise HTTPException(400, "Walkthrough focus players are invalid")
+            snapshot = panel.get("snapshot")
+            if not isinstance(snapshot, dict) or set(snapshot) != {"atMs", "players", "defenders", "ball", "ballHandlerId", "ballPhase", "shotPhase", "routes"} \
+                    or snapshot.get("atMs") != at_ms:
+                raise HTTPException(400, "Walkthrough court snapshot must match its panel time")
+            def validate_position_roster(raw_roster, expected_ids, label):
+                if not isinstance(raw_roster, list) or len(raw_roster) > MAX_PLAYERS:
+                    raise HTTPException(400, f"Walkthrough {label} roster is invalid")
+                found = set()
+                result = []
+                for marker in raw_roster:
+                    if not isinstance(marker, dict) or set(marker) != {"id", "x", "y"} or not _integer(marker.get("id")) or marker["id"] not in expected_ids or marker["id"] in found:
+                        raise HTTPException(400, f"Walkthrough {label} identity is invalid")
+                    found.add(marker["id"])
+                    point = _flipbook_point(marker, f"Walkthrough {label}")
+                    result.append({"id": marker["id"], **point})
+                if found != expected_ids:
+                    raise HTTPException(400, f"Walkthrough {label} roster is incomplete")
+                return result
+            clean_players = validate_position_roster(snapshot.get("players"), expected_players, "players")
+            clean_defenders = validate_position_roster(snapshot.get("defenders"), expected_defenders, "defenders")
+            clean_ball = None if snapshot.get("ball") is None else _flipbook_point(snapshot["ball"], "Walkthrough ball")
+            handler = snapshot.get("ballHandlerId")
+            if handler is not None and (not _integer(handler) or handler not in player_ids):
+                raise HTTPException(400, "Walkthrough ball handler is invalid")
+            if snapshot.get("ballPhase") not in {"held", "pass-in-flight", "handoff-pending", "loose", "shot-setup", "shot-in-flight", "shot-result"} \
+                    or snapshot.get("shotPhase") not in {"idle", "setup", "air", "result"}:
+                raise HTTPException(400, "Walkthrough ball state is invalid")
+            raw_routes = snapshot.get("routes")
+            if not isinstance(raw_routes, list) or len(raw_routes) > 100:
+                raise HTTPException(400, "Walkthrough routes are invalid")
+            route_ids: set[str] = set()
+            clean_routes = []
+            for route in raw_routes:
+                allowed = {"id", "actionId", "sequence", "kind", "playerId", "scope", "importance", "start", "end", "control", "via", "points"}
+                if not isinstance(route, dict) or set(route) - allowed:
+                    raise HTTPException(400, "Walkthrough route fields are invalid")
+                route_id, route_player, action_id = route.get("id"), route.get("playerId"), route.get("actionId")
+                generated_action = isinstance(action_id, str) and (
+                    re.fullmatch(r"auto-(?:offball|handoff|pick-roll|screen)-(?:[1-9]|[12]\d|30)", action_id) is not None
+                    or re.fullmatch(r"adaptive-read-(?:movement|pass)", action_id) is not None
+                )
+                if not isinstance(route_id, str) or route_id in route_ids or not _integer(route_player) or route_player not in player_ids \
+                        or action_id is not None and (not isinstance(action_id, str) or action_id not in action_ids and not generated_action) \
+                        or route.get("scope") not in {"on-ball", "off-ball"} or route.get("importance") not in {"main", "adjustment"} \
+                        or not isinstance(route.get("kind"), str):
+                    raise HTTPException(400, "Walkthrough route identity is invalid")
+                route_ids.add(route_id)
+                clean_route = {"id": route_id, "actionId": action_id, "sequence": route.get("sequence"), "kind": route["kind"], "playerId": route_player,
+                    "scope": route["scope"], "importance": route["importance"], "start": _flipbook_point(route.get("start"), "Walkthrough route start"),
+                    "end": _flipbook_point(route.get("end"), "Walkthrough route end")}
+                if route.get("sequence") is not None and (not _integer(route["sequence"]) or not 1 <= route["sequence"] <= MAX_ARROWS):
+                    raise HTTPException(400, "Walkthrough route sequence is invalid")
+                for field in ("control", "via"):
+                    if route.get(field) is not None:
+                        clean_route[field] = _flipbook_point(route[field], f"Walkthrough route {field}")
+                if "points" in route:
+                    if not isinstance(route["points"], list) or len(route["points"]) > 128:
+                        raise HTTPException(400, "Walkthrough route points are invalid")
+                    clean_route["points"] = [_flipbook_point(point, "Walkthrough route point") for point in route["points"]]
+                clean_routes.append(clean_route)
+            route_selection = panel.get("routeIds")
+            if not isinstance(route_selection, list) or len(route_selection) > 100 or any(not isinstance(item, str) or item not in route_ids for item in route_selection) or len(set(route_selection)) != len(route_selection):
+                raise HTTPException(400, "Walkthrough selected routes are invalid")
+            # Keep the nested snapshot clock on the same numeric representation
+            # as the normalized panel clock so create receipts remain stable
+            # when their document is validated a second time.
+            clean_snapshot = {"atMs": float(at_ms), "players": clean_players, "defenders": clean_defenders, "ball": clean_ball,
+                "ballHandlerId": handler, "ballPhase": snapshot["ballPhase"], "shotPhase": snapshot["shotPhase"], "routes": clean_routes}
+            clean_panels.append({"id": panel_id, "atMs": float(at_ms), "caption": caption, "focusPlayerIds": list(focus),
+                "routeIds": list(route_selection), "snapshot": clean_snapshot})
+        clean_stories.append({"id": story_id, "playName": play_name, "endingId": ending_id, "endingLabel": label, "recording": session, "panels": clean_panels})
+    return {"version": 1, "stories": clean_stories}
 
 
 def _spacing_gates(value: object, players: list[dict], arrows: list[dict], branches: list[dict]) -> dict:
@@ -487,7 +686,7 @@ def _read_coach(value: object, playbook_id: str) -> dict:
                 or not valid_settings(session.get("initialSettings")):
             raise HTTPException(400, "Read checkpoint replay session is invalid")
         source = session["initialDrawing"]
-        if not isinstance(source, dict) or "readCoach" in source or "roleCues" in source or "branches" in source:
+        if not isinstance(source, dict) or "readCoach" in source or "roleCues" in source or "spacingGates" in source or "flipbooks" in source or "branches" in source:
             raise HTTPException(400, "Read checkpoint snapshots must be flattened and cannot contain lessons")
         _document(source, playbook_id=playbook_id, validate_timing_edges=True)
         _point(session.get("hoop"), "Read checkpoint hoop")
@@ -514,7 +713,7 @@ def _read_coach(value: object, playbook_id: str) -> dict:
                 if set(event) - {"kind", "atMs", "elapsedMs", "accumulatorMs", "drawing", "relocation"} or "drawing" not in event:
                     raise HTTPException(400, "Read checkpoint replay edit is invalid")
                 drawing = event["drawing"]
-                if not isinstance(drawing, dict) or "readCoach" in drawing or "roleCues" in drawing or "branches" in drawing:
+                if not isinstance(drawing, dict) or "readCoach" in drawing or "roleCues" in drawing or "spacingGates" in drawing or "flipbooks" in drawing or "branches" in drawing:
                     raise HTTPException(400, "Read checkpoint replay edits must be flattened")
                 _document(drawing, playbook_id=playbook_id)
                 relocation = event.get("relocation")
@@ -729,7 +928,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         "arrows": arrows,
     }
     raw_branches = payload.get("branches")
-    nested_payload = {key: value for key, value in payload.items() if key not in {"roleCues", "spacingGates"}}
+    nested_payload = {key: value for key, value in payload.items() if key not in {"roleCues", "spacingGates", "flipbooks"}}
     if raw_branches is not None:
         if not isinstance(raw_branches, list) or len(raw_branches) > MAX_BRANCHES:
             raise HTTPException(400, f"A play can have at most {MAX_BRANCHES} endings")
@@ -791,6 +990,8 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         result["roleCues"] = _role_cues(payload["roleCues"], players, arrows, result.get("branches", []))
     if "spacingGates" in payload:
         result["spacingGates"] = _spacing_gates(payload["spacingGates"], players, arrows, result.get("branches", []))
+    if "flipbooks" in payload:
+        result["flipbooks"] = _flipbooks(payload["flipbooks"], playbook_id, players, result.get("branches", []))
     if validate_timing_edges:
         _validate_timing_path(result["arrows"])
     return result
@@ -1226,7 +1427,7 @@ def _saved_play_instant(value: object) -> int | float:
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
-    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1"
+    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1"
     try:
         PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
         paths = sorted(PLAYBOOKS_DIR.iterdir())
@@ -1293,6 +1494,8 @@ def create_playbook(payload: Annotated[dict, Depends(_request_document)], create
         raise HTTPException(409, "This server requires a My Role-aware client before saving cue wording")
     if _has_spacing_gates(payload) and "spacing-gates-v1" not in supported:
         raise HTTPException(409, "This server requires a spacing-gate-aware client before saving spacing instructions")
+    if _has_flipbooks(payload) and "play-flipbook-v1" not in supported:
+        raise HTTPException(409, "This server requires a Play Flipbook-aware client before saving walkthroughs")
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -1359,6 +1562,13 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(409, "This play contains spacing gates and requires an explicit spacing-gate-aware update. The saved play is unchanged")
         if "spacingGates" in payload and "spacing-gates-v1" not in supported:
             raise HTTPException(409, "This server requires a spacing-gate-aware client before saving spacing instructions")
+        current_has_flipbooks = _has_flipbooks(current)
+        if current_has_flipbooks and ("play-flipbook-v1" not in supported or not _has_flipbooks(payload)):
+            raise HTTPException(409, "This play contains walkthroughs and requires an explicit Flipbook-aware update. The saved play is unchanged")
+        if "flipbooks" in payload and "play-flipbook-v1" not in supported:
+            raise HTTPException(409, "This server requires a Play Flipbook-aware client before saving walkthroughs")
+        if _has_flipbooks(payload) and "play-flipbook-v1" not in supported:
+            raise HTTPException(409, "This server requires a Play Flipbook-aware client before saving walkthroughs")
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:

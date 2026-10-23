@@ -6,7 +6,7 @@ export type AppWorkspace =
   | "jumper";
 export type AnalysisView = "overview" | "shot" | "tracking";
 export type JumperView = "guess" | "create" | "clips";
-export type PlaybookView = "edit" | "practice" | "role";
+export type PlaybookView = "edit" | "practice" | "role" | "flipbook";
 export type WorkspaceLocation = {
   workspace: AppWorkspace;
   analysisView: AnalysisView;
@@ -35,6 +35,8 @@ export function readWorkspaceHash(
       return { ...current, workspace: "playbook", playbookView: "edit" };
     case "#playbook/practice":
       return { ...current, workspace: "playbook", playbookView: "practice", rolePlayerId: null };
+    case "#playbook/flipbook":
+      return { ...current, workspace: "playbook", playbookView: "flipbook", rolePlayerId: null };
     case "#counter-lab":
       return { ...current, workspace: "counterlab" };
     case "#jumper":
@@ -61,7 +63,7 @@ export function readWorkspaceHash(
 
 export function workspaceHash(value: WorkspaceLocation): string {
   if (value.workspace === "home") return "#home";
-  if (value.workspace === "playbook") return value.playbookView === "practice" ? "#playbook/practice" : value.playbookView === "role" && value.rolePlayerId ? `#playbook/role/${value.rolePlayerId}` : "#playbook";
+  if (value.workspace === "playbook") return value.playbookView === "practice" ? "#playbook/practice" : value.playbookView === "flipbook" ? "#playbook/flipbook" : value.playbookView === "role" && value.rolePlayerId ? `#playbook/role/${value.rolePlayerId}` : "#playbook";
   if (value.workspace === "counterlab") return "#counter-lab";
   if (value.workspace === "jumper") {
     return value.jumperView === "guess"

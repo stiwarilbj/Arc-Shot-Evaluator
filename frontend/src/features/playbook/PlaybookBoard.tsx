@@ -12,7 +12,9 @@ import { PocketActionsPanel, type PocketPlacementRequest } from "./PocketActions
 import { buildPocketInsertion } from "./pocketActions.ts";
 import { ReadCoachAuthorPanel, ReadCoachPracticeView, readCoachSnapshotFrame } from "./ReadCoachViews.tsx";
 import { RoleRehearsalView } from "./RoleRehearsalView.tsx";
+import { PlayFlipbookView } from "./PlayFlipbookView.tsx";
 import { authoredRoleCueTemplates } from "./roleRehearsal.ts";
+import { checkPlaybookJsonText } from "./jsonIntake.ts";
 import { SpacingGateLayer, spacingGateStatusSymbol, spacingGateStatusText, type SpacingGateDragKind } from "./SpacingGateLayer.tsx";
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -28,6 +30,7 @@ import {
   Eraser,
   FolderOpen,
   Hand,
+  Images,
   MousePointer2,
   Pencil,
   Pause,
@@ -61,7 +64,7 @@ import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, ReadCoachCheckpoint, RoleCuePhase, SimulationSettings, SpacingGate, SpacingGateEvent, SpacingGateResult } from "./types";
+import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, PlayFlipbookStory, ReadCoachCheckpoint, RoleCuePhase, SimulationSettings, SpacingGate, SpacingGateEvent, SpacingGateResult } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -368,9 +371,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   onDraftChange?: (play: PlaybookDraft) => void;
   requestedPlay?: { requestId: string; play: PlaybookDraft } | null;
   active?: boolean;
-  view?: "edit" | "practice" | "role";
+  view?: "edit" | "practice" | "role" | "flipbook";
   rolePlayerId?: number | null;
-  onViewChange?: (view: "edit" | "practice" | "role", playerId?: number | null) => void;
+  onViewChange?: (view: "edit" | "practice" | "role" | "flipbook", playerId?: number | null) => void;
 }) {
   const arrowVisibility = useArrowVisibility();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -442,6 +445,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [simulationView, setSimulationView] = useState<SimulationView | null>(null);
   const [readCoachCapture, setReadCoachCapture] = useState<SimulationCapture | null>(null);
   const [readCoachEditing, setReadCoachEditing] = useState<ReadCoachCheckpoint | null>(null);
+  const [flipbookCapture, setFlipbookCapture] = useState<SimulationCapture | null>(null);
+  const flipbookNavigationPendingRef = useRef(false);
+  const [flipbookHistoryRevision, setFlipbookHistoryRevision] = useState(0);
   const previewClientRef = useRef<PlaybookSimulationClient | null>(null);
   const readCoachPreviewFrameRef = useRef<number | null>(null);
   const previewCancelRef = useRef<(() => void) | null>(null);
@@ -814,6 +820,44 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     client.capture();
   }
 
+  function buildFlipbook() {
+    const view = lastSimulationViewRef.current;
+    const client = simulationClientRef.current;
+    const executable = simulationDrawing(draft, activeBranchId);
+    const sameDrawing = simulationDrawingRef.current != null && JSON.stringify(simulationDrawingRef.current) === JSON.stringify(executable);
+    setFlipbookCapture(null);
+    setError(null);
+    if (client && view && sameDrawing && view.session.recordedUntilMs > 0
+      && view.session.recordedUntilMs >= view.durationMs - 1
+      && Math.abs(view.session.positionMs - view.session.recordedUntilMs) < 1e-5) {
+      flipbookNavigationPendingRef.current = true;
+      client.playback(false);
+      setSimulationPlaying(false);
+      client.captureFlipbook();
+      return;
+    }
+    flipbookNavigationPendingRef.current = false;
+    pauseSimulation();
+    onViewChange?.("flipbook");
+  }
+
+  function updateFlipbookStory(story: PlayFlipbookStory | null) {
+    const next = clonePlaybook(draft);
+    const remaining = (next.flipbooks?.stories ?? []).filter((item) => item.endingId !== activeBranchId);
+    if (story) remaining.push(structuredClone(story));
+    if (remaining.length) next.flipbooks = { version: 1, stories: remaining };
+    else delete next.flipbooks;
+    validatePlaybookDocument(next);
+    checkPlaybookJsonText(JSON.stringify(next));
+    if (isSameDraft(next, draft)) return true;
+    recordHistory(clonePlaybook(draft), activeBranchId);
+    setDraftState(draftSession.edit(next));
+    setDirty(draftSession.dirty);
+    setStatus("idle");
+    setError(null);
+    return true;
+  }
+
   function openSavedReadCheckpoint(checkpoint: ReadCoachCheckpoint) {
     setReadCoachEditing(checkpoint);
     setReadCoachCapture({ session: checkpoint.session, frame: readCoachSnapshotFrame(checkpoint.snapshot) });
@@ -963,6 +1007,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setFuture((current) => [{ draft: before, branchId: activeBranchId }, ...current]);
     setActiveBranchId(previous.branchId);
     setSelected(null);
+    setFlipbookHistoryRevision((revision) => revision + 1);
   }
 
   function redo() {
@@ -974,6 +1019,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     setHistory((current) => [...current, { draft: before, branchId: activeBranchId }]);
     setActiveBranchId(next.branchId);
     setSelected(null);
+    setFlipbookHistoryRevision((revision) => revision + 1);
   }
 
   function chooseTool(next: PlaybookTool) {
@@ -1083,7 +1129,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function deleteBranch(branchId: string) {
     const branch = draft.branches?.find((item) => item.id === branchId);
-    if (!branch || !window.confirm(`Delete ${branch.label}?`)) return;
+    const hasWalkthrough = draft.flipbooks?.stories.some((story) => story.endingId === branchId) ?? false;
+    if (!branch || !window.confirm(hasWalkthrough
+      ? `Delete ${branch.label} and its frozen walkthrough?`
+      : `Delete ${branch.label}?`)) return;
     const next = clonePlaybook(draft);
     next.branches = (next.branches ?? []).filter((item) => item.id !== branchId);
     if (next.roleCues) {
@@ -1091,6 +1140,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       next.roleCues = { version: 1, cues };
     }
     if (next.spacingGates) next.spacingGates = { version: 1, gates: next.spacingGates.gates.filter((gate) => gate.scope !== "ending" || gate.branchId !== branchId) };
+    if (next.flipbooks) {
+      const stories = next.flipbooks.stories.filter((story) => story.endingId !== branchId);
+      if (stories.length) next.flipbooks = { version: 1, stories };
+      else delete next.flipbooks;
+    }
     commitCanonical(next, draft, activeBranchId);
     if (activeBranchId === branchId) selectBranch(null);
   }
@@ -1210,6 +1264,12 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           setReadCoachCapture(capture);
           setSimulationFrameState(capture.frame);
           setSimulationElapsed(capture.session.positionMs);
+        },
+        onFlipbookCapture: (capture) => {
+          if (simulationClientRef.current !== client || !flipbookNavigationPendingRef.current) return;
+          flipbookNavigationPendingRef.current = false;
+          setFlipbookCapture(capture);
+          onViewChange?.("flipbook");
         },
         onCommandError: (_type, message) => {
           setSimulationPlaying(false);
@@ -2003,6 +2063,14 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     branchLabel={activePath.branch?.label ?? null} sharedIds={activePath.sharedIds} playerId={rolePlayerId} settings={simulationSettings}
     visibility={arrowVisibility} active={active} onViewChange={(nextView, playerId) => onViewChange?.(nextView, playerId)} onCueChange={saveRoleCue} />;
   }
+  if (view === "flipbook") {
+    const story = draft.flipbooks?.stories.find((item) => item.endingId === activeBranchId);
+    return <PlayFlipbookView source={simulationDrawing(draft, activeBranchId)} settings={simulationSettings} visibility={arrowVisibility}
+      endingId={activeBranchId} endingLabel={activePath.branch?.label ?? "Main"} story={story} initialCapture={flipbookCapture}
+      active={active} onExit={() => { setFlipbookCapture(null); onViewChange?.("edit"); }}
+      onChange={updateFlipbookStory} onSavePlay={() => { void saveDraft(); }} onUndo={undo} onRedo={redo}
+      canUndo={history.length > 0} canRedo={future.length > 0} historyRevision={flipbookHistoryRevision} />;
+  }
 
   return (
     <div ref={rootRef} className="playbook-page" tabIndex={-1} onKeyDown={onKeyDown} onBlur={(event) => {
@@ -2028,6 +2096,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           <button type="button" className="button button-outline" onClick={() => onViewChange?.("practice")}><BrainCircuit size={16} />Practice reads{draft.readCoach?.checkpoints.length ? ` · ${draft.readCoach.checkpoints.length}` : ""}</button>
           <button type="button" className="button button-subtle" onClick={() => setSavedOpen(true)}><FolderOpen size={16} />Saved plays</button>
           <button type="button" className="button button-outline" onClick={exportPng}><Download size={16} />Export PNG</button>
+          <button type="button" className="button button-outline" onClick={buildFlipbook}><Images size={16} />Build a walkthrough</button>
           {onTestInCounterLab ? <button type="button" className="button button-outline" onClick={() => onTestInCounterLab(flattenPlaybookPath(draft, activeBranchId, activePath.branch?.label))}><ShieldCheck size={16} />Test in Counter Lab</button> : null}
           <button type="button" className="button button-primary" onClick={() => void saveDraft()} disabled={status === "saving"}><Save size={16} />{status === "saving" ? "Saving…" : "Save play"}</button>
         </div>

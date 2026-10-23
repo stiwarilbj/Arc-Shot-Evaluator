@@ -183,9 +183,9 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
         && branch.fork.actionIds.every((id) => typeof id === "string" && /^[a-z0-9-]{1,64}$/.test(id))
         && new Set(branch.fork.actionIds).size === branch.fork.actionIds.length
         && integer(branch.fork.sequence) && branch.fork.sequence >= 1 && branch.fork.sequence <= 30, "Ending fork reference is invalid");
-      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined, spacingGates: undefined }, false);
+      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined, spacingGates: undefined, flipbooks: undefined }, false);
       const resolved = resolvePlaybookPath(value as unknown as PlaybookDraft, branch.id);
-      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined, spacingGates: undefined });
+      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined, spacingGates: undefined, flipbooks: undefined });
       validateTimingEdges(resolved.play);
       const sharedSyncMembers = new Map<string, Set<string>>();
       const endingSyncMembers = new Map<string, Set<string>>();
@@ -284,6 +284,93 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
     }
   }
   if (value.readCoach !== undefined) validateReadCoach(value.readCoach);
+  if (value.flipbooks !== undefined) validateFlipbookLesson(value.flipbooks, value as unknown as PlaybookDraft);
+}
+
+function validateFlipbookLesson(raw: unknown, play: PlaybookDraft) {
+  check(object(raw) && raw.version === 1 && Array.isArray(raw.stories) && raw.stories.length <= 9, "Play Flipbook supports one story for Main and each ending");
+  const branchById = new Map((play.branches ?? []).map((branch) => [branch.id, branch]));
+  const storyKeys = new Set<string>();
+  const playerIds = new Set(play.players.map((player) => player.id));
+  for (const rawStory of raw.stories) {
+    check(object(rawStory) && Object.keys(rawStory).every((key) => ["id", "playName", "endingId", "endingLabel", "recording", "panels"].includes(key)), "Walkthrough contains unsupported fields");
+    const story = rawStory as Record<string, unknown>;
+    check(typeof story.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(story.id), "Walkthrough identity is invalid");
+    check(typeof story.playName === "string" && story.playName.trim().length > 0 && Array.from(story.playName).length <= 80, "Walkthrough play name is invalid");
+    const endingId = story.endingId;
+    check(endingId === null || typeof endingId === "string" && branchById.has(endingId), "Walkthrough must belong to Main or an existing ending");
+    const endingKey = endingId === null ? "main" : endingId;
+    check(!storyKeys.has(endingKey), "A play can contain only one walkthrough per ending"); storyKeys.add(endingKey);
+    check(typeof story.endingLabel === "string" && story.endingLabel.trim().length > 0 && Array.from(story.endingLabel).length <= 40, "Walkthrough ending label must contain 1–40 characters");
+    validateReadCoachSessionRecord(story.recording);
+    const session = story.recording as Record<string, unknown>;
+    const recordingEndMs = Number(session.positionMs);
+    check(Number.isFinite(recordingEndMs) && recordingEndMs > 0, "Walkthrough recording must contain a complete possession");
+    const source = session.initialDrawing as Record<string, unknown>;
+    const lastEdit = [...(session.events as Array<Record<string, unknown>>)].reverse().find((event) => event.kind === "edit");
+    const captured = (lastEdit?.drawing as Record<string, unknown> | undefined) ?? source;
+    const expectedPlayers = new Set((captured.players as Array<Record<string, unknown>>).map((marker) => marker.id));
+    const authoredDefenders = captured.defenders as Array<Record<string, unknown>>;
+    const expectedDefenders = new Set(authoredDefenders.length ? authoredDefenders.map((marker) => marker.id) : [...expectedPlayers]);
+    const actionIds = new Set<string>((source.arrows as Array<Record<string, unknown>>).map((action) => String(action.id)));
+    for (const event of session.events as Array<Record<string, unknown>>) if (event.kind === "edit") {
+      for (const action of ((event.drawing as Record<string, unknown>).arrows as Array<Record<string, unknown>>)) actionIds.add(String(action.id));
+    }
+    check(typeof story.endingLabel === "string" && story.endingLabel.length <= 40
+      && Array.isArray(story.panels) && story.panels.length >= 1 && story.panels.length <= 12, "Walkthrough needs 1–12 panels");
+    const panelIds = new Set<string>();
+    let previousTime = -1;
+    for (const rawPanel of story.panels) {
+      check(object(rawPanel) && Object.keys(rawPanel).every((key) => ["id", "atMs", "caption", "focusPlayerIds", "routeIds", "snapshot"].includes(key)), "Walkthrough panel contains unsupported fields");
+      const panel = rawPanel as Record<string, unknown>;
+      check(typeof panel.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(panel.id) && !panelIds.has(panel.id), "Walkthrough panel identities must be unique"); panelIds.add(panel.id);
+      check(typeof panel.atMs === "number" && Number.isFinite(panel.atMs) && panel.atMs >= 0 && panel.atMs <= recordingEndMs
+        && panel.atMs > previousTime, "Walkthrough panels must be chronological recorded moments");
+      previousTime = panel.atMs;
+      check(typeof panel.caption === "string" && Array.from(panel.caption).length <= 160, "Walkthrough caption must be 160 characters or fewer");
+      check(Array.isArray(panel.focusPlayerIds) && panel.focusPlayerIds.length <= 5 && panel.focusPlayerIds.every((id) => integer(id) && playerIds.has(id))
+        && new Set(panel.focusPlayerIds).size === panel.focusPlayerIds.length, "Walkthrough focus players are invalid");
+      check(object(panel.snapshot) && panel.snapshot.atMs === panel.atMs, "Walkthrough court moment must match its panel time");
+      const snapshot = panel.snapshot as Record<string, unknown>;
+      check(Array.isArray(snapshot.players) && snapshot.players.length <= 5 && Array.isArray(snapshot.defenders) && snapshot.defenders.length <= 5, "Walkthrough roster is invalid");
+      const validateCourtRoster = (roster: unknown[], expected: Set<unknown>, label: string) => {
+        const seen = new Set<number>();
+        for (const rawMarker of roster) {
+          check(object(rawMarker) && Object.keys(rawMarker).every((key) => ["id", "x", "y"].includes(key))
+            && integer(rawMarker.id) && expected.has(rawMarker.id) && !seen.has(rawMarker.id), `Walkthrough ${label} identity is invalid`);
+          point(rawMarker); seen.add(rawMarker.id as number);
+        }
+        check(seen.size === expected.size, `Walkthrough ${label} roster is incomplete`);
+      };
+      validateCourtRoster(snapshot.players as unknown[], expectedPlayers, "player");
+      validateCourtRoster(snapshot.defenders as unknown[], expectedDefenders, "defender");
+      check(snapshot.ball === null || object(snapshot.ball), "Walkthrough ball position is invalid");
+      if (snapshot.ball !== null) point(snapshot.ball);
+      check(snapshot.ballHandlerId === null || integer(snapshot.ballHandlerId) && playerIds.has(snapshot.ballHandlerId), "Walkthrough ball handler is invalid");
+      check(["held", "pass-in-flight", "handoff-pending", "loose", "shot-setup", "shot-in-flight", "shot-result"].includes(String(snapshot.ballPhase))
+        && ["idle", "setup", "air", "result"].includes(String(snapshot.shotPhase)), "Walkthrough ball state is invalid");
+      check(Array.isArray(snapshot.routes) && snapshot.routes.length <= 100, "Walkthrough routes are invalid");
+      const routeIds = new Set<string>();
+      for (const rawRoute of snapshot.routes) {
+        const routeActionId = object(rawRoute) ? rawRoute.actionId : undefined;
+        const generatedAction = typeof routeActionId === "string"
+          && (/^auto-(?:offball|handoff|pick-roll|screen)-(?:[1-9]|[12]\d|30)$/.test(routeActionId)
+            || /^adaptive-read-(?:movement|pass)$/.test(routeActionId));
+        check(object(rawRoute) && Object.keys(rawRoute).every((key) => ["id", "actionId", "sequence", "kind", "playerId", "scope", "importance", "start", "end", "control", "via", "points"].includes(key))
+          && typeof rawRoute.id === "string" && !routeIds.has(rawRoute.id) && integer(rawRoute.playerId) && playerIds.has(rawRoute.playerId)
+          && (rawRoute.actionId === null || typeof rawRoute.actionId === "string" && (actionIds.has(rawRoute.actionId) || generatedAction))
+          && (rawRoute.sequence === null || integer(rawRoute.sequence) && rawRoute.sequence >= 1 && rawRoute.sequence <= 30)
+          && typeof rawRoute.kind === "string" && ["on-ball", "off-ball"].includes(String(rawRoute.scope))
+          && ["main", "adjustment"].includes(String(rawRoute.importance)), "Walkthrough route identity is invalid");
+        routeIds.add(rawRoute.id as string); point(rawRoute.start); point(rawRoute.end);
+        if (rawRoute.control !== undefined) point(rawRoute.control);
+        if (rawRoute.via !== undefined) point(rawRoute.via);
+        if (rawRoute.points !== undefined) check(Array.isArray(rawRoute.points) && rawRoute.points.length <= 128 && rawRoute.points.every((item) => { point(item); return true; }), "Walkthrough route points are invalid");
+      }
+      check(Array.isArray(panel.routeIds) && panel.routeIds.length <= 100 && panel.routeIds.every((id) => typeof id === "string" && routeIds.has(id))
+        && new Set(panel.routeIds).size === panel.routeIds.length, "Walkthrough route selection is invalid");
+    }
+  }
 }
 
 export function validateReadCoachSessionRecord(raw: unknown) {
@@ -293,7 +380,7 @@ export function validateReadCoachSessionRecord(raw: unknown) {
     && Array.isArray(raw.events) && raw.events.length <= 200000, "Read checkpoint session is invalid");
   check(object(raw.hoop), "Read checkpoint court is invalid"); point(raw.hoop);
   const source = raw.initialDrawing;
-  check(object(source) && source.readCoach === undefined && source.roleCues === undefined && source.spacingGates === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
+  check(object(source) && source.readCoach === undefined && source.roleCues === undefined && source.spacingGates === undefined && source.flipbooks === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
   validatePlaybookDocument(source);
   const settings = raw.initialSettings;
   check(object(settings) && ["off", "spacing", "cuts", "read-react"].includes(String(settings.offenseOffBall))
@@ -312,7 +399,7 @@ export function validateReadCoachSessionRecord(raw: unknown) {
     } else if (event.kind === "settings") {
       check(object(event.settings), "Read checkpoint replay settings are invalid");
     } else if (event.kind === "edit") {
-      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.roleCues === undefined && event.drawing.spacingGates === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
+      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.roleCues === undefined && event.drawing.spacingGates === undefined && event.drawing.flipbooks === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
       validatePlaybookDocument(event.drawing);
     } else throw new Error("Read checkpoint replay event is unsupported");
   }

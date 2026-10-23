@@ -50,7 +50,7 @@ export function useWorkspaceNavigation() {
     const titles: Record<AppWorkspace, string> = {
       home: "Basketball tools & games",
       analyzer: "Shot Analyzer",
-      playbook: location.playbookView === "practice" ? "Practice reads · Playbook" : location.playbookView === "role" ? "My Role · Playbook" : "Playbook",
+      playbook: location.playbookView === "practice" ? "Practice reads · Playbook" : location.playbookView === "role" ? "My Role · Playbook" : location.playbookView === "flipbook" ? "Play Flipbook · Playbook" : "Playbook",
       counterlab: "Counter Lab",
       jumper:
         location.jumperView === "create"

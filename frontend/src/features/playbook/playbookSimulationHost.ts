@@ -1,5 +1,5 @@
 import { advanceSimulationState, assertReadCoachSnapshot, createReadCoachChoiceRun, createSimulationRun, editPausedSimulationMarker, getAuthoritativeSimulationFrame, getSimulationFrame, rebasePausedSimulation, setSimulationRunSettings, type SimulationRun } from "./simulation.ts";
-import { captureSimulationSessionPrefix, getSimulationSessionInfo, restoreSimulationSession, seekSimulationSession } from "./simulationSession.ts";
+import { captureSimulationSession, captureSimulationSessionPrefix, getSimulationSessionInfo, restoreSimulationSession, seekSimulationSession } from "./simulationSession.ts";
 import { parseSimulationCommand, type SimulationResponse } from "./playbookSimulationProtocol.ts";
 
 /** One authoritative run per worker. Each operation is bounded to at most 50 ms
@@ -18,6 +18,12 @@ export function createPlaybookSimulationHost() {
         accepted = true;
         run = createSimulationRun(command.drawing, command.settings, undefined, { recordSession: true, seed: command.seed });
         sessionId = command.sessionId; revision = command.revision; lastRequest = command.requestId; playing = true; stopAtMs = null;
+      } else if (command.type === "open-flipbook") {
+        if (run) throw new Error("This worker already owns a session. Restart walkthrough playback to create another");
+        accepted = true;
+        run = restoreSimulationSession(command.session);
+        seekSimulationSession(run, 0);
+        sessionId = command.sessionId; revision = command.revision; lastRequest = command.requestId; playing = false; stopAtMs = null;
       } else if (command.type === "read-opening") {
         if (run) throw new Error("This worker already owns a session. Restart replay to create another");
         accepted = true;
@@ -51,13 +57,17 @@ export function createPlaybookSimulationHost() {
         else if (command.type === "playback") playing = command.playing;
         else if (command.type === "settings") setSimulationRunSettings(run, command.settings);
         else if (command.type === "seek") { playing = false; seekSimulationSession(run, command.timeMs); }
-        else if (command.type === "capture") {
+        else if (command.type === "capture" || command.type === "capture-flipbook") {
           playing = false;
-          seekSimulationSession(run, getSimulationSessionInfo(run)?.positionMs ?? (run.elapsedMs + run.accumulatorMs));
-          if (run.ballState.kind !== "held") throw new Error(run.ballState.kind === "pass-in-flight" || run.ballState.kind === "handoff-pending"
+          const info = getSimulationSessionInfo(run)!;
+          if (command.type === "capture-flipbook" && (info.positionMs < info.recordedUntilMs - 1e-6 || info.positionMs < run.durationMs - 1e-6)) {
+            throw new Error("Finish the recorded possession before freezing a walkthrough");
+          }
+          seekSimulationSession(run, info.positionMs);
+          if (command.type === "capture" && run.ballState.kind !== "held") throw new Error(run.ballState.kind === "pass-in-flight" || run.ballState.kind === "handoff-pending"
             ? "Wait for the catch, then pause to create a read checkpoint"
             : run.ballState.kind.startsWith("shot-") ? "Pause before the shot begins to create a read checkpoint" : "A read checkpoint needs a live ball handler");
-          const session = captureSimulationSessionPrefix(run);
+          const session = command.type === "capture-flipbook" ? captureSimulationSession(run) : captureSimulationSessionPrefix(run);
           return { ...envelope, type: "capture", capture: { session, frame: getAuthoritativeSimulationFrame(run) } };
         }
         else if (command.type === "edit") {

@@ -18,6 +18,7 @@ const routes = [
   ],
   ["#playbook", { workspace: "playbook" }],
   ["#playbook/practice", { workspace: "playbook", playbookView: "practice" }],
+  ["#playbook/flipbook", { workspace: "playbook", playbookView: "flipbook" }],
   ["#playbook/role/2", { workspace: "playbook", playbookView: "role", rolePlayerId: 2 }],
   ["#counter-lab", { workspace: "counterlab" }],
   ["#jumper", { workspace: "jumper", jumperView: "guess" }],

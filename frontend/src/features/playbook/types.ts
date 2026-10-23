@@ -1,3 +1,5 @@
+import type { CourtRoute } from "./arrowVisibility";
+
 export type PlaybookTool = "select" | "player" | "ball" | "movement" | "pass" | "screen" | "slip-screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut" | "spacing-gate" | "delete";
 export type ArrowKind = "movement" | "pass" | "screen" | "slip-screen" | "handoff" | "pick-roll" | "pick-pop" | "off-ball-screen" | "pin-down" | "backdoor-cut";
 export type ArrowPath = "straight" | "curve";
@@ -179,6 +181,34 @@ export type SpacingGate = {
   branchId?: string;
 };
 export type SpacingGateLesson = { version: 1; gates: SpacingGate[] };
+
+export type PlayFlipbookSnapshot = {
+  atMs: number;
+  players: Array<Pick<PlaybookMarker, "id" | "x" | "y">>;
+  defenders: Array<Pick<PlaybookMarker, "id" | "x" | "y">>;
+  ball: CourtPoint | null;
+  ballHandlerId: number | null;
+  ballPhase: "held" | "pass-in-flight" | "handoff-pending" | "loose" | "shot-setup" | "shot-in-flight" | "shot-result";
+  shotPhase: "idle" | "setup" | "air" | "result";
+  routes: CourtRoute[];
+};
+export type PlayFlipbookPanel = {
+  id: string;
+  atMs: number;
+  caption: string;
+  focusPlayerIds: number[];
+  routeIds: string[];
+  snapshot: PlayFlipbookSnapshot;
+};
+export type PlayFlipbookStory = {
+  id: string;
+  playName: string;
+  endingId: string | null;
+  endingLabel: string;
+  recording: ReadCoachSessionRecord;
+  panels: PlayFlipbookPanel[];
+};
+export type PlayFlipbookLesson = { version: 1; stories: PlayFlipbookStory[] };
 export type SpacingGateResult = {
   gateId: string;
   status: "pending" | "checking" | "met" | "missed" | "not-evaluated";
@@ -210,6 +240,8 @@ export interface PlaybookDocument {
   roleCues?: RoleCueLesson;
   /** Optional version-1 extension for authored spacing expectations */
   spacingGates?: SpacingGateLesson;
+  /** Optional version-1 extension containing frozen, panel-by-panel walkthroughs */
+  flipbooks?: PlayFlipbookLesson;
 }
 
 export type PlaybookDraft = Omit<PlaybookDocument, "id" | "created_at" | "updated_at"> & {

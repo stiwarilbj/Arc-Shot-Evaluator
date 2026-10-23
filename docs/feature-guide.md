@@ -266,6 +266,16 @@ overwrite a saved lesson without the Read Coach capability · A checkpoint requi
 its recorded simulation engine version; if the engine changes, preserve and edit the
 lesson to capture and review a new situation · See the [Read Coach guide](playbook-read-coach.md)
 
+### Explain a possession with Play Flipbook
+
+Choose **Build a walkthrough** beside **Export PNG** to record the selected Main path or ending with the current simulation settings · The recording includes the complete possession and resolves an automatic defense once
+
+Review suggested opening, interaction, catch, screen, completion, and finish moments · Select a panel to seek the recording, edit its caption, adjust its timestamp, or refine which players and executed routes are shown · Add up to 12 chronological panels
+
+**What changed?** compares each panel with the one before it by describing player movement, possession state, and route changes · Use **Export storyboard PNG** for an image or **Print / Save PDF** for a multi-page storyboard
+
+Each story is frozen to its recorded simulation and stays available after the play changes · Use **Rebuild from current play** to review a replacement before accepting it · Save the walkthrough into the draft, then save the play to persist it · Walkthroughs remain separate for Main and every ending · The focused view also has its own `#playbook/flipbook` URL · See the [Play Flipbook guide](playbook-flipbook.md) for editing, export, rebuild, and persistence details
+
 ### Branch one opening into endings
 
 Use **Create a branch here** on a Main action to fork before that move and copy

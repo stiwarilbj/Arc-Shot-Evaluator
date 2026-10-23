@@ -18,6 +18,8 @@ export type SimulationCommand = Envelope & (
   | { type: "edit"; drawing: PlaybookDraft; relocation?: SimulationRelocation }
   | { type: "seek"; timeMs: number }
   | { type: "capture" }
+  | { type: "capture-flipbook" }
+  | { type: "open-flipbook"; session: ReadCoachSessionRecord }
   | { type: "read-opening"; checkpoint: ReadCoachCheckpoint }
   | { type: "read-choice"; checkpoint: ReadCoachCheckpoint; choiceId: string }
   | { type: "frame"; deltaMs: number }
@@ -59,6 +61,8 @@ export function parseSimulationCommand(value: unknown): SimulationCommand {
     }
     case "seek": check(clock(value.timeMs), "seek time"); break;
     case "capture": break;
+    case "capture-flipbook": break;
+    case "open-flipbook": validateReadCoachSessionRecord(value.session); break;
     case "read-opening":
       validateReadCoachLesson({ version: 1, checkpoints: [value.checkpoint] });
       check((value.checkpoint as ReadCoachCheckpoint).session.engineVersion === SIMULATION_ENGINE_VERSION, "read checkpoint engine version");

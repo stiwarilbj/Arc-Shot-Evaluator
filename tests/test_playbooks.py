@@ -171,6 +171,80 @@ def test_spacing_gate_validation_rejects_invalid_geometry_and_milestones(tmp_pat
         assert client.post("/api/playbooks", json=payload, headers=headers).status_code == 400
 
 
+def test_play_flipbook_round_trip_requires_aware_updates_and_preserves_frozen_story(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    base = client.post("/api/playbooks", json=_payload("Possession story")).json()
+    drawing = {key: base[key] for key in ("version", "id", "name", "defenders_visible", "players", "defenders", "ball", "arrows")}
+    end_ms = 16.6666666667
+    settings = {"offenseOffBall": "off", "defenseScheme": "man-to-man", "defenseStrategy": "help", "offBallIntensity": 70,
+                "automaticActions": {"screen": False, "handoff": False, "pickRoll": False, "offBallScreen": False}, "offenseMode": "scripted"}
+    recording = {"version": 1, "engineVersion": 1, "seed": 107, "initialDrawing": drawing, "initialSettings": settings,
+                 "resolvedDefenseScheme": "man-to-man", "hoop": {"x": 50, "y": 5}, "positionMs": end_ms,
+                 "events": [{"kind": "advance", "atMs": 0, "elapsedMs": 0, "accumulatorMs": 0, "deltaMs": end_ms, "endMs": end_ms}]}
+    snapshot = {"atMs": 0, "players": [{key: player[key] for key in ("id", "x", "y")} for player in base["players"]],
+                "defenders": [{key: marker[key] for key in ("id", "x", "y")} for marker in base["defenders"]],
+                "ball": base["ball"], "ballHandlerId": 1, "ballPhase": "held", "shotPhase": "idle", "routes": []}
+    finish = {**snapshot, "atMs": end_ms}
+    flipbooks = {"version": 1, "stories": [{"id": "walkthrough-one", "playName": "Frozen possession name", "endingId": None,
+                 "endingLabel": "Main", "recording": recording, "panels": [
+                     {"id": "opening", "atMs": 0, "caption": "The set", "focusPlayerIds": [], "routeIds": [], "snapshot": snapshot},
+                     {"id": "finish", "atMs": end_ms, "caption": "The finish", "focusPlayerIds": [], "routeIds": [], "snapshot": finish},
+                 ]}]}
+    aware = {"X-ARC-Playbook-Extensions": "play-flipbook-v1"}
+    unsupported = client.put(f"/api/playbooks/{base['id']}", json={**base, "flipbooks": flipbooks}, headers={"If-Match": _match(base)})
+    assert unsupported.status_code == 409
+
+    saved = client.put(f"/api/playbooks/{base['id']}", json={**base, "flipbooks": flipbooks}, headers={**aware, "If-Match": _match(base)})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["flipbooks"]["stories"][0]["playName"] == "Frozen possession name"
+    assert client.get(f"/api/playbooks/{base['id']}").json()["flipbooks"] == saved.json()["flipbooks"]
+    assert "play-flipbook-v1" in client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"]
+
+    stale = {key: value for key, value in saved.json().items() if key != "flipbooks"}
+    conflict = client.put(f"/api/playbooks/{base['id']}", json=stale, headers={"If-Match": _match(saved.json())})
+    assert conflict.status_code == 409
+    invalid = json.loads(json.dumps(saved.json()))
+    invalid["flipbooks"]["stories"][0]["panels"].reverse()
+    rejected = client.put(f"/api/playbooks/{base['id']}", json=invalid, headers={**aware, "If-Match": _match(saved.json())})
+    assert rejected.status_code == 400
+    assert client.get(f"/api/playbooks/{base['id']}").json()["flipbooks"] == saved.json()["flipbooks"]
+
+
+def test_play_flipbook_create_receipt_is_stable_for_zero_time_and_generated_routes(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("New frozen walkthrough")
+    drawing = {"version": 1, "id": "draft-flipbook-create", "name": payload["name"], "defenders_visible": payload["defenders_visible"],
+               "players": payload["players"], "defenders": payload["defenders"], "ball": payload["ball"], "arrows": payload["arrows"]}
+    end_ms = 16.6666666667
+    settings = {"offenseOffBall": "off", "defenseScheme": "man-to-man", "defenseStrategy": "help", "offBallIntensity": 70,
+                "automaticActions": {"screen": False, "handoff": False, "pickRoll": False, "offBallScreen": False}, "offenseMode": "scripted"}
+    recording = {"version": 1, "engineVersion": 1, "seed": 107, "initialDrawing": drawing, "initialSettings": settings,
+                 "resolvedDefenseScheme": "man-to-man", "hoop": {"x": 50, "y": 5}, "positionMs": end_ms,
+                 "events": [{"kind": "advance", "atMs": 0, "elapsedMs": 0, "accumulatorMs": 0, "deltaMs": end_ms, "endMs": end_ms}]}
+    route = {"id": "auto-screen-2:2:actor", "actionId": "auto-screen-2", "sequence": 2, "kind": "screen", "playerId": 1,
+             "scope": "on-ball", "importance": "main", "start": {"x": 50, "y": 70}, "end": {"x": 52, "y": 60}}
+    snapshot = {"atMs": 0, "players": [{key: player[key] for key in ("id", "x", "y")} for player in payload["players"]],
+                "defenders": [{key: marker[key] for key in ("id", "x", "y")} for marker in payload["defenders"]],
+                "ball": payload["ball"], "ballHandlerId": 1, "ballPhase": "held", "shotPhase": "idle", "routes": [route]}
+    finish = {**snapshot, "atMs": end_ms, "routes": []}
+    payload["flipbooks"] = {"version": 1, "stories": [{"id": "created-walkthrough", "playName": payload["name"], "endingId": None,
+        "endingLabel": "Main", "recording": recording, "panels": [
+            {"id": "opening", "atMs": 0, "caption": "Opening", "focusPlayerIds": [1], "routeIds": [route["id"]], "snapshot": snapshot},
+            {"id": "finish", "atMs": end_ms, "caption": "Finish", "focusPlayerIds": [], "routeIds": [], "snapshot": finish},
+        ]}]}
+    headers = {"X-ARC-Playbook-Extensions": "play-flipbook-v1", "X-ARC-Create-ID": "play-" + "a" * 32}
+    created = client.post("/api/playbooks", json=payload, headers=headers)
+    assert created.status_code == 200, created.text
+    assert created.json()["flipbooks"]["stories"][0]["panels"][0]["snapshot"]["atMs"] == 0.0
+    reopened = client.get(f"/api/playbooks/{created.json()['id']}")
+    assert reopened.status_code == 200
+    retried = client.post("/api/playbooks", json=payload, headers=headers)
+    assert retried.status_code == 200, retried.text
+    assert retried.json() == created.json()
+
+
 def test_playbook_rejects_out_of_bounds_or_duplicate_markers(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     client = TestClient(app)
@@ -921,7 +995,7 @@ def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_pat
         "continuation": [payload["arrows"][0]],
     }]
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
 
@@ -1086,7 +1160,7 @@ def test_read_coach_lessons_require_capability_and_round_trip(tmp_path, monkeypa
     }]}
     payload["readCoach"] = lesson
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
     created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "read-coach-v1"})

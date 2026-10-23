@@ -1,5 +1,5 @@
 import { parseSimulationResponse, type SimulationCommand, type SimulationResponse, type SimulationView, type SimulationRelocation, type SimulationCapture } from "./playbookSimulationProtocol.ts";
-import type { PlaybookDraft, ReadCoachCheckpoint, SimulationSettings } from "./types.ts";
+import type { PlaybookDraft, ReadCoachCheckpoint, ReadCoachSessionRecord, SimulationSettings } from "./types.ts";
 
 type CommandBody = SimulationCommand extends infer C ? C extends SimulationCommand ? Omit<C, "sessionId" | "revision" | "requestId"> : never : never;
 type WorkerPort = Pick<Worker, "postMessage" | "terminate" | "addEventListener" | "removeEventListener">;
@@ -12,6 +12,7 @@ export const MAX_PENDING_ADVANCE_MS = 100;
 export function createPlaybookSimulationClient(options: {
   sessionId: string; onState: (view: SimulationView) => void; onFailure: (message: string) => void;
   onCapture?: (capture: SimulationCapture) => void;
+  onFlipbookCapture?: (capture: SimulationCapture) => void;
   onCommandError?: (type: SimulationCommand["type"], message: string) => void;
   createWorker?: () => WorkerPort; timeoutMs?: number;
 }) {
@@ -65,7 +66,7 @@ export function createPlaybookSimulationClient(options: {
     }
     if (current) {
       if (response.type === "capture") {
-        options.onCapture?.(response.capture);
+        (completedCommandType === "capture-flipbook" ? options.onFlipbookCapture : options.onCapture)?.(response.capture);
         pump();
         return;
       }
@@ -93,6 +94,8 @@ export function createPlaybookSimulationClient(options: {
     edit(drawing: PlaybookDraft, relocation?: SimulationRelocation) { wantedPlaying = false; debt = 0; control({ type: "edit", drawing, relocation }); },
     seek(timeMs: number) { wantedPlaying = false; debt = 0; control({ type: "seek", timeMs }); },
     capture() { wantedPlaying = false; debt = 0; control({ type: "capture" }); },
+    captureFlipbook() { wantedPlaying = false; debt = 0; control({ type: "capture-flipbook" }); },
+    openFlipbook(session: ReadCoachSessionRecord) { wantedPlaying = false; debt = 0; control({ type: "open-flipbook", session }); },
     startReadOpening(checkpoint: ReadCoachCheckpoint) { wantedPlaying = true; control({ type: "read-opening", checkpoint }); },
     startReadChoice(checkpoint: ReadCoachCheckpoint, choiceId: string) { wantedPlaying = true; control({ type: "read-choice", checkpoint, choiceId }); },
     advance(deltaMs: number) { if (!disposed && wantedPlaying && Number.isFinite(deltaMs) && deltaMs > 0) { debt = Math.min(MAX_PENDING_ADVANCE_MS, debt + Math.min(50, deltaMs)); pump(); } },

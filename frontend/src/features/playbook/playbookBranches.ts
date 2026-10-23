@@ -73,6 +73,7 @@ export function flattenPlaybookPath(source: PlaybookDraft, branchId: string | nu
   delete resolved.readCoach;
   delete resolved.roleCues;
   delete resolved.spacingGates;
+  delete resolved.flipbooks;
   if (label) resolved.name = `${source.name} — ${label}`.slice(0, 80);
   return resolved;
 }
