@@ -39,6 +39,7 @@ export function playbookContentKey(draft: PlaybookDraft): string {
     draft.roleCues ?? null,
     draft.spacingGates ?? null,
     draft.flipbooks ?? null,
+    draft.baitPayoffs ?? null,
   ]);
 }
 

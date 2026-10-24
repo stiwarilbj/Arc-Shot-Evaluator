@@ -148,6 +148,71 @@ def test_spacing_gates_round_trip_and_require_extension_aware_updates(tmp_path, 
     assert updated.json()["spacingGates"] == saved["spacingGates"]
 
 
+def test_bait_payoff_round_trip_requires_aware_updates_and_preserves_endpoint_expectations(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Bait and payoff")
+    payload["players"] = [{"id": 1, "x": 50, "y": 70}, {"id": 2, "x": 30, "y": 58}]
+    payload["defenders"] = [{"id": 10, "x": 55, "y": 60}]
+    payload["arrows"] = [
+        {"id": "bait-cut", "kind": "backdoor-cut", "actor_id": 2, "sequence": 1, "start": {"x": 30, "y": 58}, "end": {"x": 46, "y": 42}, "timing": 1.2},
+        {"id": "payoff-pass", "kind": "pass", "actor_id": 1, "recipient_id": 2, "sequence": 2, "start": {"x": 50, "y": 70}, "end": {"x": 46, "y": 42}, "timing": 1.2},
+    ]
+    connection = {
+        "id": "bait-link", "baitActionId": "bait-cut", "payoffActionId": "payoff-pass", "title": "Pull the helper",
+        "explanation": "The cut asks the low defender to turn before the pass reaches the receiver", "scope": "shared",
+        "baitSignature": "0123abcd", "payoffSignature": "abcd0123",
+        "reaction": {"defenderId": 10, "direction": "enter", "area": {"shape": "circle", "center": {"x": 50, "y": 50}, "radiusFeet": 3.127},
+            "checkpoint": {"actionId": "payoff-pass", "event": "start"}},
+    }
+    payload["baitPayoffs"] = {"version": 1, "connections": [connection]}
+    aware = {"X-ARC-Playbook-Extensions": "bait-payoff-v1"}
+    assert client.post("/api/playbooks", json=payload).status_code == 409
+    created = client.post("/api/playbooks", json=payload, headers=aware)
+    assert created.status_code == 200, created.text
+    saved = created.json()
+    assert saved["baitPayoffs"]["connections"][0]["reaction"]["area"]["radiusFeet"] == 3.13
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["baitPayoffs"] == saved["baitPayoffs"]
+    assert "bait-payoff-v1" in client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"]
+
+    stale = {key: value for key, value in saved.items() if key != "baitPayoffs"}
+    assert client.put(f"/api/playbooks/{saved['id']}", json=stale, headers={"If-Match": _match(saved)}).status_code == 409
+    current = {**saved, "name": "Bait connection survives updates"}
+    updated = client.put(f"/api/playbooks/{saved['id']}", json=current, headers={**aware, "If-Match": _match(saved)})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["baitPayoffs"] == saved["baitPayoffs"]
+
+    malformed = json.loads(json.dumps(updated.json()))
+    malformed["baitPayoffs"]["connections"][0]["reaction"]["area"]["center"] = {"x": 0, "y": 0}
+    assert client.put(f"/api/playbooks/{saved['id']}", json=malformed, headers={**aware, "If-Match": _match(updated.json())}).status_code == 400
+    assert client.get(f"/api/playbooks/{saved['id']}").json()["baitPayoffs"] == saved["baitPayoffs"]
+
+
+def test_bait_payoff_branch_connections_must_reference_the_resolved_ending(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
+    client = TestClient(app)
+    payload = _payload("Branch-scoped Bait and payoff")
+    payload["players"] = [{"id": 1, "x": 50, "y": 70}, {"id": 2, "x": 30, "y": 58}]
+    payload["arrows"] = [
+        {"id": "opening", "kind": "movement", "actor_id": 1, "sequence": 1, "start": {"x": 50, "y": 70}, "end": {"x": 55, "y": 65}, "timing": 1.2},
+        {"id": "fork", "kind": "movement", "actor_id": 1, "sequence": 2, "start": {"x": 55, "y": 65}, "end": {"x": 60, "y": 60}, "timing": 1.2},
+        {"id": "main-only", "kind": "movement", "actor_id": 1, "sequence": 3, "start": {"x": 60, "y": 60}, "end": {"x": 65, "y": 55}, "timing": 1.2},
+    ]
+    ending_action = {"id": "ending-payoff", "kind": "pass", "actor_id": 1, "recipient_id": 2, "sequence": 3,
+        "start": {"x": 55, "y": 65}, "end": {"x": 30, "y": 58}, "timing": 1.2}
+    payload["branches"] = [{"id": "ending-left", "label": "Left read", "fork": {"actionIds": ["fork"], "sequence": 2}, "continuation": [payload["arrows"][1], ending_action]}]
+    payload["baitPayoffs"] = {"version": 1, "connections": [{"id": "ending-link", "baitActionId": "opening", "payoffActionId": "ending-payoff",
+        "title": "Replace the cutter", "explanation": "The replacement opens the lane", "scope": "ending", "branchId": "ending-left",
+        "baitSignature": "0123abcd", "payoffSignature": "abcd0123"}]}
+    headers = {"X-ARC-Playbook-Extensions": "branches-v1,bait-payoff-v1"}
+    saved = client.post("/api/playbooks", json=payload, headers=headers)
+    assert saved.status_code == 200, saved.text
+    invalid = json.loads(json.dumps(saved.json()))
+    invalid["baitPayoffs"]["connections"][0]["payoffActionId"] = "main-only"
+    assert client.put(f"/api/playbooks/{saved.json()['id']}", json=invalid, headers={**headers, "If-Match": _match(saved.json())}).status_code == 400
+    assert client.get(f"/api/playbooks/{saved.json()['id']}").json()["baitPayoffs"] == saved.json()["baitPayoffs"]
+
+
 def test_spacing_gate_validation_rejects_invalid_geometry_and_milestones(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(playbooks_module, "PLAYBOOKS_DIR", tmp_path)
     client = TestClient(app)
@@ -995,7 +1060,7 @@ def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_pat
         "continuation": [payload["arrows"][0]],
     }]
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
 
@@ -1160,7 +1225,7 @@ def test_read_coach_lessons_require_capability_and_round_trip(tmp_path, monkeypa
     }]}
     payload["readCoach"] = lesson
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
     created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "read-coach-v1"})

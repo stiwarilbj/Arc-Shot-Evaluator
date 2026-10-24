@@ -63,5 +63,16 @@ export function normalizePlaybookPrecision<T extends PlaybookDraft>(playbook: T)
     gate.afterSeconds = roundForStorage(gate.afterSeconds, 2);
     if (gate.trigger.progress !== undefined) gate.trigger.progress = roundForStorage(gate.trigger.progress, 4);
   }
+  for (const connection of saved.baitPayoffs?.connections ?? []) {
+    if (connection.reaction) {
+      point(connection.reaction.area.center);
+      if (connection.reaction.area.shape === "circle") connection.reaction.area.radiusFeet = roundForStorage(connection.reaction.area.radiusFeet, 2);
+      else {
+        connection.reaction.area.widthFeet = roundForStorage(connection.reaction.area.widthFeet, 2);
+        connection.reaction.area.heightFeet = roundForStorage(connection.reaction.area.heightFeet, 2);
+      }
+      if (connection.reaction.checkpoint.progress !== undefined) connection.reaction.checkpoint.progress = roundForStorage(connection.reaction.checkpoint.progress, 4);
+    }
+  }
   return saved;
 }

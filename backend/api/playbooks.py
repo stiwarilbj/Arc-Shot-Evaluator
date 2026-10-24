@@ -35,6 +35,7 @@ MAX_ROLE_CUES = 600
 MAX_SPACING_GATES = 30
 MAX_FLIPBOOK_STORIES = 9
 MAX_FLIPBOOK_PANELS = 12
+MAX_BAIT_PAYOFFS = 30
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
 MAX_JSON_DEPTH = 32
@@ -197,6 +198,123 @@ def _has_flipbooks(value: dict) -> bool:
     return isinstance(lesson, dict) and isinstance(lesson.get("stories"), list)
 
 
+def _has_bait_payoffs(value: dict) -> bool:
+    # Presence, including an empty list, proves the client understands this
+    # extension and prevents an older writer from silently stripping it
+    return "baitPayoffs" in value
+
+
+def _bait_payoffs(value: object, players: list[dict], defenders: list[dict], arrows: list[dict], branches: list[dict]) -> dict:
+    if not isinstance(value, dict) or set(value) != {"version", "connections"} or value.get("version") != 1:
+        raise HTTPException(400, "Bait & Payoff data is invalid")
+    connections = value.get("connections")
+    if not isinstance(connections, list) or len(connections) > MAX_BAIT_PAYOFFS:
+        raise HTTPException(400, f"A play can contain at most {MAX_BAIT_PAYOFFS} Bait & Payoff connections")
+    main_by_id = {arrow["id"]: arrow for arrow in arrows}
+    branch_by_id = {branch["id"]: branch for branch in branches}
+    paths = _resolved_action_paths({"arrows": arrows, "branches": branches})
+    player_ids = {marker["id"] for marker in players}
+    defender_ids = {marker["id"] for marker in defenders} or set(player_ids)
+    seen: set[str] = set()
+    clean: list[dict] = []
+    event_names = {"start", "complete", "catch", "screen-set", "screen-use", "route-point"}
+    screen_set_kinds = {"screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"}
+    screen_use_kinds = screen_set_kinds | {"slip-screen", "handoff"}
+    for item in connections:
+        allowed = {"id", "baitActionId", "payoffActionId", "title", "explanation", "scope", "branchId", "baitSignature", "payoffSignature", "reaction"}
+        if not isinstance(item, dict) or set(item) - allowed:
+            raise HTTPException(400, "Bait & Payoff connection fields are invalid")
+        connection_id = item.get("id")
+        bait_id, payoff_id = item.get("baitActionId"), item.get("payoffActionId")
+        if not isinstance(connection_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", connection_id) or connection_id in seen:
+            raise HTTPException(400, "Bait & Payoff identities must be unique short labels")
+        seen.add(connection_id)
+        if not isinstance(bait_id, str) or not re.fullmatch(r"[a-z0-9-]{1,64}", bait_id) or not isinstance(payoff_id, str) or not re.fullmatch(r"[a-z0-9-]{1,64}", payoff_id) or bait_id == payoff_id:
+            raise HTTPException(400, "Bait and payoff must reference distinct stable action identities")
+        title, explanation = item.get("title"), item.get("explanation")
+        if not isinstance(title, str) or not title.strip(NAME_WHITESPACE) or len(title) > 60:
+            raise HTTPException(400, "Bait & Payoff title must contain 1-60 characters")
+        if not isinstance(explanation, str) or not explanation.strip(NAME_WHITESPACE) or len(explanation) > 1000:
+            raise HTTPException(400, "Bait & Payoff explanation must contain 1-1000 characters")
+        scope, branch_id = item.get("scope"), item.get("branchId")
+        if scope not in {"shared", "ending"}:
+            raise HTTPException(400, "Bait & Payoff scope is invalid")
+        if scope == "shared":
+            if branch_id is not None:
+                raise HTTPException(400, "Shared Bait & Payoff connections cannot name an ending")
+            path_actions = main_by_id
+        else:
+            if not isinstance(branch_id, str) or branch_id not in branch_by_id:
+                raise HTTPException(400, "Ending Bait & Payoff connection must reference an existing ending")
+            path_actions = {arrow["id"]: arrow for arrow in paths[branch_id]}
+        bait, payoff = path_actions.get(bait_id), path_actions.get(payoff_id)
+        if bait is None or payoff is None:
+            raise HTTPException(400, "Bait & Payoff actions must remain in the selected path")
+        bait_signature, payoff_signature = item.get("baitSignature"), item.get("payoffSignature")
+        if not isinstance(bait_signature, str) or not re.fullmatch(r"[0-9a-f]{8}", bait_signature) or not isinstance(payoff_signature, str) or not re.fullmatch(r"[0-9a-f]{8}", payoff_signature):
+            raise HTTPException(400, "Bait & Payoff action review signatures are invalid")
+        clean_item = {"id": connection_id, "baitActionId": bait_id, "payoffActionId": payoff_id,
+            "title": title.strip(NAME_WHITESPACE), "explanation": explanation.strip(NAME_WHITESPACE), "scope": scope,
+            "baitSignature": bait_signature, "payoffSignature": payoff_signature}
+        if branch_id is not None:
+            clean_item["branchId"] = branch_id
+        reaction = item.get("reaction")
+        if reaction is not None:
+            if not isinstance(reaction, dict) or set(reaction) != {"defenderId", "area", "direction", "checkpoint"}:
+                raise HTTPException(400, "Defender reaction check fields are invalid")
+            defender_id = reaction.get("defenderId")
+            if not _integer(defender_id) or defender_id not in defender_ids:
+                raise HTTPException(400, "Reaction check must reference a defender on this court")
+            direction = reaction.get("direction")
+            if direction not in {"enter", "leave"}:
+                raise HTTPException(400, "Reaction direction must be enter or leave")
+            area = reaction.get("area")
+            if not isinstance(area, dict) or set(area) - {"shape", "center", "radiusFeet", "widthFeet", "heightFeet"}:
+                raise HTTPException(400, "Reaction area is invalid")
+            center = _point(area.get("center"), "Reaction area center")
+            if area.get("shape") == "circle":
+                radius = area.get("radiusFeet")
+                if not isinstance(radius, (int, float)) or isinstance(radius, bool) or not math.isfinite(radius) or not 0.5 <= radius <= 25 or "widthFeet" in area or "heightFeet" in area:
+                    raise HTTPException(400, "Reaction radius must be 0.5-25 feet")
+                if min(center["x"] * .5, (100 - center["x"]) * .5, center["y"] * .47, (100 - center["y"]) * .47) < radius - 1e-6:
+                    raise HTTPException(400, "Reaction area must stay within the playable court")
+                clean_area = {"shape": "circle", "center": center, "radiusFeet": round(float(radius), 2)}
+            elif area.get("shape") == "rectangle":
+                width, height = area.get("widthFeet"), area.get("heightFeet")
+                if not isinstance(width, (int, float)) or isinstance(width, bool) or not math.isfinite(width) or not 1 <= width <= 50 or not isinstance(height, (int, float)) or isinstance(height, bool) or not math.isfinite(height) or not 1 <= height <= 47 or "radiusFeet" in area:
+                    raise HTTPException(400, "Reaction rectangle dimensions are invalid")
+                if min(center["x"] * .5, (100 - center["x"]) * .5) < width / 2 - 1e-6 or min(center["y"] * .47, (100 - center["y"]) * .47) < height / 2 - 1e-6:
+                    raise HTTPException(400, "Reaction area must stay within the playable court")
+                clean_area = {"shape": "rectangle", "center": center, "widthFeet": round(float(width), 2), "heightFeet": round(float(height), 2)}
+            else:
+                raise HTTPException(400, "Reaction area shape must be circle or rectangle")
+            checkpoint = reaction.get("checkpoint")
+            checkpoint_fields = {"actionId", "event", "routePlayerId", "routePhase", "routeSegment", "progress"}
+            if not isinstance(checkpoint, dict) or set(checkpoint) - checkpoint_fields or not {"actionId", "event"}.issubset(checkpoint):
+                raise HTTPException(400, "Reaction checkpoint fields are invalid")
+            checkpoint_action = path_actions.get(checkpoint.get("actionId")) if isinstance(checkpoint.get("actionId"), str) else None
+            event = checkpoint.get("event")
+            if checkpoint_action is None or event not in event_names or checkpoint_action["id"] not in {bait_id, payoff_id}:
+                raise HTTPException(400, "Reaction checkpoint must belong to a linked action and supported milestone")
+            if event == "catch" and checkpoint_action["kind"] not in {"pass", "handoff"}:
+                raise HTTPException(400, "Catch checkpoints require a pass or handoff")
+            if event == "screen-set" and checkpoint_action["kind"] not in screen_set_kinds:
+                raise HTTPException(400, "Screen-set checkpoints require a screen action")
+            if event == "screen-use" and checkpoint_action["kind"] not in screen_use_kinds:
+                raise HTTPException(400, "Screen-use checkpoints require a screen or handoff action")
+            clean_checkpoint = {"actionId": checkpoint_action["id"], "event": event}
+            if event == "route-point":
+                route_player, phase, segment, progress = checkpoint.get("routePlayerId"), checkpoint.get("routePhase"), checkpoint.get("routeSegment"), checkpoint.get("progress")
+                if not _integer(route_player) or route_player not in player_ids or phase != "main" or segment != 0 or not isinstance(progress, (int, float)) or isinstance(progress, bool) or not math.isfinite(progress) or not 0 < progress < 1:
+                    raise HTTPException(400, "Route-point checkpoint needs a player, main route, and progress between zero and one")
+                clean_checkpoint.update({"routePlayerId": route_player, "routePhase": phase, "routeSegment": segment, "progress": round(float(progress), 4)})
+            elif any(key in checkpoint for key in ("routePlayerId", "routePhase", "routeSegment", "progress")):
+                raise HTTPException(400, "Only route-point checkpoints can specify route progress")
+            clean_item["reaction"] = {"defenderId": defender_id, "direction": direction, "area": clean_area, "checkpoint": clean_checkpoint}
+        clean.append(clean_item)
+    return {"version": 1, "connections": clean}
+
+
 def _flipbook_point(value: object, label: str) -> dict[str, float]:
     if not isinstance(value, dict) or any(not isinstance(value.get(axis), (int, float)) or isinstance(value.get(axis), bool)
                                           or not math.isfinite(value[axis]) or not 0 <= value[axis] <= 100 for axis in ("x", "y")):
@@ -242,7 +360,7 @@ def _flipbooks(value: object, playbook_id: str, players: list[dict], branches: l
                 or not isinstance(session.get("events"), list) or len(session["events"]) > 200000:
             raise HTTPException(400, "Walkthrough replay session is invalid")
         source = session["initialDrawing"]
-        if not isinstance(source, dict) or any(key in source for key in ("branches", "readCoach", "roleCues", "spacingGates", "flipbooks")):
+        if not isinstance(source, dict) or any(key in source for key in ("branches", "readCoach", "roleCues", "spacingGates", "flipbooks", "baitPayoffs")):
             raise HTTPException(400, "Walkthrough recording must use a flattened executable drawing")
         _document(source, playbook_id=playbook_id)
         if not isinstance(session.get("initialSettings"), dict):
@@ -279,7 +397,7 @@ def _flipbooks(value: object, playbook_id: str, players: list[dict], branches: l
                 if set(event) - {"kind", "atMs", "elapsedMs", "accumulatorMs", "drawing", "relocation"} or not isinstance(event.get("drawing"), dict):
                     raise HTTPException(400, "Walkthrough edit event is invalid")
                 drawing = event["drawing"]
-                if any(key in drawing for key in ("branches", "readCoach", "roleCues", "spacingGates", "flipbooks")):
+                if any(key in drawing for key in ("branches", "readCoach", "roleCues", "spacingGates", "flipbooks", "baitPayoffs")):
                     raise HTTPException(400, "Walkthrough edits must remain flattened")
                 normalized = _document(drawing, playbook_id=playbook_id)
                 action_ids.update(arrow["id"] for arrow in normalized["arrows"])
@@ -686,7 +804,7 @@ def _read_coach(value: object, playbook_id: str) -> dict:
                 or not valid_settings(session.get("initialSettings")):
             raise HTTPException(400, "Read checkpoint replay session is invalid")
         source = session["initialDrawing"]
-        if not isinstance(source, dict) or "readCoach" in source or "roleCues" in source or "spacingGates" in source or "flipbooks" in source or "branches" in source:
+        if not isinstance(source, dict) or "readCoach" in source or "roleCues" in source or "spacingGates" in source or "flipbooks" in source or "baitPayoffs" in source or "branches" in source:
             raise HTTPException(400, "Read checkpoint snapshots must be flattened and cannot contain lessons")
         _document(source, playbook_id=playbook_id, validate_timing_edges=True)
         _point(session.get("hoop"), "Read checkpoint hoop")
@@ -713,7 +831,7 @@ def _read_coach(value: object, playbook_id: str) -> dict:
                 if set(event) - {"kind", "atMs", "elapsedMs", "accumulatorMs", "drawing", "relocation"} or "drawing" not in event:
                     raise HTTPException(400, "Read checkpoint replay edit is invalid")
                 drawing = event["drawing"]
-                if not isinstance(drawing, dict) or "readCoach" in drawing or "roleCues" in drawing or "spacingGates" in drawing or "flipbooks" in drawing or "branches" in drawing:
+                if not isinstance(drawing, dict) or "readCoach" in drawing or "roleCues" in drawing or "spacingGates" in drawing or "flipbooks" in drawing or "baitPayoffs" in drawing or "branches" in drawing:
                     raise HTTPException(400, "Read checkpoint replay edits must be flattened")
                 _document(drawing, playbook_id=playbook_id)
                 relocation = event.get("relocation")
@@ -928,7 +1046,7 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         "arrows": arrows,
     }
     raw_branches = payload.get("branches")
-    nested_payload = {key: value for key, value in payload.items() if key not in {"roleCues", "spacingGates", "flipbooks"}}
+    nested_payload = {key: value for key, value in payload.items() if key not in {"roleCues", "spacingGates", "flipbooks", "baitPayoffs"}}
     if raw_branches is not None:
         if not isinstance(raw_branches, list) or len(raw_branches) > MAX_BRANCHES:
             raise HTTPException(400, f"A play can have at most {MAX_BRANCHES} endings")
@@ -992,6 +1110,8 @@ def _document(payload: object, *, playbook_id: str, created_at: str | None = Non
         result["spacingGates"] = _spacing_gates(payload["spacingGates"], players, arrows, result.get("branches", []))
     if "flipbooks" in payload:
         result["flipbooks"] = _flipbooks(payload["flipbooks"], playbook_id, players, result.get("branches", []))
+    if "baitPayoffs" in payload:
+        result["baitPayoffs"] = _bait_payoffs(payload["baitPayoffs"], players, defenders, arrows, result.get("branches", []))
     if validate_timing_edges:
         _validate_timing_path(result["arrows"])
     return result
@@ -1427,7 +1547,7 @@ def _saved_play_instant(value: object) -> int | float:
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
-    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1"
+    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1"
     try:
         PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
         paths = sorted(PLAYBOOKS_DIR.iterdir())
@@ -1496,6 +1616,8 @@ def create_playbook(payload: Annotated[dict, Depends(_request_document)], create
         raise HTTPException(409, "This server requires a spacing-gate-aware client before saving spacing instructions")
     if _has_flipbooks(payload) and "play-flipbook-v1" not in supported:
         raise HTTPException(409, "This server requires a Play Flipbook-aware client before saving walkthroughs")
+    if _has_bait_payoffs(payload) and "bait-payoff-v1" not in supported:
+        raise HTTPException(409, "This server requires a Bait & Payoff-aware client before saving connections")
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -1569,6 +1691,11 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(409, "This server requires a Play Flipbook-aware client before saving walkthroughs")
         if _has_flipbooks(payload) and "play-flipbook-v1" not in supported:
             raise HTTPException(409, "This server requires a Play Flipbook-aware client before saving walkthroughs")
+        current_has_bait_payoffs = _has_bait_payoffs(current)
+        if current_has_bait_payoffs and ("bait-payoff-v1" not in supported or "baitPayoffs" not in payload):
+            raise HTTPException(409, "This play contains Bait & Payoff connections and requires an explicit Bait & Payoff-aware update · The saved play is unchanged")
+        if "baitPayoffs" in payload and "bait-payoff-v1" not in supported:
+            raise HTTPException(409, "This server requires a Bait & Payoff-aware client before saving connections")
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:

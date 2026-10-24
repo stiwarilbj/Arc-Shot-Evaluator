@@ -209,6 +209,36 @@ export type PlayFlipbookStory = {
   panels: PlayFlipbookPanel[];
 };
 export type PlayFlipbookLesson = { version: 1; stories: PlayFlipbookStory[] };
+export type BaitPayoffEvent = SpacingGateEvent;
+export type BaitPayoffCheckpoint = {
+  actionId: string;
+  event: BaitPayoffEvent;
+  routePlayerId?: number;
+  routePhase?: "main" | "approach" | "use" | "release";
+  routeSegment?: number;
+  progress?: number;
+};
+export type BaitPayoffArea = { shape: "circle"; center: CourtPoint; radiusFeet: number }
+  | { shape: "rectangle"; center: CourtPoint; widthFeet: number; heightFeet: number };
+export type BaitPayoffReaction = {
+  defenderId: number;
+  area: BaitPayoffArea;
+  direction: "enter" | "leave";
+  checkpoint: BaitPayoffCheckpoint;
+};
+export type BaitPayoffConnection = {
+  id: string;
+  baitActionId: string;
+  payoffActionId: string;
+  title: string;
+  explanation: string;
+  scope: "shared" | "ending";
+  branchId?: string;
+  baitSignature: string;
+  payoffSignature: string;
+  reaction?: BaitPayoffReaction;
+};
+export type BaitPayoffLesson = { version: 1; connections: BaitPayoffConnection[] };
 export type SpacingGateResult = {
   gateId: string;
   status: "pending" | "checking" | "met" | "missed" | "not-evaluated";
@@ -242,6 +272,8 @@ export interface PlaybookDocument {
   spacingGates?: SpacingGateLesson;
   /** Optional version-1 extension containing frozen, panel-by-panel walkthroughs */
   flipbooks?: PlayFlipbookLesson;
+  /** Optional version-1 extension for author-defined decoy and payoff links */
+  baitPayoffs?: BaitPayoffLesson;
 }
 
 export type PlaybookDraft = Omit<PlaybookDocument, "id" | "created_at" | "updated_at"> & {

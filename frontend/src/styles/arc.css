@@ -1665,3 +1665,77 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .flipbook-print-panel p { margin: 0; color: #333; font-size: 9pt; line-height: 1.4; }
   .flipbook-print-panel .play-flipbook-court-wrap { width: 100%; }
 }
+
+/* Bait & Payoff teaching links stay secondary to the action inspector */
+.bait-payoff-inspector { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.bait-payoff-toggle { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 10px 11px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.bait-payoff-toggle > span:first-child { display: grid; gap: 2px; }
+.bait-payoff-toggle strong { font-size: 12px; }
+.bait-payoff-toggle small { color: var(--muted); font-size: 10px; }
+.bait-payoff-count { display: grid; min-width: 21px; height: 21px; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--orange) 15%, var(--surface-2)); color: var(--orange); font-size: 10px; font-weight: 800; }
+.bait-payoff-inspector-body { display: grid; gap: 8px; max-height: 390px; overflow: auto; padding: 0 9px 10px; }
+.bait-payoff-card { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 6px; padding: 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
+.bait-payoff-card.is-selected { border-color: color-mix(in srgb, var(--orange) 70%, var(--line)); }
+.bait-payoff-card-select { display: grid; min-width: 0; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; font-size: 11px; }
+.bait-payoff-card-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--muted); font-size: 10px; }
+.bait-payoff-card-flow strong { color: var(--text); font-weight: 700; }
+.bait-payoff-card-actions { display: flex; align-items: center; gap: 4px; }
+.bait-payoff-card-actions .button { min-height: 30px; padding: 5px 7px; font-size: 10px; }
+.bait-payoff-review { color: var(--orange); font-size: 10px; }
+.bait-payoff-form { display: grid; gap: 7px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
+.bait-payoff-form-heading { display: flex; align-items: center; justify-content: space-between; gap: 7px; color: var(--text); font-size: 11px; }
+.bait-payoff-form > label, .bait-payoff-reaction-fields > label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; }
+.bait-payoff-form input:not([type="checkbox"]), .bait-payoff-form textarea, .bait-payoff-form select { width: 100%; min-width: 0; min-height: 33px; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; font-size: 11px; }
+.bait-payoff-form textarea { min-height: 62px; resize: vertical; }
+.bait-payoff-form > button { justify-content: center; }
+.bait-payoff-reaction-editor { border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); }
+.bait-payoff-reaction-editor summary { padding: 8px; cursor: pointer; }
+.bait-payoff-reaction-editor summary label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11px; font-weight: 700; }
+.bait-payoff-reaction-editor input[type="checkbox"] { accent-color: var(--orange); }
+.bait-payoff-reaction-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; padding: 0 8px 8px; }
+.bait-payoff-reaction-fields > small, .bait-payoff-reaction-fields > button { grid-column: 1 / -1; }
+.bait-payoff-reaction-fields > small, .bait-payoff-empty { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.bait-payoff-empty { margin: 0; padding: 8px; }
+.bait-payoff-error { margin: 0; color: var(--danger, #ef8279); font-size: 11px; }
+.bait-payoff-area { pointer-events: none; }
+.bait-payoff-area > circle:first-child, .bait-payoff-area > rect { fill: color-mix(in srgb, var(--orange) 13%, transparent); stroke: var(--orange); stroke-width: 2.4; stroke-dasharray: 8 5; vector-effect: non-scaling-stroke; }
+.bait-payoff-area-center { fill: var(--orange); stroke: var(--surface); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.bait-payoff-area.is-selected > circle:first-child, .bait-payoff-area.is-selected > rect { stroke-width: 3.2; }
+.bait-payoff-backdrop { position: fixed; z-index: 120; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 20px; background: rgba(0,0,0,.76); backdrop-filter: blur(6px); }
+.bait-payoff-presentation { display: grid; width: min(960px, 100%); max-height: min(94vh, 900px); gap: 12px; overflow: auto; padding: clamp(14px, 2vw, 22px); border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); color: var(--text); box-shadow: 0 22px 70px #0008; }
+.bait-payoff-presentation > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.bait-payoff-presentation > header h2 { margin: 3px 0; font-size: clamp(19px, 3vw, 25px); }
+.bait-payoff-presentation > header p { margin: 0; color: var(--muted); font-size: 12px; }
+.bait-payoff-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.bait-payoff-steps button { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--muted); cursor: pointer; text-align: left; }
+.bait-payoff-steps button[aria-selected="true"] { border-color: var(--orange); color: var(--text); box-shadow: inset 0 0 0 1px var(--orange); }
+.bait-payoff-steps button > span { font-weight: 700; }
+.bait-payoff-stage-heading { display: flex; justify-content: space-between; gap: 8px; color: var(--text); font-size: 12px; }
+.bait-payoff-stage-heading > span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.bait-payoff-action-statuses { display: flex; flex-wrap: wrap; gap: 5px 12px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.bait-payoff-action-statuses strong { color: var(--text); }
+.bait-payoff-presentation-court { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: #111516; }
+.bait-payoff-presentation-court .read-coach-court { width: min(100%, 680px); margin-inline: auto; }
+.bait-payoff-preparing { display: grid; min-height: 200px; place-items: center; padding: 20px; color: var(--muted); text-align: center; }
+.bait-payoff-explanation { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px; border-left: 3px solid var(--orange); border-radius: 6px; background: var(--surface-2); color: var(--text); }
+.bait-payoff-explanation svg { flex: 0 0 auto; color: var(--orange); }
+.bait-payoff-explanation p { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.bait-payoff-reaction-result { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.bait-payoff-reaction-result > div { display: grid; flex: 1 1 220px; gap: 3px; }
+.bait-payoff-reaction-result strong { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.bait-payoff-reaction-result > div small, .bait-payoff-causality { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.bait-payoff-reaction-result.status-reaction-observed strong { color: #70d596; }
+.bait-payoff-reaction-result.status-reaction-not-observed strong { color: #ff857b; }
+.bait-payoff-causality { flex-basis: 100%; }
+.bait-payoff-transport { display: grid; grid-template-columns: auto auto auto minmax(100px,1fr) auto; align-items: center; gap: 7px; }
+.bait-payoff-transport input { width: 100%; accent-color: var(--orange); }
+.bait-payoff-transport output { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.bait-payoff-method-note { margin: 0; color: var(--muted); font-size: 10px; }
+.bait-payoff-role-guide { width: min(840px, 100%); }
+.role-bait-payoffs { display: grid; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.role-bait-payoffs > header { display: flex; justify-content: space-between; color: var(--text); font-size: 11px; }
+.role-bait-payoffs > button { display: grid; gap: 2px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; }
+.role-bait-payoffs > button small { color: var(--muted); font-size: 10px; }
+.bait-payoff-presentation :focus-visible, .bait-payoff-inspector :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+@media (max-width: 620px) { .bait-payoff-card { grid-template-columns: 1fr; } .bait-payoff-card-actions { justify-content: flex-end; } .bait-payoff-reaction-fields { grid-template-columns: 1fr; } .bait-payoff-reaction-fields > small, .bait-payoff-reaction-fields > button { grid-column: auto; } .bait-payoff-transport { grid-template-columns: 1fr 1fr; } .bait-payoff-transport input { grid-column: 1 / -1; grid-row: 1; } .bait-payoff-transport output { justify-self: end; } .bait-payoff-presentation { max-height: 96vh; } }
+@media (prefers-reduced-motion: reduce) { .bait-payoff-backdrop, .bait-payoff-presentation { scroll-behavior: auto; } }

@@ -175,6 +175,38 @@ action, participants, timing, or prerequisites change · The route uses
 ending, selection, and paused editor session · Rehearsal pauses when the browser
 tab or workspace is hidden
 
+### Explain Bait & Payoff connections
+
+Select an action and expand **Bait & Payoff** to connect it to a different action
+in the active path · Give the link a title and explain the intended idea, then save
+it as part of the play · Use the action selectors to change either endpoint; each
+lists its move number, action type, and bound players · Connections use stable action
+IDs, so renumbering moves does not silently reconnect the lesson
+
+Choose **Show the idea** for a three-step court presentation · The Bait step seeks
+to its recorded execution start, the paused Explanation step shows the author's
+text, and the Payoff step seeks to its actual recorded start · **Play this
+interaction** plays the interval from the bait start through the payoff completion
+while preserving simultaneous actions · The presentation keeps the editor draft
+and returns to it paused · Route arrows follow the shared visibility setting; with
+arrows off, player emphasis and step labels still show which action is featured
+
+Optionally enable **Check defender reaction**, mark a circular or rectangular area,
+and choose **Enter area** or **Leave area** at a later action milestone · You can
+place the area center on court or adjust its center and size with numeric controls ·
+For a route point, select a player bound to that action and the recorded route
+progress · The check compares the defender's actual recorded position at bait start
+with the selected executed milestone; it does not infer causation or payoff success ·
+Use the timestamp buttons to inspect both positions · Missing defenders or milestones
+are **Not evaluated**, not counted as a failed reaction
+
+Edit and delete links from the collapsed inspector list · A linked action or checked
+defender must be explicitly retargeted or removed before that identity is deleted ·
+Changes to action type or participants display a review reminder · Links follow branch
+scope, are saved with the play, and are excluded from simulation inputs · In **My
+Role**, select a connection involving that player to reuse the role recording for the
+same guided explanation and endpoint check
+
 ### Choreograph timing
 
 Expand **Timing** below the court to see a lane for each offensive player · Each

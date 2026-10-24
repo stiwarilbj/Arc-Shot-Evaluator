@@ -13,7 +13,10 @@ import { buildPocketInsertion } from "./pocketActions.ts";
 import { ReadCoachAuthorPanel, ReadCoachPracticeView, readCoachSnapshotFrame } from "./ReadCoachViews.tsx";
 import { RoleRehearsalView } from "./RoleRehearsalView.tsx";
 import { PlayFlipbookView } from "./PlayFlipbookView.tsx";
+import { BaitPayoffAreaOverlay } from "./BaitPayoffArea.tsx";
+import { BaitPayoffInspector, BaitPayoffPresentation } from "./BaitPayoffViews.tsx";
 import { authoredRoleCueTemplates } from "./roleRehearsal.ts";
+import { baitPayoffActionSignature } from "./baitPayoff.ts";
 import { checkPlaybookJsonText } from "./jsonIntake.ts";
 import { SpacingGateLayer, spacingGateStatusSymbol, spacingGateStatusText, type SpacingGateDragKind } from "./SpacingGateLayer.tsx";
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
@@ -64,7 +67,7 @@ import { OFFENSIVE_BADGE_ORDER, OFFENSIVE_BADGES } from "./badges";
 import { DEFENSIVE_BADGE_ORDER, DEFENSIVE_BADGES } from "./defensiveBadges";
 import { CourtMarkings } from "./CourtMarkings";
 import { EMPTY_COURT, READY_SETUP, STARTER_PLAY_DETAILS, STARTER_PLAYS } from "./data";
-import type { ArrowKind, AutomaticActionSettings, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, PlayFlipbookStory, ReadCoachCheckpoint, RoleCuePhase, SimulationSettings, SpacingGate, SpacingGateEvent, SpacingGateResult } from "./types";
+import type { ArrowKind, AutomaticActionSettings, BaitPayoffArea, BaitPayoffConnection, CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookBranch, PlaybookDocument, PlaybookDraft, PlaybookMarker, PlaybookTool, PlayFlipbookStory, ReadCoachCheckpoint, RoleCuePhase, SimulationSettings, SpacingGate, SpacingGateEvent, SpacingGateResult } from "./types";
 import { clonePlaybook, DEFAULT_SIMULATION_SETTINGS, pointDistance } from "./types";
 import { COURT_VIEWBOX, clientPointToCourt, courtPointToSvg, courtSvgToPoint, NBA_COURT_GEOMETRY } from "./courtGeometry";
 import {
@@ -253,6 +256,39 @@ function spacingGateEditError(previous: PlaybookDraft, next: PlaybookDraft) {
   return null;
 }
 
+function baitPayoffEditError(previous: PlaybookDraft, next: PlaybookDraft) {
+  const connections = previous.baitPayoffs?.connections ?? [];
+  const retained = new Map((next.baitPayoffs?.connections ?? []).map((connection) => [connection.id, connection]));
+  for (const connection of connections) {
+    if (!retained.has(connection.id)) continue;
+    const pathActions = (play: PlaybookDraft, branchId: string | null) => resolvePlaybookPath(play, branchId).play.arrows;
+    const branchId = connection.scope === "ending" ? connection.branchId ?? null : null;
+    const oldActions = new Map(pathActions(previous, branchId).map((action) => [action.id, action]));
+    const newActions = new Map(pathActions(next, branchId).map((action) => [action.id, action]));
+    for (const actionId of [connection.baitActionId, connection.payoffActionId]) {
+      if (oldActions.has(actionId) && !newActions.has(actionId)) {
+        return `Bait & Payoff “${connection.title}” references a deleted action · Remove or retarget the connection before deleting that action`;
+      }
+    }
+    const reaction = connection.reaction;
+    if (reaction) {
+      const defenders = next.defenders.length ? next.defenders : next.players;
+      if (!defenders.some((defender) => defender.id === reaction.defenderId)) {
+        return `Bait & Payoff “${connection.title}” checks Defender ${reaction.defenderId} · Retarget or remove the reaction check before removing that defender`;
+      }
+    }
+  }
+  const retainedById = new Map((next.baitPayoffs?.connections ?? []).map((connection) => [connection.id, connection]));
+  for (const connection of connections) {
+    const retainedConnection = retainedById.get(connection.id);
+    if (!retainedConnection?.reaction) continue;
+    if (!next.defenders.length && !next.players.some((player) => player.id === retainedConnection.reaction!.defenderId)) {
+      return `Bait & Payoff “${connection.title}” checks a generated defender that is no longer available · Retarget or remove the reaction check first`;
+    }
+  }
+  return null;
+}
+
 function isSameDraft(a: PlaybookDraft, b: PlaybookDraft) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -407,6 +443,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [selectedSpacingGateId, setSelectedSpacingGateId] = useState<string | null>(null);
   const [spacingGateListOpen, setSpacingGateListOpen] = useState(false);
   const [showSpacingGates, setShowSpacingGates] = useState(true);
+  const [selectedBaitConnectionId, setSelectedBaitConnectionId] = useState<string | null>(null);
+  const [baitPresentation, setBaitPresentation] = useState<BaitPayoffConnection | null>(null);
+  const [baitAreaPickingId, setBaitAreaPickingId] = useState<string | null>(null);
+  const [baitPickedAreaPoint, setBaitPickedAreaPoint] = useState<CourtPoint | null>(null);
   const branchLabelInput = useRef<HTMLInputElement>(null);
   const [dirty, setDirty] = useState(false);
   const [selected, setSelected] = useState<Selection>(null);
@@ -968,6 +1008,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (isSameDraft(next, previous)) return true;
     const gateError = spacingGateEditError(previous, next);
     if (gateError) { setError(gateError); return false; }
+    const baitError = baitPayoffEditError(previous, next);
+    if (baitError) { setError(baitError); return false; }
     const connectionError = timingConnectionEditError(previous, next);
     if (connectionError) { setError(connectionError); return false; }
     const before = clonePlaybook(previous);
@@ -996,6 +1038,45 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Cue wording could not be saved");
     }
+  }
+
+  function saveBaitPayoff(connection: BaitPayoffConnection, previousId?: string) {
+    const path = clonePlaybook(activeDraft);
+    const connections = (path.baitPayoffs?.connections ?? []).filter((item) => item.id !== previousId && item.id !== connection.id);
+    connections.push(structuredClone(connection));
+    path.baitPayoffs = { version: 1, connections };
+    const next = applyEditedPath(draft, activeBranchId, path, activePath);
+    if (commitCanonical(next, draft, activeBranchId, true)) {
+      setSelectedBaitConnectionId(connection.id);
+      setBaitAreaPickingId(null);
+      setBaitPickedAreaPoint(null);
+    }
+  }
+
+  function deleteBaitPayoff(id: string) {
+    const path = clonePlaybook(activeDraft);
+    const connections = (path.baitPayoffs?.connections ?? []).filter((item) => item.id !== id);
+    path.baitPayoffs = { version: 1, connections };
+    const next = applyEditedPath(draft, activeBranchId, path, activePath);
+    if (commitCanonical(next, draft, activeBranchId, true)) {
+      if (selectedBaitConnectionId === id) setSelectedBaitConnectionId(null);
+      setBaitAreaPickingId(null);
+      setBaitPickedAreaPoint(null);
+    }
+  }
+
+  function showBaitPayoff(connection: BaitPayoffConnection) {
+    pauseSimulation();
+    setSelectedBaitConnectionId(connection.id);
+    setBaitPresentation(structuredClone(connection));
+  }
+
+  function placeBaitPayoffAreaPoint(event: ReactPointerEvent<SVGSVGElement>) {
+    if (!baitAreaPickingId) return false;
+    event.preventDefault(); event.stopPropagation();
+    const point = pointFromPointer(event, svgRef.current);
+    if (point) setBaitPickedAreaPoint(point);
+    return true;
   }
 
   function undo() {
@@ -1099,6 +1180,16 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         return template ? [{ ...cue, scope: "ending" as const, branchId: branch.id, signature: template.signature }] : [];
       });
       if (copiedCues.length) next.roleCues = { version: 1, cues: [...(next.roleCues?.cues ?? []), ...copiedCues] };
+      const branchPath = resolvePlaybookPath(next, branch.id).play;
+      const copiedConnections = (next.baitPayoffs?.connections ?? []).flatMap((connection) => {
+        if (connection.scope !== "shared" || !copiedIds.has(connection.baitActionId) && !copiedIds.has(connection.payoffActionId)) return [];
+        const bait = branchPath.arrows.find((arrow) => arrow.id === connection.baitActionId);
+        const payoff = branchPath.arrows.find((arrow) => arrow.id === connection.payoffActionId);
+        if (!bait || !payoff) return [];
+        return [{ ...structuredClone(connection), id: timingIdentity("bait"), scope: "ending" as const, branchId: branch.id,
+          baitSignature: baitPayoffActionSignature(bait, branchPath), payoffSignature: baitPayoffActionSignature(payoff, branchPath) }];
+      });
+      if (copiedConnections.length) next.baitPayoffs = { version: 1, connections: [...(next.baitPayoffs?.connections ?? []), ...copiedConnections] };
       commitCanonical(next, draft, null);
       selectBranch(branch.id);
       setRenamingBranchId(branch.id);
@@ -1130,8 +1221,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   function deleteBranch(branchId: string) {
     const branch = draft.branches?.find((item) => item.id === branchId);
     const hasWalkthrough = draft.flipbooks?.stories.some((story) => story.endingId === branchId) ?? false;
-    if (!branch || !window.confirm(hasWalkthrough
-      ? `Delete ${branch.label} and its frozen walkthrough?`
+    const hasBaitConnections = draft.baitPayoffs?.connections.some((connection) => connection.scope === "ending" && connection.branchId === branchId) ?? false;
+    const consequences = [hasWalkthrough ? "its frozen walkthrough" : null, hasBaitConnections ? "its Bait & Payoff connections" : null].filter(Boolean);
+    if (!branch || !window.confirm(consequences.length
+      ? `Delete ${branch.label} and ${consequences.join(" and ")}?`
       : `Delete ${branch.label}?`)) return;
     const next = clonePlaybook(draft);
     next.branches = (next.branches ?? []).filter((item) => item.id !== branchId);
@@ -1140,6 +1233,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       next.roleCues = { version: 1, cues };
     }
     if (next.spacingGates) next.spacingGates = { version: 1, gates: next.spacingGates.gates.filter((gate) => gate.scope !== "ending" || gate.branchId !== branchId) };
+    if (next.baitPayoffs) next.baitPayoffs = { version: 1, connections: next.baitPayoffs.connections.filter((item) => item.scope !== "ending" || item.branchId !== branchId) };
     if (next.flipbooks) {
       const stories = next.flipbooks.stories.filter((story) => story.endingId !== branchId);
       if (stories.length) next.flipbooks = { version: 1, stories };
@@ -1931,6 +2025,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       interruptPointerInteraction();
+      if (baitAreaPickingId) {
+        event.preventDefault();
+        setBaitAreaPickingId(null);
+        setBaitPickedAreaPoint(null);
+        setError(null);
+        return;
+      }
       if (spacingGateRoutePick) {
         event.preventDefault();
         setSpacingGateRoutePick(null);
@@ -2061,7 +2162,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (activeDraft.spacingGates) rolePlay.spacingGates = structuredClone(activeDraft.spacingGates);
     return <RoleRehearsalView play={rolePlay} cueSource={draft} branchId={activeBranchId}
     branchLabel={activePath.branch?.label ?? null} sharedIds={activePath.sharedIds} playerId={rolePlayerId} settings={simulationSettings}
-    visibility={arrowVisibility} active={active} onViewChange={(nextView, playerId) => onViewChange?.(nextView, playerId)} onCueChange={saveRoleCue} />;
+    connections={activePath.play.baitPayoffs?.connections ?? []} visibility={arrowVisibility} active={active} onViewChange={(nextView, playerId) => onViewChange?.(nextView, playerId)} onCueChange={saveRoleCue} />;
   }
   if (view === "flipbook") {
     const story = draft.flipbooks?.stories.find((item) => item.endingId === activeBranchId);
@@ -2364,6 +2465,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               {selectedArrow.kind === "pass" || selectedArrow.kind === "handoff" ? <div className="sequence-editor"><span>Receiver</span><ArcSelect ariaLabel="Action receiver" className="arc-select--compact playbook-path-select" value={String(selectedArrow.recipient_id ?? "auto")} options={[{ value: "auto", label: `Auto · Player ${selectedParticipants?.recipientId ?? "?"}` }, ...draft.players.filter((player) => player.id !== (selectedArrow.actor_id ?? selectedParticipants?.actorId)).map((player) => ({ value: String(player.id), label: `Player ${player.id}` }))]} onValueChange={(value) => changeArrowParticipant(selectedArrow.id, "recipient_id", value)} /></div> : null}
               <div className="sequence-editor"><span>Path</span><ArcSelect ariaLabel="Arrow path" className="arc-select--compact playbook-path-select" value={selectedArrow.path ?? "straight"} options={[{ value: "straight", label: "Straight" }, { value: "curve", label: "Curved" }]} onValueChange={(value) => changeArrowPath(selectedArrow.id, value as "straight" | "curve")} /></div>
               {!timingActive ? <label className="sequence-editor"><span>Min. seconds</span><input aria-label="Action timing" type="number" min={0.5} max={4} step={0.1} value={arrowFields.id === selectedArrow.id ? arrowFields.timing : clampTiming(selectedArrow.timing ?? 1.2).toFixed(1)} onChange={(event) => { const value = event.currentTarget.value; setArrowFields((current) => ({ ...current, id: selectedArrow.id, timing: value })); }} onBlur={() => { const value = Number(arrowFields.timing); if (arrowFields.id === selectedArrow.id && Number.isFinite(value) && arrowFields.timing.trim()) changeArrowTiming(selectedArrow.id, value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label> : null}
+              <BaitPayoffInspector play={activePath.play} branchId={activeBranchId} sharedIds={activePath.sharedIds} totalConnectionCount={draft.baitPayoffs?.connections.length ?? 0} selectedActionId={selectedArrow.id} selectedConnectionId={selectedBaitConnectionId}
+                areaPickingId={baitAreaPickingId} pickedAreaPoint={baitPickedAreaPoint} onConsumeAreaPoint={() => setBaitPickedAreaPoint(null)} onSelectConnection={setSelectedBaitConnectionId}
+                onSave={saveBaitPayoff} onDelete={deleteBaitPayoff} onShow={showBaitPayoff} onPickArea={setBaitAreaPickingId} />
             </> : null}
           </div>
         {readCoachCapture ? <ReadCoachAuthorPanel session={readCoachCapture.session} frame={readCoachCapture.frame} base={draft} existing={readCoachEditing ?? undefined} visibility={arrowVisibility} onCancel={() => { previewCancelRef.current?.(); setReadCoachCapture(null); setReadCoachEditing(null); }} onSave={saveReadCheckpoint} onPreview={previewReadChoice} /> : null}
@@ -2386,7 +2490,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="simulation-settings-note">The scheme sets the defensive shape · Coverage and emphasis change screen, help, pressure, and recovery behavior</span>
           </div> : null}
           <div className="court-frame">
-            <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""} ${spacingGateRoutePick ? "is-spacing-gate-route-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onDragOver={onPocketDragOver} onDrop={onPocketDrop} onPointerDownCapture={(event) => spacingGateRoutePick ? onSpacingGateRoutePointPointerDown(event) : onTimingRoutePointPointerDown(event)} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
+            <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""} ${spacingGateRoutePick ? "is-spacing-gate-route-pick" : ""} ${baitAreaPickingId ? "is-bait-area-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onDragOver={onPocketDragOver} onDrop={onPocketDrop} onPointerDownCapture={(event) => { if (placeBaitPayoffAreaPoint(event)) return; if (spacingGateRoutePick) onSpacingGateRoutePointPointerDown(event); else onTimingRoutePointPointerDown(event); }} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
               <defs>
                 <pattern id="court-boards" width="80" height="80" patternUnits="userSpaceOnUse"><rect width="80" height="80" fill="var(--surface)" /><path d="M0 0h80M0 40h80" stroke="rgba(255,255,255,.022)" strokeWidth="1" /><path d="M40 0v80" stroke="rgba(255,255,255,.014)" strokeWidth="1" /></pattern>
                 <marker id="movement-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--text)" /></marker>
@@ -2394,6 +2498,10 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
               </defs>
               <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} rx="8" className="court-floor" fill="url(#court-boards)" />
               <CourtMarkings />
+              {(() => {
+                const connection = activeDraft.baitPayoffs?.connections.find((item) => item.id === selectedBaitConnectionId);
+                return connection?.reaction ? <BaitPayoffAreaOverlay area={connection.reaction.area} /> : null;
+              })()}
               {simulationActive ? <CourtRoutes routes={simulationFrame.routes.filter((route) => route.actionId !== editingArrowId || editingArrowId == null)} visibility={arrowVisibility} labels /> : <CourtRoutes routes={authoredRoutes.filter((route) => !route.id.endsWith(":actor") && route.kind === "handler-support")} visibility={arrowVisibility} />}
               {!simulationActive && compareRoutes.length ? <CourtRoutes routes={compareRoutes} visibility={arrowVisibility} compare /> : null}
               {spacingGateRoutePreview ? <g className="spacing-gate-route-preview" pointerEvents="none"><CourtRoutes routes={[spacingGateRoutePreview]} visibility="all" /><text x={markerPoint(spacingGateRoutePreview.end).x} y={markerPoint(spacingGateRoutePreview.end).y - 24}>CLICK ROUTE POINT</text></g> : null}
@@ -2452,7 +2560,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 </g>;
               })()}
             </svg>
-            <div className="court-hint">{spacingGateRoutePick ? "Click the highlighted route to place the spacing checkpoint · Escape cancels" : routePointPick ? `Click Player ${routePointPick.playerId}'s highlighted route to place the wait point` : tool === "spacing-gate" ? "Click near a player to place a spacing gate · Escape cancels" : tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "pick-pop" ? pickPopSelection.screenerId == null ? "Select the screener" : pickPopSelection.handlerId == null ? "Select the ball handler" : pickPopSelection.screenPoint == null ? "Click the screen location" : "Click the pop destination" : tool === "pin-down" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : offBallScreenSelection.screenPoint == null ? "Click the screen location" : "Click the cutter destination" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : tool === "backdoor-cut" ? backdoorCutterId == null ? "Select the cutter" : "Click the basket route destination" : "Drag across the court to draw"}</div>
+            <div className="court-hint">{baitAreaPickingId ? "Click the court to place the reaction area center · Escape cancels" : spacingGateRoutePick ? "Click the highlighted route to place the spacing checkpoint · Escape cancels" : routePointPick ? `Click Player ${routePointPick.playerId}'s highlighted route to place the wait point` : tool === "spacing-gate" ? "Click near a player to place a spacing gate · Escape cancels" : tool === "select" ? "Select a marker to move it" : tool === "delete" ? "Select an object to delete" : tool === "player" ? "Click the court to place a player" : tool === "ball" ? "Click the court to place the ball" : tool === "pick-pop" ? pickPopSelection.screenerId == null ? "Select the screener" : pickPopSelection.handlerId == null ? "Select the ball handler" : pickPopSelection.screenPoint == null ? "Click the screen location" : "Click the pop destination" : tool === "pin-down" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : offBallScreenSelection.screenPoint == null ? "Click the screen location" : "Click the cutter destination" : tool === "off-ball-screen" ? offBallScreenSelection.screenerId == null ? "Select the screener" : offBallScreenSelection.cutterId == null ? "Select the cutter" : "Click a spot to set the screen" : tool === "backdoor-cut" ? backdoorCutterId == null ? "Select the cutter" : "Click the basket route destination" : "Drag across the court to draw"}</div>
           </div>
           <TimingMixerPanel id="timing-mixer" actions={activeDraft.arrows} players={activeDraft.players} bindings={timingBindings} routes={authoredRoutes} sharedActionIds={activePath.sharedIds} diagnostics={simulationFrame.execution} selectedActionId={selectedArrow?.id ?? null} routePickPending={routePointPick !== null} open={timingOpen} onOpenChange={setTimingOpen} onSelect={(id) => { if (simulationPlaying) pauseSimulation(); setTool("select"); setSelected({ type: "arrow", id }); }} onChangeStart={changeTimingStart} onChangeDuration={changeTimingDuration} onToggleSync={toggleTimingSync} onAddWait={addTimingWait} onRemoveWait={removeTimingWait} onStartRoutePick={beginRoutePointWait} onPreviewAction={setTimingPreviewActionId} />
           <div className="playbook-statusbar"><span><Hand size={14} /> {selected ? `${selected.type === "ball" ? "Ball" : selected.type === "arrow" ? `Move ${selectedArrowSequence ?? ""}` : `${selected.type === "defender" ? "Defender" : "Player"} ${selected.id}`} selected` : "Nothing selected"}</span><span>Arrows stay draggable · Arrow keys nudge · Shift for larger steps · Cmd/Ctrl Z to undo</span></div>
@@ -2469,6 +2577,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
         <div className="starter-grid">{filteredStarterPlays.map((play) => { const details = STARTER_PLAY_DETAILS[play.name]; return <button type="button" className="starter-card" key={play.name} onClick={() => { requestLoad(clonePlaybook(play)); setStarterOpen(false); }}><MiniCourt play={play} /><span className="starter-card-copy"><span className="starter-category-label">{details?.category}</span><strong>{play.name}</strong><span>{details?.description ?? "Edit this diagram"}</span></span></button>; })}{filteredStarterPlays.length === 0 ? <p className="starter-empty">No starter plays match that search</p> : null}</div>
       </section></div> : null}
       {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes · Save it before opening the new starting point, or discard the draft</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave && draftSession.isCurrent(didSave) && replacementRef.current === next) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
+      {baitPresentation ? <BaitPayoffPresentation play={flattenPlaybookPath(draft, activeBranchId, activePath.branch?.label)} connection={baitPresentation} settings={simulationSettings} visibility={arrowVisibility} active={active} onClose={() => { setBaitPresentation(null); pauseSimulation(); }} /> : null}
     </div>
   );
 }

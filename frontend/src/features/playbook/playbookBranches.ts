@@ -37,6 +37,7 @@ export function resolvePlaybookPath(source: PlaybookDraft, branchId: string | nu
   if (!branch) {
     play.arrows = orderedActions(source.arrows);
     play.spacingGates = source.spacingGates ? { version: 1, gates: source.spacingGates.gates.filter((gate) => gate.scope === "shared") } : undefined;
+    play.baitPayoffs = source.baitPayoffs ? { version: 1, connections: source.baitPayoffs.connections.filter((item) => item.scope === "shared") } : undefined;
     return { play, branch: null, sharedCount: play.arrows.length, sharedIds: new Set(play.arrows.map((arrow) => arrow.id)) };
   }
 
@@ -65,6 +66,10 @@ export function resolvePlaybookPath(source: PlaybookDraft, branchId: string | nu
   const sharedGateIds = new Set(play.arrows.filter((arrow) => sharedIds.has(arrow.id)).map((arrow) => arrow.id));
   play.spacingGates = source.spacingGates ? { version: 1, gates: source.spacingGates.gates.filter((gate) =>
     gate.scope === "shared" ? sharedGateIds.has(gate.trigger.actionId) : gate.branchId === branch.id) } : undefined;
+  const pathIds = new Set(play.arrows.map((arrow) => arrow.id));
+  play.baitPayoffs = source.baitPayoffs ? { version: 1, connections: source.baitPayoffs.connections.filter((item) =>
+    item.scope === "shared" ? pathIds.has(item.baitActionId) && pathIds.has(item.payoffActionId) && sharedIds.has(item.baitActionId) && sharedIds.has(item.payoffActionId)
+      : item.branchId === branch.id) } : undefined;
   return { play, branch, sharedCount: shared.length, sharedIds: new Set(shared.map((arrow) => arrow.id)) };
 }
 
@@ -74,6 +79,7 @@ export function flattenPlaybookPath(source: PlaybookDraft, branchId: string | nu
   delete resolved.roleCues;
   delete resolved.spacingGates;
   delete resolved.flipbooks;
+  delete resolved.baitPayoffs;
   if (label) resolved.name = `${source.name} — ${label}`.slice(0, 80);
   return resolved;
 }
@@ -81,6 +87,12 @@ export function flattenPlaybookPath(source: PlaybookDraft, branchId: string | nu
 /** Apply an edited flattened path back to its shared Main opening and private continuation */
 export function applyEditedPath(source: PlaybookDraft, branchId: string | null, editedPath: PlaybookDraft, oldPath: ResolvedPlaybookPath): PlaybookDraft {
   const next = clonePlaybook(editedPath);
+  const oldVisibleBaitPayoffIds = new Set(oldPath.play.baitPayoffs?.connections.map((item) => item.id) ?? []);
+  const newVisibleBaitPayoffs = editedPath.baitPayoffs?.connections ?? [];
+  const replaceBaitPayoffIds = new Set([...oldVisibleBaitPayoffIds, ...newVisibleBaitPayoffs.map((item) => item.id)]);
+  next.baitPayoffs = source.baitPayoffs || editedPath.baitPayoffs
+    ? { version: 1, connections: [...(source.baitPayoffs?.connections ?? []).filter((item) => !replaceBaitPayoffIds.has(item.id)), ...structuredClone(newVisibleBaitPayoffs)] }
+    : undefined;
   const oldVisibleGateIds = new Set(oldPath.play.spacingGates?.gates.map((gate) => gate.id) ?? []);
   const newVisibleGates = editedPath.spacingGates?.gates ?? [];
   const replaceGateIds = new Set([...oldVisibleGateIds, ...newVisibleGates.map((gate) => gate.id)]);

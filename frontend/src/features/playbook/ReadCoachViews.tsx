@@ -8,7 +8,8 @@ import { routeVisible, type ArrowVisibility } from "./arrowVisibility";
 import { SpacingGateLayer } from "./SpacingGateLayer.tsx";
 import type { SimulationFrame } from "./simulation";
 import type { CourtRoute } from "./arrowVisibility";
-import type { PlaybookArrow, PlaybookDraft, ReadCoachCheckpoint, ReadCoachChoice, ReadCoachCourtSnapshot, ReadCoachSessionRecord, SpacingGate } from "./types";
+import type { BaitPayoffArea, PlaybookArrow, PlaybookDraft, ReadCoachCheckpoint, ReadCoachChoice, ReadCoachCourtSnapshot, ReadCoachSessionRecord, SpacingGate } from "./types";
+import { BaitPayoffAreaOverlay } from "./BaitPayoffArea.tsx";
 
 type ChoiceKind = PlaybookArrow["kind"];
 type AuthorProps = {
@@ -32,9 +33,9 @@ function routePath(arrow: PlaybookArrow) {
   return `M${start.x} ${start.y} ${control ? `Q${control.x} ${control.y}` : "L"} ${end.x} ${end.y}`;
 }
 
-export function ReadCoachCourt({ frame, arrows = [], visibility, showRoutes = true, routes, emphasisPlayerId = null, showWholeTeam = true, spacingGates = [], showSpacingGates = false, onClick, drawing, ariaLabel, svgRef }: {
+export function ReadCoachCourt({ frame, arrows = [], visibility, showRoutes = true, routes, emphasisPlayerId = null, emphasisPlayerIds, showWholeTeam = true, spacingGates = [], showSpacingGates = false, baitPayoffArea, onClick, drawing, ariaLabel, svgRef }: {
   frame: SimulationFrame; arrows?: PlaybookArrow[]; visibility: ArrowVisibility; showRoutes?: boolean; routes?: CourtRoute[];
-  emphasisPlayerId?: number | null; showWholeTeam?: boolean; spacingGates?: SpacingGate[]; showSpacingGates?: boolean;
+  emphasisPlayerId?: number | null; emphasisPlayerIds?: number[]; showWholeTeam?: boolean; spacingGates?: SpacingGate[]; showSpacingGates?: boolean; baitPayoffArea?: BaitPayoffArea;
   onClick?: (event: MouseEvent<SVGSVGElement>) => void; drawing?: boolean; ariaLabel: string; svgRef?: Ref<SVGSVGElement>;
 }) {
   const courtRoutes = useMemo(() => routes ?? frame.routes, [routes, frame.routes]);
@@ -42,10 +43,11 @@ export function ReadCoachCourt({ frame, arrows = [], visibility, showRoutes = tr
     <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} className="court-floor" /><CourtMarkings />
     {showRoutes ? <CourtRoutes routes={courtRoutes} visibility={visibility} /> : null}
     <SpacingGateLayer gates={spacingGates} results={frame.spacingGateResults ?? []} visible={showSpacingGates} interactive={false} />
+    {baitPayoffArea ? <BaitPayoffAreaOverlay area={baitPayoffArea} /> : null}
     <defs><marker id="read-choice-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="var(--orange)" /></marker></defs>
     {arrows.filter((arrow) => routeVisible({ scope: arrow.kind === "pass" || arrow.kind === "handoff" || arrow.actor_id === frame.ballHandlerId || arrow.recipient_id === frame.ballHandlerId || arrow.handler_id === frame.ballHandlerId ? "on-ball" : "off-ball", importance: "main" }, visibility)).map((arrow, index) => <g key={arrow.id} className="read-choice-route"><path d={routePath(arrow)} markerEnd="url(#read-choice-arrow)" /><circle cx={courtPointToSvg(arrow.start).x} cy={courtPointToSvg(arrow.start).y} r="3.5" /><text x={courtPointToSvg(arrow.end).x} y={courtPointToSvg(arrow.end).y - 9}>{index + 1}</text></g>)}
     {frame.defenders.map((marker) => { const point = courtPointToSvg(marker); return <g key={`d${marker.id}`} className={`read-defender ${emphasisPlayerId !== null && !showWholeTeam ? "read-role-muted" : ""}`}><circle cx={point.x} cy={point.y} r="15" /><text x={point.x} y={point.y + 1}>D{marker.id}</text></g>; })}
-    {frame.players.map((marker) => { const point = courtPointToSvg(marker); return <g key={`p${marker.id}`} className={`read-player ${frame.ballHandlerId === marker.id ? "is-handler" : ""} ${emphasisPlayerId !== null && marker.id !== emphasisPlayerId && !showWholeTeam ? "read-role-muted" : ""} ${marker.id === emphasisPlayerId ? "is-role-player" : ""}`}><circle cx={point.x} cy={point.y} r="17" /><text x={point.x} y={point.y + 1}>{marker.id}</text></g>; })}
+    {frame.players.map((marker) => { const point = courtPointToSvg(marker); const emphasized = emphasisPlayerIds ? emphasisPlayerIds.includes(marker.id) : marker.id === emphasisPlayerId; const hasEmphasis = emphasisPlayerIds ? emphasisPlayerIds.length > 0 : emphasisPlayerId !== null; return <g key={`p${marker.id}`} className={`read-player ${frame.ballHandlerId === marker.id ? "is-handler" : ""} ${hasEmphasis && !emphasized && !showWholeTeam ? "read-role-muted" : ""} ${emphasized ? "is-role-player" : ""}`}><circle cx={point.x} cy={point.y} r="17" /><text x={point.x} y={point.y + 1}>{marker.id}</text></g>; })}
     {frame.ball ? <circle className="read-ball" cx={courtPointToSvg(frame.ball).x} cy={courtPointToSvg(frame.ball).y} r="7" /> : null}
   </svg>;
 }

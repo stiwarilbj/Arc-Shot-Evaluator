@@ -5,8 +5,10 @@ import { createPlaybookSimulationClient, type PlaybookSimulationClient } from ".
 import { buildRoleCues, type RoleCue } from "./roleRehearsal.ts";
 import { authoredCourtRoutes } from "./simulation.ts";
 import { spacingGateStatusSymbol, spacingGateStatusText } from "./SpacingGateLayer.tsx";
+import { BaitPayoffRoleGuide } from "./BaitPayoffViews.tsx";
+import { baitPayoffParticipants, type BaitPayoffSample } from "./baitPayoff.ts";
 import type { SimulationView } from "./playbookSimulationProtocol.ts";
-import type { PlaybookDraft, RoleCuePhase, SimulationSettings } from "./types.ts";
+import type { BaitPayoffConnection, PlaybookDraft, RoleCuePhase, SimulationSettings } from "./types.ts";
 import type { ArrowVisibility } from "./arrowVisibility.ts";
 
 type Props = {
@@ -15,6 +17,7 @@ type Props = {
   branchId: string | null;
   branchLabel: string | null;
   sharedIds: Set<string>;
+  connections: BaitPayoffConnection[];
   playerId: number | null;
   settings: SimulationSettings;
   visibility: ArrowVisibility;
@@ -27,9 +30,10 @@ function statusLabel(status: RoleCue["status"]) {
   return status === "blocked" ? "Blocked" : status === "completed" ? "Done" : status === "active" ? "Active" : "Waiting";
 }
 
-export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, sharedIds, playerId, settings, visibility, active, onViewChange, onCueChange }: Props) {
+export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, sharedIds, connections, playerId, settings, visibility, active, onViewChange, onCueChange }: Props) {
   const clientRef = useRef<PlaybookSimulationClient | null>(null);
-  const loopRef = useRef<{ kind: "role" | "cue"; start: number; end: number } | null>(null);
+  const loopRef = useRef<{ kind: "role" | "cue" | "interaction"; start: number; end: number } | null>(null);
+  const samplesRef = useRef<BaitPayoffSample[]>([]);
   const previousTimestamp = useRef<number | null>(null);
   const preparingRef = useRef(false);
   const rewindingRef = useRef(false);
@@ -45,11 +49,12 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
   const [selectedCueKey, setSelectedCueKey] = useState<string | null>(null);
   const [editingCue, setEditingCue] = useState(false);
   const [cueText, setCueText] = useState("");
+  const [selectedBaitConnection, setSelectedBaitConnection] = useState<BaitPayoffConnection | null>(null);
   const activePlayer = play.players.find((player) => player.id === playerId) ?? null;
   const executableKey = useMemo(() => JSON.stringify({ players: play.players, defenders: play.defenders, ball: play.ball, arrows: play.arrows, defenders_visible: play.defenders_visible, settings }), [play, settings]);
 
   useEffect(() => {
-    setView(null); setError(null); setPlaying(false); setPrepareProgress(0); loopRef.current = null; previousTimestamp.current = null;
+    setView(null); setError(null); setPlaying(false); setPrepareProgress(0); loopRef.current = null; previousTimestamp.current = null; samplesRef.current = [];
     if (play.players.length === 0 || play.arrows.length === 0) {
       // Stationary roles need no worker. Empty or setup-only drawings should
       // show the intentional no-possession state rather than starting a worker
@@ -61,6 +66,10 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
     const client = createPlaybookSimulationClient({
       sessionId: crypto.randomUUID(),
       onState: (next) => {
+        const sampleTime = next.session.positionMs;
+        const priorSample = samplesRef.current.at(-1);
+        if (!priorSample || sampleTime > priorSample.atMs + 1e-4) samplesRef.current.push({ atMs: sampleTime,
+          defenders: next.frame.defenders.map(({ id, x, y }) => ({ id, x, y })), execution: structuredClone(next.frame.execution ?? []) });
         if (preparingRef.current) {
           const fraction = next.durationMs > 0 ? Math.min(1, next.session.recordedUntilMs / next.durationMs) : 1;
           const percent = Math.floor(fraction * 100);
@@ -86,6 +95,9 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
         const loop = loopRef.current;
         const now = next.session.positionMs;
         if (loop && now >= loop.end - 1e-5) {
+          if (loop.kind === "interaction") {
+            loopRef.current = null; setPlaying(false); client.playback(false); client.seek(loop.end); return;
+          }
           client.seek(loop.start);
           client.playback(true);
           return;
@@ -166,6 +178,12 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
     || nextCueTime !== undefined && Math.abs(cue.startAtMs - nextCueTime) <= 1));
   const roleRouteList = useMemo(() => authoredCourtRoutes(play).filter((route) => route.playerId === playerId && route.actionId !== null), [play, playerId]);
   const roleSpacingGates = useMemo(() => (play.spacingGates?.gates ?? []).filter((gate) => gate.playerId === playerId), [play.spacingGates, playerId]);
+  const roleBaitPayoffs = useMemo(() => connections.filter((connection) => {
+    if (playerId === null) return false;
+    const bait = play.arrows.find((action) => action.id === connection.baitActionId);
+    const payoff = play.arrows.find((action) => action.id === connection.payoffActionId);
+    return Boolean(bait && baitPayoffParticipants(bait, play).includes(playerId) || payoff && baitPayoffParticipants(payoff, play).includes(playerId));
+  }), [connections, play, playerId]);
   const spacingGateResults = view?.frame.spacingGateResults ?? [];
   const isMissingPlayer = !activePlayer;
 
@@ -188,6 +206,11 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
     clientRef.current.seek(start);
     clientRef.current.playback(true);
     setPlaying(true);
+  }
+  function playBaitInteraction(start: number, end: number) {
+    if (!view || !clientRef.current || end <= start) return;
+    loopRef.current = { kind: "interaction", start, end };
+    setSelectedCueKey(null); setEditingCue(false); setPlaying(true); clientRef.current.seek(start); clientRef.current.playback(true);
   }
   function focusCue(cue: RoleCue) {
     setSelectedCueKey(cue.key); setEditingCue(false); setCueText(cue.text); seek(cue.startAtMs);
@@ -240,6 +263,12 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
             </button>;
           })}
         </section> : null}
+        {activePlayer && roleBaitPayoffs.length ? <section className="role-bait-payoffs" aria-label={`Bait and payoff ideas involving Player ${activePlayer.id}`}>
+          <header><strong>Bait &amp; Payoff</strong><span>{roleBaitPayoffs.length}</span></header>
+          {roleBaitPayoffs.map((connection) => <button type="button" key={connection.id} onClick={() => { if (view) { clientRef.current?.playback(false); setPlaying(false); setSelectedBaitConnection(connection); } }} disabled={!view}>
+            <strong>{connection.title}</strong><small>Move {play.arrows.find((action) => action.id === connection.baitActionId)?.sequence ?? "?"} → Move {play.arrows.find((action) => action.id === connection.payoffActionId)?.sequence ?? "?"}</small><span>Show the idea</span>
+          </button>)}
+        </section> : null}
         {visibleCues.map((cue) => { const index = cues.findIndex((item) => item.key === cue.key); const position = Math.abs(cue.startAtMs - (currentCueTime ?? cue.startAtMs)) <= 1 ? "Current" : Math.abs(cue.startAtMs - (previousCueTime ?? Number.NaN)) <= 1 ? "Previous" : "Next"; return <button type="button" key={cue.key} className={`role-cue-card ${cue.key === selectedCue?.key ? "is-current" : ""}`} onClick={() => focusCue(cue)} aria-current={cue.key === selectedCue?.key ? "step" : undefined}>
           <span className={`role-cue-status is-${cue.status}`}>{position} · {statusLabel(cue.status)}</span><strong>{cue.text}</strong><small>Move {cue.sequence} · {(cue.startAtMs / 1000).toFixed(1)}s{cue.phase === "receive" && cue.diagnostic?.transfer?.outcome.kind === "pending" ? " · awaiting confirmed catch" : ""}</small>{cue.diagnostic?.notice ? <small className="role-cue-notice">{cue.diagnostic.notice}</small> : null}{cue.reviewWording ? <small className="role-cue-review">Review wording · its action or dependency changed</small> : null}
           {index > 0 && Math.abs(cues[index - 1].startAtMs - cue.startAtMs) < 1 ? <span className="sr-only">Simultaneous with previous responsibility</span> : null}
@@ -251,6 +280,7 @@ export function RoleRehearsalView({ play, cueSource, branchId, branchLabel, shar
         {cues.length ? <div className="role-cue-neighbors"><button type="button" disabled={currentIndex <= 0} onClick={() => { const index = Math.max(0, currentIndex - 1); focusCue(cues[index]); }}><ArrowLeft size={13} />Previous cue</button><button type="button" disabled={currentIndex >= cues.length - 1} onClick={() => { const index = Math.min(cues.length - 1, currentIndex + 1); focusCue(cues[index]); }}>Next cue<ArrowRight size={13} /></button></div> : null}
       </aside>
     </div>
+    {selectedBaitConnection && view ? <BaitPayoffRoleGuide play={play} connection={selectedBaitConnection} view={view} samples={samplesRef.current} visibility={visibility} onSeek={seek} onPlayInteraction={playBaitInteraction} onClose={() => { clientRef.current?.playback(false); setPlaying(false); loopRef.current = null; setSelectedBaitConnection(null); }} /> : null}
   </main>;
 }
 

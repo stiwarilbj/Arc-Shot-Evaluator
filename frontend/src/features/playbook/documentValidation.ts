@@ -183,9 +183,9 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
         && branch.fork.actionIds.every((id) => typeof id === "string" && /^[a-z0-9-]{1,64}$/.test(id))
         && new Set(branch.fork.actionIds).size === branch.fork.actionIds.length
         && integer(branch.fork.sequence) && branch.fork.sequence >= 1 && branch.fork.sequence <= 30, "Ending fork reference is invalid");
-      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined, spacingGates: undefined, flipbooks: undefined }, false);
+      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined, spacingGates: undefined, flipbooks: undefined, baitPayoffs: undefined }, false);
       const resolved = resolvePlaybookPath(value as unknown as PlaybookDraft, branch.id);
-      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined, spacingGates: undefined, flipbooks: undefined });
+      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined, spacingGates: undefined, flipbooks: undefined, baitPayoffs: undefined });
       validateTimingEdges(resolved.play);
       const sharedSyncMembers = new Map<string, Set<string>>();
       const endingSyncMembers = new Map<string, Set<string>>();
@@ -285,6 +285,68 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
   }
   if (value.readCoach !== undefined) validateReadCoach(value.readCoach);
   if (value.flipbooks !== undefined) validateFlipbookLesson(value.flipbooks, value as unknown as PlaybookDraft);
+  if (value.baitPayoffs !== undefined) validateBaitPayoffLesson(value.baitPayoffs, value as unknown as PlaybookDraft);
+}
+
+function validateBaitPayoffLesson(raw: unknown, play: PlaybookDraft) {
+  check(object(raw) && raw.version === 1 && Array.isArray(raw.connections) && raw.connections.length <= 30, "Bait & Payoff supports at most 30 connections");
+  const branches = new Map((play.branches ?? []).map((branch) => [branch.id, branch]));
+  const main = new Map(play.arrows.map((arrow) => [arrow.id, arrow]));
+  const ids = new Set<string>();
+  const knownPlayerIds = new Set(play.players.map((player) => player.id));
+  const knownDefenderIds = new Set(play.defenders.map((player) => player.id));
+  if (play.defenders.length === 0) for (const player of play.players) knownDefenderIds.add(player.id);
+  for (const item of raw.connections) {
+    check(object(item) && Object.keys(item).every((key) => ["id", "baitActionId", "payoffActionId", "title", "explanation", "scope", "branchId", "baitSignature", "payoffSignature", "reaction"].includes(key)), "Bait & Payoff connection contains unsupported fields");
+    check(typeof item.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(item.id) && !ids.has(item.id), "Bait & Payoff connection identities must be unique");
+    ids.add(item.id);
+    check(typeof item.baitActionId === "string" && /^[a-z0-9-]{1,64}$/.test(item.baitActionId)
+      && typeof item.payoffActionId === "string" && /^[a-z0-9-]{1,64}$/.test(item.payoffActionId)
+      && item.baitActionId !== item.payoffActionId, "Bait and payoff must be different stable action identities");
+    check(typeof item.title === "string" && item.title.trim().length > 0 && Array.from(item.title).length <= 60, "Bait & Payoff title must contain 1–60 characters");
+    check(typeof item.explanation === "string" && item.explanation.trim().length > 0 && Array.from(item.explanation).length <= 1000, "Bait & Payoff explanation must contain 1–1000 characters");
+    check(item.scope === "shared" || item.scope === "ending", "Bait & Payoff scope is invalid");
+    check(typeof item.baitSignature === "string" && /^[0-9a-f]{8}$/.test(item.baitSignature)
+      && typeof item.payoffSignature === "string" && /^[0-9a-f]{8}$/.test(item.payoffSignature), "Bait & Payoff action review signatures are invalid");
+    const branch = item.scope === "ending" ? branches.get(String(item.branchId)) : undefined;
+    check(item.scope !== "ending" || typeof item.branchId === "string" && Boolean(branch), "Ending connection must reference an existing ending");
+    check(item.scope !== "shared" || item.branchId === undefined, "Shared connections cannot name an ending");
+    const actions = item.scope === "shared"
+      ? main
+      : new Map(resolvePlaybookPath(play, branch!.id).play.arrows.map((arrow) => [arrow.id, arrow]));
+    const bait = actions.get(item.baitActionId as string), payoff = actions.get(item.payoffActionId as string);
+    check(bait && payoff, "Bait & Payoff actions must remain in their saved path");
+    if (item.reaction !== undefined) {
+      check(object(item.reaction) && Object.keys(item.reaction).every((key) => ["defenderId", "area", "direction", "checkpoint"].includes(key)), "Defender reaction check contains unsupported fields");
+      const reaction = item.reaction as Record<string, unknown>;
+      check(integer(reaction.defenderId) && knownDefenderIds.has(reaction.defenderId), "Reaction check must reference a defender on this court");
+      check(reaction.direction === "enter" || reaction.direction === "leave", "Reaction direction must be enter or leave");
+      check(object(reaction.area) && Object.keys(reaction.area).every((key) => ["shape", "center", "radiusFeet", "widthFeet", "heightFeet"].includes(key)), "Reaction area is invalid");
+      const area = reaction.area as Record<string, unknown>;
+      point(area.center);
+      const center = area.center as { x: number; y: number };
+      if (area.shape === "circle") {
+        check(typeof area.radiusFeet === "number" && Number.isFinite(area.radiusFeet) && area.radiusFeet >= 0.5 && area.radiusFeet <= 25 && area.widthFeet === undefined && area.heightFeet === undefined, "Reaction radius must be 0.5–25 feet");
+        check(center.x * .5 >= area.radiusFeet - 1e-6 && (100 - center.x) * .5 >= area.radiusFeet - 1e-6 && center.y * .47 >= area.radiusFeet - 1e-6 && (100 - center.y) * .47 >= area.radiusFeet - 1e-6, "Reaction area must stay within the playable court");
+      } else {
+        check(area.shape === "rectangle" && typeof area.widthFeet === "number" && Number.isFinite(area.widthFeet) && area.widthFeet >= 1 && area.widthFeet <= 50 && typeof area.heightFeet === "number" && Number.isFinite(area.heightFeet) && area.heightFeet >= 1 && area.heightFeet <= 47 && area.radiusFeet === undefined, "Reaction rectangle dimensions are invalid");
+        check(center.x * .5 >= area.widthFeet / 2 - 1e-6 && (100 - center.x) * .5 >= area.widthFeet / 2 - 1e-6 && center.y * .47 >= area.heightFeet / 2 - 1e-6 && (100 - center.y) * .47 >= area.heightFeet / 2 - 1e-6, "Reaction area must stay within the playable court");
+      }
+      check(object(reaction.checkpoint) && Object.keys(reaction.checkpoint).every((key) => ["actionId", "event", "routePlayerId", "routePhase", "routeSegment", "progress"].includes(key)), "Reaction checkpoint is invalid");
+      const checkpoint = reaction.checkpoint as Record<string, unknown>;
+      const supportedEvents = new Set(["start", "complete", "catch", "screen-set", "screen-use", "route-point"]);
+      const checkpointAction = typeof checkpoint.actionId === "string" ? actions.get(checkpoint.actionId) : undefined;
+      check(checkpointAction && supportedEvents.has(String(checkpoint.event)), "Reaction checkpoint must identify an action milestone");
+      check(checkpointAction.id === item.baitActionId || checkpointAction.id === item.payoffActionId, "Reaction checkpoint must belong to the linked bait or payoff");
+      if (checkpoint.event === "catch") check(["pass", "handoff"].includes(checkpointAction.kind), "Catch checkpoints require a pass or handoff");
+      if (checkpoint.event === "screen-set") check(["screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"].includes(checkpointAction.kind), "Screen-set checkpoints require a screen action");
+      if (checkpoint.event === "screen-use") check(["screen", "slip-screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down", "handoff"].includes(checkpointAction.kind), "Screen-use checkpoints require a screen or handoff action");
+      if (checkpoint.event === "route-point") {
+        check(integer(checkpoint.routePlayerId) && knownPlayerIds.has(checkpoint.routePlayerId) && checkpoint.routePhase === "main"
+        && checkpoint.routeSegment === 0 && typeof checkpoint.progress === "number" && Number.isFinite(checkpoint.progress) && checkpoint.progress > 0 && checkpoint.progress < 1, "Route-point checkpoints need a court player, main route, and interior progress");
+      } else check(checkpoint.routePlayerId === undefined && checkpoint.routePhase === undefined && checkpoint.routeSegment === undefined && checkpoint.progress === undefined, "Only route-point checkpoints can specify route progress");
+    }
+  }
 }
 
 function validateFlipbookLesson(raw: unknown, play: PlaybookDraft) {
@@ -380,7 +442,7 @@ export function validateReadCoachSessionRecord(raw: unknown) {
     && Array.isArray(raw.events) && raw.events.length <= 200000, "Read checkpoint session is invalid");
   check(object(raw.hoop), "Read checkpoint court is invalid"); point(raw.hoop);
   const source = raw.initialDrawing;
-  check(object(source) && source.readCoach === undefined && source.roleCues === undefined && source.spacingGates === undefined && source.flipbooks === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
+  check(object(source) && source.readCoach === undefined && source.roleCues === undefined && source.spacingGates === undefined && source.flipbooks === undefined && source.baitPayoffs === undefined && source.branches === undefined, "Read checkpoint snapshot must be a flattened path without another lesson");
   validatePlaybookDocument(source);
   const settings = raw.initialSettings;
   check(object(settings) && ["off", "spacing", "cuts", "read-react"].includes(String(settings.offenseOffBall))
@@ -399,7 +461,7 @@ export function validateReadCoachSessionRecord(raw: unknown) {
     } else if (event.kind === "settings") {
       check(object(event.settings), "Read checkpoint replay settings are invalid");
     } else if (event.kind === "edit") {
-      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.roleCues === undefined && event.drawing.spacingGates === undefined && event.drawing.flipbooks === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
+      check(object(event.drawing) && event.drawing.readCoach === undefined && event.drawing.roleCues === undefined && event.drawing.spacingGates === undefined && event.drawing.flipbooks === undefined && event.drawing.baitPayoffs === undefined && event.drawing.branches === undefined, "Read checkpoint replay edit must be flattened");
       validatePlaybookDocument(event.drawing);
     } else throw new Error("Read checkpoint replay event is unsupported");
   }
@@ -458,7 +520,7 @@ function validateReadCoach(raw: unknown) {
       choiceIds.add(choice.id);
       check(typeof choice.label === "string" && choice.label.trim().length > 0 && Array.from(choice.label).length <= 80
         && Array.isArray(choice.arrows) && choice.arrows.length >= 1 && choice.arrows.length <= 30, "Read choice is invalid");
-      const path = { ...source, name: `${String(source.name)} · ${choice.label}`.slice(0, 80), id: String(source.id), arrows: choice.arrows, branches: undefined, readCoach: undefined, spacingGates: undefined };
+      const path = { ...source, name: `${String(source.name)} · ${choice.label}`.slice(0, 80), id: String(source.id), arrows: choice.arrows, branches: undefined, readCoach: undefined, spacingGates: undefined, baitPayoffs: undefined };
       validatePlaybookDocument(path);
     }
     check(typeof item.correctChoiceId === "string" && choiceIds.has(item.correctChoiceId), "Choose one intended read");
