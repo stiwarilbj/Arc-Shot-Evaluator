@@ -81,6 +81,23 @@ const missingPlayer = structuredClone(frames); missingPlayer[1] = { ...partial, 
 invalid(missingPlayer);
 const replacedDefender = structuredClone(frames); replacedDefender[1].defenders[0].id = 2; replacedDefender[1].assignments[0].defenderId = 2;
 invalid(replacedDefender);
+const dilemmaState = { defenderId: 1, stayWithPlayerId: 1, tagPlayerId: 2, actionId: 'pass', milestone: 'catch', choice: 'stay', startedAtMs: 0, releasedAtMs: null, status: 'committed' };
+const dilemmaFrames = [frame(), { ...frame(), elapsedMs: 100 / 3 }, { ...frame(), elapsedMs: 200 / 3,
+  defenderDilemma: { ...dilemmaState, releasedAtMs: 50, status: 'released' } }];
+dilemmaFrames[0].defenderDilemma = { ...dilemmaState };
+dilemmaFrames[1].defenderDilemma = { ...dilemmaState };
+assert.deepEqual(decodeReplayForPlayback(packReplay(dilemmaFrames)), dilemmaFrames, 'valid Dilemma commitment events remain lossless across a recorded replay');
+for (const change of [
+  d => { d.defenderId = 99; }, d => { d.stayWithPlayerId = 99; }, d => { d.tagPlayerId = d.stayWithPlayerId; },
+  d => { d.actionId = ''; }, d => { d.choice = 'unknown'; }, d => { d.milestone = 'scheduled-time'; },
+  d => { d.startedAtMs = Infinity; }, d => { d.startedAtMs = 200; }, d => { d.status = 'released'; },
+  d => { d.releasedAtMs = 0; d.status = 'released'; }, d => { d.releasedAtMs = 100; d.status = 'released'; },
+]) {
+  const damaged = structuredClone(dilemmaFrames); change(damaged[1].defenderDilemma); invalid(damaged);
+}
+const missingDilemmaFrame = structuredClone(dilemmaFrames); delete missingDilemmaFrame[1].defenderDilemma; invalid(missingDilemmaFrame);
+const changedDilemmaIdentity = structuredClone(dilemmaFrames); changedDilemmaIdentity[1].defenderDilemma.choice = 'tag'; invalid(changedDilemmaIdentity);
+const missingDilemmaAction = structuredClone(dilemmaFrames); missingDilemmaAction[1].execution = []; invalid(missingDilemmaAction);
 // Decode-time failure must not damage the reusable source archive or later retries.
 assert.deepEqual(decodeReplayForPlayback(archive), frames);
 console.log(`Replay content validation passed: ${rejected} structurally decodable damaged payloads rejected; exact values, shared metadata, partial rosters, possession changes and retry preserved`);

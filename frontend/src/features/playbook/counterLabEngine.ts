@@ -3,8 +3,10 @@ import type { PlaybookDraft, SimulationSettings } from "./types.ts";
 import { DEFAULT_SIMULATION_SETTINGS, validatePlaybookParticipants } from "./types.ts";
 import { advanceSimulationState, createSimulationRun, observeCounterLabRun, pointDistanceFeet, prepareSimulationRun, SIMULATION_STEP_MS } from "./simulation.ts";
 import { createCounterLabRepairs, type CounterLabFrame, type CounterLabMode, type CounterLabProfile, type CounterLabRepair, type CounterLabResult, type CounterLabSummary, type CounterLabProgress, type PassDiagnostic, type RepairEvidence } from "./counterLabTypes.ts";
+import { DILEMMA_CHOICES, type DefenderDilemmaChoice, type DefenderDilemmaConfiguration, type DefenderDilemmaChoiceSummary, type DefenderDilemmaProgress } from "./defenderDilemma.ts";
 import { counterLabTrialKey, createCompletedTrialCache, type PackedCounterLabTrial } from "./counterLabTrialCache.ts";
 import type { ReplayArchive } from "./counterLabReplayArchive.ts";
+import { packReplay } from "./counterLabReplayArchive.ts";
 
 export type CounterLabAnalysis = { results: CounterLabSummary[]; repairs: CounterLabRepair[]; detailArchives: Map<string, ReplayArchive> };
 export type { CounterLabProgress } from "./counterLabTypes.ts";
@@ -158,7 +160,8 @@ function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMo
       defensiveResponsibilities: observation.defensiveResponsibilities,
       assignments: observation.assignments, opportunities: observation.opportunities, blockedPass: observation.blockedPass,
       involvedPlayerIds: observation.involvedPlayerIds, activeRoutes: observation.activeRoutes,
-      players: frame.players, defenders: frame.defenders, ball: frame.ball, shotPhase: frame.shotPhase, execution: frame.execution };
+      players: frame.players, defenders: frame.defenders, ball: frame.ball, shotPhase: frame.shotPhase, execution: frame.execution,
+      ...(observation.defenderDilemma ? { defenderDilemma: observation.defenderDilemma } : {}) };
     trace.push(sample);
     if (run.elapsedMs + 1e-6 >= nextDiagnosticMs || run.elapsedMs >= run.durationMs) { diagnosticTrace.push(sample); nextDiagnosticMs += 100; }
   };
@@ -208,6 +211,71 @@ function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMo
   return { key: `${profile.id}:${mode}`, profile, mode, shotRelease: run.frame.shotRelease, score: Math.round(run.frame.shotQuality), finalShotQuality: run.frame.shotQuality, createdAdvantage, outcome,
     firstLostOpeningMs, firstBlockedPass, firstUnsafePass, passDiagnostics, firstBreakdown, releasedAtMs, adaptiveAttempts: run.adaptiveActionsTaken, adaptiveSuccesses: successfulReads.size, recoveredAtMs,
     actionDiagnostics, actions, notice: lossFrame?.action ? `The opening closed during ${lossFrame.action}` : null, trace };
+}
+
+export type CounterLabDilemmaAnalysis = { summaries: DefenderDilemmaChoiceSummary[]; archives: Map<DefenderDilemmaChoice, ReplayArchive> };
+
+/** Three opt-in replays share one validated setup, defense, offense mode, and RNG seed. */
+export async function analyzeCounterLabDilemma(
+  draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode,
+  configuration: DefenderDilemmaConfiguration, seed: number,
+  onProgress: (progress: DefenderDilemmaProgress) => void,
+  shouldCancel: () => boolean = () => false,
+): Promise<CounterLabDilemmaAnalysis> {
+  draft = structuredClone(draft);
+  validateCounterLabInput(draft, [profile], [mode]);
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error("Dilemma seed is invalid");
+  if (!draft.players.some((player) => player.id === configuration.stayWithPlayerId)
+      || !draft.players.some((player) => player.id === configuration.tagPlayerId)
+      || configuration.stayWithPlayerId === configuration.tagPlayerId) throw new Error("Choose two different offensive players");
+  if (!draft.defenders.some((defender) => defender.id === configuration.defenderId)) throw new Error("Choose a defender in this play");
+  if (!draft.arrows.some((arrow) => arrow.id === configuration.actionId)) throw new Error("Choose a trigger action in this play");
+  const settings = trialSettings(profile, mode);
+  const summaries: DefenderDilemmaChoiceSummary[] = [];
+  const archives = new Map<DefenderDilemmaChoice, ReplayArchive>();
+  for (const [choiceIndex, choice] of DILEMMA_CHOICES.entries()) {
+    if (shouldCancel()) throw new DOMException("Dilemma cancelled", "AbortError");
+    onProgress({ completed: choiceIndex, total: DILEMMA_CHOICES.length, choice, label: `Preparing ${choice} commitment` });
+    const run = createSimulationRun(draft, settings, undefined, { seed, defenderDilemma: { ...configuration, choice } });
+    if (!run.defenders.some((defender) => defender.id === configuration.defenderId)) throw new Error("The selected defender is unavailable in the resolved replay");
+    const trace: CounterLabFrame[] = [];
+    let nextSample = 0;
+    let steps = 0;
+    let chunkStarted = performance.now();
+    const append = () => {
+      const observation = observeCounterLabRun(run);
+      trace.push({ elapsedMs: run.elapsedMs, sequence: observation.sequence, action: observation.action, ballHandlerId: observation.ballHandlerId,
+        ballPhase: observation.ballPhase, assignments: observation.assignments, opportunities: observation.opportunities,
+        blockedPass: observation.blockedPass, involvedPlayerIds: observation.involvedPlayerIds, activeRoutes: observation.activeRoutes,
+        players: observation.frame.players, defenders: observation.frame.defenders, ball: observation.frame.ball,
+        shotPhase: observation.frame.shotPhase, execution: observation.frame.execution,
+        ...(observation.defenderDilemma ? { defenderDilemma: observation.defenderDilemma } : {}) });
+    };
+    append();
+    while (run.elapsedMs < run.durationMs && steps++ < 20_000) {
+      if (shouldCancel()) throw new DOMException("Dilemma cancelled", "AbortError");
+      advanceSimulationState(run, SIMULATION_STEP_MS, settings);
+      if (run.elapsedMs + 1e-6 >= nextSample) { append(); nextSample += SIMULATION_STEP_MS; }
+      if (steps % 8 === 0 || performance.now() - chunkStarted >= 8) {
+        onProgress({ completed: choiceIndex, total: DILEMMA_CHOICES.length, choice, label: `Running ${choice} commitment · ${Math.round(run.elapsedMs / Math.max(1, run.durationMs) * 100)}%` });
+        await yieldToWorker();
+        if (shouldCancel()) throw new DOMException("Dilemma cancelled", "AbortError");
+        chunkStarted = performance.now();
+      }
+    }
+    if (run.elapsedMs < run.durationMs) throw new Error("This possession exceeded the simulation limit · Shorten the play and try again");
+    if (trace.at(-1)?.elapsedMs !== run.elapsedMs) append();
+    const state = trace.at(-1)?.defenderDilemma;
+    const status = state?.startedAtMs == null ? "trigger-not-reached" : state.releasedAtMs == null ? "release-not-reached" : "released";
+    summaries.push({ choice, status, startedAtMs: state?.startedAtMs ?? null, releasedAtMs: state?.releasedAtMs ?? null,
+      durationMs: run.durationMs, message: status === "trigger-not-reached" ? "The selected action never actually started · The defender stayed with the recorded defense"
+        : status === "release-not-reached" ? "The release milestone was not recorded · This commitment continues only through the end of the recorded possession"
+        : "The commitment began at the recorded action start and changed at the recorded release milestone" });
+    archives.set(choice, packReplay(trace));
+    onProgress({ completed: choiceIndex + 1, total: DILEMMA_CHOICES.length, choice, label: `${choiceIndex + 1} of 3 commitments recorded` });
+    await yieldToWorker();
+  }
+  return { summaries, archives };
 }
 
 export async function analyzeCounterLab(draft: PlaybookDraft, profiles: CounterLabProfile[], modes: CounterLabMode[], onProgress: (progress: CounterLabProgress) => void,

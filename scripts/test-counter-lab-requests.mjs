@@ -14,6 +14,12 @@ for (const type of ['cancel', 'release']) assert.deepEqual(parseCounterLabReques
 const details = { type: 'details', id: 'a', detailId: 'detail-1', key: 'switch:scripted', repairId: 'original' };
 assert.equal(parseCounterLabRequest(details), details);
 assert.ok(parseCounterLabRequest({ ...details, key: 'custom-profile:adaptive', repairId: 'slip-screen-one' }));
+const dilemma = { type: 'dilemma', id: 'analysis-d', dilemmaId: 'dilemma-1', draft: structuredClone(STARTER_PLAYS[0]),
+  profile: structuredClone(COUNTER_LAB_DEFAULT_PROFILES.find((profile) => profile.id === 'switch')), mode: 'scripted', seed: 193,
+  configuration: { defenderId: 1, stayWithPlayerId: 1, tagPlayerId: 2, actionId: 'pickroll-screen', milestone: 'screen-set' } };
+assert.equal(parseCounterLabRequest(dilemma), dilemma, 'valid Dilemma requests preserve their authored input');
+assert.equal(parseCounterLabRequest({ type: 'dilemma-cancel', id: 'a', dilemmaId: 'd-1' }).type, 'dilemma-cancel');
+assert.equal(parseCounterLabRequest({ type: 'dilemma-details', id: 'a', dilemmaId: 'd-1', detailId: 'detail-2', choice: 'split' }).choice, 'split');
 const legacy = request();
 for (const marker of [...legacy.draft.players, ...legacy.draft.defenders]) { delete marker.ratings; delete marker.badges; }
 for (const arrow of legacy.draft.arrows) { delete arrow.actor_id; delete arrow.recipient_id; }
@@ -26,7 +32,7 @@ function invalid(value) {
   let error;
   assert.throws(() => { try { parseCounterLabRequest(value); } catch (caught) { error = caught; throw caught; } }, Error);
   const response = counterLabRequestError(value, error);
-  assert.equal(response.type, 'error'); assert.equal(typeof response.id, 'string'); assert.equal(typeof response.message, 'string');
+  assert.ok(['error', 'dilemma-error'].includes(response.type)); assert.equal(typeof response.id, 'string'); assert.equal(typeof response.message, 'string');
   rejected++;
 }
 for (const value of [null, undefined, true, 4, 'analyze', [], {}, { id: 'a' }, { type: 'unknown', id: 'a' }, { type: 'cancel', id: 7 }, { type: 'release', id: '  ' }]) invalid(value);
@@ -49,6 +55,15 @@ for (const change of [
   v => { v.draft.arrows[0].control = {}; }, v => { v.draft.arrows[0].timing = '1'; },
   v => { v.draft.arrows[0].actor_id = 999; }, v => { v.draft.arrows[0].sequence = NaN; },
 ]) { const value = request(); change(value); invalid(value); }
+for (const change of [
+  value => { value.configuration.milestone = 'scheduled-time'; },
+  value => { value.configuration.tagPlayerId = value.configuration.stayWithPlayerId; },
+  value => { value.configuration.defenderId = 999; },
+  value => { value.configuration.actionId = 'missing'; },
+  value => { value.seed = -1; },
+  value => { value.profile.strategy = 'unknown'; },
+  value => { value.draft.defenders = []; },
+]) { const value = structuredClone(dilemma); change(value); invalid(value); }
 {
   const value = request(); value.draft.arrows[0].timingPlan = { startAtMs: NaN }; invalid(value);
 }

@@ -5,6 +5,8 @@ import type { CourtRoute } from "./arrowVisibility";
 import type { ReplayArchive } from "./counterLabReplayArchive.ts";
 import type { CourtPoint, DefenseScheme, DefenseStrategy, PlaybookDraft } from "./types";
 import { bindAuthoredActions, DEFENSE_SCHEME_ORDER, type ActionDiagnostic } from "./simulation.ts";
+import type { DefenderDilemmaChoice, DefenderDilemmaConfiguration, DefenderDilemmaChoiceSummary, DefenderDilemmaProgress } from "./defenderDilemma.ts";
+import type { SimulationFrame } from "./simulation.ts";
 
 export type CounterLabMode = "scripted" | "adaptive";
 export type CounterLabProfile = { id: string; label: string; strategy: DefenseStrategy; scheme: Exclude<DefenseScheme, "auto"> };
@@ -27,6 +29,7 @@ export type CounterLabFrame = {
   players: Array<{ id: number; x: number; y: number }>;
   defenders: Array<{ id: number; x: number; y: number }>;
   ball: CourtPoint | null; shotPhase: "idle" | "setup" | "air" | "result";
+  defenderDilemma?: SimulationFrame["defenderDilemma"];
 };
 export type CounterLabResult = {
   shotRelease?: ShotReleaseContext | null;
@@ -46,6 +49,9 @@ export type CounterLabProgress = { completed: number; total: number; label: stri
 export type CounterLabRequest =
   | { type: "analyze"; id: string; draft: PlaybookDraft; profiles: CounterLabProfile[]; modes: CounterLabMode[] }
   | { type: "details"; id: string; detailId: string; key: string; repairId: string }
+  | { type: "dilemma"; id: string; dilemmaId: string; draft: PlaybookDraft; profile: CounterLabProfile; mode: CounterLabMode; configuration: DefenderDilemmaConfiguration; seed: number }
+  | { type: "dilemma-details"; id: string; dilemmaId: string; detailId: string; choice: DefenderDilemmaChoice }
+  | { type: "dilemma-cancel"; id: string; dilemmaId: string }
   | { type: "cancel"; id: string }
   | { type: "release"; id: string };
 export type CounterLabMessage =
@@ -54,6 +60,11 @@ export type CounterLabMessage =
   | { type: "complete"; id: string; results: CounterLabSummary[]; repairs: CounterLabRepair[] }
   | { type: "cancelled"; id: string }
   | { type: "details"; id: string; detailId: string; key: string; repairId: string; original: ReplayArchive | null; repaired: ReplayArchive | null }
+  | ({ type: "dilemma-progress"; id: string; dilemmaId: string } & DefenderDilemmaProgress)
+  | { type: "dilemma-complete"; id: string; dilemmaId: string; summaries: DefenderDilemmaChoiceSummary[] }
+  | { type: "dilemma-cancelled"; id: string; dilemmaId: string }
+  | { type: "dilemma-details"; id: string; dilemmaId: string; detailId: string; choice: DefenderDilemmaChoice; archive: ReplayArchive | null }
+  | { type: "dilemma-error"; id: string; dilemmaId: string; message: string; detailId?: string }
   | { type: "error"; id: string; message: string; detailId?: string };
 
 export const COUNTER_LAB_DEFAULT_PROFILES: CounterLabProfile[] = [

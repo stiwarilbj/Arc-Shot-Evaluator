@@ -899,6 +899,31 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .counter-court-legend b { color: var(--text); }
 .counter-diagnosis { padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
 .counter-diagnosis p { font-size: 14px; color: var(--muted); }
+.counter-dilemma { margin-top: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.counter-dilemma > summary { min-height: 42px; color: var(--text); font-weight: 700; }
+.counter-dilemma > p { margin: 7px 0 12px; font-size: 12px; }
+.counter-dilemma > label { display: grid; gap: 5px; margin: 9px 0 2px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.counter-dilemma select { width: 100%; min-width: 0; min-height: 42px; padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text); }
+.counter-dilemma .counter-text-button { min-height: 34px; padding: 2px 0; font-size: 12px; }
+.counter-dilemma .button { width: 100%; margin-top: 10px; }
+.counter-dilemma-pick { display: block; color: var(--orange); font-size: 12px; }
+.counter-dilemma-results { display: grid; gap: 7px; margin-top: 12px; }
+.counter-dilemma-results button { display: grid; gap: 4px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; }
+.counter-dilemma-results button[aria-pressed="true"] { border-color: var(--orange); box-shadow: inset 3px 0 var(--orange); }
+.counter-dilemma-results strong { overflow-wrap: anywhere; font-size: 13px; }
+.counter-dilemma-results span { color: var(--muted); font-size: 11px; }
+.counter-dilemma-evidence { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.counter-dilemma-evidence p { font-size: 12px; }
+.counter-dilemma-evidence small { display: block; margin-top: 8px; color: var(--muted); font-size: 11px; }
+.counter-dilemma .counter-progress { margin-top: 10px; }
+.counter-dilemma .counter-alert { display: grid; gap: 6px; padding: 9px; font-size: 12px; }
+.counter-court .counter-dilemma-halo { fill: transparent; stroke: transparent; pointer-events: none; vector-effect: non-scaling-stroke; }
+.counter-court .is-dilemma-defender .counter-dilemma-halo { stroke: #78c5f4; stroke-width: 2; }
+.counter-court .is-dilemma-threat .counter-dilemma-halo { stroke: var(--orange); stroke-width: 2; }
+.counter-court .is-pickable { cursor: pointer; }
+.counter-court .is-pickable .counter-dilemma-halo { fill: color-mix(in srgb, var(--orange) 9%, transparent); stroke: color-mix(in srgb, var(--orange) 55%, transparent); stroke-width: 1.5; pointer-events: all; }
+.counter-court .is-pickable:hover .counter-dilemma-halo, .counter-court .is-pickable:focus .counter-dilemma-halo { fill: color-mix(in srgb, var(--orange) 22%, transparent); stroke: var(--orange); stroke-width: 2.5; }
+.counter-court :is(.is-dilemma-defender, .is-dilemma-threat) { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--orange) 70%, transparent)); }
 .counter-warning, .counter-repaired-outcome { margin: 16px 0; padding-top: 12px; border-top: 1px solid var(--line); }
 .counter-warning strong { color: var(--orange); }
 .counter-outcome { color: var(--text) !important; font-weight: 650; }

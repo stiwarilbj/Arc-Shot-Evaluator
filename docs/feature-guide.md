@@ -481,6 +481,26 @@ Quality is a **simulation score**, not a real-game scoring probability · See th
 [save-and-simulate compatibility harness](save-simulate-compatibility.md) for
 engine and persistence verification
 
+### Defender Dilemma
+
+Open **Defender Dilemma** beside the selected defense explanation after testing a
+play · Assign one defender and two different offensive players as **Stay with**
+and **Tag**, then choose an authored trigger action and one of its actual recorded
+release milestones · Use the court selectors or the accessible player lists
+
+Counter Lab replays **Stay with**, **Tag**, and **Split the difference** from the
+same starting play, defense, offense behavior, and deterministic seed · The
+defender begins its commitment only when the trigger action actually starts and
+returns at the selected recorded event · If either event does not occur, the
+result says so and never substitutes the action’s scheduled time
+
+Choose a result to inspect its replay alongside the **Original** baseline · The
+court highlights the defender and both threats, while the evidence panel reports
+recorded distances and available simulation options · These measurements describe
+the simulation only; they do not prove that a threat was open or that the play
+caused a defensive reaction · Dilemma settings and replays remain temporary and do
+not change or save the play
+
 ## Guess the Jumper
 
 Open **Others → Guess the Jumper** for **Guess**, **Create**, and **My Clips** ·

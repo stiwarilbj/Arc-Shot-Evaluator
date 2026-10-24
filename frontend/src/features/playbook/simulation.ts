@@ -8,6 +8,7 @@ import { coordinateMovement, createMovementBuffers, createMovementOrder, interpo
 import { clearCongestionState } from "./congestionPlanning.ts";
 import { beginSimulationSession, simulationSeed, seededSimulationRandom, assertSimulationSessionHoop, recordSimulationSettings, recordSimulationEdit, recordSimulationAdvance, advanceRecordedSimulation, restoreSimulationSession } from "./simulationSession.ts";
 import type { CourtRoute } from "./arrowVisibility";
+import type { DefenderDilemmaChoice, DefenderDilemmaConfiguration } from "./defenderDilemma.ts";
 import type { CourtPoint, DefenseScheme, DefensiveBadge, OffensiveBadge, PlayerSkillRatings, PlaybookArrow, PlaybookDraft, PlaybookMarker, ReadCoachChoice, ReadCoachCourtSnapshot, ReadCoachSessionRecord, SimulationSettings, SpacingGate, SpacingGateResult } from "./types.ts";
 import { copySpacingGateResult, newSpacingGateResult, spacingGateMet } from "./spacingGates.ts";
 import { createSimulationAttributes, refreshSimulationAttributes, preparedPlayerRating as playerRating, preparedHasBadge as playerHasBadge, preparedHasBadge as defenderHasBadge, type SimulationAttributes } from "./simulationAttributes.ts";
@@ -47,6 +48,14 @@ export type SimulationFrame = {
   shooterId: number | null;
   shotStart: CourtPoint | null;
   shotTarget: CourtPoint | null;
+  defenderDilemma?: DefenderDilemmaFrameState;
+};
+
+export type DefenderDilemmaFrameState = DefenderDilemmaConfiguration & {
+  choice: DefenderDilemmaChoice;
+  startedAtMs: number | null;
+  releasedAtMs: number | null;
+  status: "waiting" | "committed" | "released";
 };
 
 export type ActionDiagnostic = {
@@ -151,6 +160,7 @@ export type SimulationRun = {
   previousFrame: SimulationFrame;
   frame: SimulationFrame;
   readCoachInterruptedActions?: ActionDiagnostic[];
+  defenderDilemma?: DefenderDilemmaConfiguration & { choice: DefenderDilemmaChoice };
 };
 
 export const SIMULATION_STEP_MS = 1000 / 30;
@@ -1173,6 +1183,7 @@ export type CounterLabObservation = {
     players: Array<Pick<PlaybookMarker, "id" | "x" | "y">>;
     defenders: Array<Pick<PlaybookMarker, "id" | "x" | "y">>;
   };
+  defenderDilemma?: SimulationFrame["defenderDilemma"];
 };
 
 /** Return a compact, evidence-based view of the current possession for Counter Lab. */
@@ -1197,6 +1208,7 @@ export function observeCounterLabRun(run: SimulationRun, hoop = HOOP_POINT): Cou
   const activeRoutes = getRunRoutes(run, hoop);
   return {
     defensiveResponsibilities: defensiveDutySnapshot(run.defense),
+    ...(dilemmaStateForFrame(run) ? { defenderDilemma: dilemmaStateForFrame(run)! } : {}),
     elapsedMs: run.elapsedMs,
     sequence: action?.sequence ?? null,
     action: activeActions.length ? [...new Set(activeActions.map(autoActionLabel))].join(" · ") : null,
@@ -1463,6 +1475,7 @@ function velocityKey(kind: "player" | "defender", id: number) {
 function copyFrame(frame: SimulationFrame): SimulationFrame {
   return {
     ...frame,
+    ...(frame.defenderDilemma ? { defenderDilemma: { ...frame.defenderDilemma } } : {}),
     defensiveResponsibilities: frame.defensiveResponsibilities?.map(duty => ({ ...duty })),
     execution: frame.execution?.map((action) => ({ ...action,
       ...(action.congestion ? { congestion: { ...action.congestion, blockers: [...action.congestion.blockers] } } : {}),
@@ -1500,6 +1513,7 @@ function frameFor(run: SimulationRun): SimulationFrame {
       calculateOffBallQuality(run.players, run.ball, run.settings, run.defenders, shooter.id), HOOP_POINT, badgeShotContext(run, shooter, run.elapsedMs)) : 0;
   return {
     defensiveResponsibilities: defensiveDutySnapshot(run.defense),
+    ...(dilemmaStateForFrame(run) ? { defenderDilemma: dilemmaStateForFrame(run)! } : {}),
     execution: [...actionDiagnostics(run), ...(run.readCoachInterruptedActions ?? []).map((item) => ({ ...item }))],
     ...(run.spacingGateResults.length ? { spacingGateResults: run.spacingGateResults.map(copySpacingGateResult) } : {}),
     ballHandlerId: run.ballHandlerId,
@@ -1587,10 +1601,11 @@ export function authoredStateBeforeSequence(source: PlaybookDraft, beforeSequenc
   };
 }
 
-export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT, options: { recordSession?: boolean; seed?: number } = {}): SimulationRun {
+export function createSimulationRun(source: PlaybookDraft, settings: SimulationSettings, hoop = HOOP_POINT, options: { recordSession?: boolean; seed?: number; defenderDilemma?: DefenderDilemmaConfiguration & { choice: DefenderDilemmaChoice } } = {}): SimulationRun {
   const runSettings = normalizeSettings(settings);
   const seed = options.recordSession || options.seed !== undefined ? simulationSeed(options.seed) : undefined;
   const run = initializeSimulationRun(structuredClone(source), runSettings, hoop, undefined, seed === undefined ? Math.random : seededSimulationRandom(seed));
+  if (options.defenderDilemma) run.defenderDilemma = structuredClone({ ...options.defenderDilemma, choice: options.defenderDilemma.choice });
   if (options.recordSession) beginSimulationSession(run, hoop, seed!);
   return run;
 }
@@ -2379,6 +2394,47 @@ function strategyForScreen(run: SimulationRun, action: BoundAction) {
       ? action.execution?.usedAtMs != null : ["use", "release"].includes(action.execution?.phase ?? ""));
 }
 
+function dilemmaActionMilestone(action: BoundAction, milestone: DefenderDilemmaConfiguration["milestone"]): number | null {
+  const state = action.execution;
+  if (!state) return null;
+  if (milestone === "complete") return state.phase === "completed" ? state.completedAtMs : null;
+  if (milestone === "catch") return caughtAt(action.transfer) ?? null;
+  if (milestone === "pass-release") return action.transfer?.release?.atMs ?? state.releasedAtMs ?? null;
+  if (milestone === "screen-set") return state.setAtMs ?? null;
+  if (milestone === "screen-use") return state.usedAtMs ?? null;
+  return state.releasedAtMs ?? null;
+}
+
+function dilemmaTiming(run: SimulationRun) {
+  const config = run.defenderDilemma;
+  if (!config) return null;
+  const action = run.actions.find((candidate) => candidate.arrow.id === config.actionId);
+  if (!action) return { config, action: null, startedAtMs: null, releasedAtMs: null };
+  return { config, action, startedAtMs: action.execution?.startedAtMs ?? null, releasedAtMs: dilemmaActionMilestone(action, config.milestone) };
+}
+
+function dilemmaStateForFrame(run: SimulationRun): DefenderDilemmaFrameState | undefined {
+  const timing = dilemmaTiming(run);
+  if (!timing) return undefined;
+  return { ...timing.config, choice: timing.config.choice, startedAtMs: timing.startedAtMs, releasedAtMs: timing.releasedAtMs,
+    status: timing.releasedAtMs != null ? "released" : timing.startedAtMs != null ? "committed" : "waiting" };
+}
+
+function dilemmaDefenderTarget(run: SimulationRun, timeMs: number, hoop: CourtPoint): CourtPoint | null {
+  const timing = dilemmaTiming(run);
+  if (!timing || timing.startedAtMs == null || timing.startedAtMs > timeMs) return null;
+  const stay = markerForId(run.players, timing.config.stayWithPlayerId);
+  const tag = markerForId(run.players, timing.config.tagPlayerId);
+  if (!stay || !tag) return null;
+  if (timing.releasedAtMs != null && timing.releasedAtMs <= timeMs) {
+    // A tag is a temporary commitment: once the chosen event is recorded, the
+    // defender recovers to the stay-with threat for the remainder of the run.
+    return timing.config.choice === "tag" ? clampCourt(pointToward(stay, hoop, 3.75)) : null;
+  }
+  if (timing.config.choice === "split") return clampCourt(lerpPoint(stay, tag, .5));
+  return clampCourt(pointToward(timing.config.choice === "tag" ? tag : stay, hoop, 3.75));
+}
+
 function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) {
   const handler = defensiveFocusPlayer(run, timeMs);
   const activeAction = currentActionAt(run, timeMs);
@@ -2691,6 +2747,12 @@ function defensiveTargets(run: SimulationRun, timeMs: number, hoop: CourtPoint) 
   run.zoneChaserAssignments.forEach((_, defenderId) => protectedIds.add(defenderId));
   if (handlerDefenderIndex >= 0) protectedIds.add(run.defenders[handlerDefenderIndex].id);
   if (drive && helperIndex >= 0) protectedIds.add(run.defenders[helperIndex].id);
+  const dilemma = run.defenderDilemma;
+  const forcedTarget = dilemma ? dilemmaDefenderTarget(run, timeMs, hoop) : null;
+  if (dilemma && forcedTarget) {
+    const index = run.defenders.findIndex((defender) => defender.id === dilemma.defenderId);
+    if (index >= 0) { targets[index] = forcedTarget; protectedIds.add(dilemma.defenderId); }
+  }
   return { targets: separateDefenderTargets(run, targets, protectedIds), drive, helperIndex, handlerDefenderIndex, helpSpot };
 }
 
@@ -3330,6 +3392,10 @@ function updateDefense(run: SimulationRun, timeMs: number, dt: number, hoop: Cou
   run.defenders = run.defenders.map((defender, index) => {
     const target = targets[index] ?? defender;
     if (run.settings.defenseStrategy === "off") {
+      if (run.defenderDilemma?.defenderId === defender.id && dilemmaDefenderTarget(run, timeMs, hoop)) {
+        const movementTarget = smoothAITarget(run, "defender", defender, target, dt);
+        return integrateMarker(run, "defender", defender, movementTarget, dt, 9, DEFENDER_ACCELERATION_FT_PER_SECOND);
+      }
       run.targetFilters.delete(velocityKey("defender", defender.id));
       const velocity = run.velocities.get(velocityKey("defender", defender.id)) ?? { x: 0, y: 0 };
       const overlapping = [...run.players, ...run.defenders.filter((other) => other.id !== defender.id)].some((other) => pointDistanceFeet(defender, other) < 2);

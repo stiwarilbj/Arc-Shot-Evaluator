@@ -2,6 +2,7 @@ import { BALL_PHASES, type BallPhase } from "./ballState.ts";
 import { DEFENSIVE_ROLES, type DefensiveRole } from "./defensiveResponsibilities.ts";
 import type { CounterLabFrame } from "./counterLabTypes.ts";
 import { unpackReplay, type ReplayArchive } from "./counterLabReplayArchive.ts";
+import { DILEMMA_CHOICES } from "./defenderDilemma.ts";
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
@@ -24,6 +25,8 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
   check(frames.length > 0);
   let previousTime = -Infinity;
   let roster: Set<number> | undefined, defense: Set<number> | undefined;
+  let dilemmaIdentity: string | undefined, dilemmaFrames = 0;
+  let dilemmaStart: number | null = null, dilemmaRelease: number | null = null;
   for (const value of frames as unknown[]) {
     check(record(value));
     check(clock(value.elapsedMs) && value.elapsedMs >= previousTime);
@@ -46,6 +49,31 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
     check(!roster || roster.size === players.size && [...players].every((id) => roster!.has(id)));
     check(!defense || defense.size === defenders.size && [...defenders].every((id) => defense!.has(id)));
     roster ??= players; defense ??= defenders;
+    if (value.defenderDilemma !== undefined) {
+      const dilemma = value.defenderDilemma;
+      check(record(dilemma) && identity(dilemma.defenderId) && defenders.has(dilemma.defenderId as number)
+        && identity(dilemma.stayWithPlayerId) && players.has(dilemma.stayWithPlayerId as number)
+        && identity(dilemma.tagPlayerId) && players.has(dilemma.tagPlayerId as number)
+        && dilemma.stayWithPlayerId !== dilemma.tagPlayerId && text(dilemma.actionId)
+        && ["complete", "catch", "pass-release", "screen-set", "screen-use", "screen-release"].includes(dilemma.milestone as string)
+        && DILEMMA_CHOICES.includes(dilemma.choice as never)
+        && (dilemma.startedAtMs === null || clock(dilemma.startedAtMs) && dilemma.startedAtMs <= value.elapsedMs + 1e-6)
+        && (dilemma.releasedAtMs === null || clock(dilemma.releasedAtMs) && dilemma.releasedAtMs <= value.elapsedMs + 1e-6));
+      const signature = JSON.stringify([dilemma.defenderId, dilemma.stayWithPlayerId, dilemma.tagPlayerId, dilemma.actionId, dilemma.milestone, dilemma.choice]);
+      check(dilemmaIdentity === undefined || dilemmaIdentity === signature);
+      dilemmaIdentity = signature;
+      dilemmaFrames++;
+      if (dilemma.startedAtMs !== null) {
+        check(dilemmaStart === null || Math.abs(dilemmaStart - (dilemma.startedAtMs as number)) < 1e-6);
+        dilemmaStart = dilemma.startedAtMs as number;
+      }
+      if (dilemma.releasedAtMs !== null) {
+        check(dilemmaStart !== null && (dilemmaRelease === null || Math.abs(dilemmaRelease - (dilemma.releasedAtMs as number)) < 1e-6)
+          && (dilemma.releasedAtMs as number) >= dilemmaStart - 1e-6);
+        dilemmaRelease = dilemma.releasedAtMs as number;
+      }
+      check(dilemma.status === (dilemmaStart === null ? "waiting" : dilemmaRelease === null ? "committed" : "released"));
+    }
     const player = (id: unknown) => typeof id === "number" && players.has(id);
     const participant = (id: unknown) => id === null || player(id);
     check(participant(value.ballHandlerId));
@@ -127,6 +155,11 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
         }
       }
     }
+    if (value.defenderDilemma !== undefined) {
+      const dilemma = value.defenderDilemma as Record<string, unknown>;
+      if (dilemma.startedAtMs !== null) check(Array.isArray(value.execution) && value.execution.some((action) => record(action) && action.actionId === dilemma.actionId));
+    }
   }
+  check(dilemmaFrames === 0 || dilemmaFrames === frames.length);
   return frames;
 }
