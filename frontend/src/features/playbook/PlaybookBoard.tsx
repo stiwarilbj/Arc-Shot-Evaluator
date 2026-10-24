@@ -15,6 +15,7 @@ import { RoleRehearsalView } from "./RoleRehearsalView.tsx";
 import { RoleSwitchboardPanel } from "./RoleSwitchboardPanel.tsx";
 import { prepareRoleSwitch, roleSwitchSourceKey, type RoleSwitchPreview } from "./roleSwitchboard.ts";
 import { PlayFlipbookView } from "./PlayFlipbookView.tsx";
+import { SimulationExportDialog } from "./SimulationExportDialog.tsx";
 import { BaitPayoffAreaOverlay } from "./BaitPayoffArea.tsx";
 import { BaitPayoffInspector, BaitPayoffPresentation } from "./BaitPayoffViews.tsx";
 import { authoredRoleCueTemplates } from "./roleRehearsal.ts";
@@ -493,6 +494,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [readCoachCapture, setReadCoachCapture] = useState<SimulationCapture | null>(null);
   const [readCoachEditing, setReadCoachEditing] = useState<ReadCoachCheckpoint | null>(null);
   const [flipbookCapture, setFlipbookCapture] = useState<SimulationCapture | null>(null);
+  const [exportCapture, setExportCapture] = useState<SimulationCapture | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportCapturePendingRef = useRef(false);
   const flipbookNavigationPendingRef = useRef(false);
   const [flipbookHistoryRevision, setFlipbookHistoryRevision] = useState(0);
   const previewClientRef = useRef<PlaybookSimulationClient | null>(null);
@@ -1355,6 +1359,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       const client = createPlaybookSimulationClient({ sessionId: crypto.randomUUID(),
         onState: (view) => {
           if (simulationClientRef.current !== client) return;
+          if (exportCapturePendingRef.current) {
+            exportCapturePendingRef.current = false;
+            client.playback(false);
+            client.captureExport();
+          }
           lastSimulationViewRef.current = view;
           setSimulationView(view);
           setSimulationFrameState(view.frame);
@@ -1375,6 +1384,14 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
           setFlipbookCapture(capture);
           onViewChange?.("flipbook");
         },
+        onExportCapture: (capture) => {
+          if (simulationClientRef.current !== client) return;
+          setExportCapture(capture);
+          setExportOpen(true);
+          setSimulationPlaying(false);
+          setSimulationFrameState(capture.frame);
+          setSimulationElapsed(capture.session.positionMs);
+        },
         onCommandError: (_type, message) => {
           setSimulationPlaying(false);
           setError(message);
@@ -1394,10 +1411,22 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       setSimulationPlaying(true);
       setError(null);
     } catch {
+      exportCapturePendingRef.current = false;
       setSimulationPlaying(false);
       setError("Playback worker could not start · Your drawing is intact · Press Play to retry");
     }
     focusBoard();
+  }
+
+  function openReplayExport() {
+    if (!draft.players.length) { setError("Add at least one offensive player before exporting a replay"); return; }
+    if (simulationClientRef.current) {
+      pauseSimulation();
+      simulationClientRef.current.captureExport();
+      return;
+    }
+    exportCapturePendingRef.current = true;
+    startSimulation();
   }
 
   function applyAIDefense() {
@@ -2529,6 +2558,8 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="simulation-quality" role="status">Off-ball quality <strong>{offBallQualityDisplay}</strong></span>
             <span className="simulation-quality" role="status">Defensive quality <strong>{simulationActive ? `${simulationFrame.defensiveQuality}%` : "—"}</strong></span>
             <button type="button" className="button button-outline read-coach-capture-button" disabled={!simulationClientRef.current} title={!simulationClientRef.current ? "Start a simulation, then pause while the ball is held" : "Capture the acknowledged fixed-step court state"} onClick={() => captureReadCheckpoint()}><CircleHelp size={14} />Create a read checkpoint</button>
+            <button type="button" className="button button-outline read-coach-capture-button" onClick={openReplayExport}><Download size={14} />Export replay</button>
+            <button type="button" className="button button-outline read-coach-capture-button" disabled={!simulationActive} title={!simulationActive ? "Start playback to export its current court frame" : "Export the currently displayed court"} onClick={() => { if (!simulationActive) return; pauseSimulation(); openReplayExport(); }}><Images size={14} />Export current frame</button>
             <button type="button" className={`simulation-settings-toggle ${settingsOpen ? "is-open" : ""}`} aria-expanded={settingsOpen} aria-controls="simulation-settings" onClick={() => setSettingsOpen((current) => !current)}><Settings2 size={14} />Settings</button>
             {simulationSession ? <label className="simulation-replay-control"><span>Replay</span><input aria-label="Playbook replay time" type="range" min={0} max={simulationSession.recordedUntilMs || 1} step="any" disabled={simulationSession.recordedUntilMs === 0 || simulationInterrupted} value={simulationSession.positionMs} aria-valuetext={`${(simulationSession.positionMs / 1000).toFixed(2)} seconds of ${(simulationSession.recordedUntilMs / 1000).toFixed(2)} recorded`} onChange={(event) => seekSimulation(Number(event.currentTarget.value))} onKeyDown={(event) => {
               const offsets: Record<string, number> = { ArrowLeft: -1000 / 30, ArrowDown: -1000 / 30, ArrowRight: 1000 / 30, ArrowUp: 1000 / 30, PageDown: -1000, PageUp: 1000 };
@@ -2656,6 +2687,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
       </section></div> : null}
       {replacement ? <div className="playbook-modal-backdrop" role="presentation"><section className="playbook-modal replacement-modal" role="dialog" aria-modal="true" aria-labelledby="replace-title"><div className="modal-heading"><div><span className="section-kicker">Unsaved draft</span><h2 id="replace-title">Replace this play?</h2></div></div><p>Your current diagram has changes · Save it before opening the new starting point, or discard the draft</p><div className="modal-actions"><button type="button" className="button button-subtle" onClick={() => setReplacement(null)}>Cancel</button><button type="button" className="button button-outline" onClick={() => { const next = replacement; void saveDraft().then((didSave) => { if (didSave && draftSession.isCurrent(didSave) && replacementRef.current === next) { loadDraft(next); setReplacement(null); } }); }}>Save then replace</button><button type="button" className="button button-primary" onClick={() => { loadDraft(replacement); setReplacement(null); }}>Discard changes</button></div></section></div> : null}
       {baitPresentation ? <BaitPayoffPresentation play={flattenPlaybookPath(draft, activeBranchId, activePath.branch?.label)} connection={baitPresentation} settings={simulationSettings} visibility={arrowVisibility} active={active} onClose={() => { setBaitPresentation(null); pauseSimulation(); }} /> : null}
+      {exportOpen && exportCapture ? <SimulationExportDialog title={draft.name} frame={exportCapture.frame} positionMs={exportCapture.session.positionMs} durationMs={simulationView?.durationMs ?? draftDuration} session={exportCapture.session} visibility={arrowVisibility} spacingGates={activeDraft.spacingGates?.gates ?? []} showSpacingGates={showSpacingGates} onClose={() => { setExportOpen(false); setExportCapture(null); pauseSimulation(); }} /> : null}
     </div>
   );
 }

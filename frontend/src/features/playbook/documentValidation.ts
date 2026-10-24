@@ -386,7 +386,7 @@ function validateFlipbookLesson(raw: unknown, play: PlaybookDraft) {
     const panelIds = new Set<string>();
     let previousTime = -1;
     for (const rawPanel of story.panels) {
-      check(object(rawPanel) && Object.keys(rawPanel).every((key) => ["id", "atMs", "caption", "focusPlayerIds", "routeIds", "snapshot"].includes(key)), "Walkthrough panel contains unsupported fields");
+      check(object(rawPanel) && Object.keys(rawPanel).every((key) => ["id", "atMs", "caption", "focusPlayerIds", "routeIds", "snapshot", "chalkTalk"].includes(key)), "Walkthrough panel contains unsupported fields");
       const panel = rawPanel as Record<string, unknown>;
       check(typeof panel.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(panel.id) && !panelIds.has(panel.id), "Walkthrough panel identities must be unique"); panelIds.add(panel.id);
       check(typeof panel.atMs === "number" && Number.isFinite(panel.atMs) && panel.atMs >= 0 && panel.atMs <= recordingEndMs
@@ -434,6 +434,36 @@ function validateFlipbookLesson(raw: unknown, play: PlaybookDraft) {
       }
       check(Array.isArray(panel.routeIds) && panel.routeIds.length <= 100 && panel.routeIds.every((id) => typeof id === "string" && routeIds.has(id))
         && new Set(panel.routeIds).size === panel.routeIds.length, "Walkthrough route selection is invalid");
+      if (panel.chalkTalk !== undefined) validateFlipbookChalkTalk(panel.chalkTalk);
+    }
+  }
+}
+
+function validateFlipbookChalkTalk(raw: unknown) {
+  check(object(raw) && raw.version === 1 && Array.isArray(raw.steps) && raw.steps.length <= 8, "Chalk Talk supports at most eight reveal steps");
+  const stepIds = new Set<string>(), markIds = new Set<string>();
+  let count = 0;
+  for (const rawStep of raw.steps) {
+    check(object(rawStep) && Object.keys(rawStep).every((key) => ["id", "label", "marks"].includes(key))
+      && typeof rawStep.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(rawStep.id) && !stepIds.has(rawStep.id)
+      && typeof rawStep.label === "string" && Array.from(rawStep.label).length <= 80
+      && Array.isArray(rawStep.marks), "Chalk Talk reveal step is invalid");
+    stepIds.add(rawStep.id);
+    for (const rawMark of rawStep.marks) {
+      check(++count <= 30, "A walkthrough panel can contain at most 30 Chalk Talk marks");
+      check(object(rawMark) && Object.keys(rawMark).every((key) => ["id", "kind", "points", "text", "number"].includes(key))
+        && typeof rawMark.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(rawMark.id) && !markIds.has(rawMark.id)
+        && ["circle", "spotlight", "callout", "attention-line", "freehand", "text"].includes(String(rawMark.kind))
+        && Array.isArray(rawMark.points) && rawMark.points.length <= 256, "Chalk Talk mark is invalid");
+      markIds.add(rawMark.id);
+      const lengths: Record<string, [number, number]> = { circle: [2, 2], spotlight: [2, 2], callout: [1, 1], "attention-line": [2, 2], freehand: [2, 256], text: [1, 1] };
+      const [minimum, maximum] = lengths[String(rawMark.kind)];
+      check(rawMark.points.length >= minimum && rawMark.points.length <= maximum, "Chalk Talk mark has an invalid number of points");
+      for (const value of rawMark.points) point(value);
+      check(rawMark.text === undefined || typeof rawMark.text === "string" && Array.from(rawMark.text).length <= 160, "Chalk Talk text must be 160 characters or fewer");
+      check(rawMark.number === undefined || rawMark.kind === "callout" && integer(rawMark.number) && rawMark.number >= 1 && rawMark.number <= 30, "Chalk Talk callout number is invalid");
+      check(rawMark.kind !== "callout" || rawMark.number !== undefined, "Numbered callouts need a number");
+      check(rawMark.kind !== "text" || typeof rawMark.text === "string" && rawMark.text.trim().length > 0, "Text marks need readable text");
     }
   }
 }

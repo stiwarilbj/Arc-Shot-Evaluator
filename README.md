@@ -18,6 +18,7 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 ## More details
 
 - [Feature and setup guide](docs/feature-guide.md)
+- [Playbook and Counter Lab replay exports](docs/simulation-export.md)
 - [Accuracy and evidence protocol](docs/accuracy.md)
 - [ARCade Hoops architecture](docs/architecture.md)
 - [Guess the Jumper editor guide](docs/jumper-editor.md)

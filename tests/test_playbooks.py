@@ -251,20 +251,26 @@ def test_play_flipbook_round_trip_requires_aware_updates_and_preserves_frozen_st
                 "defenders": [{key: marker[key] for key in ("id", "x", "y")} for marker in base["defenders"]],
                 "ball": base["ball"], "ballHandlerId": 1, "ballPhase": "held", "shotPhase": "idle", "routes": []}
     finish = {**snapshot, "atMs": end_ms}
+    chalk_talk = {"version": 1, "steps": [
+        {"id": "reveal-one", "label": "Defender", "marks": [{"id": "spotlight-one", "kind": "spotlight", "points": [{"x": 20, "y": 30}, {"x": 35, "y": 48}]}]},
+        {"id": "reveal-two", "label": "Space", "marks": [{"id": "note-one", "kind": "text", "points": [{"x": 60, "y": 42}], "text": "Read the lane"}]},
+    ]}
+    panels = [
+        {"id": "opening", "atMs": 0, "caption": "The set", "focusPlayerIds": [], "routeIds": [], "snapshot": snapshot, "chalkTalk": chalk_talk},
+        {"id": "finish", "atMs": end_ms, "caption": "The finish", "focusPlayerIds": [], "routeIds": [], "snapshot": finish},
+    ]
     flipbooks = {"version": 1, "stories": [{"id": "walkthrough-one", "playName": "Frozen possession name", "endingId": None,
-                 "endingLabel": "Main", "recording": recording, "panels": [
-                     {"id": "opening", "atMs": 0, "caption": "The set", "focusPlayerIds": [], "routeIds": [], "snapshot": snapshot},
-                     {"id": "finish", "atMs": end_ms, "caption": "The finish", "focusPlayerIds": [], "routeIds": [], "snapshot": finish},
-                 ]}]}
-    aware = {"X-ARC-Playbook-Extensions": "play-flipbook-v1"}
-    unsupported = client.put(f"/api/playbooks/{base['id']}", json={**base, "flipbooks": flipbooks}, headers={"If-Match": _match(base)})
+                 "endingLabel": "Main", "recording": recording, "panels": panels}]}
+    aware = {"X-ARC-Playbook-Extensions": "play-flipbook-v1,chalk-talk-v1"}
+    unsupported = client.put(f"/api/playbooks/{base['id']}", json={**base, "flipbooks": flipbooks}, headers={"If-Match": _match(base), "X-ARC-Playbook-Extensions": "play-flipbook-v1"})
     assert unsupported.status_code == 409
 
     saved = client.put(f"/api/playbooks/{base['id']}", json={**base, "flipbooks": flipbooks}, headers={**aware, "If-Match": _match(base)})
     assert saved.status_code == 200, saved.text
     assert saved.json()["flipbooks"]["stories"][0]["playName"] == "Frozen possession name"
     assert client.get(f"/api/playbooks/{base['id']}").json()["flipbooks"] == saved.json()["flipbooks"]
-    assert "play-flipbook-v1" in client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"]
+    assert saved.json()["flipbooks"]["stories"][0]["panels"][0]["chalkTalk"] == flipbooks["stories"][0]["panels"][0]["chalkTalk"]
+    assert "chalk-talk-v1" in client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"]
 
     stale = {key: value for key, value in saved.json().items() if key != "flipbooks"}
     conflict = client.put(f"/api/playbooks/{base['id']}", json=stale, headers={"If-Match": _match(saved.json())})
@@ -272,6 +278,10 @@ def test_play_flipbook_round_trip_requires_aware_updates_and_preserves_frozen_st
     invalid = json.loads(json.dumps(saved.json()))
     invalid["flipbooks"]["stories"][0]["panels"].reverse()
     rejected = client.put(f"/api/playbooks/{base['id']}", json=invalid, headers={**aware, "If-Match": _match(saved.json())})
+    assert rejected.status_code == 400
+    invalid_mark = json.loads(json.dumps(saved.json()))
+    invalid_mark["flipbooks"]["stories"][0]["panels"][0]["chalkTalk"]["steps"][1]["marks"][0]["points"][0]["x"] = 101
+    rejected = client.put(f"/api/playbooks/{base['id']}", json=invalid_mark, headers={**aware, "If-Match": _match(saved.json())})
     assert rejected.status_code == 400
     assert client.get(f"/api/playbooks/{base['id']}").json()["flipbooks"] == saved.json()["flipbooks"]
 
@@ -1060,7 +1070,7 @@ def test_branch_documents_require_and_preserve_branch_aware_local_writes(tmp_pat
         "continuation": [payload["arrows"][0]],
     }]
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1,chalk-talk-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
 
@@ -1225,7 +1235,7 @@ def test_read_coach_lessons_require_capability_and_round_trip(tmp_path, monkeypa
     }]}
     payload["readCoach"] = lesson
 
-    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1"
+    assert client.get("/api/playbooks").headers["X-ARC-Playbook-Extensions"] == "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1,chalk-talk-v1"
     refused = client.post("/api/playbooks", json=payload)
     assert refused.status_code == 409
     created = client.post("/api/playbooks", json=payload, headers={"X-ARC-Playbook-Extensions": "read-coach-v1"})

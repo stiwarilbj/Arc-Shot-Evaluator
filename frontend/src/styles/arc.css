@@ -1808,6 +1808,93 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .flipbook-notice { padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--orange) 45%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--orange) 8%, var(--surface)); color: var(--text); font-size: 11px; }
 .flipbook-recording-banner { display: grid; grid-template-columns: 1fr minmax(100px, 260px) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--orange) 45%, var(--line)); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 12px; }
 .flipbook-print-story { display: none; }
+.chalk-talk-editor { display: grid; gap: 8px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.chalk-talk-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; color: var(--text); }
+.chalk-talk-heading > div { display: grid; gap: 3px; }
+.chalk-talk-heading small, .chalk-talk-hint, .chalk-talk-mark-edit small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.chalk-talk-heading label { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; }
+.chalk-talk-heading input { accent-color: var(--orange); }
+.chalk-talk-tools, .chalk-talk-steps { display: flex; flex-wrap: wrap; gap: 5px; }
+.chalk-talk-tools button, .chalk-talk-steps button, .chalk-talk-mark-list button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; font-size: 10px; cursor: pointer; }
+.chalk-talk-tools button.is-active, .chalk-talk-steps button.is-active, .chalk-talk-mark-list button[aria-pressed="true"] { border-color: var(--orange); color: var(--orange); box-shadow: inset 0 0 0 1px var(--orange); }
+.chalk-talk-step-label, .chalk-talk-mark-edit label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; }
+.chalk-talk-step-label input, .chalk-talk-mark-edit input { min-width: 0; min-height: 34px; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
+.chalk-talk-mark-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.chalk-talk-mark-list button { display: grid; justify-items: start; text-align: left; }
+.chalk-talk-mark-list small { color: var(--muted); }
+.chalk-talk-mark-edit { display: grid; gap: 7px; padding-top: 7px; border-top: 1px solid var(--line); }
+.chalk-talk-coordinates { display: grid; gap: 5px; }
+.chalk-talk-coordinates > div { display: grid; grid-template-columns: 1fr repeat(2, minmax(70px, .5fr)); align-items: center; gap: 5px; color: var(--muted); font-size: 10px; }
+.chalk-talk-coordinates label { grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 4px; }
+.chalk-talk-layer { pointer-events: none; }
+.chalk-talk-mark { fill: none; stroke: #ff9a64; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: visiblePainted; cursor: move; }
+.chalk-talk-spotlight { fill: #ff9a6418; stroke-dasharray: 8 5; }
+.chalk-talk-callout circle { fill: #ff743d; stroke: #fff; stroke-width: 2; }
+.chalk-talk-callout-number { fill: #fff; stroke: none; font: 800 14px sans-serif; text-anchor: middle; dominant-baseline: central; }
+.chalk-talk-mark-label, .chalk-talk-free-text { fill: #fff; stroke: #15191a; stroke-width: 5px; paint-order: stroke; font: 700 22px sans-serif; }
+.chalk-talk-mark.is-selected { filter: drop-shadow(0 0 5px #fff); }
+.chalk-talk-handle { fill: #fff; stroke: #ff743d; stroke-width: 3; pointer-events: all; cursor: move; }
+.chalk-talk-presentation { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 16px; background: #050707e8; }
+.chalk-talk-presentation-card { display: grid; gap: 10px; width: min(100%, 980px); max-height: 94vh; overflow: auto; padding: 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 20px 90px #0009; }
+.chalk-talk-presentation-card header, .chalk-talk-presentation-card footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.chalk-talk-presentation-card h2 { margin: 2px 0; font-size: 18px; }
+.chalk-talk-presentation-card .read-coach-court { display: block; width: 100%; height: min(65vh, 640px); background: #111617; }
+.chalk-talk-presentation-caption { margin: 0; padding: 9px 11px; border-left: 3px solid var(--orange); background: var(--surface-2); }
+.chalk-talk-presentation-card footer span { color: var(--muted); font-size: 11px; }
+.chalk-talk-presentation-card > p { margin: 0; color: var(--muted); line-height: 1.45; }
+.chalk-talk-capture-review { width: min(100%, 1240px); }
+.chalk-talk-review-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.chalk-talk-review-pair figure, .chalk-talk-rebuild-panels figure { min-width: 0; margin: 0; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.chalk-talk-review-pair figcaption, .chalk-talk-rebuild-panels figcaption { margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.chalk-talk-review-pair .read-coach-court { display: block; width: 100%; height: auto; aspect-ratio: 1.74; background: #111617; }
+.chalk-talk-rebuild-review-dialog { width: min(100%, 1120px); }
+.chalk-talk-rebuild-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; max-height: 60vh; overflow: auto; padding: 2px; }
+.chalk-talk-rebuild-panels .read-coach-court { display: block; width: 100%; height: auto; aspect-ratio: 1.74; background: #111617; }
+.simulation-export-comparison { display: flex; align-items: center; gap: 7px; width: fit-content; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 11px; }
+.simulation-export-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 14px; background: #050707e8; }
+.simulation-export-dialog { display: grid; gap: 10px; width: min(100%, 1000px); max-height: 96vh; overflow: auto; padding: 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 20px 90px #0009; }
+.simulation-export-dialog > header, .simulation-export-dialog > footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.simulation-export-dialog header h2 { margin: 2px 0 4px; font-size: 19px; }
+.simulation-export-dialog header p, .simulation-export-current-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.simulation-export-preview { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #111617; }
+.simulation-export-preview img { display: block; width: 100%; height: auto; }
+.simulation-export-draw-layer { position: absolute; inset: 0 auto 0 0; width: 100%; height: 100%; overflow: visible; touch-action: none; }
+.simulation-export-preview.is-comparison .simulation-export-draw-layer { width: 50%; }
+.simulation-export-draw-layer:has(+ *) { cursor: crosshair; }
+.simulation-export-mark { fill: none; stroke: #ffb12e; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.simulation-export-mark rect { fill: #ffb12e20; stroke-dasharray: 10 7; }
+.simulation-export-mark text { fill: white; stroke: #111; stroke-width: 5; paint-order: stroke; font: 700 22px sans-serif; }
+.simulation-export-controls { display: grid; gap: 8px; }
+.simulation-export-format, .simulation-export-settings, .simulation-export-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.simulation-export-format button, .simulation-export-tools button { min-height: 34px; padding: 6px 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 10px; cursor: pointer; }
+.simulation-export-format button.is-active, .simulation-export-tools button.is-active { border-color: var(--orange); color: var(--orange); box-shadow: inset 0 0 0 1px var(--orange); }
+.simulation-export-range { display: grid; grid-template-columns: auto minmax(80px,1fr) auto; align-items: center; gap: 9px; color: var(--muted); font-size: 10px; }
+.simulation-export-range span, .simulation-export-settings label, .simulation-export-note { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.simulation-export-range input[type="number"], .simulation-export-settings select, .simulation-export-settings input, .simulation-export-note input { width: 90px; min-height: 34px; padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text); font: inherit; }
+.simulation-export-range input[type="range"] { width: 100%; accent-color: var(--orange); }
+.simulation-export-settings input[type="checkbox"] { width: auto; accent-color: var(--orange); }
+.simulation-export-note input { flex: 1; width: auto; }
+.simulation-export-tools { flex: 1 1 100%; }
+.simulation-export-tools button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.simulation-export-preview-loading { position: absolute; z-index: 2; top: 8px; left: 8px; padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 10px; }
+.simulation-export-mark-draft { fill: none; stroke: #ffb12e; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.simulation-export-mark-draft rect { fill: #ffb12e20; stroke-dasharray: 10 7; }
+.simulation-export-mark-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.simulation-export-mark-list button { min-height: 30px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 10px; cursor: pointer; }
+.simulation-export-mark-list button[aria-pressed="true"] { border-color: var(--orange); color: var(--orange); }
+.simulation-export-selected-mark { display: flex; align-items: center; gap: 7px; }
+.simulation-export-selected-mark label { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 10px; }
+.simulation-export-selected-mark input { min-width: 100px; min-height: 32px; padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text); font: inherit; }
+.simulation-export-selected-mark .button { min-height: 32px; padding: 5px 8px; font-size: 10px; }
+.simulation-export-current-note { display: flex; align-items: center; gap: 8px; }
+.simulation-export-current-note input { flex: 1; min-width: 80px; accent-color: var(--orange); }
+.simulation-export-progress { position: relative; min-height: 23px; overflow: hidden; border-radius: 5px; background: var(--surface-2); }
+.simulation-export-progress span { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--orange) 36%, transparent); transition: width .14s linear; }
+.simulation-export-progress small { position: relative; z-index: 1; display: block; padding: 4px 7px; color: var(--text); font-size: 10px; }
+.simulation-export-dialog > footer { justify-content: flex-end; padding-top: 3px; }
+@media (max-width: 620px) { .simulation-export-backdrop { padding: 5px; } .simulation-export-dialog { max-height: 99vh; padding: 9px; } .simulation-export-range { grid-template-columns: 1fr; } .simulation-export-range span { justify-content: space-between; } .simulation-export-settings { align-items: flex-start; } .simulation-export-selected-mark { align-items: stretch; flex-direction: column; } .simulation-export-current-note { align-items: flex-start; flex-direction: column; } .simulation-export-current-note input { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .simulation-export-progress span { transition: none; } }
+@media (max-width: 620px) { .chalk-talk-heading { flex-direction: column; } .chalk-talk-presentation { padding: 7px; } .chalk-talk-presentation-card { max-height: 98vh; padding: 9px; } .chalk-talk-presentation-card .read-coach-court { height: 48vh; } .chalk-talk-review-pair, .chalk-talk-rebuild-panels { grid-template-columns: 1fr; } .chalk-talk-review-pair .read-coach-court, .chalk-talk-rebuild-panels .read-coach-court { height: auto; } }
 .playbook-flipbook :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 @media (max-width: 900px) { .flipbook-workbench { grid-template-columns: 1fr; } .flipbook-editor { order: 2; } }
 @media (max-width: 620px) { .flipbook-header { flex-direction: column; } .flipbook-header-actions { justify-content: flex-start; } .flipbook-time-row { grid-template-columns: 1fr; } .flipbook-story-controls { align-items: flex-start; flex-direction: column; } .flipbook-story-controls > div { justify-content: flex-start; } .flipbook-refine > div { grid-template-columns: 1fr; } .flipbook-recording { grid-template-columns: 1fr; } .flipbook-recording-banner { grid-template-columns: 1fr; } }

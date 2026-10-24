@@ -34,8 +34,13 @@ const snapshot = (frame, atMs, routes = []) => ({ atMs, players: frame.players.m
   defenders: frame.defenders.map(({ id, x, y }) => ({ id, x, y })), ball: frame.ball ? { ...frame.ball } : null,
   ballHandlerId: frame.ballHandlerId ?? null, ballPhase: frame.ballPhase ?? 'held', shotPhase: frame.shotPhase, routes });
 const panel = (id, atMs, caption, frame, routes = []) => ({ id, atMs, caption, focusPlayerIds: routes.length ? [1] : [], routeIds: routes.map((route) => route.id), snapshot: snapshot(frame, atMs, routes) });
+const opening = panel('opening', 0, 'Opening', openingFrame, [generatedRoute]);
+opening.chalkTalk = { version: 1, steps: [
+  { id: 'reveal-defender', label: 'Defender position', marks: [{ id: 'defender-circle', kind: 'circle', points: [{ x: 34, y: 41 }, { x: 41, y: 41 }] }] },
+  { id: 'reveal-space', label: 'Available space', marks: [{ id: 'space-label', kind: 'text', points: [{ x: 60, y: 36 }], text: 'Read the lane' }] },
+] };
 const story = { id: 'flipbook-test', playName: 'Frozen test name', endingId: null, endingLabel: 'Main', recording,
-  panels: [panel('opening', 0, 'Opening', openingFrame, [generatedRoute]), panel('finish', recording.positionMs, 'Finish', endingFrame)] };
+  panels: [opening, panel('finish', recording.positionMs, 'Finish', endingFrame)] };
 const document = { ...clone(source), flipbooks: { version: 1, stories: [story] } };
 validatePlaybookDocument(document);
 
@@ -46,6 +51,7 @@ assert.equal(flattenPlaybookPath(frozen, null).flipbooks, undefined, 'executable
 const normalized = normalizePlaybookPrecision(document);
 validatePlaybookDocument(normalized);
 assert.deepEqual(normalized.flipbooks.stories[0].recording.events, recording.events, 'replay inputs keep their exact precision');
+assert.deepEqual(normalized.flipbooks.stories[0].panels[0].chalkTalk, opening.chalkTalk, 'saved annotations retain exact geometry and reveal ordering');
 
 for (const mutate of [
   (value) => { value.flipbooks.stories.push(clone(value.flipbooks.stories[0])); },
@@ -54,6 +60,8 @@ for (const mutate of [
   (value) => { value.flipbooks.stories[0].playName = ' '; },
   (value) => { value.flipbooks.stories[0].panels[0].routeIds.push('missing-route'); },
   (value) => { value.flipbooks.stories[0].panels[0].snapshot.routes[0].actionId = 'forged-auto-action'; },
+  (value) => { value.flipbooks.stories[0].panels[0].chalkTalk.steps[1].marks[0].points[0].x = Number.NaN; },
+  (value) => { value.flipbooks.stories[0].panels[0].chalkTalk.steps.push(...Array.from({ length: 8 }, (_, index) => ({ id: `extra-${index}`, label: 'Extra', marks: [] }))); },
 ]) {
   const invalid = clone(document); mutate(invalid);
   assert.throws(() => validatePlaybookDocument(invalid), undefined, 'malformed or duplicate walkthrough data is rejected');
@@ -61,8 +69,9 @@ for (const mutate of [
 
 const legacy = validateHostedLibrary([document]);
 const hosted = await upgradeHostedLibrary(legacy);
-assert.equal(hosted.version, 8, 'Flipbook-aware content receives hosted envelope version 8');
+assert.equal(hosted.version, 10, 'Chalk Talk-aware content receives hosted envelope version 10');
 assert.equal(hosted.plays[0].flipbooks.stories[0].playName, 'Frozen test name');
+assert.deepEqual(hosted.plays[0].flipbooks.stories[0].panels[0].chalkTalk, opening.chalkTalk);
 await verifyHostedLibrary(hosted);
 
 const hostMessage = (body, sessionId, revision, requestId) => ({ ...body, sessionId, revision, requestId });
@@ -71,6 +80,10 @@ let early = earlyHost(hostMessage({ type: 'start', drawing: executable, settings
 assert.equal(early.type, 'state');
 early = earlyHost(hostMessage({ type: 'capture-flipbook' }, 'early', 2, 2));
 assert.equal(early.type, 'error', 'a partial simulation cannot be frozen as a complete walkthrough');
+early = earlyHost(hostMessage({ type: 'capture-export' }, 'early', 3, 3));
+parseSimulationResponse(early);
+assert.equal(early.type, 'export-capture', 'a partial simulation can be captured for a disposable full replay export');
+assert.equal(early.capture.session.positionMs, 0, 'a current-position export capture retains the acknowledged partial session');
 
 const host = createPlaybookSimulationHost();
 let response = host(hostMessage({ type: 'start', drawing: executable, settings, seed: 107 }, 'recording', 1, 1));
@@ -97,4 +110,4 @@ seekSimulationSession(expectedRun, seekTime);
 assert.deepEqual(response.view.frame.players.map(({ id, x, y }) => ({ id, x, y })), getAuthoritativeSimulationFrame(expectedRun).players.map(({ id, x, y }) => ({ id, x, y })));
 assert.equal(response.view.session.positionMs, seekTime, 'worker seeking restores the exact recorded moment');
 
-console.log('Play Flipbook passed: frozen title and recording, chronological panel validation, executable-path exclusion, precision-preserving save, hosted envelope v8, complete-session capture, exact worker seek and rejection of early capture');
+console.log('Play Flipbook and Chalk Talk passed: frozen recording, annotation validation and round trip, executable-path exclusion, hosted envelope v10, full and partial export capture, exact worker seek and rejection of early walkthrough capture');

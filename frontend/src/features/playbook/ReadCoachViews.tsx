@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type Ref } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref } from "react";
 import { Check, CircleHelp, Play, Plus, Trash2, X } from "lucide-react";
 import { CourtMarkings } from "./CourtMarkings";
 import { CourtRoutes } from "./CourtRoutes";
@@ -33,13 +33,16 @@ function routePath(arrow: PlaybookArrow) {
   return `M${start.x} ${start.y} ${control ? `Q${control.x} ${control.y}` : "L"} ${end.x} ${end.y}`;
 }
 
-export function ReadCoachCourt({ frame, arrows = [], visibility, showRoutes = true, routes, emphasisPlayerId = null, emphasisPlayerIds, showWholeTeam = true, spacingGates = [], showSpacingGates = false, baitPayoffArea, onClick, drawing, ariaLabel, svgRef }: {
+export function ReadCoachCourt({ frame, arrows = [], visibility, showRoutes = true, routes, emphasisPlayerId = null, emphasisPlayerIds, showWholeTeam = true, spacingGates = [], showSpacingGates = false, baitPayoffArea, onClick, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onKeyDown, tabIndex, children, drawing, ariaLabel, svgRef }: {
   frame: SimulationFrame; arrows?: PlaybookArrow[]; visibility: ArrowVisibility; showRoutes?: boolean; routes?: CourtRoute[];
   emphasisPlayerId?: number | null; emphasisPlayerIds?: number[]; showWholeTeam?: boolean; spacingGates?: SpacingGate[]; showSpacingGates?: boolean; baitPayoffArea?: BaitPayoffArea;
-  onClick?: (event: MouseEvent<SVGSVGElement>) => void; drawing?: boolean; ariaLabel: string; svgRef?: Ref<SVGSVGElement>;
+  onClick?: (event: MouseEvent<SVGSVGElement>) => void; onPointerDown?: (event: ReactPointerEvent<SVGSVGElement>) => void;
+  onPointerMove?: (event: ReactPointerEvent<SVGSVGElement>) => void; onPointerUp?: (event: ReactPointerEvent<SVGSVGElement>) => void;
+  onPointerCancel?: (event: ReactPointerEvent<SVGSVGElement>) => void; onKeyDown?: (event: ReactKeyboardEvent<SVGSVGElement>) => void;
+  tabIndex?: number; children?: ReactNode; drawing?: boolean; ariaLabel: string; svgRef?: Ref<SVGSVGElement>;
 }) {
   const courtRoutes = useMemo(() => routes ?? frame.routes, [routes, frame.routes]);
-  return <svg ref={svgRef} className={`court-svg read-coach-court ${drawing ? "is-drawing-read" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={ariaLabel} onClick={onClick}>
+  return <svg ref={svgRef} className={`court-svg read-coach-court ${drawing ? "is-drawing-read" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role={onPointerDown || onKeyDown ? "group" : "img"} aria-label={ariaLabel} tabIndex={tabIndex ?? (onPointerDown || onKeyDown ? 0 : undefined)} onClick={onClick} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel} onKeyDown={onKeyDown}>
     <rect x="0" y="0" width={COURT_VIEWBOX.width} height={COURT_VIEWBOX.height} className="court-floor" /><CourtMarkings />
     {showRoutes ? <CourtRoutes routes={courtRoutes} visibility={visibility} /> : null}
     <SpacingGateLayer gates={spacingGates} results={frame.spacingGateResults ?? []} visible={showSpacingGates} interactive={false} />
@@ -49,6 +52,7 @@ export function ReadCoachCourt({ frame, arrows = [], visibility, showRoutes = tr
     {frame.defenders.map((marker) => { const point = courtPointToSvg(marker); return <g key={`d${marker.id}`} className={`read-defender ${emphasisPlayerId !== null && !showWholeTeam ? "read-role-muted" : ""}`}><circle cx={point.x} cy={point.y} r="15" /><text x={point.x} y={point.y + 1}>D{marker.id}</text></g>; })}
     {frame.players.map((marker) => { const point = courtPointToSvg(marker); const emphasized = emphasisPlayerIds ? emphasisPlayerIds.includes(marker.id) : marker.id === emphasisPlayerId; const hasEmphasis = emphasisPlayerIds ? emphasisPlayerIds.length > 0 : emphasisPlayerId !== null; return <g key={`p${marker.id}`} className={`read-player ${frame.ballHandlerId === marker.id ? "is-handler" : ""} ${hasEmphasis && !emphasized && !showWholeTeam ? "read-role-muted" : ""} ${emphasized ? "is-role-player" : ""}`}><circle cx={point.x} cy={point.y} r="17" /><text x={point.x} y={point.y + 1}>{marker.id}</text></g>; })}
     {frame.ball ? <circle className="read-ball" cx={courtPointToSvg(frame.ball).x} cy={courtPointToSvg(frame.ball).y} r="7" /> : null}
+    {children}
   </svg>;
 }
 

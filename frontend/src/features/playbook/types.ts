@@ -192,6 +192,17 @@ export type PlayFlipbookSnapshot = {
   shotPhase: "idle" | "setup" | "air" | "result";
   routes: CourtRoute[];
 };
+export type FlipbookAnnotationKind = "circle" | "spotlight" | "callout" | "attention-line" | "freehand" | "text";
+export type FlipbookAnnotation = {
+  id: string;
+  kind: FlipbookAnnotationKind;
+  /** Court-relative points; circle and spotlight use the first two points as their bounds. */
+  points: CourtPoint[];
+  text?: string;
+  number?: number;
+};
+export type FlipbookAnnotationStep = { id: string; label: string; marks: FlipbookAnnotation[] };
+export type FlipbookChalkTalk = { version: 1; steps: FlipbookAnnotationStep[] };
 export type PlayFlipbookPanel = {
   id: string;
   atMs: number;
@@ -199,6 +210,8 @@ export type PlayFlipbookPanel = {
   focusPlayerIds: number[];
   routeIds: string[];
   snapshot: PlayFlipbookSnapshot;
+  /** Frozen teaching marks, independent from executable routes and action data. */
+  chalkTalk?: FlipbookChalkTalk;
 };
 export type PlayFlipbookStory = {
   id: string;

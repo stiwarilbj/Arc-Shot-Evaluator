@@ -19,6 +19,7 @@ export type SimulationCommand = Envelope & (
   | { type: "seek"; timeMs: number }
   | { type: "capture" }
   | { type: "capture-flipbook" }
+  | { type: "capture-export" }
   | { type: "open-flipbook"; session: ReadCoachSessionRecord }
   | { type: "read-opening"; checkpoint: ReadCoachCheckpoint }
   | { type: "read-choice"; checkpoint: ReadCoachCheckpoint; choiceId: string }
@@ -27,6 +28,7 @@ export type SimulationCommand = Envelope & (
 export type SimulationResponse = Envelope & (
   | { type: "state"; view: SimulationView }
   | { type: "capture"; capture: SimulationCapture }
+  | { type: "export-capture"; capture: SimulationCapture }
   | { type: "error"; message: string }
 );
 
@@ -62,6 +64,7 @@ export function parseSimulationCommand(value: unknown): SimulationCommand {
     case "seek": check(clock(value.timeMs), "seek time"); break;
     case "capture": break;
     case "capture-flipbook": break;
+    case "capture-export": break;
     case "open-flipbook": validateReadCoachSessionRecord(value.session); break;
     case "read-opening":
       validateReadCoachLesson({ version: 1, checkpoints: [value.checkpoint] });
@@ -84,7 +87,7 @@ export function parseSimulationCommand(value: unknown): SimulationCommand {
 export function parseSimulationResponse(value: unknown): SimulationResponse {
   envelope(value);
   if (value.type === "error") { check(text(value.message), "error message"); return value as SimulationResponse; }
-  if (value.type === "capture") {
+  if (value.type === "capture" || value.type === "export-capture") {
     check(record(value.capture) && record(value.capture.frame), "capture payload");
     validateReadCoachSessionRecord(value.capture.session);
     check(Array.isArray(value.capture.frame.players) && Array.isArray(value.capture.frame.defenders), "captured court frame");

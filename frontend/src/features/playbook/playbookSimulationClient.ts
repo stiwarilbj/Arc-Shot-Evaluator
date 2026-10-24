@@ -13,6 +13,7 @@ export function createPlaybookSimulationClient(options: {
   sessionId: string; onState: (view: SimulationView) => void; onFailure: (message: string) => void;
   onCapture?: (capture: SimulationCapture) => void;
   onFlipbookCapture?: (capture: SimulationCapture) => void;
+  onExportCapture?: (capture: SimulationCapture) => void;
   onCommandError?: (type: SimulationCommand["type"], message: string) => void;
   createWorker?: () => WorkerPort; timeoutMs?: number;
 }) {
@@ -65,8 +66,9 @@ export function createPlaybookSimulationClient(options: {
       fail(`${response.message} Your drawing and last frame are intact · Press Play to restart`); return;
     }
     if (current) {
-      if (response.type === "capture") {
-        (completedCommandType === "capture-flipbook" ? options.onFlipbookCapture : options.onCapture)?.(response.capture);
+      if (response.type === "capture" || response.type === "export-capture") {
+        if (response.type === "export-capture") options.onExportCapture?.(response.capture);
+        else (completedCommandType === "capture-flipbook" ? options.onFlipbookCapture : options.onCapture)?.(response.capture);
         pump();
         return;
       }
@@ -95,6 +97,7 @@ export function createPlaybookSimulationClient(options: {
     seek(timeMs: number) { wantedPlaying = false; debt = 0; control({ type: "seek", timeMs }); },
     capture() { wantedPlaying = false; debt = 0; control({ type: "capture" }); },
     captureFlipbook() { wantedPlaying = false; debt = 0; control({ type: "capture-flipbook" }); },
+    captureExport() { wantedPlaying = false; debt = 0; control({ type: "capture-export" }); },
     openFlipbook(session: ReadCoachSessionRecord) { wantedPlaying = false; debt = 0; control({ type: "open-flipbook", session }); },
     startReadOpening(checkpoint: ReadCoachCheckpoint) { wantedPlaying = true; control({ type: "read-opening", checkpoint }); },
     startReadChoice(checkpoint: ReadCoachCheckpoint, choiceId: string) { wantedPlaying = true; control({ type: "read-choice", checkpoint, choiceId }); },

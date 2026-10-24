@@ -13,7 +13,8 @@ export type RoleRehearsalAwareLibrary = RevisionFields & { version: 6; migration
 export type SpacingGateAwareLibrary = RevisionFields & { version: 7; migration: { source: RoleRehearsalAwareLibrary; checksum: string } };
 export type PlayFlipbookAwareLibrary = RevisionFields & { version: 8; migration: { source: SpacingGateAwareLibrary; checksum: string } };
 export type BaitPayoffAwareLibrary = RevisionFields & { version: 9; migration: { source: PlayFlipbookAwareLibrary; checksum: string } };
-export type HostedLibrary = LegacyLibrary | RevisionLibrary | BranchAwareLibrary | TimingAwareLibrary | ReadCoachAwareLibrary | RoleRehearsalAwareLibrary | SpacingGateAwareLibrary | PlayFlipbookAwareLibrary | BaitPayoffAwareLibrary;
+export type ChalkTalkAwareLibrary = RevisionFields & { version: 10; migration: { source: BaitPayoffAwareLibrary; checksum: string } };
+export type HostedLibrary = LegacyLibrary | RevisionLibrary | BranchAwareLibrary | TimingAwareLibrary | ReadCoachAwareLibrary | RoleRehearsalAwareLibrary | SpacingGateAwareLibrary | PlayFlipbookAwareLibrary | BaitPayoffAwareLibrary | ChalkTalkAwareLibrary;
 type RevisionedLibrary = Exclude<HostedLibrary, LegacyLibrary>;
 
 function validateUniquePlays(plays: unknown[]): void {
@@ -29,7 +30,7 @@ export function validateHostedLibrary(value: unknown): HostedLibrary {
   try {
     if (Array.isArray(value)) { validateUniquePlays(value); return { version: 1, plays: value, creations: [] }; }
     const library = value as HostedLibrary;
-    if (!library || ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(library.version) || !Array.isArray(library.plays) || !Array.isArray(library.creations)) throw new Error();
+    if (!library || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(library.version) || !Array.isArray(library.plays) || !Array.isArray(library.creations)) throw new Error();
     validateUniquePlays(library.plays);
     const ids = new Set<string>();
     for (const receipt of library.creations) {
@@ -50,6 +51,7 @@ export function validateHostedLibrary(value: unknown): HostedLibrary {
     if (library.version === 7 && validateHostedLibrary(library.migration.source).version !== 6) throw new Error();
     if (library.version === 8 && validateHostedLibrary(library.migration.source).version !== 7) throw new Error();
     if (library.version === 9 && validateHostedLibrary(library.migration.source).version !== 8) throw new Error();
+    if (library.version === 10 && validateHostedLibrary(library.migration.source).version !== 9) throw new Error();
     return library;
   } catch { throw new Error("Saved plays could not be read · Your stored data has been preserved"); }
 }
@@ -110,6 +112,9 @@ async function sealPlayFlipbookAwareLibrary(library: Omit<PlayFlipbookAwareLibra
 async function sealBaitPayoffAwareLibrary(library: Omit<BaitPayoffAwareLibrary, "checksum">): Promise<BaitPayoffAwareLibrary> {
   return { ...library, checksum: await contentChecksum(library) };
 }
+async function sealChalkTalkAwareLibrary(library: Omit<ChalkTalkAwareLibrary, "checksum">): Promise<ChalkTalkAwareLibrary> {
+  return { ...library, checksum: await contentChecksum(library) };
+}
 async function upgradeToBranchAware(library: RevisionLibrary): Promise<BranchAwareLibrary> {
   return sealBranchAwareLibrary({ version: 3, plays: library.plays, creations: library.creations, histories: library.histories,
     migration: { source: library, checksum: await contentChecksum(library) },
@@ -152,6 +157,12 @@ async function upgradeToBaitPayoffAware(library: PlayFlipbookAwareLibrary): Prom
     ...(library.preservedSources ? { preservedSources: library.preservedSources } : {}),
     ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}) });
 }
+async function upgradeToChalkTalkAware(library: BaitPayoffAwareLibrary): Promise<ChalkTalkAwareLibrary> {
+  return sealChalkTalkAwareLibrary({ version: 10, plays: library.plays, creations: library.creations, histories: library.histories,
+    migration: { source: library, checksum: await contentChecksum(library) },
+    ...(library.preservedSources ? { preservedSources: library.preservedSources } : {}),
+    ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}) });
+}
 const hasTiming = (plays: PlaybookDocument[]) => plays.some((play) => [...play.arrows, ...(play.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined));
 const hasReadCoach = (plays: PlaybookDocument[]) => plays.some((play) => Boolean(play.readCoach?.checkpoints.length));
 // Even an empty lesson records that a client understands this extension. An
@@ -160,16 +171,18 @@ const hasRoleCues = (plays: PlaybookDocument[]) => plays.some((play) => play.rol
 const hasSpacingGates = (plays: PlaybookDocument[]) => plays.some((play) => play.spacingGates !== undefined);
 const hasFlipbooks = (plays: PlaybookDocument[]) => plays.some((play) => play.flipbooks !== undefined);
 const hasBaitPayoffs = (plays: PlaybookDocument[]) => plays.some((play) => play.baitPayoffs !== undefined);
+const hasChalkTalk = (plays: PlaybookDocument[]) => plays.some((play) => play.flipbooks?.stories.some((story) => story.panels.some((panel) => panel.chalkTalk !== undefined)));
 async function addRequiredLibraryLayers(library: RevisionedLibrary): Promise<RevisionedLibrary> {
-  const timed = hasTiming(library.plays), lesson = hasReadCoach(library.plays), role = hasRoleCues(library.plays), gates = hasSpacingGates(library.plays), flipbooks = hasFlipbooks(library.plays), baitPayoffs = hasBaitPayoffs(library.plays);
+  const timed = hasTiming(library.plays), lesson = hasReadCoach(library.plays), role = hasRoleCues(library.plays), gates = hasSpacingGates(library.plays), flipbooks = hasFlipbooks(library.plays), baitPayoffs = hasBaitPayoffs(library.plays), chalkTalk = hasChalkTalk(library.plays);
   let current: RevisionedLibrary = library;
-  if (current.version === 2 && (current.plays.some((play) => play.branches?.length) || timed || lesson || role || gates || flipbooks || baitPayoffs)) current = await upgradeToBranchAware(current);
-  if (current.version === 3 && (timed || lesson || role || gates || flipbooks || baitPayoffs)) current = await upgradeToTimingAware(current);
-  if (current.version === 4 && (lesson || role || gates || flipbooks || baitPayoffs)) current = await upgradeToReadCoachAware(current);
-  if (current.version === 5 && (role || gates || flipbooks || baitPayoffs)) current = await upgradeToRoleRehearsalAware(current);
-  if (current.version === 6 && (gates || flipbooks || baitPayoffs)) current = await upgradeToSpacingGateAware(current);
-  if (current.version === 7 && (flipbooks || baitPayoffs)) current = await upgradeToPlayFlipbookAware(current);
-  if (current.version === 8 && baitPayoffs) current = await upgradeToBaitPayoffAware(current);
+  if (current.version === 2 && (current.plays.some((play) => play.branches?.length) || timed || lesson || role || gates || flipbooks || baitPayoffs || chalkTalk)) current = await upgradeToBranchAware(current);
+  if (current.version === 3 && (timed || lesson || role || gates || flipbooks || baitPayoffs || chalkTalk)) current = await upgradeToTimingAware(current);
+  if (current.version === 4 && (lesson || role || gates || flipbooks || baitPayoffs || chalkTalk)) current = await upgradeToReadCoachAware(current);
+  if (current.version === 5 && (role || gates || flipbooks || baitPayoffs || chalkTalk)) current = await upgradeToRoleRehearsalAware(current);
+  if (current.version === 6 && (gates || flipbooks || baitPayoffs || chalkTalk)) current = await upgradeToSpacingGateAware(current);
+  if (current.version === 7 && (flipbooks || baitPayoffs || chalkTalk)) current = await upgradeToPlayFlipbookAware(current);
+  if (current.version === 8 && (baitPayoffs || chalkTalk)) current = await upgradeToBaitPayoffAware(current);
+  if (current.version === 9 && chalkTalk) current = await upgradeToChalkTalkAware(current);
   return current;
 }
 
@@ -199,7 +212,8 @@ export async function reviseHostedLibrary(library: Exclude<HostedLibrary, Legacy
     ...(library.reservedIds ? { reservedIds: library.reservedIds } : {}),
   };
   let revised: RevisionedLibrary;
-  if (library.version === 9) revised = await sealBaitPayoffAwareLibrary({ version: 9, plays, creations, histories, migration: library.migration, ...extras });
+  if (library.version === 10) revised = await sealChalkTalkAwareLibrary({ version: 10, plays, creations, histories, migration: library.migration, ...extras });
+  else if (library.version === 9) revised = await sealBaitPayoffAwareLibrary({ version: 9, plays, creations, histories, migration: library.migration, ...extras });
   else if (library.version === 8) revised = await sealPlayFlipbookAwareLibrary({ version: 8, plays, creations, histories, migration: library.migration, ...extras });
   else if (library.version === 7) revised = await sealSpacingGateAwareLibrary({ version: 7, plays, creations, histories, migration: library.migration, ...extras });
   else if (library.version === 6) revised = await sealRoleRehearsalAwareLibrary({ version: 6, plays, creations, histories, migration: library.migration, ...extras });
@@ -215,7 +229,7 @@ export async function inspectHostedRecovery(value: unknown, id: string): Promise
   const library = value as RevisionLibrary;
   let verified = false;
   try { validateHostedLibrary(value); await verifyHostedLibrary(library); verified = true; } catch (error) { if (error instanceof HistoryVerificationUnavailableError) throw error; /* Preserve every damaged record in storage. */ }
-  if (![2, 3, 4, 5, 6, 7, 8, 9].includes(library?.version ?? 0) || !Array.isArray(library.histories)) throw new Error(HISTORY_ERROR);
+  if (![2, 3, 4, 5, 6, 7, 8, 9, 10].includes(library?.version ?? 0) || !Array.isArray(library.histories)) throw new Error(HISTORY_ERROR);
   const history = library.histories.find(item => item?.id === id);
   if (!history || !Array.isArray(history.entries)) throw new Error("Saved-play history not found");
   if (history.entries.length > 32) throw new Error(HISTORY_ERROR);

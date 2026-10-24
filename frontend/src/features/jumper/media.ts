@@ -84,6 +84,8 @@ export async function preview(
   }
 }
 export async function writers(width: number, height: number) {
+  if (typeof OffscreenCanvas === "undefined")
+    throw Error("Video export is unsupported in this browser · PNG, PDF, and image-folder exports remain available");
   const codec = (await canEncodeVideo("avc", { width, height }))
     ? "avc"
     : (await canEncodeVideo("vp9", { width, height }))
@@ -111,7 +113,8 @@ export async function writers(width: number, height: number) {
       bitrate: highQuality ? 8_000_000 : 2_500_000,
     });
     output.addVideoTrack(source, { frameRate: 30 });
-    await output.start();
+    try { await output.start(); }
+    catch (error) { source.close(); await output.cancel().catch(() => undefined); canvas.width = 0; canvas.height = 0; throw error; }
     let finalized = false;
     return {
       get finalized() {
@@ -125,8 +128,16 @@ export async function writers(width: number, height: number) {
         source.close();
         await output.finalize();
         finalized = true;
+        canvas.width = 0; canvas.height = 0;
         if (!target.buffer) throw Error("Export produced no video");
         return new Blob([target.buffer], { type: mime });
+      },
+      async cancel() {
+        if (finalized) return;
+        source.close();
+        await output.cancel().catch(() => undefined);
+        canvas.width = 0; canvas.height = 0;
+        finalized = true;
       },
     };
   };

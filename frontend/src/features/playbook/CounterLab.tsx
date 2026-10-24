@@ -3,7 +3,7 @@ import { ArrowVisibilityControl, useArrowVisibility } from "./ArrowVisibilityCon
 import { CourtRoutes } from "./CourtRoutes";
 import { authoredCourtRoutes, bindAuthoredActions, pointDistanceFeet } from "./simulation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CircleAlert, FlaskConical, LoaderCircle, Pause, Play, RotateCcw, Save, X } from "lucide-react";
+import { Check, CircleAlert, Download, FlaskConical, Images, LoaderCircle, Pause, Play, RotateCcw, Save, X } from "lucide-react";
 import type { PlaybookDraft, PlaybookDocument } from "./types";
 import { clonePlaybook } from "./types";
 import { createPlaybook, fetchPlaybooks, subscribePlaybooks } from "./api";
@@ -18,6 +18,8 @@ import { CourtMarkings } from "./CourtMarkings";
 import { flattenPlaybookPath } from "./playbookBranches.ts";
 import { AdvantageRelay, type AdvantageRelaySelection, type AdvantageRelaySide } from "./AdvantageRelay.tsx";
 import { validateAdvantageRelay } from "./counterLabAdvantageRelay.ts";
+import { SimulationExportDialog } from "./SimulationExportDialog.tsx";
+import type { SimulationFrame } from "./simulation.ts";
 const requestId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const clock = (time: number) => `${(time / 1000).toFixed(1)}s`;
 const signed = (value: number) => `${value > 0 ? "+" : ""}${Number(value.toFixed(1))}`;
@@ -51,6 +53,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   active: boolean; currentDraft: PlaybookDraft | null; requestedPlay: { requestId: string; play: PlaybookDraft } | null;
   onOpenEditor: () => void; onOpenInPlaybook: (play: PlaybookDocument) => void;
 }) {
+  const arrowVisibility = useArrowVisibility();
   const [draft, setDraft] = useState(() => clonePlaybook(requestedPlay?.play ?? currentDraft ?? STARTER_PLAYS[0]));
   const [source, setSource] = useState(currentDraft || requestedPlay ? "Playbook draft" : "Starter play");
   const [saved, setSaved] = useState<PlaybookDocument[]>([]);
@@ -84,6 +87,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   const [dilemmaTrace, setDilemmaTrace] = useState<CounterLabFrame[] | null>(null);
   const [dilemmaChoice, setDilemmaChoice] = useState<DefenderDilemmaChoice>("stay");
   const [dilemmaPickTarget, setDilemmaPickTarget] = useState<"defenderId" | "stayWithPlayerId" | "tagPlayerId" | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const reportWorker = useRef<Worker | null>(null), pendingWorker = useRef<Worker | null>(null);
   const simulationWorker = useRef<Worker | null>(null);
   const [repairCreates] = useState(() => new Map<string, { draft: PlaybookDraft; id: string }>());
@@ -111,6 +115,14 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
   const relayDuration = Math.max(duration, baseline?.advantageRelay.durationMs ?? 0, repaired?.advantageRelay.durationMs ?? 0);
   const originalFrame = replayFrame(playbackTrace, position);
   const repairedFrame = chosenRepair ? replayFrame(repairTrace, position) : null;
+  const exportTrace = !dilemmaMode && courtView === "repair" ? repairTrace : playbackTrace;
+  const exportComparisonTrace = !dilemmaMode && chosenRepair ? (courtView === "repair" ? baselineTrace : repairTrace) : null;
+  const exportFrame = replayFrame(exportTrace, position);
+  const exportDuration = exportTrace?.at(-1)?.elapsedMs ?? 0;
+  const exportComparisonDuration = exportComparisonTrace?.at(-1)?.elapsedMs ?? null;
+  const exportTitle = dilemmaMode ? dilemmaChoiceLabel(dilemmaChoice, `Player ${dilemmaSetup.stayWithPlayerId ?? "?"}`, `Player ${dilemmaSetup.tagPlayerId ?? "?"}`)
+    : courtView === "repair" ? chosenRepair?.name ?? "Original play" : "Original play";
+  const exportComparisonTitle = courtView === "repair" ? "Original play" : chosenRepair?.name;
   const schemes = eligibleCounterLabSchemes(draft.defenders.length || Math.min(5, draft.players.length), draft.players.length);
   const dilemmaActions = useMemo(() => bindAuthoredActions(draft).filter((action) => dilemmaReleaseMilestones(action.arrow.kind).length), [draft]);
   const dilemmaAction = dilemmaActions.find((action) => action.arrow.id === dilemmaSetup.actionId) ?? null;
@@ -385,7 +397,7 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
         {!dilemmaMode && baseline ? <AdvantageRelay key={`${reportId.current}:${baseline.key}:${chosenId}`} original={baseline.advantageRelay} repaired={repaired?.advantageRelay ?? null} durationMs={relayDuration} positionMs={position} profile={baseline.profile} mode={baseline.mode} visibleSide={courtView} onSelect={selectRelayEvent} /> : null}
         <div className={`counter-courts ${dilemmaMode ? "is-single" : chosenRepair ? `mobile-${courtView}` : "is-single"}`}>{dilemmaMode ? <CounterCourt title={dilemmaChoiceLabel(dilemmaChoice, `Player ${dilemmaSetup.stayWithPlayerId ?? "?"}`, `Player ${dilemmaSetup.tagPlayerId ?? "?"}`)} frame={originalFrame} view="dilemma" spotlight={spotlight} /> : <><CounterCourt title="Original play" frame={originalFrame} view="original" pickTarget={dilemmaPickTarget} onPick={pickDilemmaMarker} spotlight={spotlight} relayFocus={relayFocus?.side === "original" ? relayFocus : null} />{chosenRepair ? <CounterCourt title={chosenRepair.name} frame={repairedFrame} view="repair" relayFocus={relayFocus?.side === "repair" ? relayFocus : null} /> : null}</>}</div>
         {detailError ? <div className="counter-alert" role="alert">{detailError}<button className="counter-text-button" onClick={() => setDetailRetry((value) => value + 1)}>Retry replay</button></div> : dilemmaMode && !dilemmaTrace ? <div className="counter-loading-detail" role="status"><LoaderCircle className="counter-spinner" size={20} />Loading the selected commitment…</div> : !playbackTrace ? <div className="counter-loading-detail" role="status"><LoaderCircle className="counter-spinner" size={20} />Loading the selected replay…</div> : <div className="counter-timeline" tabIndex={0} aria-label="Court replay controls" onKeyDown={(event) => { if ((event.target as HTMLElement).closest("select,input,button")) return; if (event.key === " ") { event.preventDefault(); playPause(); } if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); pauseAndSeek(position + (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 1000 : 100)); } if (event.key === "Home" || event.key === "End") { event.preventDefault(); pauseAndSeek(event.key === "Home" ? 0 : duration); } }}>
-          <div className="counter-timeline-actions"><button aria-label={playing ? "Pause court replay" : "Play court replay"} onClick={playPause}>{playing ? <Pause size={18} /> : <Play size={18} />}{playing ? "Pause" : "Play"}</button><button aria-label="Restart court replay" onClick={() => pauseAndSeek(0)}><RotateCcw size={17} /></button><span>{clock(position)} / {clock(duration)}</span><label>Speed <select aria-label="Replay speed" value={speed} onChange={(event) => setSpeed(Number(event.currentTarget.value))}><option value={.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option></select></label></div><div className="counter-scrub-wrap"><input aria-label="Scrub court replay" type="range" min={0} max={duration || 1} step={50} value={position} onChange={(event) => pauseAndSeek(Number(event.currentTarget.value))} />{baseline?.firstBreakdown ? <button className="counter-scrub-marker" style={{ left: `${baseline.firstBreakdown.atMs / Math.max(1, duration) * 100}%` }} aria-label={`Jump to first breakdown at ${clock(baseline.firstBreakdown.atMs)}`} title="First breakdown" onClick={() => pauseAndSeek(baseline.firstBreakdown!.atMs)} /> : null}</div><div className="counter-scrub-foot"><span>{originalFrame?.action ?? "Possession"}</span>{baseline?.firstBreakdown ? <button className="counter-text-button" onClick={() => pauseAndSeek(baseline.firstBreakdown!.atMs)}>Jump to breakdown · {clock(baseline.firstBreakdown.atMs)}</button> : null}</div></div>}
+          <div className="counter-timeline-actions"><button aria-label={playing ? "Pause court replay" : "Play court replay"} onClick={playPause}>{playing ? <Pause size={18} /> : <Play size={18} />}{playing ? "Pause" : "Play"}</button><button aria-label="Restart court replay" onClick={() => pauseAndSeek(0)}><RotateCcw size={17} /></button><span>{clock(position)} / {clock(duration)}</span><label>Speed <select aria-label="Replay speed" value={speed} onChange={(event) => setSpeed(Number(event.currentTarget.value))}><option value={.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option></select></label><button type="button" onClick={() => { setPlaying(false); setExportOpen(true); }} disabled={!playbackTrace}><Download size={15}/>Export replay</button><button type="button" onClick={() => { setPlaying(false); setExportOpen(true); }} disabled={!originalFrame}><Images size={15}/>Export current frame</button></div><div className="counter-scrub-wrap"><input aria-label="Scrub court replay" type="range" min={0} max={duration || 1} step={50} value={position} onChange={(event) => pauseAndSeek(Number(event.currentTarget.value))} />{baseline?.firstBreakdown ? <button className="counter-scrub-marker" style={{ left: `${baseline.firstBreakdown.atMs / Math.max(1, duration) * 100}%` }} aria-label={`Jump to first breakdown at ${clock(baseline.firstBreakdown.atMs)}`} title="First breakdown" onClick={() => pauseAndSeek(baseline.firstBreakdown!.atMs)} /> : null}</div><div className="counter-scrub-foot"><span>{originalFrame?.action ?? "Possession"}</span>{baseline?.firstBreakdown ? <button className="counter-text-button" onClick={() => pauseAndSeek(baseline.firstBreakdown!.atMs)}>Jump to breakdown · {clock(baseline.firstBreakdown.atMs)}</button> : null}</div></div>}
       </div><aside className="counter-diagnosis"><span className="section-kicker">{baseline?.profile.label} · {modeName(selection.mode)}</span><h3>{baseline ? resultLabel(baseline) : "Choose a defense"}</h3><p>{baseline ? explainResult(baseline) : ""}</p>{baseline?.firstUnsafePass ? <div className="counter-warning"><strong>Contested pass · Move {baseline.firstUnsafePass.sequence}</strong><p>The lane was unsafe at {clock(baseline.firstUnsafePass.unsafeAtMs!)}. {baseline.firstUnsafePass.status === "delivered" ? "The pass was still delivered in this simulation" : baseline.firstUnsafePass.status === "interrupted" ? "The action was interrupted before a catch was recorded" : "The transfer later failed"}</p></div> : null}<p className="counter-outcome">{baseline?.outcome}</p>{baseline ? <details><summary>Simulation evidence</summary><p>Adaptive attempts: {baseline.adaptiveAttempts} · completed: {baseline.adaptiveSuccesses}</p>{baseline.actionDiagnostics?.filter((action) => action.notice).map((action) => <p key={action.actionId}>Move {action.sequence}: {action.notice}</p>)}{baseline.passDiagnostics.map((pass) => <p key={pass.actionId}>Move {pass.sequence}: Player {pass.actorId} → {pass.playerId ?? "missing receiver"} · {pass.status}{pass.unsafeAtMs != null ? ` · separation ${pass.receiverGap.toFixed(1)} ft, lane ${pass.laneGap.toFixed(1)} ft` : ""}</p>)}</details> : null}
         <details className="counter-dilemma"><summary>Defender Dilemma · test one defender’s choice</summary><p>Replay the same play, defense, and offense mode with three temporary commitments. The trigger and release use recorded events only.</p>
           {!replayDefenders.length ? <p className="counter-muted" role="status">This play has no available defenders · Add a defender in Playbook before comparing choices</p> : null}
@@ -408,7 +420,28 @@ export function CounterLab({ active, currentDraft, requestedPlay, onOpenEditor, 
       </section>
     </section> : null}
     </div></div>
+    {exportOpen && exportFrame ? <SimulationExportDialog title={`${draft.name} · ${exportTitle}`} frame={counterFrameToSimulation(exportFrame)} positionMs={Math.min(position, exportDuration)} durationMs={exportDuration} visibility={arrowVisibility}
+      frameLabel={exportTitle} comparisonLabel={exportComparisonTitle}
+      frameAt={(timeMs) => counterFrameToSimulation(replayFrame(exportTrace, timeMs))}
+      comparisonAt={exportComparisonTrace ? (timeMs) => counterFrameToSimulation(replayFrame(exportComparisonTrace, timeMs)) : null}
+      comparisonDurationMs={exportComparisonDuration}
+      focus={dilemmaMode
+        ? { playerIds: spotlight?.playerIds ?? [], defenderIds: spotlight ? [spotlight.defenderId] : [], actionIds: [] }
+        : relayFocus?.side === courtView ? { playerIds: relayFocus.playerIds, defenderIds: relayFocus.defenderIds, actionIds: relayFocus.actionIds } : undefined}
+      onClose={() => { setExportOpen(false); setPlaying(false); }} /> : null}
   </main>;
+}
+
+function counterFrameToSimulation(frame: CounterLabFrame | null): SimulationFrame {
+  return {
+    routes: frame?.activeRoutes ?? [], players: frame?.players ?? [], defenders: frame?.defenders ?? [], ball: frame?.ball ?? null,
+    ballHandlerId: frame?.ballHandlerId ?? null, ballPhase: frame?.ballPhase ?? "held", activeSequence: frame?.sequence ?? null,
+    activeActionLabel: frame?.action ?? null, adaptiveReadLabel: null, adaptiveReadReason: null, adaptiveReadRoute: null,
+    activeDefenseScheme: null, defenseSchemeWasAutomatic: false, defenseSchemeNotice: null, defensiveQuality: 0,
+    offBallQuality: 0, shotPhase: frame?.shotPhase ?? "idle", shotProgress: 0, shotResult: "pending", shotQuality: 0,
+    shotRelease: null, shooterId: null, shotStart: null, shotTarget: null,
+    execution: frame?.execution ?? [],
+  };
 }
 function resultLabel(result: CounterLabSummary) {
   if (result.firstBreakdown) {

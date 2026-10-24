@@ -57,7 +57,7 @@ export function createPlaybookSimulationHost() {
         else if (command.type === "playback") playing = command.playing;
         else if (command.type === "settings") setSimulationRunSettings(run, command.settings);
         else if (command.type === "seek") { playing = false; seekSimulationSession(run, command.timeMs); }
-        else if (command.type === "capture" || command.type === "capture-flipbook") {
+        else if (command.type === "capture" || command.type === "capture-flipbook" || command.type === "capture-export") {
           playing = false;
           const info = getSimulationSessionInfo(run)!;
           if (command.type === "capture-flipbook" && (info.positionMs < info.recordedUntilMs - 1e-6 || info.positionMs < run.durationMs - 1e-6)) {
@@ -67,8 +67,8 @@ export function createPlaybookSimulationHost() {
           if (command.type === "capture" && run.ballState.kind !== "held") throw new Error(run.ballState.kind === "pass-in-flight" || run.ballState.kind === "handoff-pending"
             ? "Wait for the catch, then pause to create a read checkpoint"
             : run.ballState.kind.startsWith("shot-") ? "Pause before the shot begins to create a read checkpoint" : "A read checkpoint needs a live ball handler");
-          const session = command.type === "capture-flipbook" ? captureSimulationSession(run) : captureSimulationSessionPrefix(run);
-          return { ...envelope, type: "capture", capture: { session, frame: getAuthoritativeSimulationFrame(run) } };
+          const session = command.type === "capture-flipbook" || command.type === "capture-export" ? captureSimulationSession(run) : captureSimulationSessionPrefix(run);
+          return { ...envelope, type: command.type === "capture-export" ? "export-capture" : "capture", capture: { session, frame: getAuthoritativeSimulationFrame(run) } };
         }
         else if (command.type === "edit") {
           playing = false;

@@ -54,7 +54,7 @@ const CHANGE_EVENT = "arc-playbooks-changed";
 const parseLibrary = createParsedLibraryCache(validateLibrary);
 const parseHostedLibrary = createParsedLibraryCache(validateHostedLibrary);
 function hasRevisionHistory(library: HostedLibrary): library is Exclude<HostedLibrary, { version: 1 }> {
-  return library.version === 2 || library.version === 3 || library.version === 4 || library.version === 5 || library.version === 6 || library.version === 7 || library.version === 8 || library.version === 9;
+  return library.version === 2 || library.version === 3 || library.version === 4 || library.version === 5 || library.version === 6 || library.version === 7 || library.version === 8 || library.version === 9 || library.version === 10;
 }
 const libraryReads = createSharedLibraryRead(async () => {
   const plays = IS_GITHUB_PAGES ? await readLocalPlaybooks() : await readRemotePlaybooks();
@@ -87,7 +87,8 @@ async function saveRemotePlay(playbook: PlaybookDraft, identity: PlaybookSaveIde
   const id = identity.operation === "create" ? creationId! : identity.id;
   const usesBranchExtension = playbook.branches !== undefined;
   const usesTimingExtension = [...playbook.arrows, ...(playbook.branches ?? []).flatMap((branch) => branch.continuation)].some((arrow) => arrow.timingPlan !== undefined);
-  const requiredExtensions = [usesBranchExtension ? "branches-v1" : null, usesTimingExtension ? "timing-v1" : null, playbook.readCoach?.checkpoints.length ? "read-coach-v1" : null, playbook.roleCues !== undefined ? "role-rehearsal-v1" : null, playbook.spacingGates !== undefined ? "spacing-gates-v1" : null, playbook.flipbooks !== undefined ? "play-flipbook-v1" : null, playbook.baitPayoffs !== undefined ? "bait-payoff-v1" : null].filter((value): value is string => value !== null);
+  const usesChalkTalk = playbook.flipbooks?.stories.some((story) => story.panels.some((panel) => panel.chalkTalk !== undefined)) ?? false;
+  const requiredExtensions = [usesBranchExtension ? "branches-v1" : null, usesTimingExtension ? "timing-v1" : null, playbook.readCoach?.checkpoints.length ? "read-coach-v1" : null, playbook.roleCues !== undefined ? "role-rehearsal-v1" : null, playbook.spacingGates !== undefined ? "spacing-gates-v1" : null, playbook.flipbooks !== undefined ? "play-flipbook-v1" : null, playbook.baitPayoffs !== undefined ? "bait-payoff-v1" : null, usesChalkTalk ? "chalk-talk-v1" : null].filter((value): value is string => value !== null);
   try {
     return await withPersistenceDeadline(async (signal) => {
       if (requiredExtensions.length) {

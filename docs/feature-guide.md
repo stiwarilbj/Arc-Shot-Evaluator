@@ -328,7 +328,11 @@ Review suggested opening, interaction, catch, screen, completion, and finish mom
 
 **What changed?** compares each panel with the one before it by describing player movement, possession state, and route changes · Use **Export storyboard PNG** for an image or **Print / Save PDF** for a multi-page storyboard
 
+Add Chalk Talk circles, spotlights, callouts, dashed lines, freehand marks, and text to a frozen panel · Group marks into cumulative reveal steps and use **Present walkthrough** to teach them in order · Replacing a marked moment or rebuilding a story requires a review before acceptance
+
 Each story is frozen to its recorded simulation and stays available after the play changes · Use **Rebuild from current play** to review a replacement before accepting it · Save the walkthrough into the draft, then save the play to persist it · Walkthroughs remain separate for Main and every ending · The focused view also has its own `#playbook/flipbook` URL · See the [Play Flipbook guide](playbook-flipbook.md) for editing, export, rebuild, and persistence details
+
+Playbook and Counter Lab also export recorded simulations as video, frame-by-frame PDF, or a ZIP of images · **Export current frame** saves a PNG or PDF with optional temporary notes and drawings · Counter Lab can include synchronized original and repair courts · See the [simulation export guide](simulation-export.md)
 
 ### Branch one opening into endings
 

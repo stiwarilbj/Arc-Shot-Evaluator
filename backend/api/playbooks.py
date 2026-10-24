@@ -35,6 +35,8 @@ MAX_ROLE_CUES = 600
 MAX_SPACING_GATES = 30
 MAX_FLIPBOOK_STORIES = 9
 MAX_FLIPBOOK_PANELS = 12
+MAX_FLIPBOOK_MARKS = 30
+MAX_FLIPBOOK_STEPS = 8
 MAX_BAIT_PAYOFFS = 30
 MAX_DOCUMENT_BYTES = 256 * 1024
 MAX_SAVED_FILE_BYTES = 1024 * 1024  # Includes private idempotency receipts.
@@ -204,6 +206,15 @@ def _has_bait_payoffs(value: dict) -> bool:
     return "baitPayoffs" in value
 
 
+def _has_chalk_talk(value: dict) -> bool:
+    lesson = value.get("flipbooks")
+    if not isinstance(lesson, dict) or not isinstance(lesson.get("stories"), list):
+        return False
+    return any(isinstance(story, dict) and isinstance(story.get("panels"), list)
+        and any(isinstance(panel, dict) and "chalkTalk" in panel for panel in story["panels"])
+        for story in lesson["stories"])
+
+
 def _bait_payoffs(value: object, players: list[dict], defenders: list[dict], arrows: list[dict], branches: list[dict]) -> dict:
     if not isinstance(value, dict) or set(value) != {"version", "connections"} or value.get("version") != 1:
         raise HTTPException(400, "Bait & Payoff data is invalid")
@@ -322,6 +333,59 @@ def _flipbook_point(value: object, label: str) -> dict[str, float]:
     return {"x": float(value["x"]), "y": float(value["y"])}
 
 
+def _flipbook_chalk_talk(value: object) -> dict:
+    if not isinstance(value, dict) or set(value) != {"version", "steps"} or value.get("version") != 1:
+        raise HTTPException(400, "Chalk Talk data is invalid")
+    steps = value.get("steps")
+    if not isinstance(steps, list) or len(steps) > MAX_FLIPBOOK_STEPS:
+        raise HTTPException(400, f"A walkthrough panel can contain at most {MAX_FLIPBOOK_STEPS} reveal steps")
+    point_counts = {"circle": (2, 2), "spotlight": (2, 2), "callout": (1, 1), "attention-line": (2, 2), "freehand": (2, 256), "text": (1, 1)}
+    step_ids: set[str] = set()
+    mark_ids: set[str] = set()
+    clean_steps = []
+    mark_count = 0
+    for step in steps:
+        if not isinstance(step, dict) or set(step) != {"id", "label", "marks"}:
+            raise HTTPException(400, "Chalk Talk reveal step fields are invalid")
+        step_id, label, marks = step.get("id"), step.get("label"), step.get("marks")
+        if not isinstance(step_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", step_id) or step_id in step_ids:
+            raise HTTPException(400, "Chalk Talk reveal step identities must be unique")
+        if not isinstance(label, str) or len(label) > 80 or not isinstance(marks, list):
+            raise HTTPException(400, "Chalk Talk reveal step label or marks are invalid")
+        step_ids.add(step_id)
+        clean_marks = []
+        for mark in marks:
+            mark_count += 1
+            if mark_count > MAX_FLIPBOOK_MARKS:
+                raise HTTPException(400, f"A walkthrough panel can contain at most {MAX_FLIPBOOK_MARKS} Chalk Talk marks")
+            if not isinstance(mark, dict) or set(mark) - {"id", "kind", "points", "text", "number"}:
+                raise HTTPException(400, "Chalk Talk mark fields are invalid")
+            mark_id, kind, points = mark.get("id"), mark.get("kind"), mark.get("points")
+            if not isinstance(mark_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", mark_id) or mark_id in mark_ids:
+                raise HTTPException(400, "Chalk Talk mark identities must be unique")
+            if kind not in point_counts or not isinstance(points, list) or not point_counts[kind][0] <= len(points) <= point_counts[kind][1]:
+                raise HTTPException(400, "Chalk Talk mark kind or geometry is invalid")
+            mark_ids.add(mark_id)
+            clean_mark = {"id": mark_id, "kind": kind, "points": [_flipbook_point(point, "Chalk Talk mark") for point in points]}
+            text = mark.get("text")
+            if text is not None:
+                if not isinstance(text, str) or len(text) > 160:
+                    raise HTTPException(400, "Chalk Talk text must be 160 characters or fewer")
+                clean_mark["text"] = text
+            number = mark.get("number")
+            if number is not None:
+                if kind != "callout" or not _integer(number) or not 1 <= number <= 30:
+                    raise HTTPException(400, "Chalk Talk callout number is invalid")
+                clean_mark["number"] = number
+            if kind == "callout" and number is None:
+                raise HTTPException(400, "Numbered callouts need a number")
+            if kind == "text" and (not isinstance(text, str) or not text.strip()):
+                raise HTTPException(400, "Text marks need readable text")
+            clean_marks.append(clean_mark)
+        clean_steps.append({"id": step_id, "label": label, "marks": clean_marks})
+    return {"version": 1, "steps": clean_steps}
+
+
 def _flipbooks(value: object, playbook_id: str, players: list[dict], branches: list[dict]) -> dict:
     if not isinstance(value, dict) or set(value) != {"version", "stories"} or value.get("version") != 1:
         raise HTTPException(400, "Play Flipbook format is invalid")
@@ -419,7 +483,7 @@ def _flipbooks(value: object, playbook_id: str, players: list[dict], branches: l
         previous_time = -1.0
         clean_panels = []
         for panel in panels:
-            if not isinstance(panel, dict) or set(panel) != {"id", "atMs", "caption", "focusPlayerIds", "routeIds", "snapshot"}:
+            if not isinstance(panel, dict) or set(panel) - {"id", "atMs", "caption", "focusPlayerIds", "routeIds", "snapshot", "chalkTalk"} or not {"id", "atMs", "caption", "focusPlayerIds", "routeIds", "snapshot"}.issubset(panel):
                 raise HTTPException(400, "Walkthrough panel fields are invalid")
             panel_id, at_ms, caption = panel.get("id"), panel.get("atMs"), panel.get("caption")
             if not isinstance(panel_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", panel_id) or panel_id in panel_ids:
@@ -501,8 +565,11 @@ def _flipbooks(value: object, playbook_id: str, players: list[dict], branches: l
             # when their document is validated a second time.
             clean_snapshot = {"atMs": float(at_ms), "players": clean_players, "defenders": clean_defenders, "ball": clean_ball,
                 "ballHandlerId": handler, "ballPhase": snapshot["ballPhase"], "shotPhase": snapshot["shotPhase"], "routes": clean_routes}
-            clean_panels.append({"id": panel_id, "atMs": float(at_ms), "caption": caption, "focusPlayerIds": list(focus),
-                "routeIds": list(route_selection), "snapshot": clean_snapshot})
+            clean_panel = {"id": panel_id, "atMs": float(at_ms), "caption": caption, "focusPlayerIds": list(focus),
+                "routeIds": list(route_selection), "snapshot": clean_snapshot}
+            if "chalkTalk" in panel:
+                clean_panel["chalkTalk"] = _flipbook_chalk_talk(panel["chalkTalk"])
+            clean_panels.append(clean_panel)
         clean_stories.append({"id": story_id, "playName": play_name, "endingId": ending_id, "endingLabel": label, "recording": session, "panels": clean_panels})
     return {"version": 1, "stories": clean_stories}
 
@@ -1547,7 +1614,7 @@ def _saved_play_instant(value: object) -> int | float:
 
 @router.get("")
 def list_playbooks(response: Response) -> list[dict]:
-    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1"
+    response.headers["X-ARC-Playbook-Extensions"] = "branches-v1,timing-v1,read-coach-v1,role-rehearsal-v1,spacing-gates-v1,play-flipbook-v1,bait-payoff-v1,chalk-talk-v1"
     try:
         PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)
         paths = sorted(PLAYBOOKS_DIR.iterdir())
@@ -1618,6 +1685,8 @@ def create_playbook(payload: Annotated[dict, Depends(_request_document)], create
         raise HTTPException(409, "This server requires a Play Flipbook-aware client before saving walkthroughs")
     if _has_bait_payoffs(payload) and "bait-payoff-v1" not in supported:
         raise HTTPException(409, "This server requires a Bait & Payoff-aware client before saving connections")
+    if _has_chalk_talk(payload) and "chalk-talk-v1" not in supported:
+        raise HTTPException(409, "This server requires a Chalk Talk-aware client before saving panel annotations")
     if create_id is not None and not re.fullmatch(r"play-[0-9a-f]{32}", create_id):
         raise HTTPException(400, "Invalid create identity")
     playbook_id = create_id or f"play-{uuid.uuid4().hex[:12]}"
@@ -1696,6 +1765,11 @@ def update_playbook(playbook_id: str, payload: Annotated[dict, Depends(_request_
             raise HTTPException(409, "This play contains Bait & Payoff connections and requires an explicit Bait & Payoff-aware update · The saved play is unchanged")
         if "baitPayoffs" in payload and "bait-payoff-v1" not in supported:
             raise HTTPException(409, "This server requires a Bait & Payoff-aware client before saving connections")
+        current_has_chalk_talk = _has_chalk_talk(current)
+        if current_has_chalk_talk and ("chalk-talk-v1" not in supported or not _has_chalk_talk(payload)):
+            raise HTTPException(409, "This play contains Chalk Talk annotations and requires an explicit Chalk Talk-aware update · The saved play is unchanged")
+        if _has_chalk_talk(payload) and "chalk-talk-v1" not in supported:
+            raise HTTPException(409, "This server requires a Chalk Talk-aware client before saving panel annotations")
         # Compare inside the same transaction as replacement. Legacy documents
         # get one explicit precondition until their first revisioned save.
         if if_match is None:
