@@ -140,8 +140,9 @@ export function decodeReplayForPlayback(archive: ReplayArchive): CounterLabFrame
         }
         if (action.transfer !== undefined) {
           const transfer = action.transfer;
-          check(record(transfer) && text(transfer.actionKey) && ["pass", "handoff"].includes(transfer.kind as string));
+          check(record(transfer) && text(transfer.actionKey) && transfer.actionKey === `${action.actionId}:${action.sequence}` && ["pass", "handoff"].includes(transfer.kind as string));
           check(participant(transfer.giverId) && participant(transfer.receiverId));
+          check(transfer.giverId === action.actorId && transfer.receiverId === action.recipientId);
           const sample = (value: unknown) => record(value) && clock(value.atMs) && value.atMs <= previousTime + 1e-6 && point(value.position);
           check(transfer.release === null || sample(transfer.release));
           check(transfer.arrival === null || sample(transfer.arrival));

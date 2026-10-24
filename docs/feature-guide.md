@@ -503,6 +503,31 @@ Quality is a **simulation score**, not a real-game scoring probability · See th
 [save-and-simulate compatibility harness](save-simulate-compatibility.md) for
 engine and persistence verification
 
+### Advantage Relay
+
+Expand **Advantage Relay** above the replay court to follow recorded openings
+through the selected defense and offense mode · **Opening created** marks the
+first eligible option, including an opening already available at the start ·
+**Opening lost** marks the first below-threshold sample after the same 300 ms
+confirmation used by Counter Lab breakdowns
+
+**Opening transferred** appears only when the recorded pass or handoff has an
+eligible pass option, a confirmed catch, and an eligible continuation for the
+receiver before a confirmed opening loss · Completed transfers that do not meet
+those conditions remain neutral supporting evidence · Pass flight is treated as
+transit, and loss checks stop at shot release
+
+Select a moment to pause and seek the shared replay clock · Its evidence card
+shows the recorded action, ball handler, simulation quality, separation, passing
+lane clearance, and other options at that sample · Original and selected repair
+chains share a time scale, while small screens show the ribbon for the visible
+court · No eligible opening is shown explicitly when a possession has no
+qualifying chain
+
+Relay evidence is computed during the existing analysis and stays in memory ·
+Opening labels describe simulation records, not real-game probabilities, causal
+defensive reactions, or guarantees that a player was open
+
 ### Defender Dilemma
 
 Open **Defender Dilemma** beside the selected defense explanation after testing a

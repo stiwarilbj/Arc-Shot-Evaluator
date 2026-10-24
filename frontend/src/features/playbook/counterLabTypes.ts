@@ -21,7 +21,7 @@ export type CounterLabFrame = {
   ballPhase?: BallPhase;
   elapsedMs: number; sequence: number | null; action: string | null; ballHandlerId: number | null;
   assignments: Array<{ defenderId: number; playerId: number }>;
-  opportunities: Array<{ kind: "shot" | "pass" | "drive"; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number }>;
+  opportunities: CounterLabOpportunity[];
   blockedPass: { actionId: string; sequence: number; playerId: number; receiverGap: number; laneGap: number } | null;
   involvedPlayerIds: number[];
   execution?: ActionDiagnostic[];
@@ -31,8 +31,54 @@ export type CounterLabFrame = {
   ball: CourtPoint | null; shotPhase: "idle" | "setup" | "air" | "result";
   defenderDilemma?: SimulationFrame["defenderDilemma"];
 };
+export type CounterLabOpportunity = { kind: "shot" | "pass" | "drive"; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number };
+export type AdvantageRelayEvidence = {
+  snapshotMs: number;
+  ballHandlerId: number | null;
+  sequence: number | null;
+  action: string | null;
+  actionId: string | null;
+  opportunities: CounterLabOpportunity[];
+  assignments: Array<{ defenderId: number; playerId: number }>;
+};
+export type AdvantageRelayTransfer = {
+  actionId: string;
+  sequence: number;
+  kind: "pass" | "handoff";
+  giverId: number;
+  receiverId: number;
+  releasedAtMs: number;
+  caughtAtMs: number;
+  continuationAtMs: number;
+  passOpportunity: CounterLabOpportunity;
+  continuationOpportunity: CounterLabOpportunity;
+};
+export type AdvantageRelayEvent = {
+  id: string;
+  kind: "created" | "transferred" | "lost";
+  atMs: number;
+  confirmedAtMs: number | null;
+  playerIds: number[];
+  sequence: number | null;
+  actionId: string | null;
+  note: string | null;
+  evidence: AdvantageRelayEvidence;
+  transfer: AdvantageRelayTransfer | null;
+};
+export type AdvantageRelaySupportingTransfer = {
+  id: string;
+  actionId: string;
+  sequence: number;
+  kind: "pass" | "handoff";
+  outcome: "caught" | "failed" | "interrupted";
+  giverId: number;
+  receiverId: number;
+  atMs: number;
+};
+export type AdvantageRelay = { version: 1; status: "recorded" | "none"; durationMs: number; events: AdvantageRelayEvent[]; supportingTransfers: AdvantageRelaySupportingTransfer[] };
 export type CounterLabResult = {
   shotRelease?: ShotReleaseContext | null;
+  advantageRelay: AdvantageRelay;
   key: string; profile: CounterLabProfile; mode: CounterLabMode; score: number; finalShotQuality: number;
   createdAdvantage: boolean; outcome: string; firstLostOpeningMs: number | null;
   firstBlockedPass: (PassDiagnostic & { playerId: number }) | null;

@@ -7,6 +7,7 @@ import { DILEMMA_CHOICES, type DefenderDilemmaChoice, type DefenderDilemmaConfig
 import { counterLabTrialKey, createCompletedTrialCache, type PackedCounterLabTrial } from "./counterLabTrialCache.ts";
 import type { ReplayArchive } from "./counterLabReplayArchive.ts";
 import { packReplay } from "./counterLabReplayArchive.ts";
+import { ADVANTAGE_LOSS_PERSISTENCE_MS, ADVANTAGE_OPENING_QUALITY, ADVANTAGE_QUALITY_DROP, buildAdvantageRelay } from "./counterLabAdvantageRelay.ts";
 
 export type CounterLabAnalysis = { results: CounterLabSummary[]; repairs: CounterLabRepair[]; detailArchives: Map<string, ReplayArchive> };
 export type { CounterLabProgress } from "./counterLabTypes.ts";
@@ -22,10 +23,10 @@ export function diagnoseOpenings(trace: CounterLabFrame[]) {
     // Transit alone is not evidence that an opening has been lost.
     if (frame.ballPhase === "pass-in-flight") { pending = null; continue; }
     const best = Math.max(0, ...frame.opportunities.map((option) => option.quality));
-    if (best >= 55) { peak = Math.max(peak, best); pending = null; }
-    else if (peak >= 55 && best <= peak - 15) {
+    if (best >= ADVANTAGE_OPENING_QUALITY) { peak = Math.max(peak, best); pending = null; }
+    else if (peak >= ADVANTAGE_OPENING_QUALITY && best <= peak - ADVANTAGE_QUALITY_DROP) {
       pending ??= frame.elapsedMs;
-      if (lost == null && frame.elapsedMs - pending >= 300 - 1e-6) lost = pending;
+      if (lost == null && frame.elapsedMs - pending >= ADVANTAGE_LOSS_PERSISTENCE_MS - 1e-6) lost = pending;
     } else pending = null;
   }
   return { createdAdvantage: peak >= 55, firstLostOpeningMs: lost };
@@ -84,7 +85,7 @@ const reuseCompletedRepair = createCompletedTrialCache(8 * 1024 * 1024, 128);
 function completedCounterLabTrial(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>, isRepair = false): CounterLabResult {
   const settings = trialSettings(profile, mode);
   if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
-  return (isRepair ? reuseCompletedRepair : reuseCompletedTrial)(counterLabTrialKey(draft, profile, mode, settings), () => {
+  return (isRepair ? reuseCompletedRepair : reuseCompletedTrial)(counterLabTrialKey("advantage-relay-v1", draft, profile, mode, settings), () => {
     const trial = simulateCounterLabTrial(profile, mode, settings, shouldCancel, createRun);
     let step = trial.next();
     while (!step.done) step = trial.next();
@@ -101,7 +102,7 @@ const yieldToWorker = () => new Promise<void>((resolve) => setTimeout(resolve, 0
 async function completedCounterLabTrialAsync(draft: PlaybookDraft, profile: CounterLabProfile, mode: CounterLabMode, shouldCancel: () => boolean, createRun: ReturnType<typeof prepareSimulationRun>, isRepair: boolean): Promise<PackedCounterLabTrial> {
   const settings = trialSettings(profile, mode);
   if (shouldCancel()) throw new DOMException("Analysis cancelled", "AbortError");
-  const result = await (isRepair ? reuseCompletedRepair : reuseCompletedTrial).packedAsync(counterLabTrialKey(draft, profile, mode, settings), async () => {
+  const result = await (isRepair ? reuseCompletedRepair : reuseCompletedTrial).packedAsync(counterLabTrialKey("advantage-relay-v1", draft, profile, mode, settings), async () => {
     const trial = simulateCounterLabTrial(profile, mode, settings, shouldCancel, createRun);
     let step = trial.next();
     while (!step.done) {
@@ -208,7 +209,8 @@ function* simulateCounterLabTrial(profile: CounterLabProfile, mode: CounterLabMo
     : run.adaptiveActionsTaken ? `${run.adaptiveActionsTaken} adaptive attempt${run.adaptiveActionsTaken === 1 ? "" : "s"}; ${firstBreakdown ? "no verified recovery" : "no breakdown required recovery"}`
     : "No adaptive actions were attempted";
   const actions = [...new Set(run.actions.filter((action) => !action.automatic && !action.adaptiveReadLabel).map((action) => action.arrow.kind.replaceAll("-", " ")))];
-  return { key: `${profile.id}:${mode}`, profile, mode, shotRelease: run.frame.shotRelease, score: Math.round(run.frame.shotQuality), finalShotQuality: run.frame.shotQuality, createdAdvantage, outcome,
+  const advantageRelay = buildAdvantageRelay(diagnosticTrace, trace);
+  return { key: `${profile.id}:${mode}`, profile, mode, shotRelease: run.frame.shotRelease, advantageRelay, score: Math.round(run.frame.shotQuality), finalShotQuality: run.frame.shotQuality, createdAdvantage, outcome,
     firstLostOpeningMs, firstBlockedPass, firstUnsafePass, passDiagnostics, firstBreakdown, releasedAtMs, adaptiveAttempts: run.adaptiveActionsTaken, adaptiveSuccesses: successfulReads.size, recoveredAtMs,
     actionDiagnostics, actions, notice: lossFrame?.action ? `The opening closed during ${lossFrame.action}` : null, trace };
 }
