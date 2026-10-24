@@ -12,6 +12,8 @@ import { PocketActionsPanel, type PocketPlacementRequest } from "./PocketActions
 import { buildPocketInsertion } from "./pocketActions.ts";
 import { ReadCoachAuthorPanel, ReadCoachPracticeView, readCoachSnapshotFrame } from "./ReadCoachViews.tsx";
 import { RoleRehearsalView } from "./RoleRehearsalView.tsx";
+import { RoleSwitchboardPanel } from "./RoleSwitchboardPanel.tsx";
+import { prepareRoleSwitch, roleSwitchSourceKey, type RoleSwitchPreview } from "./roleSwitchboard.ts";
 import { PlayFlipbookView } from "./PlayFlipbookView.tsx";
 import { BaitPayoffAreaOverlay } from "./BaitPayoffArea.tsx";
 import { BaitPayoffInspector, BaitPayoffPresentation } from "./BaitPayoffViews.tsx";
@@ -461,6 +463,11 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const [defenderSkillsOpen, setDefenderSkillsOpen] = useState(false);
   const [defenderSkillsId, setDefenderSkillsId] = useState<number | null>(null);
   const [ratingsOpen, setRatingsOpen] = useState(false);
+  const [roleSwitchFirstId, setRoleSwitchFirstId] = useState<number | null>(null);
+  const [roleSwitchSecondId, setRoleSwitchSecondId] = useState<number | null>(null);
+  const [roleSwitchPickTarget, setRoleSwitchPickTarget] = useState<"first" | "second" | null>(null);
+  const [roleSwitchPreview, setRoleSwitchPreview] = useState<RoleSwitchPreview | null>(null);
+  const [roleSwitchHighlightIds, setRoleSwitchHighlightIds] = useState<string[]>([]);
   const [playerSkillsTab, setPlayerSkillsTab] = useState<"ratings" | "badges">("ratings");
   const [ratingPlayerId, setRatingPlayerId] = useState<number | null>(null);
   const [saved, setSaved] = useState<PlaybookDocument[]>([]);
@@ -535,6 +542,9 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
   const spacingGateResults = simulationFrameState?.spacingGateResults ?? [];
   const selectedSpacingGateResult = selectedSpacingGate ? spacingGateResults.find((result) => result.gateId === selectedSpacingGate.id) : null;
   const selectedRatingsPlayer = draft.players.find((player) => player.id === ratingPlayerId) ?? draft.players[0] ?? null;
+  const roleSwitchFirstPlayerId = draft.players.some((player) => player.id === roleSwitchFirstId) ? roleSwitchFirstId : draft.players[0]?.id ?? null;
+  const roleSwitchSecondPlayerId = draft.players.some((player) => player.id === roleSwitchSecondId && player.id !== roleSwitchFirstPlayerId)
+    ? roleSwitchSecondId : draft.players.find((player) => player.id !== roleSwitchFirstPlayerId)?.id ?? null;
   const selectedSkillsDefender = draft.defenders.find((defender) => defender.id === defenderSkillsId) ?? draft.defenders[0] ?? null;
   const selectedParticipants = useMemo(() => selectedArrow ? bindAuthoredActions(activeDraft).find((action) => action.arrow.id === selectedArrow.id) : null, [activeDraft, selectedArrow?.id]);
   const selectedArrowSequence = selectedArrow ? arrowSequence(selectedArrow, activeDraft.arrows.findIndex((arrow) => arrow.id === selectedArrow.id)) : null;
@@ -1905,6 +1915,23 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     if (dragRef.current || drawingRef.current || spacingGateDragRef.current) return;
     focusBoard();
     if (!selection) return;
+    if (roleSwitchPickTarget) {
+      event.preventDefault();
+      if (selection.type !== "player") {
+        setError("Choose an offensive player marker for the role exchange");
+        return;
+      }
+      const playerId = Number(selection.id);
+      if ((roleSwitchPickTarget === "first" ? roleSwitchSecondId : roleSwitchFirstId) === playerId) {
+        setError("Choose two different offensive players");
+        return;
+      }
+      if (roleSwitchPickTarget === "first") setRoleSwitchFirstId(playerId);
+      else setRoleSwitchSecondId(playerId);
+      setRoleSwitchPickTarget(null);
+      setError(null);
+      return;
+    }
     if (selection.type === "arrow" && (pocketSelectionMode || event.shiftKey)) {
       event.preventDefault();
       togglePocketSelection(String(selection.id), event.shiftKey || pocketSelectionMode);
@@ -2024,6 +2051,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
+      if (roleSwitchPickTarget || roleSwitchPreview) {
+        event.preventDefault();
+        if (roleSwitchPickTarget) setRoleSwitchPickTarget(null);
+        else setRoleSwitchPreview(null);
+        setError(null);
+        return;
+      }
       interruptPointerInteraction();
       if (baitAreaPickingId) {
         event.preventDefault();
@@ -2089,6 +2123,43 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
     const delta = { x: event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0, y: event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0 };
     const currentPoint = selected.type === "ball" ? activeDraft.ball : selected.type === "player" ? activeDraft.players.find((marker) => marker.id === selected.id) : selected.type === "defender" ? activeDraft.defenders.find((marker) => marker.id === selected.id) : activeDraft.arrows.find((arrow) => arrow.id === selected.id)?.end;
     if (currentPoint) commit(replacePoint(activeDraft, selected, { x: clamp(currentPoint.x + delta.x), y: clamp(currentPoint.y + delta.y) }));
+  }
+
+  function previewRoleSwitch() {
+    if (roleSwitchFirstPlayerId == null || roleSwitchSecondPlayerId == null) return;
+    pauseSimulation();
+    try {
+      const prepared = prepareRoleSwitch(draft, roleSwitchFirstPlayerId, roleSwitchSecondPlayerId);
+      setRoleSwitchPreview(prepared);
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The role exchange could not be prepared");
+    }
+  }
+
+  function applyRoleSwitch() {
+    if (!roleSwitchPreview || roleSwitchFirstPlayerId == null || roleSwitchSecondPlayerId == null) return;
+    if (roleSwitchPreview.sourceKey !== roleSwitchSourceKey(draft)
+      || roleSwitchPreview.firstPlayerId !== roleSwitchFirstPlayerId || roleSwitchPreview.secondPlayerId !== roleSwitchSecondPlayerId) {
+      setError("The drawing changed after this preview · Refresh it before applying the exchange");
+      return;
+    }
+    try {
+      const prepared = prepareRoleSwitch(draft, roleSwitchFirstPlayerId, roleSwitchSecondPlayerId);
+      if (prepared.validationErrors.length) {
+        setRoleSwitchPreview(prepared);
+        setError(prepared.validationErrors[0]);
+        return;
+      }
+      if (!handoffCanonicalDraft(prepared.after, false, activeBranchId)) return;
+      recordHistory(clonePlaybook(draft), activeBranchId);
+      setRoleSwitchPreview(null);
+      setRoleSwitchPickTarget(null);
+      setRoleSwitchHighlightIds([]);
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The role exchange could not be applied · Your drawing is intact");
+    }
   }
 
   async function exportPng() {
@@ -2214,7 +2285,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             const isShared = activeBranchId ? activePath.sharedIds.has(arrow.id) : sharedIn > 0;
             const affected = sharedIn + 1;
             const branchStatus = activeBranchId ? branchActionStatus(activeDraft.arrows, draft.arrows, arrow.id) : null;
-            return <div className="playbook-action-row" key={arrow.id}>
+            return <div className={`playbook-action-row ${roleSwitchHighlightIds.includes(arrow.id) ? "is-role-switch-highlight" : ""}`} key={arrow.id}>
               {pocketSelectionMode ? <label className="pocket-action-checkbox"><input type="checkbox" checked={pocketSelectedIds.includes(arrow.id)} onChange={() => togglePocketSelection(arrow.id)} aria-label={`Select Move ${arrowSequence(arrow, index)} for a pocket action`} />Include</label> : null}
               <button type="button" aria-pressed={selected?.type === "arrow" && selected.id === arrow.id} onClick={() => { setSimulationPlaying(false); chooseTool("select"); setSelected({ type: "arrow", id: arrow.id }); }}><strong>Move {arrowSequence(arrow, index)}</strong><span>{actionLabel(arrow.kind)}</span>{branchStatus ? <em className={`branch-action-badge branch-action-${branchStatus}`}>{branchStatus === "added" ? "Added" : "Changed"}</em> : null}{isShared ? <small>Shared opening · edits affect Main + {sharedIn} ending{sharedIn === 1 ? "" : "s"}</small> : null}</button>
               {!activeBranchId ? <button type="button" className="branch-create-action" disabled={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES} title={(draft.branches?.length ?? 0) >= MAX_PLAYBOOK_BRANCHES ? "A play can have at most eight endings" : `Create a branch before Move ${arrowSequence(arrow, index)}`} onClick={() => createBranch(arrow.id)}>Create a branch here</button> : null}
@@ -2337,6 +2408,13 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <label><input type="checkbox" checked={simulationSettings.automaticActions.offBallScreen} onChange={(event) => changeAutomaticAction("offBallScreen", event.currentTarget.checked)} /><span>Off-ball screens</span></label>
             <small>Applied when the next simulation starts</small>
           </div> : null}
+          <RoleSwitchboardPanel source={draft} activePath={activeDraft} activeBranchId={activeBranchId} activeBranchLabel={activePath.branch?.label ?? "Main"}
+            arrowVisibility={arrowVisibility} firstPlayerId={roleSwitchFirstPlayerId} secondPlayerId={roleSwitchSecondPlayerId}
+            pickTarget={roleSwitchPickTarget} preview={roleSwitchPreview}
+            onSelectPlayer={(which, playerId) => { if (which === "first") setRoleSwitchFirstId(playerId); else setRoleSwitchSecondId(playerId); setError(null); }}
+            onPickTarget={(which) => { chooseTool("select"); setRoleSwitchPickTarget((current) => current === which ? null : which); setError(null); focusBoard(); }}
+            onPreview={previewRoleSwitch} onApply={applyRoleSwitch} onCancel={() => { setRoleSwitchPreview(null); setRoleSwitchPickTarget(null); setError(null); }}
+            onHighlightActions={setRoleSwitchHighlightIds} />
           <button type="button" className={`preset-button ${ratingsOpen ? "is-active" : ""}`} aria-expanded={ratingsOpen} aria-controls="player-skills-panel" onClick={() => setRatingsOpen((open) => !open)}>
             <UsersRound size={17} /><span>Player skills</span><i className={`toggle-dot ${ratingsOpen ? "is-on" : ""}`} />
           </button>
@@ -2490,7 +2568,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
             <span className="simulation-settings-note">The scheme sets the defensive shape · Coverage and emphasis change screen, help, pressure, and recovery behavior</span>
           </div> : null}
           <div className="court-frame">
-            <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""} ${spacingGateRoutePick ? "is-spacing-gate-route-pick" : ""} ${baitAreaPickingId ? "is-bait-area-pick" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onDragOver={onPocketDragOver} onDrop={onPocketDrop} onPointerDownCapture={(event) => { if (placeBaitPayoffAreaPoint(event)) return; if (spacingGateRoutePick) onSpacingGateRoutePointPointerDown(event); else onTimingRoutePointPointerDown(event); }} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
+              <svg ref={svgRef} className={`court-svg ${routePointPick ? "is-route-point-pick" : ""} ${spacingGateRoutePick ? "is-spacing-gate-route-pick" : ""} ${baitAreaPickingId ? "is-bait-area-pick" : ""} ${roleSwitchPickTarget ? "is-role-switch-picking" : ""}`} viewBox={`0 0 ${COURT_VIEWBOX.width} ${COURT_VIEWBOX.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editable NBA half-court play diagram" onDragOver={onPocketDragOver} onDrop={onPocketDrop} onPointerDownCapture={(event) => { if (placeBaitPayoffAreaPoint(event)) return; if (spacingGateRoutePick) onSpacingGateRoutePointPointerDown(event); else onTimingRoutePointPointerDown(event); }} onPointerDown={onBackgroundPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerInterrupted} onLostPointerCapture={onPointerInterrupted}>
               <defs>
                 <pattern id="court-boards" width="80" height="80" patternUnits="userSpaceOnUse"><rect width="80" height="80" fill="var(--surface)" /><path d="M0 0h80M0 40h80" stroke="rgba(255,255,255,.022)" strokeWidth="1" /><path d="M40 0v80" stroke="rgba(255,255,255,.014)" strokeWidth="1" /></pattern>
                 <marker id="movement-arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--text)" /></marker>
@@ -2502,7 +2580,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 const connection = activeDraft.baitPayoffs?.connections.find((item) => item.id === selectedBaitConnectionId);
                 return connection?.reaction ? <BaitPayoffAreaOverlay area={connection.reaction.area} /> : null;
               })()}
-              {simulationActive ? <CourtRoutes routes={simulationFrame.routes.filter((route) => route.actionId !== editingArrowId || editingArrowId == null)} visibility={arrowVisibility} labels /> : <CourtRoutes routes={authoredRoutes.filter((route) => !route.id.endsWith(":actor") && route.kind === "handler-support")} visibility={arrowVisibility} />}
+              {simulationActive ? <CourtRoutes routes={simulationFrame.routes.filter((route) => route.actionId !== editingArrowId || editingArrowId == null)} visibility={arrowVisibility} labels highlightActionIds={new Set(roleSwitchHighlightIds)} /> : <CourtRoutes routes={authoredRoutes.filter((route) => !route.id.endsWith(":actor") && route.kind === "handler-support")} visibility={arrowVisibility} highlightActionIds={new Set(roleSwitchHighlightIds)} />}
               {!simulationActive && compareRoutes.length ? <CourtRoutes routes={compareRoutes} visibility={arrowVisibility} compare /> : null}
               {spacingGateRoutePreview ? <g className="spacing-gate-route-preview" pointerEvents="none"><CourtRoutes routes={[spacingGateRoutePreview]} visibility="all" /><text x={markerPoint(spacingGateRoutePreview.end).x} y={markerPoint(spacingGateRoutePreview.end).y - 24}>CLICK ROUTE POINT</text></g> : null}
               <SpacingGateLayer gates={activeDraft.spacingGates?.gates ?? []} results={simulationFrame.spacingGateResults ?? []} visible={showSpacingGates} selectedGateId={selectedSpacingGateId} interactive onSelect={(id) => { const gate = activeDraft.spacingGates?.gates.find((candidate) => candidate.id === id); if (gate) selectSpacingGate(gate); }} onPointerStart={beginSpacingGateDrag} />
@@ -2523,7 +2601,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 const sequence = arrowSequence(arrow, draft.arrows.findIndex((original) => original.id === arrow.id));
                 const badgePoint = actionPointAt(arrow, 0.5);
                 const badge = markerPoint(badgePoint);
-                return <g key={arrow.id} onPointerDown={(event) => onMarkerPointerDown(event, { type: "arrow", id: arrow.id })} className={`play-arrow-group ${active ? "is-selected" : ""}`}>
+                return <g key={arrow.id} onPointerDown={(event) => onMarkerPointerDown(event, { type: "arrow", id: arrow.id })} className={`play-arrow-group ${active ? "is-selected" : ""} ${roleSwitchHighlightIds.includes(arrow.id) ? "is-role-switch-highlight" : ""}`}>
                   <title>Move {sequence} · {actionLabel(arrow.kind)}{arrow.screener_id != null ? ` · Player ${arrow.screener_id} screens for player ${arrow.handler_id ?? arrow.cutter_id ?? "the ball handler"}` : ""} · {clampTiming(arrow.timing ?? 1.2).toFixed(1)} seconds</title>
                   {screenCutterPath(arrow, draft.players) ? <path d={screenCutterPath(arrow, draft.players) as string} className="screen-cutter-arrow" markerEnd="url(#movement-arrow)" /> : null}
                   <path d={actionPath(arrow)} className={actionClass(arrow.kind)} markerEnd={`url(#${actionMarker(arrow.kind)})`} />
@@ -2544,7 +2622,7 @@ export function PlaybookBoard({ onTestInCounterLab, onDraftChange, requestedPlay
                 const point = markerPoint(marker);
                 const active = selected?.type === "player" && selected.id === marker.id;
                 const role = offBallScreenSelection.screenerId === marker.id ? "is-screen-screener" : offBallScreenSelection.cutterId === marker.id ? "is-screen-cutter" : pickPopSelection.screenerId === marker.id ? "is-screen-screener" : pickPopSelection.handlerId === marker.id ? "is-screen-cutter" : backdoorCutterId === marker.id ? "is-screen-cutter" : "";
-                return <g key={`player-${marker.id}`} className={`offense-marker-group ${active ? "is-selected" : ""} ${role} ${pocketPreviewPlayerIds.includes(marker.id) ? "pocket-assigned-preview" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "player", id: marker.id })}>
+                return <g key={`player-${marker.id}`} className={`offense-marker-group ${active ? "is-selected" : ""} ${role} ${pocketPreviewPlayerIds.includes(marker.id) ? "pocket-assigned-preview" : ""} ${roleSwitchPickTarget ? "role-switch-candidate" : ""}`} onPointerDown={(event) => onMarkerPointerDown(event, { type: "player", id: marker.id })}>
                   <circle cx={point.x} cy={point.y} r="30" className="marker-hit-target" /><circle cx={point.x} cy={point.y} r={simulationActive ? 18 : 25} className="offense-marker" /><text x={point.x} y={point.y + 1} className="marker-number">{marker.id}</text>
                 </g>;
               })}

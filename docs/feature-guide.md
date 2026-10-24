@@ -77,6 +77,28 @@ Customize offensive shooting/finishing ratings and badges, defender skills, and
 simulation settings · Player strengths, defensive strategies, cuts, spacing, and
 enabled automatic actions affect the simulator's decisions
 
+### Role Switchboard
+
+Expand **Role Switchboard** beside the offensive roster controls to see factual
+job badges for the selected ending · A player can have several jobs, and each
+badge lists the move numbers that use that role · Select a badge to highlight its
+actions on the court
+
+Choose two distinct players with the selectors or **Pick on court**, then select
+**Preview exchange** · The preview shows the affected Main and ending paths,
+their changed participants, timing waits, spacing gates, My Role cues, and
+Bait & Payoff checks · Use **Before** and **After** to compare routes and the
+two exchanged starting markers · The preview pauses playback but leaves the
+drawing and saved state untouched
+
+**Apply swap** exchanges their authored responsibilities and starting spots as
+one undoable edit · Player identities, ratings, badges, roster order, defenders,
+and the ball's authored court location stay in place · Existing timing, route
+geometry, and action identities are preserved · Custom cue wording stays intact
+and is marked for review when affected · Captured Read Coach lessons and
+Flipbook walkthroughs keep their original recorded personnel until you rebuild
+them explicitly
+
 ### Pocket actions
 
 Open **Pocket actions** beside the starter-play controls to reuse a small

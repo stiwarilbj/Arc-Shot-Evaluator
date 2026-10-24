@@ -1281,6 +1281,87 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .shared-court-route.route-shot { stroke-dasharray: 3 5; }
 @media (max-width: 620px) { .playbook-simulation-bar .arrow-visibility-control { width: 100%; } .playbook-simulation-bar .arrow-visibility-control select { flex: 1; } }
 
+.role-switchboard-panel { min-width: 0; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
+.role-switchboard-panel > summary { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 7px 9px; color: var(--text); cursor: pointer; font-size: 12px; font-weight: 750; list-style-position: inside; }
+.role-switchboard-panel > summary svg { color: var(--orange); }
+.role-switchboard-panel > summary small { margin-left: auto; color: var(--muted); font-size: 10px; font-weight: 500; }
+.role-switchboard-content { display: grid; gap: 9px; max-height: min(54vh, 450px); overflow-y: auto; padding: 9px; border-top: 1px solid var(--line); scrollbar-width: thin; }
+.role-switchboard-intro { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.role-switchboard-job-list { display: grid; gap: 7px; }
+.role-switchboard-player { display: grid; gap: 5px; min-width: 0; }
+.role-switchboard-player > strong { color: var(--text); font-size: 11px; }
+.role-switchboard-player > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.role-switchboard-player button { display: grid; gap: 2px; max-width: 100%; min-height: 35px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); cursor: pointer; text-align: left; font: inherit; font-size: 10px; }
+.role-switchboard-player button:hover, .role-switchboard-player button.is-active { border-color: var(--orange); }
+.role-switchboard-player button small { color: var(--muted); font-size: 9px; }
+.role-switchboard-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.role-switchboard-pair label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 10px; }
+.role-switchboard-pair select { width: 100%; min-height: 38px; padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--text); font: inherit; }
+.role-switch-pick { justify-content: center; min-height: 34px; padding: 4px 6px; font-size: 10px; }
+.role-switch-pick.is-active { color: var(--orange); border-color: var(--orange); }
+.role-switchboard-impact-note { display: grid; gap: 2px; margin: 0; padding: 7px; border-left: 2px solid var(--orange); background: color-mix(in srgb, var(--orange) 7%, var(--surface)); font-size: 10px; }
+.role-switchboard-impact-note strong { color: var(--text); }
+.role-switchboard-impact-note span, .role-switch-pick-note { color: var(--muted); }
+.role-switchboard-content > p { line-height: 1.45; }
+.role-switch-preview-button { justify-content: center; min-height: 42px; }
+.role-switchboard-panel .role-switch-pick-note { margin: 0; font-size: 10px; }
+.role-switch-candidate { cursor: crosshair !important; }
+.court-svg.is-role-switch-picking .offense-marker-group .marker-hit-target { stroke: var(--text); stroke-width: 3; stroke-dasharray: 4 4; }
+.court-svg.is-role-switch-picking .offense-marker-group:hover .offense-marker { filter: drop-shadow(0 0 8px var(--orange)); }
+.play-arrow-group.is-role-switch-highlight path { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--orange) 75%, transparent)); stroke-width: 5 !important; }
+.playbook-action-row.is-role-switch-highlight > button:first-child { border-color: var(--orange); box-shadow: inset 3px 0 var(--orange); }
+.court-route-layer .is-role-switch-highlight .shared-court-route { stroke: var(--orange); stroke-width: 4; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--orange) 75%, transparent)); }
+.role-switch-preview-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 68%); }
+.role-switch-preview-dialog { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 10px; width: min(1080px, 100%); max-height: min(880px, calc(100dvh - 32px)); min-height: 0; padding: 14px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.role-switch-preview-dialog > header, .role-switch-preview-dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.role-switch-preview-dialog > header h2 { margin: 3px 0 0; font-size: 19px; }
+.role-switch-preview-dialog > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.role-switch-preview-body { display: grid; grid-template-columns: minmax(250px, .9fr) minmax(280px, 1.1fr); gap: 12px; min-height: 0; overflow: hidden; }
+.role-switch-preview-court-section { display: flex; flex-direction: column; gap: 7px; min-height: 0; }
+.role-switch-side-toggle { display: inline-flex; align-self: flex-start; padding: 3px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.role-switch-side-toggle button { min-height: 32px; padding: 4px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; }
+.role-switch-side-toggle button.is-active { background: var(--orange); color: #171717; font-weight: 750; }
+.role-switch-court-wrap { display: grid; place-items: center; flex: 1 1 auto; min-height: 160px; padding: 5px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--media-bg); }
+.role-switch-court { display: block; width: 100%; height: 100%; max-height: 100%; aspect-ratio: 1000 / 940; border-radius: 4px; background: var(--surface); }
+.role-switch-player-marker circle { fill: var(--orange); stroke: var(--text); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.role-switch-player-marker.is-exchanged circle { stroke: #fff3a2; stroke-width: 6; stroke-dasharray: 4 3; }
+.role-switch-player-marker text { fill: white; stroke: none; font: 750 17px sans-serif; text-anchor: middle; dominant-baseline: central; }
+.role-switch-ball-marker circle { fill: #d96b38; stroke: white; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.role-switch-ball-marker path { stroke: white; stroke-width: 1.5; }
+.role-switch-preview-court-section > small { color: var(--muted); font-size: 10px; }
+.role-switch-preview-details { display: grid; align-content: start; gap: 8px; min-height: 0; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; }
+.role-switch-preview-details > section { padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.role-switch-preview-details h3 { margin: 0 0 6px; color: var(--text); font-size: 12px; }
+.role-switch-preview-details p, .role-switch-preview-details small { display: block; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.role-switch-impact-list { display: grid; gap: 5px; }
+.role-switch-impact-list details { border: 1px solid var(--line); border-radius: 5px; background: var(--surface); }
+.role-switch-impact-list details > summary { display: flex; justify-content: space-between; gap: 8px; min-height: 33px; padding: 8px; cursor: pointer; color: var(--text); font-size: 10px; font-weight: 700; }
+.role-switch-impact-list details > summary span { color: var(--muted); font-weight: 500; }
+.role-switch-impact-list ul { display: grid; gap: 5px; max-height: 220px; margin: 0; padding: 0 8px 8px; overflow: auto; list-style: none; }
+.role-switch-impact-list li { display: grid; gap: 2px; padding: 6px; border-left: 2px solid var(--orange); background: var(--surface-2); }
+.role-switch-impact-list li strong { color: var(--text); font-size: 10px; }
+.role-switch-impact-list li span { color: var(--muted); font-size: 9px; line-height: 1.4; }
+.role-switch-stale, .role-switch-validation-errors { display: grid; gap: 6px; padding: 9px; border: 1px solid color-mix(in srgb, var(--orange) 60%, var(--line)); border-radius: 6px; background: color-mix(in srgb, var(--orange) 8%, var(--surface)); }
+.role-switch-stale strong, .role-switch-validation-errors h3 { margin: 0; color: var(--orange); font-size: 11px; }
+.role-switch-stale > span { color: var(--muted); font-size: 10px; }
+.role-switch-stale .button { justify-content: center; min-height: 34px; }
+.role-switch-validation-errors ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; color: var(--text); font-size: 10px; line-height: 1.45; }
+.role-switch-frozen-note { padding: 8px; border-left: 2px solid var(--muted); background: var(--surface-2); }
+.role-switch-preview-dialog > footer { justify-content: flex-end; padding-top: 4px; border-top: 1px solid var(--line); }
+.role-switch-preview-dialog > footer .button { min-height: 40px; }
+@media (max-width: 720px) {
+  .role-switchboard-panel > summary { flex-wrap: wrap; }
+  .role-switchboard-panel > summary small { flex-basis: 100%; margin-left: 25px; }
+  .role-switchboard-pair { grid-template-columns: minmax(0, 1fr); }
+  .role-switch-preview-backdrop { align-items: end; padding: 0; }
+  .role-switch-preview-dialog { width: 100%; max-height: 96dvh; padding: 11px; border-radius: 12px 12px 0 0; }
+  .role-switch-preview-body { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+  .role-switch-preview-court-section { min-height: 230px; }
+  .role-switch-court-wrap { min-height: 190px; }
+  .role-switch-preview-details { overflow: visible; }
+  .role-switch-preview-dialog > footer { position: sticky; bottom: 0; background: var(--surface); }
+}
+
 .playbook-action-list { border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px; }
 .playbook-action-list summary { min-height: 36px; cursor: pointer; display: list-item; }
 .playbook-action-list > div { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; scrollbar-width: thin; }

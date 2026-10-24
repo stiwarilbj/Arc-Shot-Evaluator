@@ -183,9 +183,12 @@ export function validatePlaybookDocument(value: unknown, shouldValidateTimingEdg
         && branch.fork.actionIds.every((id) => typeof id === "string" && /^[a-z0-9-]{1,64}$/.test(id))
         && new Set(branch.fork.actionIds).size === branch.fork.actionIds.length
         && integer(branch.fork.sequence) && branch.fork.sequence >= 1 && branch.fork.sequence <= 30, "Ending fork reference is invalid");
-      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined, spacingGates: undefined, flipbooks: undefined, baitPayoffs: undefined }, false);
+      // These extensions are validated against the complete play family below
+      // and may legitimately reference shared Main actions that are not present
+      // in the branch's continuation-only structural validation.
+      validatePlaybookDocument({ ...value, arrows: branch.continuation, branches: undefined, roleCues: undefined, spacingGates: undefined, flipbooks: undefined, baitPayoffs: undefined }, false);
       const resolved = resolvePlaybookPath(value as unknown as PlaybookDraft, branch.id);
-      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined, spacingGates: undefined, flipbooks: undefined, baitPayoffs: undefined });
+      validatePlaybookDocument({ ...value, arrows: resolved.play.arrows, branches: undefined, roleCues: undefined, spacingGates: undefined, flipbooks: undefined, baitPayoffs: undefined });
       validateTimingEdges(resolved.play);
       const sharedSyncMembers = new Map<string, Set<string>>();
       const endingSyncMembers = new Map<string, Set<string>>();
