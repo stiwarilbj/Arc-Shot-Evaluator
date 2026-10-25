@@ -151,6 +151,8 @@ const impossibleHistory = [
   unplayedRound(2, 3, [0, 3]),
   unplayedRound(3, 3, [0, 1, 3]),
   unplayedRound(4, 7, [0, 1, 7]),
+  unplayedRound(4, 6, [10, 11, 6]),
+  unplayedRound(7, 11, [10, 6, 11]),
   { ...s, recent: [s.setupIndex] },
   { ...s, recent: [0, s.setupIndex, s.setupIndex] },
 ];

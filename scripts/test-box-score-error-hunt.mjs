@@ -67,6 +67,48 @@ assert(validateSession(session));
 assert.equal(answerRound(session, session.puzzle.wrongField), session);
 const restarted = createSession();
 assert.equal(restarted.answered, 0); assert.equal(restarted.bestStreak, 0); assert.equal(restarted.puzzle.difficulty, 1);
+for (let seed = 700; seed < 730; seed++) {
+  const random = seeded(seed);
+  let progression = createSession(random);
+  for (let round = 0; round < 100; round++) {
+    const options = keysFor(progression.puzzle.difficulty);
+    progression = answerRound(progression, options[Math.floor(random() * options.length)]);
+    assert(validateSession(progression), "Random valid answer summaries remain restorable");
+    progression = nextRound(progression, random);
+    assert(validateSession(progression), "Random valid round history remains restorable");
+  }
+}
+
+// Saved puzzle history and streak summaries must describe a reachable game state
+let answeredPuzzle = createSession(seeded(501));
+answeredPuzzle = answerRound(answeredPuzzle, answeredPuzzle.puzzle.wrongField);
+assert(validateSession(answeredPuzzle));
+const replayedAsUnanswered = { ...answeredPuzzle, selected: null };
+assert.equal(validateSession(replayedAsUnanswered), false, "An answered puzzle cannot be restored as a fresh answer opportunity");
+const nextPuzzle = nextRound(answeredPuzzle, seeded(502));
+assert(validateSession(nextPuzzle), "A normal answer followed by Next round retains valid history");
+assert.equal(validateSession({ ...nextPuzzle, recentIds: [nextPuzzle.puzzle.id] }), false, "History cannot forget generated puzzles before the recent window is full");
+
+let oneMissSequence = createSession(seeded(503));
+for (let n = 0; n < 4; n++) {
+  const answer = n < 3 ? oneMissSequence.puzzle.wrongField : keysFor(oneMissSequence.puzzle.difficulty).find(key => key !== oneMissSequence.puzzle.wrongField);
+  oneMissSequence = answerRound(oneMissSequence, answer);
+  if (n < 3) oneMissSequence = nextRound(oneMissSequence, seeded(504 + n));
+}
+assert(validateSession(oneMissSequence), "Three correct answers and a final miss can produce a best streak of three");
+assert.equal(validateSession({ ...oneMissSequence, bestStreak: 1 }), false, "One miss cannot split three correct answers into runs of one");
+
+let splitSequence = createSession(seeded(510));
+for (let n = 0; n < 4; n++) {
+  const answer = n === 2
+    ? keysFor(splitSequence.puzzle.difficulty).find(key => key !== splitSequence.puzzle.wrongField)
+    : splitSequence.puzzle.wrongField;
+  splitSequence = answerRound(splitSequence, answer);
+  if (n < 3) splitSequence = nextRound(splitSequence, seeded(511 + n));
+}
+assert(validateSession(splitSequence), "Two runs of correct answers around a miss can end with a streak of one");
+assert.equal(validateSession({ ...splitSequence, bestStreak: 3 }), false, "Best streak cannot exceed every run allowed by the trailing streak");
+
 // Reject corrupt persisted results, identities, statistics, and impossible source lines.
 for (const mutate of [
   s => {s.puzzle.totals.points = -1;},
@@ -89,6 +131,8 @@ assert(savePractice(session, () => storage));
 const restored = loadPractice(() => storage);
 assert.deepEqual(restored.session, session);
 assert.equal(answerRound(restored.session, restored.session.puzzle.wrongField), restored.session);
+store.set(PRACTICE_KEY, JSON.stringify(replayedAsUnanswered));
+assert.equal(loadPractice(() => storage).session.answered, 0, "Impossible saved answer state recovers to a fresh session");
 for (const raw of ['bad JSON', '{}', 'null', 'x'.repeat(32769)]) {
   store.set(PRACTICE_KEY, raw); const result = loadPractice(() => storage); assert(validateSession(result.session));
 }

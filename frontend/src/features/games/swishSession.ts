@@ -46,6 +46,8 @@ export function validateSwishSession(value: unknown): value is SwishSession {
       s.setupIndex >= setupLimitForRound(s.round) || (s.round === 1 && s.setupIndex !== 0) ||
       !Array.isArray(s.recent) || s.recent.length !== Math.min(s.round, 3) ||
       !s.recent.every(n => integer(n, ROUND_SETUPS.length - 1)) || new Set(s.recent).size !== s.recent.length || s.recent.at(-1) !== s.setupIndex) return false;
+  const firstRecentRound = s.round - s.recent.length + 1;
+  if (s.recent.some((setupIndex, offset) => setupIndex >= setupLimitForRound(firstRecentRound + offset))) return false;
   if (s.lastShot === null) return s.attempts === 0 && s.makes === 0;
   if (!s.lastShot || !validControls(s.lastShot.controls) || s.attempts < 1) return false;
   // A miss is itself an attempt, so earlier attempts must account for all current makes

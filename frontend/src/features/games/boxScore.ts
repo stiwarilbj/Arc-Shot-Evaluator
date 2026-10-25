@@ -134,6 +134,11 @@ export function validateSession(value: unknown): value is PracticeSession {
   if (!["correct", "answered", "streak", "bestStreak"].every(key => integer(value[key], 1_000_000_000))) return false;
   const { correct, answered, streak, bestStreak } = value as unknown as PracticeSession;
   if (correct > answered || streak > bestStreak || bestStreak > correct || (correct > 0 && bestStreak === 0)) return false;
+  // Check that the aggregate streak summary can fit around the incorrect
+  // answers, including both the reported trailing run and the historical best.
+  const incorrect = answered - correct;
+  const priorCorrect = correct - streak;
+  if (BigInt(priorCorrect) > BigInt(incorrect) * BigInt(bestStreak) || bestStreak > Math.max(streak, priorCorrect)) return false;
   const selected = value.selected;
   if (selected !== null && !keysFor(value.puzzle.difficulty).includes(selected as TotalKey)) return false;
   if (selected !== null && answered === 0) return false;
@@ -141,6 +146,8 @@ export function validateSession(value: unknown): value is PracticeSession {
   if (selected !== null && (justCorrect ? streak < 1 : streak !== 0)) return false;
   if (value.puzzle.difficulty !== difficultyFor(correct - Number(justCorrect))) return false;
   if (!Array.isArray(value.recentIds) || value.recentIds.length < 1 || value.recentIds.length > RECENT_LIMIT || !value.recentIds.every(id => typeof id === "string" && id.length <= 240)) return false;
+  const expectedHistoryLength = Math.min(answered + Number(selected === null), RECENT_LIMIT);
+  if (value.recentIds.length !== expectedHistoryLength) return false;
   if (new Set(value.recentIds).size !== value.recentIds.length || value.recentIds.at(-1) !== value.puzzle.id) return false;
   return true;
 }
