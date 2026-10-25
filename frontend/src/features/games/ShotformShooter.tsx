@@ -17,7 +17,7 @@ function Skeleton({ pose, highlight = -1, ghost = false, left }: { pose: Pose; h
     {!ghost && highlight === 2 && line(`${side}Wrist`, `${side}Hand`, 7, true)}
   </g>;
 }
-export default function ShotformShooter({ challenge, controls, previous, time, highlight }: { challenge: Challenge; controls: Controls; previous: Controls | null; time: number; highlight: number }) {
+export default function ShotformShooter({ challenge, controls, comparison, comparisonLabel, time, highlight }: { challenge: Challenge; controls: Controls; comparison: Controls | null; comparisonLabel: string; time: number; highlight: number }) {
   const repetition = Math.min(2, Math.floor(time / 1.6)), t = clamp((time - repetition * 1.6) / 1.6, 0, 1);
   const pose = poseAt(challenge, controls, repetition, t);
   const ball = shotBallPosition(challenge, controls, repetition, t);
@@ -26,11 +26,11 @@ export default function ShotformShooter({ challenge, controls, previous, time, h
     <path d="M530 110V183H490" fill="none" stroke="var(--sj-muted)" strokeWidth="5" />
     <ellipse cx="470" cy="183" rx="24" ry="7" fill="none" stroke="var(--sj-accent)" strokeWidth="4" />
     <path d="M450 187L459 217H480L490 187M459 217L476 189M480 217L463 189" fill="none" stroke="var(--sj-line)" strokeWidth="2" />
-    {previous && <Skeleton pose={poseAt(challenge, previous, repetition, t)} ghost left={challenge.leftHanded} />}
+    {comparison && <Skeleton pose={poseAt(challenge, comparison, repetition, t)} ghost left={challenge.leftHanded} />}
     <Skeleton pose={pose} highlight={highlight} left={challenge.leftHanded} />
     <circle cx={ball[0]} cy={ball[1]} r={BALL_RADIUS} fill="var(--sj-accent)" stroke="#492516" strokeWidth="1.5" />
     <path d={`M${ball[0] - BALL_RADIUS + 1} ${ball[1]}h${BALL_RADIUS * 2 - 2}M${ball[0]} ${ball[1] - BALL_RADIUS + 1}v${BALL_RADIUS * 2 - 2}`} stroke="#492516" fill="none" />
     <text x="32" y="34" fill="var(--sj-muted)" fontSize="13">REPETITION {repetition + 1} / 3</text>
-    {previous && <text x="32" y="56" fill="var(--sj-muted)" fontSize="12">Faint outline: previous test</text>}
+    {comparison && <text x="32" y="56" fill="var(--sj-muted)" fontSize="12">Faint outline: {comparisonLabel}</text>}
   </svg>;
 }

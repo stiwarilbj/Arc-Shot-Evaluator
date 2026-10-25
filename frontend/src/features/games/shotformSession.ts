@@ -4,7 +4,13 @@ export type Nudge = { axis: 0 | 1 | 2; direction: -1 | 1 };
 export type ShotformSession = { version: 1; engine: typeof SHOTFORM_ENGINE; rng: number; round: number; challengeSeed: number; recentSeeds: number[]; controls: Controls; previous: Controls | null; pending: Nudge | null; tests: number; completed: number; bestScore: number };
 export const currentChallenge = (s: ShotformSession) => challengeFromSeed(s.challengeSeed, s.round);
 export const complete = (s: ShotformSession) => stable(measure(currentChallenge(s), s.controls));
-export const score = (s: ShotformSession) => complete(s) && s.tests > 0 ? Math.min(100, Math.round(100 * currentChallenge(s).minimum / s.tests)) : 0;
+export const roundScore = (minimum: number, tests: number) => Math.min(100, Math.round(100 * minimum / tests));
+export const score = (s: ShotformSession) => complete(s) && s.tests > 0 ? roundScore(currentChallenge(s).minimum, s.tests) : 0;
+const attainableBestScores = new Set<number>([0]);
+for (let minimum = 2; minimum <= 8; minimum++) {
+  // Beyond 200 attempts per required move, every attainable result is zero
+  for (let tests = minimum; tests <= minimum * 200 + 1; tests++) attainableBestScores.add(roundScore(minimum, tests));
+}
 export function createShotformSession(seed = Math.floor(Math.random() * 4294967296)): ShotformSession {
   const { challenge, seed: rng } = chooseChallenge(seed >>> 0, 1);
   return { version: 1, engine: SHOTFORM_ENGINE, rng, round: 1, challengeSeed: challenge.seed, recentSeeds: [challenge.seed], controls: [...challenge.start], previous: null, pending: null, tests: 0, completed: 0, bestScore: 0 };
@@ -40,8 +46,9 @@ export function validateShotformSession(value: unknown): value is ShotformSessio
   const history = s.recentSeeds.map((seed, i) => challengeFromSeed(seed, s.round - s.recentSeeds.length + 1 + i));
   if (history.some(c => c.minimum < 2 || c.minimum > 8) || new Set(history.map(c => c.id)).size !== history.length) return false;
   const challenge = currentChallenge(s), done = complete(s);
-  if (s.completed !== s.round - 1 + Number(done) || (!s.completed && s.bestScore !== 0) || (done && (s.tests < challenge.minimum || !s.previous || s.bestScore < score(s) || (s.round === 1 && s.bestScore !== score(s))))) return false;
-  if (s.controls.reduce((n, v, i) => n + Math.abs(v - challenge.start[i]), 0) > s.tests) return false;
+  if (s.completed !== s.round - 1 + Number(done) || (!s.completed && s.bestScore !== 0) || !attainableBestScores.has(s.bestScore) || (done && (s.tests < challenge.minimum || !s.previous || s.bestScore < score(s) || (s.round === 1 && s.bestScore !== score(s))))) return false;
+  const distanceFromStart = s.controls.reduce((n, v, i) => n + Math.abs(v - challenge.start[i]), 0);
+  if (distanceFromStart > s.tests || (s.previous === null && s.tests > 0 && distanceFromStart > s.tests - 1)) return false;
   if (s.previous !== null && (!validControls(s.previous) || s.tests < 1 || stable(measure(challenge, s.previous)) || s.previous.reduce((n, v, i) => n + Math.abs(v - s.controls[i]), 0) !== 1 || s.previous.reduce((n, v, i) => n + Math.abs(v - challenge.start[i]), 0) > s.tests - 1)) return false;
   if (s.pending !== null && (!s.pending || typeof s.pending !== "object" || ![0, 1, 2].includes(s.pending.axis) || ![-1, 1].includes(s.pending.direction) || done || !validControls(pendingControls(s)))) return false;
   return s.tests !== 0 || s.previous === null;

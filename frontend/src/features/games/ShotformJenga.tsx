@@ -18,7 +18,10 @@ export default function ShotformJenga({ active }: { active: boolean }) {
   const roundHeadingRef = useRef<HTMLHeadingElement>(null), focusRoundHeading = useRef(false);
   const challenge = useMemo(() => currentChallenge(session), [session.challengeSeed, session.round]);
   const scores = useMemo(() => measure(challenge, session.controls), [challenge, session.controls]);
-  const before = useMemo(() => measure(challenge, session.previous ?? challenge.start), [challenge, session.previous]);
+  const comparisonControls = session.previous ?? challenge.start;
+  const comparisonLabel = session.previous ? "Before" : "Baseline";
+  const comparison = comparisonControls.some((value, i) => value !== session.controls[i]) ? comparisonControls : null;
+  const before = useMemo(() => measure(challenge, comparisonControls), [challenge, comparisonControls]);
   const area = useMemo(() => highlightedArea(challenge, session.controls, model), [challenge, session.controls, model]);
   const done = complete(session);
   const commit = (next: ShotformSession) => { sessionRef.current = next; setSession(next); setStorage(saveShotformSession(next)); };
@@ -72,6 +75,12 @@ export default function ShotformJenga({ active }: { active: boolean }) {
     // Persist the outcome exactly once before any animation can be interrupted
     commit(next); animate();
   }
+  function resume() {
+    if (clock.current >= TEST_SECONDS) { clock.current = 0; setTime(0); }
+    busyRef.current = true;
+    setBusy(true);
+    setPlaying(!reduced && active && !document.hidden);
+  }
   function nextRound() {
     if (busyRef.current || !complete(sessionRef.current)) return;
     focusRoundHeading.current = true;
@@ -88,17 +97,17 @@ export default function ShotformJenga({ active }: { active: boolean }) {
     <div className="sj-stats" aria-label="Practice progress"><span>Round <strong>{session.round}</strong></span><span>Tested adjustments <strong>{session.tests}</strong></span><span>Completed rounds <strong>{session.completed}</strong></span><span>Best round <strong>{session.bestScore}</strong></span></div>
     <div className="sj-layout"><section className="sj-stage" aria-label="Shooting motion">
       <div className="sj-stage-label"><span>{challenge.leftHanded ? "Left-handed" : "Right-handed"} shooter · Level {challenge.tier}</span><span>{modelStatus === "neural" ? "Neural motion highlight" : modelStatus === "loading" ? "Loading motion model" : "Game motion analysis"}</span></div>
-      <ShotformShooter challenge={challenge} controls={session.controls} previous={session.previous} time={time} highlight={done ? -1 : area} />
+      <ShotformShooter challenge={challenge} controls={session.controls} comparison={comparison} comparisonLabel={session.previous ? "previous test" : "baseline"} time={time} highlight={done ? -1 : area} />
       <div className="sj-insight" role="status">{done ? "✓ All three parts are steady" : `◎ Inspect ${LABELS[AREAS[area]].toLowerCase()} across all three repetitions`}</div>
-      <div className="sj-playback"><button type="button" disabled={reduced} onClick={() => { if (playing) setPlaying(false); else { if (clock.current >= TEST_SECONDS) { clock.current = 0; setTime(0); } setPlaying(true); } }}>{playing ? "Pause" : "Resume"}</button><button type="button" onClick={() => { if (!busyRef.current) animate(); }} disabled={busy}>Replay test</button><label>Motion <input aria-label="Motion time" type="range" min="0" max={TEST_SECONDS} step="0.01" value={time} onChange={e => scrub(Number(e.target.value))} /></label><output>{time.toFixed(1)} s</output></div>
+      <div className="sj-playback"><button type="button" disabled={reduced} onClick={() => { if (playing) setPlaying(false); else resume(); }}>{playing ? "Pause" : "Resume"}</button><button type="button" onClick={() => { if (!busyRef.current) animate(); }} disabled={busy}>Replay test</button><label>Motion <input aria-label="Motion time" type="range" min="0" max={TEST_SECONDS} step="0.01" value={time} onChange={e => scrub(Number(e.target.value))} /></label><output>{time.toFixed(1)} s</output></div>
       {reduced && <p className="sj-help">Reduced motion · Scrub to inspect static poses across three repetitions</p>}
       {busy && !playing && <p className="sj-help">Test paused · Resume or scrub to the end before your next adjustment</p>}
-      <p className="sj-help">Faint outlines compare the previous test · Each round reuses the same three variation samples</p>
+      <p className="sj-help">{comparison ? `Faint outline compares the ${session.previous ? "previous test" : "starting baseline"} at the same phase` : "Scores compare with the starting baseline"} · Each round reuses the same three variation samples</p>
     </section><section className="sj-controls" aria-label="Adjust shooting motion">
       <h2>Keep every score at 80+</h2><p className="sj-help">Change one part, then test the whole motion · Changes can affect other areas</p>
       {AREAS.map((key, i) => { const delta = scores[i] - before[i]; return <div className={`sj-area ${area === i && !done ? "is-highlighted" : ""}`} key={key}>
         <div className="sj-area-title"><h3>{LABELS[key]}</h3><span>{steadyScore(scores[i]) ? "✓ Steady" : "△ Unsteady"}</span></div>
-        <div className="sj-scores"><span>Before {formatStability(before[i])}</span><strong>Now {formatStability(scores[i])} / 100</strong><span className={delta < -.05 ? "sj-worse" : ""}>{Math.abs(delta) < .05 ? "— No change" : `${delta > 0 ? "↑" : "↓"} ${Math.abs(delta).toFixed(1)}`}</span></div>
+        <div className="sj-scores"><span>{comparisonLabel} {formatStability(before[i])}</span><strong>Now {formatStability(scores[i])} / 100</strong><span className={delta < -.05 ? "sj-worse" : ""}>{Math.abs(delta) < .05 ? "— No change" : `${delta > 0 ? "↑" : "↓"} ${Math.abs(delta).toFixed(1)}`}</span></div>
         <meter min="0" max="100" low={80} optimum={100} value={scores[i]} aria-label={`${LABELS[key]} stability`} aria-valuetext={`${formatStability(scores[i])} out of 100 · ${steadyScore(scores[i]) ? "Steady" : "Unsteady"}`} />
         <div className="sj-adjustments">{([-1, 1] as const).map((direction, j) => <button type="button" key={direction} disabled={busy || done || !!pending || session.controls[i] + direction < -4 || session.controls[i] + direction > 4} onClick={() => stage(i, direction)}>{DIRECTIONS[i][j]}</button>)}<span aria-label={`${LABELS[key]} adjustment position`}>{session.controls[i] > 0 ? "+" : ""}{session.controls[i]} / ±4</span></div>
       </div>; })}

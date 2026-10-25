@@ -51,6 +51,11 @@ for(let round=1;round<=12;round++) {
 }
 const fresh=createShotformSession(177);
 assert.equal(nextShotformRound(fresh),fresh);
+const oneMove=testNudge(stageNudge(fresh,{axis:0,direction:fresh.controls[0]<4?1:-1}));
+const realUndo=undoNudge(oneMove);
+assert(validateShotformSession(realUndo),"a real undo remains restorable");
+assert(!validateShotformSession({...oneMove,previous:null}),"a changed one-test board cannot erase its required undo history");
+assert.equal(loadShotformSession(()=>({getItem:()=>JSON.stringify({...oneMove,previous:null}),setItem(){}})).restored,false,"an impossible undo save recovers as a new game");
 assert.equal(formatStability(79.983),'<80'); assert.equal(formatStability(80),'80.0');
 assert.equal(steadyScore(79.983),false); assert.equal(steadyScore(80),true);
 
@@ -86,6 +91,10 @@ while(!complete(suboptimal)) {
 assert(score(suboptimal)<100); assert(validateShotformSession(suboptimal));
 assert(!validateShotformSession({...suboptimal,previous:null}));
 assert(!validateShotformSession({...suboptimal,bestScore:100}));
+const roundTwo=nextShotformRound(suboptimal);
+assert(validateShotformSession(roundTwo));
+assert(!validateShotformSession({...roundTwo,bestScore:99}),"a best score the formula cannot produce is rejected");
+assert.equal(loadShotformSession(()=>({getItem:()=>JSON.stringify({...roundTwo,bestScore:99}),setItem(){}})).restored,false,"an impossible best score recovers as a new game");
 
 // The ball remains inside the SVG, is continuous at release, and follows a path fixed at release
 for(let n=0;n<24;n++) {

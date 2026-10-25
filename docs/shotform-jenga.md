@@ -10,7 +10,7 @@ Watch the three repetitions, then stage one change using Balance, Elbow, or Foll
 
 All three measured scores must reach 80/100 · Tests are unlimited and the game is untimed · Completion locks the result until Next round · Round score is `min(100, round(100 × minimum adjustments ÷ tested adjustments))` · Completed rounds and best round score are retained
 
-Undo restores the preceding tested controls once, without reducing the tested-adjustment count · Completed rounds stay locked · Replay changes no controls or statistics · While an animation is paused, resume or scrub to its end before adjusting again
+Undo restores the preceding tested controls once, without reducing the tested-adjustment count · After Undo, the score comparison and faint outline return to the starting baseline · Completed rounds stay locked · Replay changes no controls or statistics · While a test animation is paused, resume or scrub to its end before adjusting again
 
 Newly generated rounds 1–3 start with exactly one unstable area, rounds 4–6 with exactly two, and round 7 onward with exactly three · A bounded seeded search retains the two-to-eight-adjustment solution requirement and recent-challenge protection · Existing saved challenges keep their original setup when resumed
 
@@ -46,9 +46,9 @@ The neural model describes this animated game only · It does not analyze upload
 
 ## Progress and accessibility
 
-Version-1 browser storage includes engine identity, challenge seed, random state, controls, pending change, preceding controls, tested count, recent seeds, and round totals · Motion and diagnostic values are reconstructed instead of trusting saved scores · Validation rejects a completed round without its preceding tested controls and checks the first round's saved best score against its actual result · Invalid records recover to a fresh game, and unavailable storage permits in-memory play
+Version-1 browser storage includes engine identity, challenge seed, random state, controls, pending change, preceding controls, tested count, recent seeds, and round totals · Motion and diagnostic values are reconstructed instead of trusting saved scores · Validation checks that undo history is reachable and best scores can be produced by the scoring formula, and checks the first round's saved best score against its actual result · Invalid records recover to a fresh game, and unavailable storage permits in-memory play
 
-A test is persisted before playback, so reloading an interrupted test displays the settled outcome without recounting it · Completion only says it was saved when the write succeeds; otherwise it explains that the result is available for the current visit · Next round moves keyboard focus to its announced round and level · Workspace changes and hidden tabs pause animation · Returning stays paused · Reduced-motion preference disables autoplay and exposes the same manual motion scrubber · All adjustments use standard keyboard-operable buttons with text-and-symbol feedback
+A test is persisted before playback, so reloading an interrupted test displays the settled outcome without recounting it · Completion only says it was saved when the write succeeds; otherwise it explains that the result is available for the current visit · Next round moves keyboard focus to its announced round and level · Workspace changes and hidden tabs pause animation · Resuming a paused test keeps adjustments locked until playback finishes or motion is scrubbed to the end · Reduced-motion preference disables autoplay and exposes the same manual motion scrubber · All adjustments use standard keyboard-operable buttons with text-and-symbol feedback
 
 Data stays on the device · There are no accounts, uploads, paid APIs, sound, new backend endpoints, external inference calls, or runtime training
 
