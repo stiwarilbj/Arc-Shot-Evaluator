@@ -36,9 +36,6 @@ export function AppHeader({
   workspace = "analyzer",
   onWorkspaceChange,
 }: AppHeaderProps) {
-  const [othersOpen, setOthersOpen] = useState(false);
-  const suppressFocus = useRef(false);
-  const othersButton = useRef<HTMLButtonElement>(null);
   return (
     <header className="app-header">
       <button
@@ -78,70 +75,8 @@ export function AppHeader({
           >
             <FlaskConical size={15} /> Counter Lab
           </button>
-          <div
-            className="workspace-others"
-            onMouseEnter={() => setOthersOpen(true)}
-            onMouseLeave={(event) => {
-              if (!event.currentTarget.contains(document.activeElement))
-                setOthersOpen(false);
-            }}
-            onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget))
-                setOthersOpen(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                suppressFocus.current = true;
-                setOthersOpen(false);
-                othersButton.current?.focus();
-                suppressFocus.current = false;
-              }
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setOthersOpen(true);
-                const container = event.currentTarget;
-                setTimeout(
-                  () =>
-                    container
-                      .querySelector<HTMLButtonElement>("[role=menuitem]")
-                      ?.focus(),
-                  0,
-                );
-              }
-            }}
-          >
-            <button
-              ref={othersButton}
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={othersOpen}
-              aria-controls="others-workspace-menu"
-              className={workspace === "jumper" ? "is-active" : ""}
-              onFocus={() => {
-                if (!suppressFocus.current) setOthersOpen(true);
-              }}
-              onClick={() => setOthersOpen(true)}
-            >
-              Others <ChevronDown size={14} />
-            </button>
-            <div
-              className="workspace-others-menu"
-              id="others-workspace-menu"
-              role="menu"
-              hidden={!othersOpen}
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  onWorkspaceChange("jumper");
-                  setOthersOpen(false);
-                }}
-              >
-                Guess the Jumper
-              </button>
-            </div>
-          </div>
+          <WorkspaceMenu label="Games" id="games-workspace-menu" active={workspace === "placeholder"} onSelect={() => onWorkspaceChange("placeholder")} item="Placeholder" />
+          <WorkspaceMenu label="Others" id="others-workspace-menu" active={workspace === "jumper"} onSelect={() => onWorkspaceChange("jumper")} item="Guess the Jumper" />
         </nav>
       ) : null}
       {filename ? (
@@ -193,5 +128,62 @@ export function AppHeader({
         ) : null}
       </div>
     </header>
+  );
+}
+
+function WorkspaceMenu({ label, id, active, item, onSelect }: {
+  label: string;
+  id: string;
+  active: boolean;
+  item: string;
+  onSelect: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const suppressFocus = useRef(false);
+  const button = useRef<HTMLButtonElement>(null);
+  return (
+    <div
+      className="workspace-others"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={(event) => {
+        if (!event.currentTarget.contains(document.activeElement)) setOpen(false);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          suppressFocus.current = true;
+          setOpen(false);
+          button.current?.focus();
+          suppressFocus.current = false;
+        }
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setOpen(true);
+          const container = event.currentTarget;
+          setTimeout(() => container.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus(), 0);
+        }
+      }}
+    >
+      <button
+        ref={button}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={id}
+        className={active ? "is-active" : ""}
+        onFocus={() => { if (!suppressFocus.current) setOpen(true); }}
+        onClick={() => setOpen(true)}
+      >
+        {label} <ChevronDown size={14} />
+      </button>
+      <div className="workspace-others-menu" id={id} role="menu" hidden={!open}>
+        <button type="button" role="menuitem" onClick={() => { onSelect(); setOpen(false); }}>
+          {item}
+        </button>
+      </div>
+    </div>
   );
 }

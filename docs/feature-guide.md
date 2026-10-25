@@ -4,6 +4,10 @@
 
 This guide contains detailed workspace behavior, local setup, development checks, and technical references
 
+## Games
+
+Open **Games → Placeholder** between Counter Lab and Others for the current blank games page · The menu supports hover, click, keyboard focus, and mobile tap · Its `#games/placeholder` link supports reloads and browser Back/Forward on both build targets
+
 ## Shot Analyzer
 
 ### Upload and review

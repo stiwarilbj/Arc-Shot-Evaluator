@@ -15,6 +15,8 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 | [Counter Lab](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#counter-lab)          | Test defenses, follow recorded openings through a possession, compare repairs, and replay a defender’s dilemma |
 | [Others → Guess the Jumper](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#jumper) | Mask and edit your own jumpshot videos, keep a private clip library, and guess the shooter from their motion  |
 
+**Games → Placeholder** opens a blank page reserved for future games · Find Games between Counter Lab and Others
+
 ## More details
 
 - [Feature and setup guide](docs/feature-guide.md)

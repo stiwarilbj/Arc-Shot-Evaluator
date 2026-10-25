@@ -1259,7 +1259,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .app-header .header-actions { grid-column: 2; grid-row: 1; }
   .guide-trigger { width: 34px; min-width: 34px; padding: 0; }
   .guide-trigger span { display: none; }
-  .workspace-nav { grid-column: 1 / -1; grid-row: 2; }
+  .workspace-nav { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; height: auto; }
+  .workspace-nav button { padding-left: 3px; padding-right: 3px; gap: 3px; }
+  .workspace-nav button svg { width: 12px; height: 12px; }
   .playbook-page { width: calc(100% - 16px); }
   .play-name-input-wrap { width: min(100%, 340px); }
   .playbook-header-actions { gap: 5px; }
