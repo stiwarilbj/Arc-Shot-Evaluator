@@ -35,9 +35,9 @@ Open **Games → Shotform Jenga** at `#games/shotform-jenga` · Watch an animate
 - Adjust Balance, Elbow, or Follow-through by one bounded step · Cancel pending changes or test before making another adjustment
 - Compare before/after scores and faint previous-motion outlines · Every test in a round uses identical seeded samples, with fixed interactions that can disturb other areas
 - Reach 80/100 in all three areas to complete a round · Unlimited experiments, with the shortest verified solution setting the score benchmark · Undo and replay do not refund tests or award progress
-- Challenges unlock stronger interactions after three and six completed rounds · The bundled neural model highlights an unstable region, while deterministic motion measurements decide results
+- New challenges have one unstable area for rounds 1–3, two for rounds 4–6, and three from round 7 · The bundled neural model highlights an unstable region, while deterministic motion measurements decide results
 - Progress stays privately in this browser on both targets · Reload settles an interrupted test once · Switching workspaces or hiding the tab pauses animation, with explicit resume
-- Reduced motion offers static poses and scrubbing · Model failures use labeled Game motion analysis with retry · No uploads, external inference service, runtime training, audio, or backend endpoint
+- Reduced motion offers static poses and scrubbing · The animated ball stays inside the court through its full flight · Model failures use labeled Game motion analysis with retry · No uploads, external inference service, runtime training, audio, or backend endpoint
 - This is a synthetic motion game, not real-world coaching or video assessment · See the [game and model guide](shotform-jenga.md)
 
 ## Shot Analyzer

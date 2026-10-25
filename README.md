@@ -19,7 +19,7 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 
 **[Games → Swish Tuner](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/swish-tuner)** · Tune angle, power, and backspin with a bundled neural flight estimate, then make three shots to advance
 
-**[Games → Shotform Jenga](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/shotform-jenga)** · Stabilize an animated shot one adjustment at a time, compare three repetitions, and keep balance, elbow, and follow-through steady
+**[Games → Shotform Jenga](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/shotform-jenga)** · Stabilize an animated shot one adjustment at a time, compare three repetitions, and take on two-area then three-area challenges as you advance
 
 ## More details
 

@@ -40,7 +40,7 @@ export function validateShotformSession(value: unknown): value is ShotformSessio
   const history = s.recentSeeds.map((seed, i) => challengeFromSeed(seed, s.round - s.recentSeeds.length + 1 + i));
   if (history.some(c => c.minimum < 2 || c.minimum > 8) || new Set(history.map(c => c.id)).size !== history.length) return false;
   const challenge = currentChallenge(s), done = complete(s);
-  if (s.completed !== s.round - 1 + Number(done) || (!s.completed && s.bestScore !== 0) || (done && (s.tests < challenge.minimum || s.bestScore < score(s)))) return false;
+  if (s.completed !== s.round - 1 + Number(done) || (!s.completed && s.bestScore !== 0) || (done && (s.tests < challenge.minimum || !s.previous || s.bestScore < score(s) || (s.round === 1 && s.bestScore !== score(s))))) return false;
   if (s.controls.reduce((n, v, i) => n + Math.abs(v - challenge.start[i]), 0) > s.tests) return false;
   if (s.previous !== null && (!validControls(s.previous) || s.tests < 1 || stable(measure(challenge, s.previous)) || s.previous.reduce((n, v, i) => n + Math.abs(v - s.controls[i]), 0) !== 1 || s.previous.reduce((n, v, i) => n + Math.abs(v - challenge.start[i]), 0) > s.tests - 1)) return false;
   if (s.pending !== null && (!s.pending || typeof s.pending !== "object" || ![0, 1, 2].includes(s.pending.axis) || ![-1, 1].includes(s.pending.direction) || done || !validControls(pendingControls(s)))) return false;

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { TEST_SECONDS, challengeFromSeed, chooseChallenge, measure, motionFeatures, poseAt, randomStep, solution, stable } from '../frontend/src/features/games/shotformMotion.ts';
+import { TEST_SECONDS, challengeFromSeed, chooseChallenge, formatStability, measure, motionFeatures, poseAt, randomStep, solution, stable, steadyScore, tierFor } from '../frontend/src/features/games/shotformMotion.ts';
+import { BALL_RADIUS, projectCourtPoint, shotBallPosition } from '../frontend/src/features/games/shotformCourt.ts';
 import { complete, createShotformSession, currentChallenge, loadShotformSession, nextShotformRound, saveShotformSession, score, stageNudge, testNudge, undoNudge, validateShotformSession } from '../frontend/src/features/games/shotformSession.ts';
 import { highlightedArea, inferMotion, validMotionModel, verifiedMotionModel } from '../frontend/src/features/games/shotformPrediction.ts';
 assert.equal(TEST_SECONDS,4.8,"Browser range endpoint must unlock a paused test exactly");
@@ -11,6 +12,7 @@ const length = (a,b) => Math.hypot(...a.map((v,i) => v-b[i]));
 for (let n=0;n<180;n++) {
   const round = [1,4,7][n%3], {challenge:c} = chooseChallenge(Math.floor(random()*4294967296),round);
   assert(c.minimum>=2 && c.minimum<=8); assert(!stable(measure(c,c.start)));
+  assert.equal(measure(c,c.start).filter(value=>!steadyScore(value)).length,tierFor(round),'new challenge starts with the tier number of unstable areas');
   assert(stable(measure(c,c.target)));
   { const best=solution(c); assert.equal(best.reduce((sum,v,i)=>sum+Math.abs(v-c.start[i]),0),c.minimum); }
   for(const controls of [c.start,c.target,[-4,-4,-4],[4,4,4],[-4,4,-4],[4,-4,4]]) {
@@ -49,6 +51,60 @@ for(let round=1;round<=12;round++) {
 }
 const fresh=createShotformSession(177);
 assert.equal(nextShotformRound(fresh),fresh);
+assert.equal(formatStability(79.983),'<80'); assert.equal(formatStability(80),'80.0');
+assert.equal(steadyScore(79.983),false); assert.equal(steadyScore(80),true);
+
+// Previously saved v1 challenges remain valid even if they do not match the new tier-count rule
+function legacySession(round) {
+  const seeds=[], ids=new Set();
+  for(let historyRound=round-2;historyRound<=round;historyRound++) {
+    const required=tierFor(historyRound); let selected=null;
+    for(let seed=10000+historyRound*1000;seed<200000;seed++) {
+      const c=challengeFromSeed(seed,historyRound), unstable=measure(c,c.start).filter(value=>!steadyScore(value)).length;
+      if(c.minimum<2||c.minimum>8||ids.has(c.id)||(historyRound===round&&unstable===required))continue;
+      selected={seed,c}; break;
+    }
+    assert(selected,`find an old-style saved challenge for round ${historyRound}`);
+    seeds.push(selected.seed); ids.add(selected.c.id);
+  }
+  const last=seeds.at(-1),c=challengeFromSeed(last,round);
+  const session={...createShotformSession(987),round,challengeSeed:last,rng:last,recentSeeds:seeds,controls:[...c.start],previous:null,pending:null,tests:0,completed:round-1,bestScore:0};
+  assert.notEqual(measure(c,c.start).filter(value=>!steadyScore(value)).length,tierFor(round));
+  assert(validateShotformSession(session));
+}
+legacySession(4); legacySession(7);
+
+// A first completed result must carry the actual immediately preceding tested controls and score
+let suboptimal=createShotformSession(50),goal=solution(currentChallenge(suboptimal));
+const firstAxis=suboptimal.controls.findIndex((v,i)=>v!==goal[i]),firstDirection=Math.sign(goal[firstAxis]-suboptimal.controls[firstAxis]);
+suboptimal=testNudge(stageNudge(suboptimal,{axis:firstAxis,direction:firstDirection}));
+suboptimal=testNudge(stageNudge(suboptimal,{axis:firstAxis,direction:-firstDirection}));
+while(!complete(suboptimal)) {
+  const axis=suboptimal.controls.findIndex((v,i)=>v!==goal[i]);
+  suboptimal=testNudge(stageNudge(suboptimal,{axis,direction:Math.sign(goal[axis]-suboptimal.controls[axis])}));
+}
+assert(score(suboptimal)<100); assert(validateShotformSession(suboptimal));
+assert(!validateShotformSession({...suboptimal,previous:null}));
+assert(!validateShotformSession({...suboptimal,bestScore:100}));
+
+// The ball remains inside the SVG, is continuous at release, and follows a path fixed at release
+for(let n=0;n<24;n++) {
+  const round=[1,4,7][n%3],c=challengeFromSeed(624214377+n,round);
+  for(const controls of [c.start,[-4,-4,-4],[4,4,4],[-4,4,-4],[4,-4,4]]) for(let rep=0;rep<3;rep++) {
+    const atRelease=shotBallPosition(c,controls,rep,.52),justBefore=shotBallPosition(c,controls,rep,.52-1e-7),justAfter=shotBallPosition(c,controls,rep,.52+1e-7);
+    assert(Math.hypot(justBefore[0]-justAfter[0],justBefore[1]-justAfter[1])<.01,'ball path is continuous at release');
+    for(let frame=0;frame<=100;frame++) {
+      const t=frame/100,p=shotBallPosition(c,controls,rep,t);
+      assert(p.every(Number.isFinite));
+      assert(p[0]>=BALL_RADIUS+14&&p[0]<=620-BALL_RADIUS-14&&p[1]>=BALL_RADIUS+14&&p[1]<=440-BALL_RADIUS-14,'ball and radius stay within the court with a safe margin');
+      if(t>.52) {
+        const u=(t-.52)/.48,inv=1-u,target=[470,169],dx=target[0]-atRelease[0],controlY=BALL_RADIUS+14;
+        const expected=[inv**3*atRelease[0]+3*inv**2*u*(atRelease[0]+dx/3)+3*inv*u**2*(atRelease[0]+2*dx/3)+u**3*target[0],inv**3*atRelease[1]+3*inv**2*u*controlY+3*inv*u**2*controlY+u**3*target[1]];
+        assert(Math.hypot(p[0]-expected[0],p[1]-expected[1])<1e-9,'flight remains anchored to the recorded release position');
+      }
+    }
+  }
+}
 for(const corrupt of [null,{}, {...fresh,engine:'old'}, {...fresh,controls:[NaN,0,0]}, {...fresh,tests:-1}, {...fresh,controls:[4,4,4]}, {...fresh,completed:1}, {...fresh,previous:[0,0,0]}, {...fresh,recentSeeds:[]}, {...fresh,pending:{axis:4,direction:1}}, {...fresh,pending:{axis:0,direction:NaN}}]) assert(!validateShotformSession(corrupt));
 for (let axis=0;axis<3;axis++) for (const direction of [-1,1]) {
   const boundary={...fresh,controls:[...fresh.controls]}; boundary.controls[axis]=direction*4;

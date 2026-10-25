@@ -86,6 +86,8 @@ function gridScores(challenge: Challenge, controls: Controls) {
   });
 }
 export const stable = (scores: number[]) => scores.every(n => n >= 80 - 1e-8);
+export const steadyScore = (score: number) => stable([score]);
+export const formatStability = (score: number) => !steadyScore(score) && score.toFixed(1) === "80.0" ? "<80" : score.toFixed(1);
 export function minimumAdjustments(challenge: Challenge): number {
   let best = Infinity;
   for (let a = -4; a <= 4; a++) for (let b = -4; b <= 4; b++) for (let c = -4; c <= 4; c++) {
@@ -116,7 +118,8 @@ export function chooseChallenge(seed: number, round: number, recentIds: string[]
   for (let tries = 0; tries < 256; tries++) {
     let candidate; [seed, candidate] = randomStep(seed);
     const challenge = challengeFromSeed(Math.floor(candidate * 4294967296), round);
-    if (challenge.minimum >= 2 && challenge.minimum <= 8 && !recentIds.includes(challenge.id)) return { challenge, seed };
+    const unstableAreas = measure(challenge, challenge.start).filter(value => !stable([value])).length;
+    if (challenge.minimum >= 2 && challenge.minimum <= 8 && unstableAreas === tierFor(round) && !recentIds.includes(challenge.id)) return { challenge, seed };
   }
   throw new Error("Could not prepare a fresh challenge");
 }
