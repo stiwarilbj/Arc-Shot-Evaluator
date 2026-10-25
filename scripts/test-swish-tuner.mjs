@@ -7,7 +7,10 @@ import { neuralTrajectory, predictShot, validateModel } from "../frontend/src/fe
 
 const model = JSON.parse(readFileSync(new URL("../frontend/src/features/games/swish-model.json", import.meta.url), "utf8"));
 assert.ok(validateModel(model));
-for (const invalid of [null, {}, { ...model, engine: "old" }, { ...model, validation: { samples: 12000, p99Meters: 0.03, maxMeters: 0.04 } }, { ...model, layers: [{ weights: [[NaN]], bias: [0] }] }]) assert.equal(validateModel(invalid), false);
+for (const invalid of [null, [], {}, { ...model, engine: "old" }, { ...model, validation: { samples: 12000, p99Meters: 0.03, maxMeters: 0.04 } },
+  { ...model, validation: null }, { ...model, layers: [{ weights: [[NaN]], bias: [0] }] },
+  { ...model, layers: [null, ...model.layers.slice(1)] },
+  { ...model, layers: [{ ...model.layers[0], weights: [null, ...model.layers[0].weights.slice(1)] }, ...model.layers.slice(1)] }]) assert.equal(validateModel(invalid), false);
 const badWeights = structuredClone(model); badWeights.layers[0].weights[0][0] = Infinity;
 assert.equal(validateModel(badWeights), false);
 
@@ -123,5 +126,13 @@ fake.value = JSON.stringify(pending);
 const restored = sessions.loadSwishSession(() => fake).session;
 assert.equal(restored.attempts, 1);
 assert.equal(restored.makes, pending.makes, "Reload settles the result exactly once");
+const missControls = { angle: 35, power: 0, spin: 0 };
+const missOutcome = p.simulateShot(missControls, setup).outcome;
+assert.notEqual(missOutcome, "Swish");
+const impossibleSavedRound = { ...sessions.createSwishSession(9), round: 2, completed: 1, attempts: 2, makes: 2, totalScore: 100,
+  lastShot: { controls: missControls, outcome: missOutcome } };
+assert.equal(sessions.validateSwishSession(impossibleSavedRound), false, "A final miss needs an attempt beyond the total makes");
+const possibleSavedRound = { ...impossibleSavedRound, attempts: 3 };
+assert.equal(sessions.validateSwishSession(possibleSavedRound), true, "Earlier attempts can account for makes before a miss");
 for (const broken of [null, {}, { ...s, makes: 4 }, { ...s, seed: -1 }, { ...s, recent: [] }, { ...s, completed: 999 }, { ...s, lastShot: { controls: control, outcome: "Swish" } }]) assert.equal(sessions.validateSwishSession(broken), false);
 console.log("Swish Tuner: deterministic physics, swept contacts, descending swishes, spread bounds, catalog solutions, 36 rounds, scoring, locking, storage and model fallback passed");

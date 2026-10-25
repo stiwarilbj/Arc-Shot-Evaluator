@@ -4,15 +4,18 @@ type Layer = { weights: number[][]; bias: number[] };
 export type SwishModel = { version: number; engine: string; architecture: number[]; activation: string; normalization: number[]; residual: string; validation: { samples: number; p99Meters: number; maxMeters: number }; layers: Layer[] };
 export const PREDICTION_TIMES = Array.from({ length: 81 }, (_, i) => i / 20);
 export function validateModel(value: unknown): value is SwishModel {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const m = value as SwishModel;
   if (m.version !== 1 || m.engine !== SWISH_ENGINE || m.activation !== "tanh" || m.residual !== "ballistic-plus-t-squared" ||
-      JSON.stringify(m.architecture) !== "[4,48,48,2]" || JSON.stringify(m.normalization) !== "[13,13,5,4]" ||
-      !m.validation || !Number.isSafeInteger(m.validation.samples) || m.validation.samples < 10000 ||
+      !Array.isArray(m.architecture) || m.architecture.length !== 4 || m.architecture.some((width, i) => width !== [4, 48, 48, 2][i]) ||
+      !Array.isArray(m.normalization) || m.normalization.length !== 4 || m.normalization.some((scale, i) => scale !== [13, 13, 5, 4][i]) ||
+      !m.validation || typeof m.validation !== "object" || Array.isArray(m.validation) ||
+      !Number.isSafeInteger(m.validation.samples) || m.validation.samples < 10000 ||
       !Number.isFinite(m.validation.p99Meters) || m.validation.p99Meters < 0 || m.validation.p99Meters > 0.02 ||
       !Number.isFinite(m.validation.maxMeters) || m.validation.maxMeters < 0 || m.validation.maxMeters > MODEL_ERROR ||
       !Array.isArray(m.layers) || m.layers.length !== 3) return false;
-  return m.layers.every((layer, i) => Array.isArray(layer.weights) && layer.weights.length === m.architecture[i + 1] &&
+  return m.layers.every((layer, i) => !!layer && typeof layer === "object" && !Array.isArray(layer) &&
+    Array.isArray(layer.weights) && layer.weights.length === m.architecture[i + 1] &&
     Array.isArray(layer.bias) && layer.bias.length === m.architecture[i + 1] && layer.bias.every(n => Number.isFinite(n) && Math.abs(n) < 100) &&
     layer.weights.every(row => Array.isArray(row) && row.length === m.architecture[i] && row.every(n => Number.isFinite(n) && Math.abs(n) < 100)));
 }

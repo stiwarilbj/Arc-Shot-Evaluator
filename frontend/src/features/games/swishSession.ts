@@ -41,6 +41,8 @@ export function validateSwishSession(value: unknown): value is SwishSession {
       !Array.isArray(s.recent) || s.recent.length < 1 || s.recent.length > 3 || !s.recent.every(n => integer(n, ROUND_SETUPS.length - 1)) || s.recent.at(-1) !== s.setupIndex) return false;
   if (s.lastShot === null) return s.attempts === 0 && s.makes === 0;
   if (!s.lastShot || !validControls(s.lastShot.controls) || s.attempts < 1) return false;
+  // A miss is itself an attempt, so earlier attempts must account for all current makes
+  if (s.lastShot.outcome !== "Swish" && s.makes >= s.attempts) return false;
   if ((s.makes === 0 && s.lastShot.outcome === "Swish") || (s.makes === 3 && s.lastShot.outcome !== "Swish")) return false;
   if (s.makes === 3 && (s.totalScore < roundScore(s.attempts) || s.totalScore > (s.completed - 1) * 100 + roundScore(s.attempts))) return false;
   return simulateShot(s.lastShot.controls, ROUND_SETUPS[s.setupIndex]).outcome === s.lastShot.outcome;
