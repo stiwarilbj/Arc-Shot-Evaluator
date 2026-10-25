@@ -29,6 +29,8 @@ export const TOTAL_LABELS: Record<TotalKey, string> = {
 };
 export const RECENT_LIMIT = 64;
 const SOURCE_KEYS = ["fgm", "fga", "threeMade", "threeAttempts", "ftm", "fta", "oreb", "dreb"] as const;
+const INTEGER_ERROR_ADJUSTMENTS = [-5, -3, -2, -1, 1, 2, 3, 5] as const;
+const PERCENTAGE_ERROR_ADJUSTMENTS = [-10, -5, -2.5, -1, 1, 2.5, 5, 10] as const;
 const percentage = (made: number, attempts: number) => attempts > 0 ? Math.round(made / attempts * 1000) / 10 : 0;
 export const difficultyFor = (correct: number): Difficulty => correct >= 10 ? 3 : correct >= 5 ? 2 : 1;
 export const keysFor = (difficulty: Difficulty): readonly TotalKey[] => TOTAL_KEYS.slice(0, difficulty === 1 ? 3 : difficulty === 2 ? 4 : 6);
@@ -83,7 +85,11 @@ export function validatePuzzle(value: unknown): value is Puzzle {
     } else if (!integer(result, key === "misses" ? source.fga : key === "rebounds" ? 40 : 160)) return false;
   }
   const errors = keys.filter(key => totals[key] !== correct[key]);
-  return errors.length === 1 && errors[0] === value.wrongField && value.id === identity(source, difficulty, totals);
+  if (errors.length !== 1 || errors[0] !== value.wrongField || value.id !== identity(source, difficulty, totals)) return false;
+  const wrongField = value.wrongField as TotalKey;
+  const difference = totals[wrongField]! - correct[wrongField];
+  const adjustments = wrongField.endsWith("Pct") ? PERCENTAGE_ERROR_ADJUSTMENTS : INTEGER_ERROR_ADJUSTMENTS;
+  return adjustments.some(adjustment => Math.abs(difference - adjustment) < 1e-8);
 }
 
 export function generatePuzzle(correct: number, recentIds: readonly string[] = [], previous?: Puzzle, random: () => number = Math.random): Puzzle {

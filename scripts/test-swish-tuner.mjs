@@ -138,13 +138,43 @@ assert.equal(sessions.validateSwishSession(possibleSavedRound), true, "Earlier a
 
 // Saved history must remain consistent with the score and setup-unlock rules
 const unplayedRound = (round, setupIndex, recent) => ({
-  ...sessions.createSwishSession(77), round, completed: round - 1, totalScore: round - 1,
+  ...sessions.createSwishSession(77), round, completed: round - 1, totalScore: 75 * (round - 1),
   setupIndex, recent,
 });
 assert.equal(sessions.validateSwishSession(unplayedRound(3, 2, [0, 1, 2])), true, "The first setup tier remains available through round three");
 assert.equal(sessions.validateSwishSession(unplayedRound(4, 6, [1, 2, 6])), true, "The middle setup tier opens after round three");
 assert.equal(sessions.validateSwishSession(unplayedRound(7, 11, [5, 6, 11])), true, "The full setup catalog opens after round six");
 assert.equal(sessions.validateSwishSession({ ...unplayedRound(2, 1, [0, 1]), totalScore: 0 }), true, "A completed round can legitimately score zero after more than 600 attempts");
+const attainableScores = new Set(Array.from({ length: 599 }, (_, index) => sessions.roundScore(index + 3)));
+assert.ok(attainableScores.has(0) && attainableScores.has(100));
+for (const score of attainableScores) {
+  assert.equal(sessions.validateSwishSession({ ...unplayedRound(2, 1, [0, 1]), totalScore: score }), true, `One-round score ${score} is reachable`);
+}
+const attainableTwoRoundScores = new Set([...attainableScores].flatMap(first => [...attainableScores].map(second => first + second)));
+for (let score = 0; score <= 200; score++) {
+  assert.equal(sessions.validateSwishSession({ ...unplayedRound(3, 2, [0, 1, 2]), totalScore: score }), attainableTwoRoundScores.has(score), `Two-round aggregate ${score} matches the exact attainable set`);
+}
+let attainableFourRoundScores = new Set([0]);
+for (let round = 0; round < 4; round++) attainableFourRoundScores = new Set([...attainableFourRoundScores].flatMap(total => [...attainableScores].map(score => total + score)));
+for (let score = 0; score <= 400; score++) {
+  assert.equal(sessions.validateSwishSession({ ...unplayedRound(5, 4, [2, 3, 4]), totalScore: score }), attainableFourRoundScores.has(score), `Four-round aggregate ${score} matches the exact attainable set`);
+}
+assert.equal(sessions.validateSwishSession({ ...unplayedRound(2, 1, [0, 1]), totalScore: 99 }), false, "A completed round cannot score 99");
+assert.equal(sessions.validateSwishSession({ ...unplayedRound(3, 2, [0, 1, 2]), totalScore: 199 }), false, "Two completed rounds cannot sum to 199");
+const currentRoundSolution = p.solutionFor(p.ROUND_SETUPS[1]);
+const completedCurrentRound = {
+  ...sessions.createSwishSession(78), round: 2, setupIndex: 1, recent: [0, 1], controls: currentRoundSolution,
+  attempts: 3, makes: 3, completed: 2, totalScore: 175,
+  lastShot: { controls: currentRoundSolution, outcome: "Swish" },
+};
+assert.equal(sessions.validateSwishSession(completedCurrentRound), true, "A completed current round is validated after subtracting its known 100-point score");
+assert.equal(sessions.validateSwishSession({ ...completedCurrentRound, totalScore: 199 }), false, "The prior-round remainder must also be reachable");
+const largeRoundCount = 1_000_000;
+const longReachableHistory = {
+  ...sessions.createSwishSession(79), round: largeRoundCount, completed: largeRoundCount - 1,
+  setupIndex: 11, recent: [9, 10, 11], totalScore: 20 * (largeRoundCount - 1),
+};
+assert.equal(sessions.validateSwishSession(longReachableHistory), true, "Long histories use bounded exact reachability checks");
 const impossibleHistory = [
   { ...s, totalScore: s.completed * 100 + 1 },
   { ...sessions.createSwishSession(3), setupIndex: 1, recent: [1] },
@@ -155,6 +185,8 @@ const impossibleHistory = [
   unplayedRound(7, 11, [10, 6, 11]),
   { ...s, recent: [s.setupIndex] },
   { ...s, recent: [0, s.setupIndex, s.setupIndex] },
+  { ...unplayedRound(2, 1, [0, 1]), totalScore: 99 },
+  { ...unplayedRound(3, 2, [0, 1, 2]), totalScore: 199 },
 ];
 for (const invalid of impossibleHistory) assert.equal(sessions.validateSwishSession(invalid), false, `Reject impossible saved state: ${JSON.stringify({ round: invalid.round, setupIndex: invalid.setupIndex, completed: invalid.completed, totalScore: invalid.totalScore, recent: invalid.recent })}`);
 for (const invalid of impossibleHistory) {

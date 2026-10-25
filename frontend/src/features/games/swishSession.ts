@@ -8,6 +8,32 @@ export type SwishSession = {
 };
 export type SwishStorage = Pick<Storage, "getItem" | "setItem">;
 export const roundScore = (attempts: number) => attempts >= 3 ? Math.min(100, Math.round(300 / attempts)) : 0;
+const MAX_SMALL_SCORE_DEFICIT = 315;
+const attainableRoundScores = new Set(Array.from({ length: 599 }, (_, index) => roundScore(index + 3)));
+const positiveScoreDeficits = [...attainableRoundScores]
+  .map(score => 100 - score)
+  .filter(deficit => deficit > 0 && deficit <= MAX_SMALL_SCORE_DEFICIT)
+  .sort((a, b) => a - b);
+const minimumRoundsForSmallDeficit = Array<number>(MAX_SMALL_SCORE_DEFICIT + 1).fill(Number.POSITIVE_INFINITY);
+minimumRoundsForSmallDeficit[0] = 0;
+for (let deficit = 1; deficit <= MAX_SMALL_SCORE_DEFICIT; deficit++) {
+  for (const coin of positiveScoreDeficits) {
+    if (coin > deficit) break;
+    minimumRoundsForSmallDeficit[deficit] = Math.min(minimumRoundsForSmallDeficit[deficit], minimumRoundsForSmallDeficit[deficit - coin] + 1);
+  }
+}
+function hasReachableCompletedScore(rounds: number, totalScore: number): boolean {
+  if (!Number.isSafeInteger(rounds) || rounds < 0 || !Number.isSafeInteger(totalScore) || totalScore < 0 || totalScore > rounds * 100) return false;
+  if (rounds === 0) return totalScore === 0;
+  const deficit = rounds * 100 - totalScore;
+  if (deficit === 0) return true;
+  if (deficit <= MAX_SMALL_SCORE_DEFICIT) return minimumRoundsForSmallDeficit[deficit] <= rounds;
+
+  // Every deficit from 79 to 100 is attainable (scores 21 down to 0)
+  // Summing k such rounds reaches every integer from 79k through 100k
+  const count = Math.ceil(deficit / 100);
+  return count <= rounds && deficit >= 79 * count;
+}
 export function createSwishSession(seed = Math.floor(Math.random() * 4294967296)): SwishSession {
   return { version: 1, engine: SWISH_ENGINE, seed: seed >>> 0, round: 1, setupIndex: 0, recent: [0], controls: { angle: 52, power: 35, spin: 2 }, attempts: 0, makes: 0, completed: 0, totalScore: 0, lastShot: null };
 }
@@ -48,12 +74,15 @@ export function validateSwishSession(value: unknown): value is SwishSession {
       !s.recent.every(n => integer(n, ROUND_SETUPS.length - 1)) || new Set(s.recent).size !== s.recent.length || s.recent.at(-1) !== s.setupIndex) return false;
   const firstRecentRound = s.round - s.recent.length + 1;
   if (s.recent.some((setupIndex, offset) => setupIndex >= setupLimitForRound(firstRecentRound + offset))) return false;
+  const currentRoundComplete = s.makes === 3;
+  const previousRounds = s.completed - Number(currentRoundComplete);
+  const previousScore = s.totalScore - (currentRoundComplete ? roundScore(s.attempts) : 0);
+  if (!hasReachableCompletedScore(previousRounds, previousScore)) return false;
   if (s.lastShot === null) return s.attempts === 0 && s.makes === 0;
   if (!s.lastShot || !validControls(s.lastShot.controls) || s.attempts < 1) return false;
   // A miss is itself an attempt, so earlier attempts must account for all current makes
   if (s.lastShot.outcome !== "Swish" && s.makes >= s.attempts) return false;
   if ((s.makes === 0 && s.lastShot.outcome === "Swish") || (s.makes === 3 && s.lastShot.outcome !== "Swish")) return false;
-  if (s.makes === 3 && (s.totalScore < roundScore(s.attempts) || s.totalScore > (s.completed - 1) * 100 + roundScore(s.attempts))) return false;
   return simulateShot(s.lastShot.controls, ROUND_SETUPS[s.setupIndex]).outcome === s.lastShot.outcome;
 }
 export function loadSwishSession(storage: () => SwishStorage = () => window.localStorage): { session: SwishSession; storageAvailable: boolean } {

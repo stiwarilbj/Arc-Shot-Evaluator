@@ -7,6 +7,12 @@ function expectedTotals(s) {
   const percent = (m, a) => a ? Number((m / a * 100).toFixed(1)) : 0;
   return {points: s.fgm * 2 + s.threeMade + s.ftm, rebounds: s.oreb + s.dreb, misses: s.fga - s.fgm, fgPct: percent(s.fgm, s.fga), threePct: percent(s.threeMade, s.threeAttempts), ftPct: percent(s.ftm, s.fta)};
 }
+function puzzleWithResult(source, difficulty, wrongField, wrongValue) {
+  const correct = calculateTotals(source);
+  const totals = Object.fromEntries(keysFor(difficulty).map(key => [key, key === wrongField ? wrongValue : correct[key]]));
+  const id = [difficulty, ...["fgm", "fga", "threeMade", "threeAttempts", "ftm", "fta", "oreb", "dreb"].map(key => source[key]), ...keysFor(difficulty).map(key => totals[key])].join(":");
+  return { id, difficulty, source, totals, wrongField };
+}
 const seenFields = new Set();
 for (const correct of [0, 4, 5, 9, 10, 100]) {
   const random = seeded(200 + correct);
@@ -49,6 +55,9 @@ assert.equal(formatTotal('fgPct', 33.3), '33.3%');
 assert.equal(formatTotal('points', 0), '0');
 assert.equal(calculation({fgm:5,fga:9,threeMade:2,threeAttempts:3,ftm:3,fta:4,oreb:1,dreb:4}, 'points'), '2 × (5 − 2) + 3 × 2 + 3 = 15 points');
 assert.deepEqual([0,4,5,9,10].map(difficultyFor), [1,1,2,2,3]);
+const adjustmentFixture = {fgm:4,fga:8,threeMade:2,threeAttempts:3,ftm:2,fta:3,oreb:2,dreb:3};
+assert.equal(validatePuzzle(puzzleWithResult(adjustmentFixture, 1, 'rebounds', 11)), false, "A plausible-range total with an adjustment the generator never uses is rejected");
+assert.equal(validatePuzzle(puzzleWithResult(adjustmentFixture, 3, 'threePct', 67.2)), false, "Percentage errors must use one of the generator's exact adjustments");
 let session = createSession(seeded(13));
 assert.equal(nextRound(session), session);
 for (let n = 0; n < 11; n++) {
@@ -133,6 +142,13 @@ assert.deepEqual(restored.session, session);
 assert.equal(answerRound(restored.session, restored.session.puzzle.wrongField), restored.session);
 store.set(PRACTICE_KEY, JSON.stringify(replayedAsUnanswered));
 assert.equal(loadPractice(() => storage).session.answered, 0, "Impossible saved answer state recovers to a fresh session");
+const impossibleAdjustment = puzzleWithResult(adjustmentFixture, 1, 'rebounds', 11);
+const damagedPuzzleSession = { ...createSession(seeded(808)), puzzle: impossibleAdjustment, recentIds: [impossibleAdjustment.id] };
+assert.equal(validateSession(damagedPuzzleSession), false, "Saved totals cannot use an adjustment outside the puzzle generator's rules");
+store.set(PRACTICE_KEY, JSON.stringify(damagedPuzzleSession));
+const recoveredPuzzleSession = loadPractice(() => storage).session;
+assert.equal(recoveredPuzzleSession.answered, 0);
+assert(validatePuzzle(recoveredPuzzleSession.puzzle), "Invalid saved puzzle adjustments recover to a valid fresh puzzle");
 for (const raw of ['bad JSON', '{}', 'null', 'x'.repeat(32769)]) {
   store.set(PRACTICE_KEY, raw); const result = loadPractice(() => storage); assert(validateSession(result.session));
 }
