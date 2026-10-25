@@ -54,6 +54,7 @@ export function useWorkspaceNavigation() {
       counterlab: "Counter Lab",
       boxscore: "Box-Score Error Hunt · Games",
       swish: "Swish Tuner · Games",
+      shotform: "Shotform Jenga · Games",
       jumper:
         location.jumperView === "create"
           ? "Create · Guess the Jumper"

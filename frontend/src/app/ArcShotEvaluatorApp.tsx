@@ -34,6 +34,7 @@ import type {
 } from "../domain/analysisTypes";
 
 const BoxScoreErrorHunt = lazy(() => import("../features/games/BoxScoreErrorHunt"));
+const ShotformJenga = lazy(() => import("../features/games/ShotformJenga"));
 const SwishTuner = lazy(() => import("../features/games/SwishTuner"));
 const JumperLab = lazy(() => import("../features/jumper/JumperLab"));
 const CounterLab = lazy(() => import("../features/playbook/CounterLab").then((module) => ({ default: module.CounterLab })));
@@ -114,11 +115,13 @@ export function ArcShotEvaluatorApp() {
   // it never mutates a queued or active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
   const [boxScoreHasOpened, setBoxScoreHasOpened] = useState(workspace === "boxscore");
+  const [shotformHasOpened, setShotformHasOpened] = useState(workspace === "shotform");
   const [swishHasOpened, setSwishHasOpened] = useState(workspace === "swish");
   const [jumperHasOpened, setJumperHasOpened] = useState(workspace === "jumper");
   const [counterLabHasOpened, setCounterLabHasOpened] = useState(workspace === "counterlab");
   useEffect(() => {
     if (workspace === "boxscore") setBoxScoreHasOpened(true);
+    if (workspace === "shotform") setShotformHasOpened(true);
     if (workspace === "swish") setSwishHasOpened(true);
     if (workspace === "jumper") setJumperHasOpened(true);
     if (workspace === "counterlab") setCounterLabHasOpened(true);
@@ -518,9 +521,10 @@ export function ArcShotEvaluatorApp() {
   );
 
   return (
-    <div className={`app-shell ${workspace === "home" ? "home-app-shell" : workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : workspace === "boxscore" || workspace === "swish" ? "games-app-shell" : session ? "analysis-session-shell" : ""}`}>
+    <div className={`app-shell ${workspace === "home" ? "home-app-shell" : workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : workspace === "boxscore" || workspace === "swish" || workspace === "shotform" ? "games-app-shell" : session ? "analysis-session-shell" : ""}`}>
       <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} onHome={() => { changeWorkspace("home"); window.scrollTo(0, 0); }} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={changeWorkspace} />
       {workspace === "home" ? <HomePage /> : null}
+      {shotformHasOpened || workspace === "shotform" ? <div className={workspace === "shotform" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "shotform"}><Suspense fallback={<p role="status">Opening Shotform Jenga…</p>}><ShotformJenga active={workspace === "shotform"} /></Suspense></div> : null}
       {swishHasOpened || workspace === "swish" ? <div className={workspace === "swish" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "swish"}><Suspense fallback={<p role="status">Opening Swish Tuner…</p>}><SwishTuner active={workspace === "swish"} /></Suspense></div> : null}
       {boxScoreHasOpened || workspace === "boxscore" ? <div className={workspace === "boxscore" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "boxscore"}><Suspense fallback={<p role="status">Opening Box-Score Error Hunt…</p>}><BoxScoreErrorHunt active={workspace === "boxscore"} /></Suspense></div> : null}
       <div className={workspace === "playbook" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "playbook"}>

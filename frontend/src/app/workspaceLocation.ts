@@ -5,7 +5,8 @@ export type AppWorkspace =
   | "counterlab"
   | "jumper"
   | "boxscore"
-  | "swish";
+  | "swish"
+  | "shotform";
 export type AnalysisView = "overview" | "shot" | "tracking";
 export type JumperView = "guess" | "create" | "clips";
 export type PlaybookView = "edit" | "practice" | "role" | "flipbook";
@@ -42,6 +43,8 @@ export function readWorkspaceHash(
     case "#games/placeholder":
     case "#games/box-score-error-hunt":
       return { ...current, workspace: "boxscore" };
+    case "#games/shotform-jenga":
+      return { ...current, workspace: "shotform" };
     case "#games/swish-tuner":
       return { ...current, workspace: "swish" };
     case "#counter-lab":
@@ -69,6 +72,7 @@ export function readWorkspaceHash(
 }
 
 export function workspaceHash(value: WorkspaceLocation): string {
+  if (value.workspace === "shotform") return "#games/shotform-jenga";
   if (value.workspace === "swish") return "#games/swish-tuner";
   if (value.workspace === "boxscore") return "#games/box-score-error-hunt";
   if (value.workspace === "home") return "#home";

@@ -6,6 +6,7 @@ import {
 } from "../frontend/src/app/workspaceLocation.ts";
 
 const routes = [
+  ["#games/shotform-jenga", { workspace: "shotform" }],
   ["#home", { workspace: "home" }],
   ["#shot-analyzer", { workspace: "analyzer", analysisView: "shot" }],
   [

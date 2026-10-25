@@ -28,6 +28,18 @@ Open **Games → Swish Tuner** at `#games/swish-tuner` · Tune release angle, po
 - A bundled 55 KiB neural model runs locally without an inference service, runtime training, or the video-editor models · If unavailable, a labeled physics preview keeps practice playable and offers retry
 - The solver is simplified two-dimensional game physics, not real shooting analysis · Read the [model, controls, and verification guide](swish-tuner.md)
 
+### Shotform Jenga
+
+Open **Games → Shotform Jenga** at `#games/shotform-jenga` · Watch an animated shooter, stage one adjustment, and test three repetitions
+
+- Adjust Balance, Elbow, or Follow-through by one bounded step · Cancel pending changes or test before making another adjustment
+- Compare before/after scores and faint previous-motion outlines · Every test in a round uses identical seeded samples, with fixed interactions that can disturb other areas
+- Reach 80/100 in all three areas to complete a round · Unlimited experiments, with the shortest verified solution setting the score benchmark · Undo and replay do not refund tests or award progress
+- Challenges unlock stronger interactions after three and six completed rounds · The bundled neural model highlights an unstable region, while deterministic motion measurements decide results
+- Progress stays privately in this browser on both targets · Reload settles an interrupted test once · Switching workspaces or hiding the tab pauses animation, with explicit resume
+- Reduced motion offers static poses and scrubbing · Model failures use labeled Game motion analysis with retry · No uploads, external inference service, runtime training, audio, or backend endpoint
+- This is a synthetic motion game, not real-world coaching or video assessment · See the [game and model guide](shotform-jenga.md)
+
 ## Shot Analyzer
 
 ### Upload and review
