@@ -32,13 +32,20 @@ export function nextSwishRound(session: SwishSession): SwishSession {
   return { ...session, seed, round: session.round + 1, setupIndex, recent: [...session.recent, setupIndex].slice(-3), attempts: 0, makes: 0, lastShot: null };
 }
 const integer = (n: unknown, max = Number.MAX_SAFE_INTEGER): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0 && n <= max;
+function setupLimitForRound(round: number): number {
+  // nextSwishRound chooses the next round's setup using the difficulty of
+  // the round just completed, so the unlocked ranges lag the displayed round
+  return round <= 3 ? 3 : round <= 6 ? 7 : ROUND_SETUPS.length;
+}
 export function validateSwishSession(value: unknown): value is SwishSession {
   if (!value || typeof value !== "object") return false;
   const s = value as SwishSession;
   if (s.version !== 1 || s.engine !== SWISH_ENGINE || !integer(s.seed, 4294967295) || !integer(s.round, 1000000) || s.round < 1 ||
       !integer(s.setupIndex, ROUND_SETUPS.length - 1) || !validControls(s.controls) || !integer(s.attempts, 1000000) || !integer(s.makes, 3) || s.makes > s.attempts ||
       !integer(s.completed) || s.completed !== s.round - (s.makes === 3 ? 0 : 1) || !integer(s.totalScore, s.completed * 100) ||
-      !Array.isArray(s.recent) || s.recent.length < 1 || s.recent.length > 3 || !s.recent.every(n => integer(n, ROUND_SETUPS.length - 1)) || s.recent.at(-1) !== s.setupIndex) return false;
+      s.setupIndex >= setupLimitForRound(s.round) || (s.round === 1 && s.setupIndex !== 0) ||
+      !Array.isArray(s.recent) || s.recent.length !== Math.min(s.round, 3) ||
+      !s.recent.every(n => integer(n, ROUND_SETUPS.length - 1)) || new Set(s.recent).size !== s.recent.length || s.recent.at(-1) !== s.setupIndex) return false;
   if (s.lastShot === null) return s.attempts === 0 && s.makes === 0;
   if (!s.lastShot || !validControls(s.lastShot.controls) || s.attempts < 1) return false;
   // A miss is itself an attempt, so earlier attempts must account for all current makes

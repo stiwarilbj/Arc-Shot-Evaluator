@@ -129,10 +129,35 @@ assert.equal(restored.makes, pending.makes, "Reload settles the result exactly o
 const missControls = { angle: 35, power: 0, spin: 0 };
 const missOutcome = p.simulateShot(missControls, setup).outcome;
 assert.notEqual(missOutcome, "Swish");
-const impossibleSavedRound = { ...sessions.createSwishSession(9), round: 2, completed: 1, attempts: 2, makes: 2, totalScore: 100,
-  lastShot: { controls: missControls, outcome: missOutcome } };
+const secondSetupMiss = p.simulateShot(missControls, p.ROUND_SETUPS[1]).outcome;
+const impossibleSavedRound = { ...sessions.createSwishSession(9), round: 2, setupIndex: 1, recent: [0, 1], completed: 1, attempts: 2, makes: 2, totalScore: 100,
+  lastShot: { controls: missControls, outcome: secondSetupMiss } };
 assert.equal(sessions.validateSwishSession(impossibleSavedRound), false, "A final miss needs an attempt beyond the total makes");
 const possibleSavedRound = { ...impossibleSavedRound, attempts: 3 };
 assert.equal(sessions.validateSwishSession(possibleSavedRound), true, "Earlier attempts can account for makes before a miss");
+
+// Saved history must remain consistent with the score and setup-unlock rules
+const unplayedRound = (round, setupIndex, recent) => ({
+  ...sessions.createSwishSession(77), round, completed: round - 1, totalScore: round - 1,
+  setupIndex, recent,
+});
+assert.equal(sessions.validateSwishSession(unplayedRound(3, 2, [0, 1, 2])), true, "The first setup tier remains available through round three");
+assert.equal(sessions.validateSwishSession(unplayedRound(4, 6, [1, 2, 6])), true, "The middle setup tier opens after round three");
+assert.equal(sessions.validateSwishSession(unplayedRound(7, 11, [5, 6, 11])), true, "The full setup catalog opens after round six");
+assert.equal(sessions.validateSwishSession({ ...unplayedRound(2, 1, [0, 1]), totalScore: 0 }), true, "A completed round can legitimately score zero after more than 600 attempts");
+const impossibleHistory = [
+  { ...s, totalScore: s.completed * 100 + 1 },
+  { ...sessions.createSwishSession(3), setupIndex: 1, recent: [1] },
+  unplayedRound(2, 3, [0, 3]),
+  unplayedRound(3, 3, [0, 1, 3]),
+  unplayedRound(4, 7, [0, 1, 7]),
+  { ...s, recent: [s.setupIndex] },
+  { ...s, recent: [0, s.setupIndex, s.setupIndex] },
+];
+for (const invalid of impossibleHistory) assert.equal(sessions.validateSwishSession(invalid), false, `Reject impossible saved state: ${JSON.stringify({ round: invalid.round, setupIndex: invalid.setupIndex, completed: invalid.completed, totalScore: invalid.totalScore, recent: invalid.recent })}`);
+for (const invalid of impossibleHistory) {
+  fake.value = JSON.stringify(invalid);
+  assert.equal(sessions.loadSwishSession(() => fake).session.round, 1, "Impossible persisted progress safely starts a fresh session");
+}
 for (const broken of [null, {}, { ...s, makes: 4 }, { ...s, seed: -1 }, { ...s, recent: [] }, { ...s, completed: 999 }, { ...s, lastShot: { controls: control, outcome: "Swish" } }]) assert.equal(sessions.validateSwishSession(broken), false);
 console.log("Swish Tuner: deterministic physics, swept contacts, descending swishes, spread bounds, catalog solutions, 36 rounds, scoring, locking, storage and model fallback passed");
