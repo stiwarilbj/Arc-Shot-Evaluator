@@ -4,7 +4,7 @@
 
 [![ARCade Hoops: See your game from every angle · Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper](frontend/public/assets/arcade-hoops-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
 
-ARCade Hoops is a free basketball toolkit for reviewing shooting footage, designing plays, testing defenses, and making private silhouette clips and quizzes · Use it in the browser or run the downloaded app for full local shot analysis and video processing
+ARCade Hoops is a free basketball toolkit for reviewing shooting footage, designing plays, testing defenses, playing quick basketball games, and making private silhouette clips and quizzes · Use it in the browser or run the downloaded app for full local shot analysis and video processing
 
 ## Find your tool
 
@@ -15,7 +15,7 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 | [Counter Lab](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#counter-lab)          | Test defenses, follow recorded openings through a possession, compare repairs, and replay a defender’s dilemma |
 | [Others → Guess the Jumper](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#jumper) | Mask and edit your own jumpshot videos, keep a private clip library, and guess the shooter from their motion  |
 
-**Games → Placeholder** opens a blank page reserved for future games · Find Games between Counter Lab and Others
+**[Games → Box-Score Error Hunt](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/box-score-error-hunt)** · Find the wrong total in fictional stat lines, build a streak, and unlock shooting percentages in endless practice
 
 ## More details
 

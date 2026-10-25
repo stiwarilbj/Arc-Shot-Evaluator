@@ -75,7 +75,7 @@ export function AppHeader({
           >
             <FlaskConical size={15} /> Counter Lab
           </button>
-          <WorkspaceMenu label="Games" id="games-workspace-menu" active={workspace === "placeholder"} onSelect={() => onWorkspaceChange("placeholder")} item="Placeholder" />
+          <WorkspaceMenu label="Games" id="games-workspace-menu" active={workspace === "boxscore"} onSelect={() => onWorkspaceChange("boxscore")} item="Box-Score Error Hunt" />
           <WorkspaceMenu label="Others" id="others-workspace-menu" active={workspace === "jumper"} onSelect={() => onWorkspaceChange("jumper")} item="Guess the Jumper" />
         </nav>
       ) : null}

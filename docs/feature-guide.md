@@ -6,7 +6,13 @@ This guide contains detailed workspace behavior, local setup, development checks
 
 ## Games
 
-Open **Games → Placeholder** between Counter Lab and Others for the current blank games page · The menu supports hover, click, keyboard focus, and mobile tap · Its `#games/placeholder` link supports reloads and browser Back/Forward on both build targets
+Open **Games → Box-Score Error Hunt** between Counter Lab and Others · Its `#games/box-score-error-hunt` link supports reloads and browser Back/Forward on both build targets; old Placeholder links redirect here
+
+- Inspect a fictional player’s fixed source stats and select the single incorrect calculated total · Shots are shown as made / attempted, and field goals include three-pointers
+- Each round starts with points, total rebounds, and missed field goals · After five correct answers, rounds include field-goal percentage; after ten, three-point and free-throw percentages join the mix · Percentages are rounded to one decimal place
+- Your first answer locks the round and reveals the correct calculation · Choose Next round for another stat line · Practice is untimed, with accuracy, correct/answered totals, current streak, and best streak
+- Progress and the current round are saved privately in this browser, including in the downloaded app · Switching tools preserves the game · If browser storage is unavailable, practice continues for the current visit
+- Restart practice resets the score, streak, difficulty, and current puzzle after confirmation · The game uses exact browser mathematics, no API, account, model download, or backend service
 
 ## Shot Analyzer
 

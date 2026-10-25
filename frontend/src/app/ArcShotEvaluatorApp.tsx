@@ -33,6 +33,7 @@ import type {
   VideoMode,
 } from "../domain/analysisTypes";
 
+const BoxScoreErrorHunt = lazy(() => import("../features/games/BoxScoreErrorHunt"));
 const JumperLab = lazy(() => import("../features/jumper/JumperLab"));
 const CounterLab = lazy(() => import("../features/playbook/CounterLab").then((module) => ({ default: module.CounterLab })));
 
@@ -111,9 +112,11 @@ export function ArcShotEvaluatorApp() {
   // The selected analysis depth is captured into each queue item so changing
   // it never mutates a queued or active job.
   const [shotMode, setShotMode] = useState<ShotMode>("free_throw");
+  const [boxScoreHasOpened, setBoxScoreHasOpened] = useState(workspace === "boxscore");
   const [jumperHasOpened, setJumperHasOpened] = useState(workspace === "jumper");
   const [counterLabHasOpened, setCounterLabHasOpened] = useState(workspace === "counterlab");
   useEffect(() => {
+    if (workspace === "boxscore") setBoxScoreHasOpened(true);
     if (workspace === "jumper") setJumperHasOpened(true);
     if (workspace === "counterlab") setCounterLabHasOpened(true);
   }, [workspace]);
@@ -512,10 +515,10 @@ export function ArcShotEvaluatorApp() {
   );
 
   return (
-    <div className={`app-shell ${workspace === "home" ? "home-app-shell" : workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : session ? "analysis-session-shell" : ""}`}>
+    <div className={`app-shell ${workspace === "home" ? "home-app-shell" : workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : workspace === "boxscore" ? "box-hunt-app-shell" : session ? "analysis-session-shell" : ""}`}>
       <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} onHome={() => { changeWorkspace("home"); window.scrollTo(0, 0); }} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={changeWorkspace} />
       {workspace === "home" ? <HomePage /> : null}
-      {workspace === "placeholder" ? <main aria-label="Games placeholder" /> : null}
+      {boxScoreHasOpened || workspace === "boxscore" ? <div className={workspace === "boxscore" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "boxscore"}><Suspense fallback={<p role="status">Opening Box-Score Error Hunt…</p>}><BoxScoreErrorHunt active={workspace === "boxscore"} /></Suspense></div> : null}
       <div className={workspace === "playbook" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "playbook"}>
         <PlaybookBoard active={workspace === "playbook"} view={playbookView} rolePlayerId={rolePlayerId} onViewChange={changePlaybookView} onTestInCounterLab={testInCounterLab} onDraftChange={setCounterLabPlay} requestedPlay={playbookRequest} />
       </div>
