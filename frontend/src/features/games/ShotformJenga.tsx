@@ -101,7 +101,7 @@ export default function ShotformJenga({ active }: { active: boolean }) {
       <div className="sj-insight" role="status">{done ? "✓ All three parts are steady" : `◎ Inspect ${LABELS[AREAS[area]].toLowerCase()} across all three repetitions`}</div>
       <div className="sj-playback"><button type="button" disabled={reduced} onClick={() => { if (playing) setPlaying(false); else resume(); }}>{playing ? "Pause" : "Resume"}</button><button type="button" onClick={() => { if (!busyRef.current) animate(); }} disabled={busy}>Replay test</button><label>Motion <input aria-label="Motion time" type="range" min="0" max={TEST_SECONDS} step="0.01" value={time} onChange={e => scrub(Number(e.target.value))} /></label><output>{time.toFixed(1)} s</output></div>
       {reduced && <p className="sj-help">Reduced motion · Scrub to inspect static poses across three repetitions</p>}
-      {busy && !playing && <p className="sj-help">Test paused · Resume or scrub to the end before your next adjustment</p>}
+      {busy && !playing && <p className="sj-help">Motion paused · Resume or scrub to the end before your next adjustment</p>}
       <p className="sj-help">{comparison ? `Faint outline compares the ${session.previous ? "previous test" : "starting baseline"} at the same phase` : "Scores compare with the starting baseline"} · Each round reuses the same three variation samples</p>
     </section><section className="sj-controls" aria-label="Adjust shooting motion">
       <h2>Keep every score at 80+</h2><p className="sj-help">Change one part, then test the whole motion · Changes can affect other areas</p>

@@ -10,7 +10,7 @@ Watch the three repetitions, then stage one change using Balance, Elbow, or Foll
 
 All three measured scores must reach 80/100 · Tests are unlimited and the game is untimed · Completion locks the result until Next round · Round score is `min(100, round(100 × minimum adjustments ÷ tested adjustments))` · Completed rounds and best round score are retained
 
-Undo restores the preceding tested controls once, without reducing the tested-adjustment count · After Undo, the score comparison and faint outline return to the starting baseline · Completed rounds stay locked · Replay changes no controls or statistics · While a test animation is paused, resume or scrub to its end before adjusting again
+Undo restores the preceding tested controls once, without reducing the tested-adjustment count · After Undo, the score comparison and faint outline return to the starting baseline · Completed rounds stay locked · Replay changes no controls or statistics · While motion playback is paused, resume or scrub to its end before adjusting again
 
 Newly generated rounds 1–3 start with exactly one unstable area, rounds 4–6 with exactly two, and round 7 onward with exactly three · A bounded seeded search retains the two-to-eight-adjustment solution requirement and recent-challenge protection · Existing saved challenges keep their original setup when resumed
 
