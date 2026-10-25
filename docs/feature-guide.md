@@ -6,6 +6,8 @@ This guide contains detailed workspace behavior, local setup, development checks
 
 ## Games
 
+### Box-Score Error Hunt
+
 Open **Games → Box-Score Error Hunt** between Counter Lab and Others · Its `#games/box-score-error-hunt` link supports reloads and browser Back/Forward on both build targets; old Placeholder links redirect here
 
 - Inspect a fictional player’s fixed source stats and select the single incorrect calculated total · Shots are shown as made / attempted, and field goals include three-pointers
@@ -13,6 +15,18 @@ Open **Games → Box-Score Error Hunt** between Counter Lab and Others · Its `#
 - Your first answer locks the round and reveals the correct calculation · Choose Next round for another stat line · Practice is untimed, with accuracy, correct/answered totals, current streak, and best streak
 - Progress and the current round are saved privately in this browser, including in the downloaded app · Switching tools preserves the game · If browser storage is unavailable, practice continues for the current visit
 - Restart practice resets the score, streak, difficulty, and current puzzle after confirmation · The game uses exact browser mathematics, no API, account, model download, or backend service
+
+### Swish Tuner
+
+Open **Games → Swish Tuner** at `#games/swish-tuner` · Tune release angle, power, and backspin, then press Shoot to test the combination
+
+- The dashed neural estimate updates as controls change · The shaded band includes small, disclosed release variation and a conservative model-error allowance · The blue trace shows the actual shot
+- Make three clean shots to complete a round, with unlimited attempts · Rim and backboard contacts are misses · Each round earns `round(300 ÷ attempts)` points, up to 100
+- Rounds vary distance and sometimes height within a catalog checked for forgiving solutions · Nonstandard heights are labeled Challenge height · Previous settings carry into the next round
+- Controls lock during flight · Pause or resume a shot, and switch tools without losing progress · Leaving the game or hiding the browser pauses flight until explicitly resumed
+- Progress stays privately in the browser on both targets · Reload settles an interrupted shot once · Restart practice clears the session after confirmation · Blocked storage permits in-memory play
+- A bundled 55 KiB neural model runs locally without an inference service, runtime training, or the video-editor models · If unavailable, a labeled physics preview keeps practice playable and offers retry
+- The solver is simplified two-dimensional game physics, not real shooting analysis · Read the [model, controls, and verification guide](swish-tuner.md)
 
 ## Shot Analyzer
 

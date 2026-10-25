@@ -75,8 +75,11 @@ export function AppHeader({
           >
             <FlaskConical size={15} /> Counter Lab
           </button>
-          <WorkspaceMenu label="Games" id="games-workspace-menu" active={workspace === "boxscore"} onSelect={() => onWorkspaceChange("boxscore")} item="Box-Score Error Hunt" />
-          <WorkspaceMenu label="Others" id="others-workspace-menu" active={workspace === "jumper"} onSelect={() => onWorkspaceChange("jumper")} item="Guess the Jumper" />
+          <WorkspaceMenu label="Games" id="games-workspace-menu" items={[
+            { label: "Box-Score Error Hunt", active: workspace === "boxscore", onSelect: () => onWorkspaceChange("boxscore") },
+            { label: "Swish Tuner", active: workspace === "swish", onSelect: () => onWorkspaceChange("swish") },
+          ]} />
+          <WorkspaceMenu label="Others" id="others-workspace-menu" items={[{ label: "Guess the Jumper", active: workspace === "jumper", onSelect: () => onWorkspaceChange("jumper") }]} />
         </nav>
       ) : null}
       {filename ? (
@@ -131,12 +134,10 @@ export function AppHeader({
   );
 }
 
-function WorkspaceMenu({ label, id, active, item, onSelect }: {
+function WorkspaceMenu({ label, id, items }: {
   label: string;
   id: string;
-  active: boolean;
-  item: string;
-  onSelect: () => void;
+  items: { label: string; active: boolean; onSelect: () => void }[];
 }) {
   const [open, setOpen] = useState(false);
   const suppressFocus = useRef(false);
@@ -159,11 +160,18 @@ function WorkspaceMenu({ label, id, active, item, onSelect }: {
           button.current?.focus();
           suppressFocus.current = false;
         }
-        if (event.key === "ArrowDown") {
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
           event.preventDefault();
           setOpen(true);
           const container = event.currentTarget;
-          setTimeout(() => container.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus(), 0);
+          const key = event.key;
+          setTimeout(() => {
+            if (container.querySelector<HTMLElement>("[role=menu]")?.hidden !== false) return;
+            const entries = Array.from(container.querySelectorAll<HTMLButtonElement>("[role=menuitem]"));
+            const current = entries.indexOf(document.activeElement as HTMLButtonElement);
+            const next = key === "Home" ? 0 : key === "End" ? entries.length - 1 : key === "ArrowUp" ? (current <= 0 ? entries.length - 1 : current - 1) : (current + 1) % entries.length;
+            entries[next]?.focus();
+          }, 0);
         }
       }}
     >
@@ -173,16 +181,16 @@ function WorkspaceMenu({ label, id, active, item, onSelect }: {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={id}
-        className={active ? "is-active" : ""}
+        className={items.some(item => item.active) ? "is-active" : ""}
         onFocus={() => { if (!suppressFocus.current) setOpen(true); }}
         onClick={() => setOpen(true)}
       >
         {label} <ChevronDown size={14} />
       </button>
       <div className="workspace-others-menu" id={id} role="menu" hidden={!open}>
-        <button type="button" role="menuitem" onClick={() => { onSelect(); setOpen(false); }}>
-          {item}
-        </button>
+        {items.map(item => <button key={item.label} type="button" role="menuitem" aria-current={item.active ? "page" : undefined} onClick={() => { item.onSelect(); setOpen(false); }}>
+          {item.label}
+        </button>)}
       </div>
     </div>
   );

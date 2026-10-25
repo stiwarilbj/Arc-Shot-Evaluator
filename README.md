@@ -17,6 +17,8 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 
 **[Games → Box-Score Error Hunt](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/box-score-error-hunt)** · Find the wrong total in fictional stat lines, build a streak, and unlock shooting percentages in endless practice
 
+**[Games → Swish Tuner](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/swish-tuner)** · Tune angle, power, and backspin with a bundled neural flight estimate, then make three shots to advance
+
 ## More details
 
 - [Feature and setup guide](docs/feature-guide.md)

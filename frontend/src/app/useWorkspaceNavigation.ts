@@ -53,6 +53,7 @@ export function useWorkspaceNavigation() {
       playbook: location.playbookView === "practice" ? "Practice reads · Playbook" : location.playbookView === "role" ? "My Role · Playbook" : location.playbookView === "flipbook" ? "Play Flipbook · Playbook" : "Playbook",
       counterlab: "Counter Lab",
       boxscore: "Box-Score Error Hunt · Games",
+      swish: "Swish Tuner · Games",
       jumper:
         location.jumperView === "create"
           ? "Create · Guess the Jumper"

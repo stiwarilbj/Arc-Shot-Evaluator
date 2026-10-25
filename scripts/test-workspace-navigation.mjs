@@ -22,6 +22,7 @@ const routes = [
   ["#playbook/role/2", { workspace: "playbook", playbookView: "role", rolePlayerId: 2 }],
   ["#counter-lab", { workspace: "counterlab" }],
   ["#games/box-score-error-hunt", { workspace: "boxscore" }],
+  ["#games/swish-tuner", { workspace: "swish" }],
   ["#jumper", { workspace: "jumper", jumperView: "guess" }],
   ["#jumper/create", { workspace: "jumper", jumperView: "create" }],
   ["#jumper/my-clips", { workspace: "jumper", jumperView: "clips" }],
