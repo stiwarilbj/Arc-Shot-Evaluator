@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import threading
@@ -26,6 +27,7 @@ class AnalysisTimingTrace:
         self._last_stage: str | None = None
         self.failed_stage: str | None = None
         self.error_type: str | None = None
+        self.model_checkpoints: dict[str, dict[str, str | int | None]] = {}
         self.status = "running"
 
     @contextmanager
@@ -51,6 +53,13 @@ class AnalysisTimingTrace:
                     self.failed_stage = name
                     self.error_type = type(failure).__name__
 
+    def set_model_checkpoints(
+        self, identities: dict[str, dict[str, str | int | None]]
+    ) -> None:
+        """Retain names and digests only in this local diagnostic record."""
+        with self._lock:
+            self.model_checkpoints = copy.deepcopy(identities)
+
     def finish(self, status: str, error: Exception | None = None) -> None:
         """Record the terminal job state without retaining exception text."""
         with self._lock:
@@ -73,6 +82,7 @@ class AnalysisTimingTrace:
                 "status": self.status,
                 "total_elapsed_ms": round((time.perf_counter() - self._started) * 1000, 3),
                 "stages_ms": stages,
+                "models": copy.deepcopy(self.model_checkpoints),
                 "last_stage": self._last_stage,
                 "failed_stage": self.failed_stage,
                 "error_type": self.error_type,

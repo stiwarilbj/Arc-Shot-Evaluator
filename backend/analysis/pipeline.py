@@ -33,11 +33,12 @@ from backend.analysis.vision_models import (
     color_rim_candidates,
     frame_sharpness,
     merge_ball_candidates,
+    model_checkpoint_identity,
     select_rim_track,
 )
 from backend.prediction.jump_models import JUMP_MODEL_VERSION
 from backend.coaching.retriever import attach_coaching
-from backend.config import ANALYSIS_SESSIONS_DIR, MODEL_WEIGHTS_DIR
+from backend.config import ANALYSIS_SESSIONS_DIR, VISION_MODEL_CHECKPOINTS
 from backend.domain.models import BoundingBox, BallCandidate, FrameDetections, PlayerPose, ShotAnalysis, BallTrackPoint
 
 configure_opencv_threads()
@@ -65,20 +66,36 @@ PREDICTION_STATUS = "unavailable_unvalidated"
 # the heavyweight model calls stay predictable and do not take down the local
 # worker when two videos are submitted together.
 _MODEL_SUITE: BasketballVisionModels | None = None
+_MODEL_CHECKPOINT_IDENTITIES: dict[str, dict[str, str | int | None]] | None = None
 _MODEL_SUITE_LOCK = threading.Lock()
 _MODEL_INFERENCE_LOCK = threading.Lock()
 
 
-def get_shared_vision_models() -> BasketballVisionModels:
-    global _MODEL_SUITE
+def get_shared_vision_models(
+    timing_trace: AnalysisTimingTrace | None = None,
+) -> BasketballVisionModels:
+    global _MODEL_SUITE, _MODEL_CHECKPOINT_IDENTITIES
     if _MODEL_SUITE is None:
         with _MODEL_SUITE_LOCK:
             if _MODEL_SUITE is None:
+                identities = {
+                    role: model_checkpoint_identity(path)
+                    for role, path in VISION_MODEL_CHECKPOINTS.items()
+                }
+                if timing_trace is not None:
+                    timing_trace.set_model_checkpoints(identities)
                 configure_torch_threads()
                 _MODEL_SUITE = BasketballVisionModels(
-                    MODEL_WEIGHTS_DIR / "ebard-yolov8n.pt",
-                    MODEL_WEIGHTS_DIR / "yolo11n-pose.pt",
+                    VISION_MODEL_CHECKPOINTS["ball_rim_detector"],
+                    VISION_MODEL_CHECKPOINTS["pose"],
+                    checkpoint_identities=identities,
                 )
+                _MODEL_CHECKPOINT_IDENTITIES = identities
+    identities = _MODEL_CHECKPOINT_IDENTITIES or getattr(
+        _MODEL_SUITE, "checkpoint_identities", {}
+    )
+    if timing_trace is not None:
+        timing_trace.set_model_checkpoints(identities)
     return _MODEL_SUITE
 
 
@@ -198,7 +215,7 @@ def collect_evidence(
     timing_trace: AnalysisTimingTrace | None = None,
 ) -> list[FrameDetections]:
     with _timing_stage(timing_trace, "model_initialization"):
-        suite = get_shared_vision_models()
+        suite = get_shared_vision_models(timing_trace)
     capture = cv2.VideoCapture(str(path))
     evidence: list[FrameDetections] = []
     deep = processing_mode == "deep"

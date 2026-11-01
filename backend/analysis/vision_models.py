@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import math
 from collections import deque
 from dataclasses import dataclass, field
@@ -18,13 +19,47 @@ COCO_LINKS = (
 )
 
 
+def model_checkpoint_identity(path: Path) -> dict[str, str | int | None]:
+    """Return a private identity for a local checkpoint without retaining its bytes."""
+    digest = hashlib.sha256()
+    size_bytes = 0
+    try:
+        with path.open("rb") as checkpoint:
+            while chunk := checkpoint.read(1024 * 1024):
+                digest.update(chunk)
+                size_bytes += len(chunk)
+    except OSError as error:
+        return {
+            "name": path.name,
+            "sha256": None,
+            "size_bytes": None,
+            "status": "unavailable",
+            "error_type": type(error).__name__,
+        }
+    return {
+        "name": path.name,
+        "sha256": digest.hexdigest(),
+        "size_bytes": size_bytes,
+        "status": "available",
+    }
+
+
 class BasketballVisionModels:
     """Thin adapter around two local Ultralytics checkpoints."""
 
-    def __init__(self, detector_path: Path, pose_path: Path):
+    def __init__(
+        self,
+        detector_path: Path,
+        pose_path: Path,
+        checkpoint_identities: dict[str, dict[str, str | int | None]] | None = None,
+    ):
         from ultralytics import YOLO
         import torch
 
+        self.checkpoint_identities = checkpoint_identities or {
+            "ball_rim_detector": model_checkpoint_identity(detector_path),
+            "pose": model_checkpoint_identity(pose_path),
+        }
         self.detector = YOLO(str(detector_path))
         self.pose = YOLO(str(pose_path))
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
