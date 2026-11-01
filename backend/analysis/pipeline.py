@@ -120,10 +120,23 @@ def probe_video(path: Path) -> VideoMetadata:
     )
 
 
-def read_video_frame_batch(capture: cv2.VideoCapture, size: int) -> list[np.ndarray]:
+def read_video_frame_batch(
+    capture: cv2.VideoCapture,
+    size: int,
+    reusable_buffers: list[np.ndarray] | None = None,
+) -> list[np.ndarray]:
+    """Read into the prior batch's bounded buffers when their layout matches.
+
+    OpenCV reuses a supplied output array when its shape and dtype match the
+    decoded frame, and reallocates it when the stream layout changes.
+    """
     frames: list[np.ndarray] = []
-    for _ in range(size):
-        ok, frame = capture.read()
+    buffers = reusable_buffers if reusable_buffers is not None else []
+    for index in range(size):
+        if index < len(buffers) and buffers[index].flags.c_contiguous:
+            ok, frame = capture.read(buffers[index])
+        else:
+            ok, frame = capture.read()
         if not ok:
             break
         frames.append(frame)
@@ -185,8 +198,11 @@ def collect_evidence(
     previous_gray: np.ndarray | None = None
     frame_evidence_by_fingerprint: dict[bytes, int] = {}
     pose_inferred_fingerprints: set[bytes] = set()
+    reusable_buffers: list[np.ndarray] | None = None
     while True:
-        frames = read_video_frame_batch(capture, batch_size)
+        # The previous batch has completed both model calls and evidence
+        # assembly, so its arrays are now safe decoder output buffers again.
+        frames = read_video_frame_batch(capture, batch_size, reusable_buffers)
         if not frames:
             break
         unique_frames, frame_indexes, unique_fingerprints = _unique_exact_frames(frames)
@@ -271,6 +287,7 @@ def collect_evidence(
         completed += len(frames)
         if progress:
             progress("Tracking ball, rim, and pose", completed, meta.frame_count)
+        reusable_buffers = frames
     capture.release()
     if not evidence:
         raise ValueError("No video frames could be decoded")
