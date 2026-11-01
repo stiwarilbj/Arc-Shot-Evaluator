@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import threading
@@ -17,6 +18,7 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.analysis.diagnostics import AnalysisTimingTrace
 from backend.analysis.pipeline import analyze_video, probe_video, refresh_saved_analysis
 from backend.api.playbooks import router as playbooks_router
 from backend.api.pocket_actions import router as pocket_actions_router
@@ -64,6 +66,7 @@ job_futures: dict[str, Future] = {}
 job_session_dirs: dict[str, Path] = {}
 executor = ThreadPoolExecutor(max_workers=ANALYSIS_WORKERS, thread_name_prefix="arc-analysis")
 jumper_api.configure(executor)
+logger = logging.getLogger(__name__)
 
 
 def _job_state_path(session_dir: Path) -> Path:
@@ -103,6 +106,16 @@ def run_analysis_job(
     court_calibration: dict | None = None,
 ) -> None:
     cancel_event = job_cancel_events[job_id]
+    timing_trace = AnalysisTimingTrace()
+
+    def persist_timing_trace() -> None:
+        try:
+            timing_trace.write(session_dir, job_id)
+        except Exception:
+            # Diagnostics must never turn a completed analysis into a failed
+            # one, or hide the original analysis error.
+            logger.exception("Could not persist private analysis timing trace")
+
     try:
         if cancel_event.is_set():
             raise AnalysisCancelled
@@ -122,20 +135,29 @@ def run_analysis_job(
             processing_mode=processing_mode,
             shot_mode=shot_mode,
             court_calibration=court_calibration,
+            timing_trace=timing_trace,
         )
         if cancel_event.is_set():
             raise AnalysisCancelled
+        timing_trace.finish("completed")
+        persist_timing_trace()
         update_analysis_job(job_id, status="done", stage="Analysis complete", result=result)
     except AnalysisCancelled:
         # A cancelled run is disposable local working data. Remove the
         # partial session so a stopped video never looks like a completed one.
         shutil.rmtree(session_dir, ignore_errors=True)
+        timing_trace.finish("cancelled")
+        persist_timing_trace()
         update_analysis_job(job_id, status="cancelled", stage="Analysis stopped", error=None, result=None)
     except Exception as error:  # surfaced to the local UI
         if cancel_event.is_set():
             shutil.rmtree(session_dir, ignore_errors=True)
+            timing_trace.finish("cancelled")
+            persist_timing_trace()
             update_analysis_job(job_id, status="cancelled", stage="Analysis stopped", error=None, result=None)
         else:
+            timing_trace.finish("failed", error)
+            persist_timing_trace()
             update_analysis_job(job_id, status="error", stage="Analysis failed", error=str(error))
 def register_job(job_id: str, value: dict, session_dir: Path) -> None:
     with jobs_lock:

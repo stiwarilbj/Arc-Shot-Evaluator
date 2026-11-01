@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from backend.runtime import configure_opencv_threads, configure_torch_threads
 import cv2
 import numpy as np
 
+from backend.analysis.diagnostics import AnalysisTimingTrace
 from backend.analysis.geometry import clamp, distance, joint_angle, line_angle_degrees, robust_median, smooth_xy
 from backend.analysis.jump_shot import analyze_jump_shot, assign_player_tracks, distance_from_calibration
 from backend.analysis.video_normalization import normalize_video
@@ -42,6 +44,12 @@ configure_opencv_threads()
 
 
 Progress = Callable[[str, int, int], None]
+
+
+def _timing_stage(
+    trace: AnalysisTimingTrace | None, name: str, *, mark_failure: bool = True
+):
+    return trace.stage(name, mark_failure=mark_failure) if trace is not None else nullcontext()
 
 # Bump this whenever the interpretation of a stored result changes. Saved
 # sessions are immutable evidence; readers may backfill display fields but
@@ -187,8 +195,10 @@ def collect_evidence(
     meta: VideoMetadata,
     progress: Progress | None = None,
     processing_mode: str = "normal",
+    timing_trace: AnalysisTimingTrace | None = None,
 ) -> list[FrameDetections]:
-    suite = get_shared_vision_models()
+    with _timing_stage(timing_trace, "model_initialization"):
+        suite = get_shared_vision_models()
     capture = cv2.VideoCapture(str(path))
     evidence: list[FrameDetections] = []
     deep = processing_mode == "deep"
@@ -202,7 +212,8 @@ def collect_evidence(
     while True:
         # The previous batch has completed both model calls and evidence
         # assembly, so its arrays are now safe decoder output buffers again.
-        frames = read_video_frame_batch(capture, batch_size, reusable_buffers)
+        with _timing_stage(timing_trace, "decoding"):
+            frames = read_video_frame_batch(capture, batch_size, reusable_buffers)
         if not frames:
             break
         unique_frames, frame_indexes, unique_fingerprints = _unique_exact_frames(frames)
@@ -230,12 +241,14 @@ def collect_evidence(
         # between safe concurrent jobs and two workers competing for a second
         # copy of the Metal graph.
         with _MODEL_INFERENCE_LOCK:
-            detected = (
-                suite.infer_detector(detector_frames, deep=deep, fast=fast)
-                if detector_frames
-                else []
-            )
-            pose_results = suite.infer_pose(pose_frames, deep=deep, fast=fast) if pose_frames else []
+            with _timing_stage(timing_trace, "detection"):
+                detected = (
+                    suite.infer_detector(detector_frames, deep=deep, fast=fast)
+                    if detector_frames
+                    else []
+                )
+            with _timing_stage(timing_trace, "pose_inference"):
+                pose_results = suite.infer_pose(pose_frames, deep=deep, fast=fast) if pose_frames else []
         detected_by_frame = dict(zip(detector_frame_indexes, detected, strict=True))
         pose_by_frame = dict(zip(pose_frame_indexes, pose_results, strict=True))
         pose_inferred_fingerprints.update(
@@ -2336,6 +2349,7 @@ def analyze_video(
     processing_mode: str = "normal",
     shot_mode: str = "free_throw",
     court_calibration: dict[str, Any] | None = None,
+    timing_trace: AnalysisTimingTrace | None = None,
 ) -> dict:
     from backend.analysis.video_rendering import render_outputs
 
@@ -2350,17 +2364,21 @@ def analyze_video(
     session_dir.mkdir(parents=True, exist_ok=True)
     uploaded_source = session_dir / f"upload{source.suffix.lower()}"
     if source != uploaded_source.resolve():
-        shutil.copy2(source, uploaded_source)
+        with _timing_stage(timing_trace, "source_copy"):
+            shutil.copy2(source, uploaded_source)
     else:
         uploaded_source = source
     try:
-        source_meta = probe_video(uploaded_source)
+        with _timing_stage(timing_trace, "probing", mark_failure=False):
+            source_meta = probe_video(uploaded_source)
     except ValueError:
         source_meta = None
     if progress:
         progress("Normalizing rotation, codec, and frame timing", 0, 0)
-    local_source = normalize_video(uploaded_source, session_dir / "original.mp4")
-    meta = probe_video(local_source)
+    with _timing_stage(timing_trace, "normalization"):
+        local_source = normalize_video(uploaded_source, session_dir / "original.mp4")
+    with _timing_stage(timing_trace, "probing"):
+        meta = probe_video(local_source)
     if source_meta is not None:
         meta.source_fps = source_meta.fps
         meta.source_frame_count = source_meta.frame_count
@@ -2371,43 +2389,50 @@ def analyze_video(
         meta.slow_motion_unknown = False
     if progress:
         progress("Loading local vision models", 0, meta.frame_count)
-    evidence = collect_evidence(local_source, meta, progress, processing_mode=processing_mode)
-    if progress:
-        progress("Stabilizing rim geometry", meta.frame_count, meta.frame_count)
-    rim_candidates = [item.hoops for item in evidence]
-    rims = select_rim_track(
-        rim_candidates,
-        (meta.width, meta.height),
-        [item.scene_cut for item in evidence],
+    evidence = collect_evidence(
+        local_source, meta, progress, processing_mode=processing_mode, timing_trace=timing_trace
     )
     if progress:
+        progress("Stabilizing rim geometry", meta.frame_count, meta.frame_count)
+    with _timing_stage(timing_trace, "rim_tracking"):
+        rim_candidates = [item.hoops for item in evidence]
+        rims = select_rim_track(
+            rim_candidates,
+            (meta.width, meta.height),
+            [item.scene_cut for item in evidence],
+        )
+    if progress:
         progress("Detecting shot attempts", meta.frame_count, meta.frame_count)
-    shots = find_shots(evidence, rims, meta)
+    with _timing_stage(timing_trace, "shot_finding"):
+        shots = find_shots(evidence, rims, meta)
     if progress:
         progress("Linking player tracks", meta.frame_count, meta.frame_count)
-    player_tracks, frame_tracks = assign_player_tracks(evidence)
-    for shot in shots:
-        shot.shot_mode = shot_mode
-        shot.evidence["shot_mode"] = shot_mode
-    if shot_mode == "jump_shot":
+    with _timing_stage(timing_trace, "player_tracking"):
+        player_tracks, frame_tracks = assign_player_tracks(evidence)
+    with _timing_stage(timing_trace, "scoring"):
         for shot in shots:
-            jump = analyze_jump_shot(
-                shot=shot,
-                evidence=evidence,
-                frame_tracks=frame_tracks,
-                meta=meta,
-                rims=rims,
-                calibration=court_calibration,
-            )
-            shot.evidence.update(jump)
-            # Free-throw form ranges are not a validated jump-shot grade.
-            # Keep descriptive motion components and clear legacy aggregates.
-            for legacy_key in ("mechanics_quality", "follow_through_quality", "trajectory_quality", "shot_quality"):
-                shot.evidence.pop(legacy_key, None)
-            shot.evidence["player_tracks"] = player_tracks
-            shot.evidence["prediction_status"] = "unavailable_unvalidated"
-    quality = build_footage_quality_report(evidence, rims, meta)
-    attach_coaching(shots, quality)
+            shot.shot_mode = shot_mode
+            shot.evidence["shot_mode"] = shot_mode
+        if shot_mode == "jump_shot":
+            for shot in shots:
+                jump = analyze_jump_shot(
+                    shot=shot,
+                    evidence=evidence,
+                    frame_tracks=frame_tracks,
+                    meta=meta,
+                    rims=rims,
+                    calibration=court_calibration,
+                )
+                shot.evidence.update(jump)
+                # Free-throw form ranges are not a validated jump-shot grade.
+                # Keep descriptive motion components and clear legacy aggregates.
+                for legacy_key in ("mechanics_quality", "follow_through_quality", "trajectory_quality", "shot_quality"):
+                    shot.evidence.pop(legacy_key, None)
+                shot.evidence["player_tracks"] = player_tracks
+                shot.evidence["prediction_status"] = "unavailable_unvalidated"
+        quality = build_footage_quality_report(evidence, rims, meta)
+        attach_coaching(shots, quality)
+        summary = summarize_session(shots, shot_mode=shot_mode)
     warnings: list[str] = []
     if not any(rim is not None for rim in rims):
         warnings.append("No stable rim track was found; use a clearer side-on clip")
@@ -2418,16 +2443,17 @@ def analyze_video(
     warnings.extend(quality["messages"])
     if progress:
         progress("Rendering review videos", 0, meta.frame_count)
-    artifacts = render_outputs(
-        local_source,
-        session_dir,
-        meta,
-        shots,
-        rims,
-        evidence,
-        progress,
-        original_source=uploaded_source,
-    )
+    with _timing_stage(timing_trace, "rendering"):
+        artifacts = render_outputs(
+            local_source,
+            session_dir,
+            meta,
+            shots,
+            rims,
+            evidence,
+            progress,
+            original_source=uploaded_source,
+        )
     payload = {
         "analysis_version": ANALYSIS_VERSION,
         "models": {
@@ -2472,17 +2498,18 @@ def analyze_video(
                 "unknown": bool(meta.slow_motion_unknown or not meta.timing_preserved),
             },
         },
-        "summary": summarize_session(shots, shot_mode=shot_mode),
+        "summary": summary,
         "players": player_tracks,
         "quality": quality,
         "shots": [shot.to_public_dict() for shot in shots],
         "warnings": warnings,
         "artifacts": artifacts,
     }
-    (session_dir / "analysis.json").write_text(json.dumps(payload, indent=2))
-    with (session_dir / "shots.jsonl").open("w") as stream:
-        for shot in shots:
-            stream.write(json.dumps(shot.to_public_dict()) + "\n")
+    with _timing_stage(timing_trace, "result_writing"):
+        (session_dir / "analysis.json").write_text(json.dumps(payload, indent=2))
+        with (session_dir / "shots.jsonl").open("w") as stream:
+            for shot in shots:
+                stream.write(json.dumps(shot.to_public_dict()) + "\n")
     return payload
 
 
