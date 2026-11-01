@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 import math
 import shutil
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -51,6 +54,7 @@ PREDICTION_STATUS = "unavailable_unvalidated"
 _MODEL_SUITE: BasketballVisionModels | None = None
 _MODEL_SUITE_LOCK = threading.Lock()
 _MODEL_INFERENCE_LOCK = threading.Lock()
+_FRAME_INFERENCE_CACHE_SIZE = 64
 
 
 def get_shared_vision_models() -> BasketballVisionModels:
@@ -121,6 +125,51 @@ def read_video_frame_batch(capture: cv2.VideoCapture, size: int) -> list[np.ndar
     return frames
 
 
+@dataclass(slots=True)
+class _FrameInferenceCacheEntry:
+    detections: FrameDetections
+    poses: list[PlayerPose] | None = None
+
+
+def _frame_fingerprint(frame: np.ndarray) -> bytes:
+    contiguous = np.ascontiguousarray(frame)
+    digest = hashlib.blake2b(digest_size=32, person=b"arc-shot-frame")
+    digest.update(frame.dtype.str.encode("ascii"))
+    digest.update(np.asarray(frame.shape, dtype=np.int64).tobytes())
+    digest.update(memoryview(contiguous))
+    return digest.digest()
+
+
+def _unique_exact_frames(
+    frames: list[np.ndarray],
+) -> tuple[list[np.ndarray], list[int], list[bytes]]:
+    """Return one image per exact pixel value while preserving input order."""
+    unique: list[np.ndarray] = []
+    frame_indexes: list[int] = []
+    unique_fingerprints: list[bytes] = []
+    by_digest: dict[bytes, list[int]] = {}
+    for frame in frames:
+        key = _frame_fingerprint(frame)
+
+        match = next(
+            (
+                index
+                for index in by_digest.get(key, [])
+                if unique[index].shape == frame.shape
+                and unique[index].dtype == frame.dtype
+                and np.array_equal(unique[index], frame)
+            ),
+            None,
+        )
+        if match is None:
+            match = len(unique)
+            unique.append(frame)
+            unique_fingerprints.append(key)
+            by_digest.setdefault(key, []).append(match)
+        frame_indexes.append(match)
+    return unique, frame_indexes, unique_fingerprints
+
+
 def collect_evidence(
     path: Path,
     meta: VideoMetadata,
@@ -135,25 +184,66 @@ def collect_evidence(
     batch_size = 6 if deep else 12
     completed = 0
     previous_gray: np.ndarray | None = None
+    inference_cache: OrderedDict[bytes, _FrameInferenceCacheEntry] = OrderedDict()
     while True:
         frames = read_video_frame_batch(capture, batch_size)
         if not frames:
             break
+        unique_frames, frame_indexes, unique_fingerprints = _unique_exact_frames(frames)
+        pose_stride = 4 if fast else 1 if deep else 2
+        detector_frame_indexes: list[int] = []
+        for frame_index, fingerprint in enumerate(unique_fingerprints):
+            if fingerprint not in inference_cache:
+                detector_frame_indexes.append(frame_index)
+            else:
+                inference_cache.move_to_end(fingerprint)
+        pose_frame_indexes: list[int] = []
+        pose_frames: list[np.ndarray] = []
+        for offset in range(0, len(frames), pose_stride):
+            frame_index = frame_indexes[offset]
+            fingerprint = unique_fingerprints[frame_index]
+            cached = inference_cache.get(fingerprint)
+            if (
+                frame_index not in pose_frame_indexes
+                and (cached is None or cached.poses is None)
+            ):
+                pose_frame_indexes.append(frame_index)
+                pose_frames.append(unique_frames[frame_index])
+        # Detection runs on every unique frame, including unsampled pose frames
+        detector_frames = [unique_frames[index] for index in detector_frame_indexes]
         # Keep both model calls inside one critical section so a second
         # analysis can be decoding and preparing its next batch without
         # issuing a simultaneous MPS prediction. This is the difference
         # between safe concurrent jobs and two workers competing for a second
         # copy of the Metal graph.
         with _MODEL_INFERENCE_LOCK:
-            detected = suite.infer_detector(frames, deep=deep, fast=fast)
-            pose_stride = 4 if fast else 1 if deep else 2
-            pose_frames = frames[::pose_stride]
-            pose_results = suite.infer_pose(pose_frames, deep=deep, fast=fast)
-        pose_by_offset = {offset: poses for offset, poses in zip(range(0, len(frames), pose_stride), pose_results, strict=True)}
-        for offset, (frame, item) in enumerate(zip(frames, detected, strict=True)):
+            detected = (
+                suite.infer_detector(detector_frames, deep=deep, fast=fast)
+                if detector_frames
+                else []
+            )
+            pose_results = suite.infer_pose(pose_frames, deep=deep, fast=fast) if pose_frames else []
+        for frame_index, item in zip(detector_frame_indexes, detected, strict=True):
+            inference_cache[unique_fingerprints[frame_index]] = _FrameInferenceCacheEntry(item)
+        for frame_index, poses in zip(pose_frame_indexes, pose_results, strict=True):
+            fingerprint = unique_fingerprints[frame_index]
+            cached = inference_cache.get(fingerprint)
+            if cached is None:
+                raise RuntimeError("Pose inference completed without matching frame detections")
+            cached.poses = poses
+            inference_cache.move_to_end(fingerprint)
+        for offset, (frame, frame_index) in enumerate(zip(frames, frame_indexes, strict=True)):
+            cached = inference_cache.get(unique_fingerprints[frame_index])
+            if cached is None:
+                raise RuntimeError("Frame inference result expired before timeline assembly")
+            item = copy.deepcopy(cached.detections)
             item.balls = merge_ball_candidates(item.balls, color_ball_candidates(frame))
             item.hoops = add_model_hoops(color_rim_candidates(frame), item.hoops)
-            item.poses = pose_by_offset.get(offset, [])
+            item.poses = (
+                copy.deepcopy(cached.poses)
+                if offset % pose_stride == 0 and cached.poses is not None
+                else []
+            )
             item.sharpness = frame_sharpness(frame)
             gray = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (96, 54))
             if previous_gray is not None:
@@ -172,6 +262,8 @@ def collect_evidence(
                 )
             previous_gray = gray
             evidence.append(item)
+        while len(inference_cache) > _FRAME_INFERENCE_CACHE_SIZE:
+            inference_cache.popitem(last=False)
         completed += len(frames)
         if progress:
             progress("Tracking ball, rim, and pose", completed, meta.frame_count)
