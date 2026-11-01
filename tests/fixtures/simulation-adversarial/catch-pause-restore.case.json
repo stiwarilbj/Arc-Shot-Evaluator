@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "seed": 1107,
+  "engineVersion": 8,
+  "layout": "transfers",
+  "settings": {
+    "offenseOffBall": "read-react",
+    "defenseScheme": "man-to-man",
+    "defenseStrategy": "off",
+    "offBallIntensity": 70,
+    "automaticActions": {
+      "screen": true,
+      "handoff": true,
+      "pickRoll": true,
+      "offBallScreen": true
+    },
+    "offenseMode": "scripted"
+  },
+  "drawing": {
+    "version": 1,
+    "id": "catch-edits",
+    "name": "Paused edits during a real pass",
+    "defenders_visible": true,
+    "players": [
+      {
+        "id": 1,
+        "x": 30,
+        "y": 70
+      },
+      {
+        "id": 2,
+        "x": 50,
+        "y": 70
+      },
+      {
+        "id": 3,
+        "x": 80,
+        "y": 70
+      }
+    ],
+    "defenders": [
+      {
+        "id": 1,
+        "x": 90,
+        "y": 10
+      }
+    ],
+    "ball": {
+      "x": 30,
+      "y": 70
+    },
+    "arrows": [
+      {
+        "id": "feed",
+        "kind": "pass",
+        "actor_id": 1,
+        "recipient_id": 2,
+        "sequence": 1,
+        "timing": 1,
+        "start": {
+          "x": 30,
+          "y": 70
+        },
+        "end": {
+          "x": 50,
+          "y": 70
+        }
+      },
+      {
+        "id": "drive",
+        "kind": "movement",
+        "actor_id": 2,
+        "sequence": 2,
+        "timing": 2,
+        "start": {
+          "x": 50,
+          "y": 70
+        },
+        "end": {
+          "x": 53,
+          "y": 55
+        }
+      },
+      {
+        "id": "weak-cut",
+        "kind": "movement",
+        "actor_id": 3,
+        "sequence": 1,
+        "timing": 4,
+        "start": {
+          "x": 80,
+          "y": 70
+        },
+        "end": {
+          "x": 82,
+          "y": 60
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "kind": "advance",
+      "steps": 10,
+      "deltaMs": 16.666666666666668
+    },
+    {
+      "kind": "checkpoint"
+    },
+    {
+      "kind": "pause"
+    },
+    {
+      "kind": "advance",
+      "steps": 5,
+      "deltaMs": 33.333333333333336
+    },
+    {
+      "kind": "edit",
+      "team": "player",
+      "id": 2,
+      "point": {
+        "x": 51,
+        "y": 69
+      }
+    },
+    {
+      "kind": "attributes",
+      "id": 2,
+      "rating": 5,
+      "badge": "cutter"
+    },
+    {
+      "kind": "resume"
+    },
+    {
+      "kind": "advance",
+      "steps": 55,
+      "deltaMs": 16.666666666666668
+    },
+    {
+      "kind": "restore"
+    },
+    {
+      "kind": "advance",
+      "steps": 55,
+      "deltaMs": 16.666666666666668
+    },
+    {
+      "kind": "settings",
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "man-to-man",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        },
+        "offenseMode": "scripted"
+      }
+    },
+    {
+      "kind": "finish",
+      "maxSteps": 3000
+    }
+  ]
+}

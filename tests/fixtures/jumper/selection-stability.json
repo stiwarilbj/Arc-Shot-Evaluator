@@ -1,0 +1,13 @@
+{
+ "comparisons":[
+  {"name":"identical body","a":[[70,35,80,180]],"b":[[70,35,80,180]],"stable":true},
+  {"name":"small outline variation","a":[[70,35,80,180]],"b":[[71,36,80,180]],"stable":true},
+  {"name":"clothing fragment","a":[[70,35,80,180]],"b":[[90,80,40,60]],"stable":false},
+  {"name":"other person same area","a":[[70,35,80,180]],"b":[[130,35,80,180]],"stable":false},
+  {"name":"joined person","a":[[70,35,80,180]],"b":[[70,35,120,180]],"stable":false},
+  {"name":"empty","a":[],"b":[],"stable":false},
+  {"name":"exact threshold","a":[[40,40,40,40]],"b":[[40,40,30,40]],"stable":true},
+  {"name":"below threshold","a":[[40,40,40,40]],"b":[[40,40,29,40]],"stable":false}
+ ],
+ "points":[[0.458984375,0.498046875],[0.341796875,0.498046875],[0.400390625,0.580078125]]
+}

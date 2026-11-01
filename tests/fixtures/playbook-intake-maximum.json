@@ -1,0 +1,1019 @@
+{
+  "version": 1,
+  "id": "play-maximal-fixture",
+  "name": "🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀🏀",
+  "created_at": "2026-10-19T00:00:00Z",
+  "updated_at": "2026-10-19T00:00:00Z",
+  "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "defenders_visible": true,
+  "players": [
+    {
+      "id": 1,
+      "x": 99.9999,
+      "y": 0.0001,
+      "ratings": {
+        "threePoint": 5,
+        "midrange": 5,
+        "finishing": 5
+      },
+      "badges": [
+        "catch-and-shoot",
+        "cutter",
+        "deep-range",
+        "off-dribble-creator",
+        "playmaker",
+        "post-scorer",
+        "rim-finisher",
+        "roll-threat",
+        "screen-setter",
+        "slasher"
+      ]
+    },
+    {
+      "id": 2,
+      "x": 99.9999,
+      "y": 0.0001,
+      "ratings": {
+        "threePoint": 5,
+        "midrange": 5,
+        "finishing": 5
+      },
+      "badges": [
+        "catch-and-shoot",
+        "cutter",
+        "deep-range",
+        "off-dribble-creator",
+        "playmaker",
+        "post-scorer",
+        "rim-finisher",
+        "roll-threat",
+        "screen-setter",
+        "slasher"
+      ]
+    },
+    {
+      "id": 3,
+      "x": 99.9999,
+      "y": 0.0001,
+      "ratings": {
+        "threePoint": 5,
+        "midrange": 5,
+        "finishing": 5
+      },
+      "badges": [
+        "catch-and-shoot",
+        "cutter",
+        "deep-range",
+        "off-dribble-creator",
+        "playmaker",
+        "post-scorer",
+        "rim-finisher",
+        "roll-threat",
+        "screen-setter",
+        "slasher"
+      ]
+    },
+    {
+      "id": 4,
+      "x": 99.9999,
+      "y": 0.0001,
+      "ratings": {
+        "threePoint": 5,
+        "midrange": 5,
+        "finishing": 5
+      },
+      "badges": [
+        "catch-and-shoot",
+        "cutter",
+        "deep-range",
+        "off-dribble-creator",
+        "playmaker",
+        "post-scorer",
+        "rim-finisher",
+        "roll-threat",
+        "screen-setter",
+        "slasher"
+      ]
+    },
+    {
+      "id": 5,
+      "x": 99.9999,
+      "y": 0.0001,
+      "ratings": {
+        "threePoint": 5,
+        "midrange": 5,
+        "finishing": 5
+      },
+      "badges": [
+        "catch-and-shoot",
+        "cutter",
+        "deep-range",
+        "off-dribble-creator",
+        "playmaker",
+        "post-scorer",
+        "rim-finisher",
+        "roll-threat",
+        "screen-setter",
+        "slasher"
+      ]
+    }
+  ],
+  "defenders": [
+    {
+      "id": 1,
+      "x": 0.0001,
+      "y": 99.9999,
+      "badges": [
+        "helper",
+        "lockdown",
+        "paint-protector"
+      ]
+    },
+    {
+      "id": 2,
+      "x": 0.0001,
+      "y": 99.9999,
+      "badges": [
+        "helper",
+        "lockdown",
+        "paint-protector"
+      ]
+    },
+    {
+      "id": 3,
+      "x": 0.0001,
+      "y": 99.9999,
+      "badges": [
+        "helper",
+        "lockdown",
+        "paint-protector"
+      ]
+    },
+    {
+      "id": 4,
+      "x": 0.0001,
+      "y": 99.9999,
+      "badges": [
+        "helper",
+        "lockdown",
+        "paint-protector"
+      ]
+    },
+    {
+      "id": 5,
+      "x": 0.0001,
+      "y": 99.9999,
+      "badges": [
+        "helper",
+        "lockdown",
+        "paint-protector"
+      ]
+    }
+  ],
+  "ball": {
+    "x": 99.9999,
+    "y": 0.0001
+  },
+  "arrows": [
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000000",
+      "kind": "pass",
+      "sequence": 1,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "kind": "pass",
+      "sequence": 2,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000002",
+      "kind": "pass",
+      "sequence": 3,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000003",
+      "kind": "pass",
+      "sequence": 4,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000004",
+      "kind": "pass",
+      "sequence": 5,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000005",
+      "kind": "pass",
+      "sequence": 6,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000006",
+      "kind": "pass",
+      "sequence": 7,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000007",
+      "kind": "pass",
+      "sequence": 8,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000008",
+      "kind": "pass",
+      "sequence": 9,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000009",
+      "kind": "pass",
+      "sequence": 10,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000010",
+      "kind": "pass",
+      "sequence": 11,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000011",
+      "kind": "pass",
+      "sequence": 12,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000012",
+      "kind": "pass",
+      "sequence": 13,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000013",
+      "kind": "pass",
+      "sequence": 14,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000014",
+      "kind": "pass",
+      "sequence": 15,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000015",
+      "kind": "pass",
+      "sequence": 16,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000016",
+      "kind": "pass",
+      "sequence": 17,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000017",
+      "kind": "pass",
+      "sequence": 18,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000018",
+      "kind": "pass",
+      "sequence": 19,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000019",
+      "kind": "pass",
+      "sequence": 20,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000020",
+      "kind": "pass",
+      "sequence": 21,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000021",
+      "kind": "pass",
+      "sequence": 22,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000022",
+      "kind": "pass",
+      "sequence": 23,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000023",
+      "kind": "pass",
+      "sequence": 24,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000024",
+      "kind": "pass",
+      "sequence": 25,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000025",
+      "kind": "pass",
+      "sequence": 26,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000026",
+      "kind": "pass",
+      "sequence": 27,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000027",
+      "kind": "pass",
+      "sequence": 28,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000028",
+      "kind": "pass",
+      "sequence": 29,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    },
+    {
+      "id": "0000000000000000000000000000000000000000000000000000000000000029",
+      "kind": "pass",
+      "sequence": 30,
+      "path": "curve",
+      "timing": 3.99,
+      "actor_id": 1,
+      "recipient_id": 2,
+      "screener_id": 3,
+      "handler_id": 4,
+      "cutter_id": 5,
+      "start": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "end": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "control": {
+        "x": 0.0001,
+        "y": 99.9999
+      },
+      "exit_target": {
+        "x": 0.0001,
+        "y": 99.9999
+      }
+    }
+  ]
+}

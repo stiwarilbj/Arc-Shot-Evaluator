@@ -74,7 +74,7 @@ export function AnalysisQueue({
       <div className="queue-topline">
         <div className="queue-heading">
           <div>
-            <span className="section-kicker">ARC workflow</span>
+            <span className="section-kicker">ARCade Hoops workflow</span>
             <h2>Analysis Queue</h2>
           </div>
           <span className="queue-count">{countLabel}</span>

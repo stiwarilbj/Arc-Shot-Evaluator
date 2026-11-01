@@ -5,15 +5,15 @@ export const DEFENSIVE_BADGE_ORDER: DefensiveBadge[] = ["lockdown", "paint-prote
 export const DEFENSIVE_BADGES: Record<DefensiveBadge, { label: string; description: string }> = {
   lockdown: {
     label: "Lockdown",
-    description: "Stays goal-side of a leading scorer, closes out sooner, and recovers closely through screens.",
+    description: "Stays goal-side of a leading scorer, closes out sooner, and recovers closely through screens",
   },
   "paint-protector": {
     label: "Paint protector",
-    description: "Favors interior assignments, protects the lane, and contests nearby finishes.",
+    description: "Favors interior assignments, protects the lane, and contests nearby finishes",
   },
   helper: {
     label: "Helper",
-    description: "Rotates earlier to threaten drives, pressures the ball, then recovers to their assignment.",
+    description: "Rotates earlier to threaten drives, pressures the ball, then recovers to their assignment",
   },
 };
 

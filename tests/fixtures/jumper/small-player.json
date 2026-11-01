@@ -1,0 +1,137 @@
+[
+  {
+    "width": 320,
+    "height": 180,
+    "body": [
+      144,
+      60,
+      154,
+      100
+    ],
+    "name": "same outline",
+    "edit": null,
+    "expected": true
+  },
+  {
+    "width": 320,
+    "height": 180,
+    "body": [
+      144,
+      60,
+      154,
+      100
+    ],
+    "name": "visible fingertip",
+    "edit": [
+      154,
+      62,
+      156,
+      65
+    ],
+    "expected": true
+  },
+  {
+    "width": 320,
+    "height": 180,
+    "body": [
+      144,
+      60,
+      154,
+      100
+    ],
+    "name": "different person",
+    "replace": [
+      160,
+      60,
+      170,
+      100
+    ],
+    "expected": false
+  },
+  {
+    "width": 320,
+    "height": 180,
+    "body": [
+      144,
+      60,
+      154,
+      100
+    ],
+    "name": "missing upper body",
+    "replace": [
+      144,
+      82,
+      154,
+      100
+    ],
+    "expected": false
+  },
+  {
+    "width": 320,
+    "height": 180,
+    "body": [
+      144,
+      60,
+      154,
+      100
+    ],
+    "name": "leaks into crop border",
+    "edge": true,
+    "expected": false
+  },
+  {
+    "width": 320,
+    "height": 180,
+    "body": [
+      144,
+      60,
+      154,
+      100
+    ],
+    "name": "occluded new pixels",
+    "edit": [
+      154,
+      62,
+      160,
+      68
+    ],
+    "occupied": [
+      154,
+      62,
+      160,
+      68
+    ],
+    "expected": false
+  },
+  {
+    "width": 320,
+    "height": 180,
+    "body": [
+      144,
+      60,
+      154,
+      100
+    ],
+    "name": "nonfinite scores",
+    "nan": true,
+    "expected": false
+  },
+  {
+    "width": 320,
+    "height": 180,
+    "body": [
+      144,
+      60,
+      154,
+      100
+    ],
+    "name": "existing occlusion is uncertain",
+    "occupied": [
+      145,
+      60,
+      150,
+      75
+    ],
+    "expected": false
+  }
+]

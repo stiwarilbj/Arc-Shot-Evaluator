@@ -1,0 +1,8 @@
+[
+  {"name":"forward excludes future and current anchors", "frame":10,"reverse":false,"conditions":[[0,0],[10,10],[20,20]],"recent":[[9,9],[10,10],[11,11]],"spatial":[0,9],"pointers":[0,9]},
+  {"name":"reverse excludes earlier and current anchors", "frame":10,"reverse":true,"conditions":[[0,0],[10,10],[20,20]],"recent":[[9,9],[10,10],[11,11]],"spatial":[20,11],"pointers":[20,11]},
+  {"name":"forward rejects mislabeled identities", "frame":10,"reverse":false,"conditions":[[0,0],[5,12]],"recent":[[9,11],[8,8]],"spatial":[0,8],"pointers":[0,8]},
+  {"name":"reverse rejects mislabeled identities", "frame":10,"reverse":true,"conditions":[[20,20],[15,7]],"recent":[[11,9],[12,12]],"spatial":[20,12],"pointers":[20,12]},
+  {"name":"forward has only future or current evidence", "frame":10,"reverse":false,"conditions":[[10,10],[20,20]],"recent":[[10,10],[11,11]],"error":true},
+  {"name":"reverse has only earlier or current evidence", "frame":10,"reverse":true,"conditions":[[10,10],[0,0]],"recent":[[10,10],[9,9]],"error":true}
+]

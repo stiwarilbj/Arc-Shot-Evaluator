@@ -1,0 +1,52 @@
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const {chromium,expect}=require('../frontend/node_modules/@playwright/test');
+// Browser plugin not available. Controlled inference isolates validation/undo UI;
+// actual SAM processing is exercised separately.
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{window.maskingPosts=0;const Original=window.Worker;window.Worker=class extends Original{postMessage(...args){if(args[0]?.kind==='process')window.maskingPosts++;return super.postMessage(...args)}}});
+ await page.route(/\/masking[^/]*\.(?:js|ts)(?:\?.*)?$/,route=>route.fulfill({contentType:'application/javascript',body:"self.onmessage=({data})=>self.postMessage({kind:'error',id:data.id,error:'Controlled inference reached after valid corrections'});"}));
+ let modelRequests=0;
+ page.on('request',r=>{if(/\.onnx|sam2.*\.pt|native_tracker\.json/.test(r.url()))modelRequests++});
+ await page.goto(process.env.JUMPER_URL||'http://127.0.0.1:5177/Arc-Shot-Evaluator/#jumper/create');
+ console.log(page.url(),await page.title());
+ await expect(page.getByRole('heading',{name:'One shot. No clues.'})).toBeVisible();
+ await page.locator('.jumper-upload input').setInputFiles(new URL('../tests/fixtures/jumper/research-short.mp4',import.meta.url).pathname);
+ const image=page.getByAltText('Selected video frame; click to aim a mask point');await image.waitFor();
+ await page.locator('.jumper-corrections summary').click();
+ await page.getByLabel('Find other people automatically',{exact:false}).uncheck();
+ await image.click();await page.getByRole('button',{name:'Place point',exact:true}).click();
+ // A later frame keeps the opening-preview request separate from corrections.
+ await page.getByLabel('Correction frame',{exact:true}).fill('1');
+ await expect(image).toBeVisible();await page.waitForTimeout(500);
+ const box=await image.boundingBox();
+ await image.click({position:{x:box.width/2,y:box.height/2}});
+ await page.getByRole('button',{name:'Place point',exact:true}).click();
+ await page.getByRole('button',{name:'Exclude',exact:true}).click();
+ await image.click({position:{x:box.width/2+.01,y:box.height/2+.01}});
+ await page.getByRole('button',{name:'Place point',exact:true}).click();
+ await page.waitForTimeout(700);
+ const before=await page.evaluate(()=>window.maskingPosts);
+ await page.getByRole('button',{name:'Process clip',exact:true}).click();
+ const error=page.getByRole('alert').filter({hasText:'Include and Exclude points overlap'});
+ await expect(error).toContainText('frame 2, track 1');
+ await expect(error).toContainText('Remove or move');
+ await expect(page.getByRole('button',{name:'Process clip',exact:true})).toBeEnabled();
+ if(await page.evaluate(()=>window.maskingPosts)!==before)throw Error('Conflicting input reached masking worker');
+ if(modelRequests)throw Error('Conflicting flow downloaded inference models');
+ await page.screenshot({path:'/tmp/jumper-conflict-desktop.png',fullPage:false});
+ await page.setViewportSize({width:390,height:844});await error.scrollIntoViewIfNeeded();
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile overflow');
+ await page.screenshot({path:'/tmp/jumper-conflict-mobile.png',fullPage:false});
+ await page.getByRole('button',{name:'Light',exact:true}).click();await error.scrollIntoViewIfNeeded();
+ await page.screenshot({path:'/tmp/jumper-conflict-light.png',fullPage:false});
+ await page.getByRole('button',{name:'Undo correction',exact:true}).click();
+ await page.getByRole('button',{name:'Process clip',exact:true}).click();
+ await expect(page.getByRole('alert').filter({hasText:'Controlled inference reached after valid corrections'})).toBeVisible();
+ if(await page.evaluate(()=>window.maskingPosts)<=before)throw Error('Undo did not restore processable input');
+ if(errors.length)throw Error(errors.join('\n'));
+ console.log('Correction conflict frame/track error, no inference, retained controls, undo recovery, mobile/dark/light: PASS');
+}finally{await browser.close()}

@@ -1,0 +1,17 @@
+[
+  {"name":"stable shot","frames":[{},{},{},{},{}],"cuts":[]},
+  {"name":"bright flash","frames":[{},{},{"offset":90},{},{}],"cuts":[]},
+  {"name":"exposure change","frames":[{},{"gain":0.6},{"gain":0.6},{"gain":0.6}],"cuts":[]},
+  {"name":"clipped white flash","frames":[{},{},{"flat":255},{},{}],"cuts":[]},
+  {"name":"two-frame white flash","frames":[{},{},{"flat":255},{"flat":255},{},{}],"cuts":[]},
+  {"name":"fast horizontal pan","frames":[{},{"x":12},{"x":24},{"x":36},{"x":48}],"cuts":[]},
+  {"name":"fast vertical pan","frames":[{},{"y":7},{"y":14},{"y":21},{"y":28}],"cuts":[]},
+  {"name":"pan with flash","frames":[{},{"x":8},{"x":16,"offset":90},{"x":24},{"x":32}],"cuts":[]},
+  {"name":"different scene same brightness","frames":[{},{},{"seed":5},{"seed":5},{"seed":5}],"cuts":[2]},
+  {"name":"cut followed by pan","frames":[{},{},{"seed":5},{"seed":5,"x":10},{"seed":5,"x":20}],"cuts":[2]},
+  {"name":"brief inserted scene is still cut","frames":[{},{},{"seed":5},{},{},{}],"cuts":[2,3]},
+  {"name":"cut to sustained blank","frames":[{},{},{"flat":0},{"flat":0},{"flat":0}],"cuts":[2]},
+  {"name":"truncated transition needs review","frames":[{},{},{"seed":5}],"cuts":[2]},
+  {"name":"consecutive cuts","frames":[{},{"seed":5},{"seed":5},{"seed":5},{"seed":9},{"seed":9},{"seed":9}],"cuts":[1,4]},
+  {"name":"nonadjacent observations reset history","frames":[{},{"seed":5,"frame":3}],"cuts":[]}
+]

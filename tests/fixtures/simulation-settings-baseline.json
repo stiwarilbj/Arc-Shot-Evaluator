@@ -1,0 +1,1410 @@
+{
+  "randomSample": 0.375,
+  "cases": [
+    {
+      "playIndex": 0,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "e92e9fb60b6f8677e84b04f7d28514bc79fd076d0f1a36ce6cfc29718450cd06",
+      "steps": 316,
+      "dependenciesSha256": "3029bf8a0a2b0bc2849067ded83a8812906fccdb75d75eb72b47c09e54d2608e",
+      "dependenciesSteps": 319,
+      "ballStateSha256": "9c9d12a293fc1e90b4faf2c5b611fa7b7a1da5834de6fcf8e18aa7e000193e8c",
+      "ballStateSteps": 317,
+      "responsibilitiesSha256": "54e16a4d39e6bbb23590da975a041a71a585da8ffa5fa0ff57269592eab65034",
+      "responsibilitiesSteps": 262,
+      "congestionSha256": "7cc127a9551a80a0df74eee47047e9ad31a5fbedec814e6f6611789b645c531a",
+      "congestionSteps": 319,
+      "releaseContextSha256": "f1fe5bcd8395a7d8feddfffaf5c44774102cfbec8eb22095d86824e947e740b8",
+      "releaseContextSteps": 319
+    },
+    {
+      "playIndex": 1,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "bc494925116b9fa5628ea59a119116473ca29fd8e4dc5dbda2d76fa753919b6a",
+      "steps": 316,
+      "dependenciesSha256": "71cdec7ed4d16af26e486e601c5ddde0e643e65c448bd293414c94add5c3a0cd",
+      "dependenciesSteps": 268,
+      "ballStateSha256": "a30eff9340ea3985f21e21405f354da4a3021944aa2ce8a310c0a4b4bc621afc",
+      "ballStateSteps": 269,
+      "responsibilitiesSha256": "52543183ec98c0823dcc4060fec74cf775c7d4350580cd70e862ee2a44765ee1",
+      "responsibilitiesSteps": 293,
+      "congestionSha256": "6d97db254f4871cc3e1c45392736b38779b3afaca4fc03eedc65cc3afa10c310",
+      "congestionSteps": 290,
+      "releaseContextSha256": "32db64bcecc67c2d5d5b6e7e91423b2a038b066311c2c7007308a583995ff0d0",
+      "releaseContextSteps": 290
+    },
+    {
+      "playIndex": 2,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "off",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "bdb4f372311fe3bfc3ce64ddf77439d9e49e3a93e665163d41089cd5433124ac",
+      "steps": 258,
+      "dependenciesSha256": "5e20dbaaa3f15660b28d0df9ee71639e571ebbf1e5e94d9779fc03b5d0e5dbda",
+      "dependenciesSteps": 253,
+      "ballStateSha256": "a729b497cfea26c874ed6cc48f4cfd16cc4c4276f66dc6f65bbad1d218bd22f0",
+      "ballStateSteps": 246,
+      "responsibilitiesSha256": "65273cf8bf8c54ce81728a38681a7276cfc0d206a9ef136710f1f226d618f788",
+      "responsibilitiesSteps": 246,
+      "congestionSha256": "5fa43667e06390bc6014ed6cdaba0b87e692febc34f77506220556620c89f8f2",
+      "congestionSteps": 247,
+      "releaseContextSha256": "4a750d2eaa6f83edf12bf60b76619a33f289c7aea876c06bcbb75be9267ce8bb",
+      "releaseContextSteps": 247
+    },
+    {
+      "playIndex": 3,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "contain",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "63c1d0e5c82205ecb6b432df5c187be912386ad2fd6596b99e8aac7619d072be",
+      "steps": 336,
+      "dependenciesSha256": "d3db78f20b390af25a6002afe8d4ef623d52d609b943b0460a9ef897422c898c",
+      "dependenciesSteps": 288,
+      "ballStateSha256": "068345d1b9fe5dd96d4c386f9e3217f4b05887e7c89a3956fba4c0462b7ebe9b",
+      "ballStateSteps": 288,
+      "responsibilitiesSha256": "ccccf32b9514b8dd8d7eadbb3f645cb647a9f3275942352aab8b129d34163230",
+      "responsibilitiesSteps": 288,
+      "congestionSha256": "1b4f477460276b45ac80637088425cedf0b79248471dd9afeaaf64ef6cb04d97",
+      "congestionSteps": 288,
+      "releaseContextSha256": "80129353c45ed92f080be32e4131d76213825146dbdc64347fc2894cb19f3a81",
+      "releaseContextSteps": 288
+    },
+    {
+      "playIndex": 4,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "5184e050bef5d0bf55cbdfbf0fb35e82b246242e25143aa8c213e9d507e78af2",
+      "steps": 362,
+      "dependenciesSha256": "f3113d9c804d052a46484f5355fa77c3acd2c07428aecf5877b6ae5ce229d1d7",
+      "dependenciesSteps": 333,
+      "ballStateSha256": "1ec7cc9502c2ce0af31b570cb7c40a441a878906606270d562b354d81aceb4f6",
+      "ballStateSteps": 333,
+      "responsibilitiesSha256": "a23dfbef1c8e52e5f6cd903893462f80198ff36c4718093ebefec58dd6c5a29d",
+      "responsibilitiesSteps": 339,
+      "congestionSha256": "fd768b2a29d8baf69a953fd2b7961654796fdc42f166c76188351908a8d41bb5",
+      "congestionSteps": 335,
+      "releaseContextSha256": "4ccb099c6ec560b4c237b5849074352414c75f14a1ea6394ab6dd6d3cb876cdc",
+      "releaseContextSteps": 335
+    },
+    {
+      "playIndex": 5,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "switch",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "a292d665a79eea1a807c75079545fb0f772c784249eafbf936532088e337f49b",
+      "steps": 260,
+      "dependenciesSha256": "d9efc37757f8eec06ca66c18a8b6cb2b211f3eafb426b0dbf040d021fe2b0d5b",
+      "dependenciesSteps": 217,
+      "ballStateSha256": "dd5d23d00776eab121113f611af5797aeb88c031834641ad9ebb86be55cb4862",
+      "ballStateSteps": 226,
+      "responsibilitiesSha256": "d151a4d3bb789c5d3de6316376fb4c07734215df4f63789fc3146135cc5953b1",
+      "responsibilitiesSteps": 236,
+      "congestionSha256": "a339b8cf3f4d43ef7c11e138c318fdcebeb39000171e643c040e437435fc6201",
+      "congestionSteps": 221,
+      "releaseContextSha256": "09633006ce794fc595e38a7eeeae7c7096db4dc0d06579f03833da529f17082f",
+      "releaseContextSteps": 221
+    },
+    {
+      "playIndex": 6,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "trap-rotate",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "adeaca5b4bc0f3d1e49ba221edfe8b675882396bf1fe300d4d4b62e2a0c9723d",
+      "steps": 293,
+      "dependenciesSha256": "4c0d6a222d76c5c568599602fce0bfab37f7ca098321861cc65dd6b1e29b82e5",
+      "dependenciesSteps": 309,
+      "ballStateSha256": "ac028882504a2bfb8a5e64882e3ebf13ce613dab6487e4920585959245eb7e52",
+      "ballStateSteps": 299,
+      "responsibilitiesSha256": "594520c94027914c47823f075e54dfb6f73580f2dd40dd851c14548176359dc0",
+      "responsibilitiesSteps": 318,
+      "congestionSha256": "755cd2659d99cdefe399c7674bcb98094790c969320f5a43f2900b8eba8152ef",
+      "congestionSteps": 287,
+      "releaseContextSha256": "3c6ea0a6a18a11efce4fa505c868cb980a723b035d0349d258d9be64bfd2d98d",
+      "releaseContextSteps": 287
+    },
+    {
+      "playIndex": 7,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "fight-over",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "fc599ea15ebe76d1cb4f1937d8622b38f96ab73bf608a4001204959549f6e4c1",
+      "steps": 325,
+      "dependenciesSha256": "496c8bfad923ec07f0644f621c74e59d7ebe592976eb84b424a784c5fb30662d",
+      "dependenciesSteps": 307,
+      "ballStateSha256": "67315ea74bcd0af265b5184431a0e7d602d37c59c6d72357ee419de8c93dcb1d",
+      "ballStateSteps": 309,
+      "responsibilitiesSha256": "4144a6794a99f8ca5bdaddfcbe3fc9ddcd8385580b6a08d32cb5bf1878f52ec3",
+      "responsibilitiesSteps": 319,
+      "congestionSha256": "baa5557e5df8b80e0b4dcac52a761456e0a8d9fe9f0db65fa7a4caf8144b2b95",
+      "congestionSteps": 309,
+      "releaseContextSha256": "83ab9e5c82aecd8594f70cc465c3b2c7e38f5f1ecf9e1c05c4a75a388599b0e9",
+      "releaseContextSteps": 309
+    },
+    {
+      "playIndex": 8,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "go-under",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "5f16cdab4e83914d90f80f4f2fa730a9d885f87940d7d3e905f8b19581d381d3",
+      "steps": 275,
+      "dependenciesSha256": "a8daf027e120f60e66d5cc5358549bc12d06f51416ec1327da551598a1e96c2a",
+      "dependenciesSteps": 259,
+      "ballStateSha256": "c90ca405c6b636df64b44af0ee7707b698458e6b58a1514916f12adafc928d57",
+      "ballStateSteps": 259,
+      "responsibilitiesSha256": "fccdac91eb8418d51378fed7e4cbaf540488e544f5cd34e03a01b3a5725efc57",
+      "responsibilitiesSteps": 259,
+      "congestionSha256": "fccdac91eb8418d51378fed7e4cbaf540488e544f5cd34e03a01b3a5725efc57",
+      "congestionSteps": 259,
+      "releaseContextSha256": "c9f19ed89b5e90abaf88c1135a00c40821a95211a523cb48dacc3d0421e2b31b",
+      "releaseContextSteps": 259
+    },
+    {
+      "playIndex": 9,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "drop",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "4c8b5395d97b7876a358307e12c8114e9dba71797f466bddc398aa1cfb919749",
+      "steps": 317,
+      "dependenciesSha256": "4a64eb5e41f933f9316bd93828b0a751b71403d17331a3600dae94baa4bffade",
+      "dependenciesSteps": 281,
+      "ballStateSha256": "afc444afd299f70a102bd7d6ae4b856b1a185e7353282826b6d34b4bcbb540fa",
+      "ballStateSteps": 281,
+      "responsibilitiesSha256": "32cfa15529e61a1f05a58beb32ea08987fd2314a7e829b7b16822b340d1cc29f",
+      "responsibilitiesSteps": 279,
+      "congestionSha256": "d2c8af55a72825795cad7d3088f7683fd350677e31877596c0520ef58265a30f",
+      "congestionSteps": 279,
+      "releaseContextSha256": "5121be5415ef467b2ab28c9bf582ccb7ab21b1542d4d1f45f7fcc7ad5666305c",
+      "releaseContextSteps": 279
+    },
+    {
+      "playIndex": 10,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "hedge",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "8ff6b6bee504dc64892482bb7ed35243f2b85446b3f31fc3878552dff53e4c20",
+      "steps": 315,
+      "dependenciesSha256": "93f60e806389c812549a12fbeb49243cb6dde0f1be69622a1c1e5184a934c79b",
+      "dependenciesSteps": 315,
+      "ballStateSha256": "3f79efaf8e55526fadf6528965286b022866222d60bbc55a17c121f84a7e60db",
+      "ballStateSteps": 316,
+      "responsibilitiesSha256": "c743a8509c7ccebc813e899569196f76d17f4355c66c560902c11fe1eada56e5",
+      "responsibilitiesSteps": 305,
+      "congestionSha256": "cedfcc6703759311793ee0715132451dd3930da77d1b560b5925019d986745af",
+      "congestionSteps": 326,
+      "releaseContextSha256": "e8ae58d569d1da30c34b06f14ceb786151586adda79770cf74e304152401601c",
+      "releaseContextSteps": 326
+    },
+    {
+      "playIndex": 11,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "deny-lanes",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "363e25d7e1ce28e416daa0b574111bcfe00b5471f7840295b7c718440cbafc60",
+      "steps": 397,
+      "dependenciesSha256": "04171f274d425b3879d2167d49be3f51ffe6f39749b018530bbf36c3160e744d",
+      "dependenciesSteps": 387,
+      "ballStateSha256": "84e8085552bebffa1497642051761aa76736adbc3a149b6744ed8bb59ca391a5",
+      "ballStateSteps": 366,
+      "responsibilitiesSha256": "2ff611fb88420cf9416b989435134ffa3ac4d641568f9f7192e9bca4e33d21d4",
+      "responsibilitiesSteps": 398,
+      "congestionSha256": "44d69f1ef5608a83161cacc8bdeef0343c333369062768ed8e0be60a53dc3034",
+      "congestionSteps": 327,
+      "releaseContextSha256": "2c4eb293f231f44ae395b26da3194402de7077b095f2796d463559f3f059bb9b",
+      "releaseContextSteps": 327
+    },
+    {
+      "playIndex": 12,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "protect-paint",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "610debbd2f947b0d5a542c2cb31100a0eb450abe7b76a918bb1dd400f492f24a",
+      "steps": 191,
+      "dependenciesSha256": "ed0086ea96dc05d5141dbd3c5127095e30cbb138dd0978633adaeadf1d1968ca",
+      "dependenciesSteps": 191,
+      "ballStateSha256": "9e8ef4fb4a68cc5c07060045c172a7ecefed46d488e58ab50c0266431e05a9a0",
+      "ballStateSteps": 130,
+      "responsibilitiesSha256": "7d051ab87c3e8569ff9fa099fe9393c49492890f2e387e437b936d650103a19a",
+      "responsibilitiesSteps": 130,
+      "congestionSha256": "7d051ab87c3e8569ff9fa099fe9393c49492890f2e387e437b936d650103a19a",
+      "congestionSteps": 130,
+      "releaseContextSha256": "a919b165364ec2150fb00fa636cde60c9f565f0667b3bdc3439baa1223e849de",
+      "releaseContextSteps": 130
+    },
+    {
+      "playIndex": 13,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "9a04c2f6aa588348bf2b7c903c2a42d783d3d8ce94c5e8cb8532737b470bd949",
+      "steps": 316,
+      "dependenciesSha256": "46d27e62654545a8ff38bf6b70387743c40065225baade73c617fff38a0a6994",
+      "dependenciesSteps": 298,
+      "ballStateSha256": "91faed6d00272f32c2cd805d06c3df4a6325ab539c8e3a1f208fd1843b4c9385",
+      "ballStateSteps": 273,
+      "responsibilitiesSha256": "db0f233338742363fd5689547ce90e6e409f0afae0aeb012e9b6a2e7822e0c9f",
+      "responsibilitiesSteps": 273,
+      "congestionSha256": "0d73254d2234d4b52c4b63bef981da82ce7fccd758482eeb37d915b3606bc6c2",
+      "congestionSteps": 316,
+      "releaseContextSha256": "c722876971fd138fb416f858b31cb9b5a5e7b0a603f828e0ad576ecd2de16215",
+      "releaseContextSteps": 316
+    },
+    {
+      "playIndex": 14,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "man-to-man",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "6d46708129e6cb4a069d0460117c885a1962d8447148082edcdd5ee2c44cfe8e",
+      "steps": 317,
+      "dependenciesSha256": "bff2c244eb46c95674098886490d994222bc33b05dd8dced10d4049c0f4dc80a",
+      "dependenciesSteps": 283,
+      "ballStateSha256": "f21004bec03e53ff989f251ac9b270aca5d92d6863e13852ba5e0a8391b650a0",
+      "ballStateSteps": 283,
+      "responsibilitiesSha256": "052bea0d95a8f53d88c59c121ae1a16c8d89a1e9d756438e27c86a604d451142",
+      "responsibilitiesSteps": 283,
+      "congestionSha256": "dbbfe95ae356f349b917f3545030e7bd42bfe3de7b1b269c855e333c1a32f790",
+      "congestionSteps": 287,
+      "releaseContextSha256": "856df45fb9c4ffa2f9620b494a6631916167fbee54a38944d3dc127d2d8c8d0d",
+      "releaseContextSteps": 287
+    },
+    {
+      "playIndex": 15,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "pack-line",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "1a6ad14436ebbcdd97e4d0fec9d8f8b0813bff6151f2aad7c954fbfa19aa70eb",
+      "steps": 315,
+      "dependenciesSha256": "eb147a0cb73996145120c0381cccc6fce49cbbd40cbe9b1e944149fa912fdec1",
+      "dependenciesSteps": 249,
+      "ballStateSha256": "f0b6f3fc3263a9070a6a0591c8670a3482cff34b2ee6789d2866565b8cfc29b9",
+      "ballStateSteps": 249,
+      "responsibilitiesSha256": "34ddf76ab1ae49e68e6228701f3b73d8338f4c16d75617693e7bba33457d1e31",
+      "responsibilitiesSteps": 249,
+      "congestionSha256": "456622bbca97cc93acf1fe46f399baa7748867d6bb47d25a79d34e5e984bf944",
+      "congestionSteps": 249,
+      "releaseContextSha256": "4cbfc77a067b772c1223b505566e4c9ce502e2ea87af07d595d35eee6e770bbf",
+      "releaseContextSteps": 249
+    },
+    {
+      "playIndex": 16,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "zone-2-3",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "bb071c6a935381be722bd7b1390e002db107eff292dfa1bf705f77279c216b3e",
+      "steps": 356,
+      "dependenciesSha256": "7608cee5a998c601e907bcf5f0b48962ab3707320b2333be78eba03f9f3daaa2",
+      "dependenciesSteps": 326,
+      "ballStateSha256": "2a9e75cb92177c269c25a5930cc19822765ec7b0dc87a49878b9f0e223fd5d78",
+      "ballStateSteps": 331,
+      "responsibilitiesSha256": "e5c79ed1ee94501d7f2e001d60e47fa485d8f2943d02b708c698f0c298e186f8",
+      "responsibilitiesSteps": 333,
+      "congestionSha256": "d7a898f0149fdef34382b4589309c19477a58b01a039b68832ec832a95f7ecf5",
+      "congestionSteps": 339,
+      "releaseContextSha256": "fe4ffca486d8313488a6326a81400f5aa973f3009af83f281aea4495edae245a",
+      "releaseContextSteps": 339
+    },
+    {
+      "playIndex": 17,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "zone-3-2",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "81fdd9e2f1a73685149808188e623f8582df3eb66832324cce70d63a4010805c",
+      "steps": 225,
+      "dependenciesSha256": "2524073080e4afe155291276a097d4a845bfd9022a5d4acd67ea5c234d197ed6",
+      "dependenciesSteps": 224,
+      "ballStateSha256": "d55c0e8b0cb29b58351494d530719c486b71d2c1470bf1c69234bcd61a0ac632",
+      "ballStateSteps": 225,
+      "responsibilitiesSha256": "fb0de4d2e6eb58255dfc9269edea0a095be5a6163004edfc657eaa651eb637aa",
+      "responsibilitiesSteps": 224,
+      "congestionSha256": "fb0de4d2e6eb58255dfc9269edea0a095be5a6163004edfc657eaa651eb637aa",
+      "congestionSteps": 224,
+      "releaseContextSha256": "bd32f3959a0577f170e16a716816c45620072e1fc06bc9b3a12d7aabcffb1b17",
+      "releaseContextSteps": 224
+    },
+    {
+      "playIndex": 18,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "zone-1-3-1",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "91e52aacb8c5cb59597f1277084e4fd8ec4cd4ead0ee4e1f68899aed9eb75b8b",
+      "steps": 139,
+      "dependenciesSha256": "ad39e4f68c19cc2200f87a380e5dd2065f235f4b6c79bddccb090d2b225f5b42",
+      "dependenciesSteps": 136,
+      "ballStateSha256": "af670cfd18f609b3a7bac5fbd90882fe03e34cff6a5d89784e3bb15c0cdbd98e",
+      "ballStateSteps": 145,
+      "responsibilitiesSha256": "9a6123d4ad47301da3e6222833dc762418ef58cfc798ad8c2d5529788e2d3578",
+      "responsibilitiesSteps": 144,
+      "congestionSha256": "99da8d60073579760c26674ba9b12588ba34f20f43beadaa554db9d91c430c74",
+      "congestionSteps": 139,
+      "releaseContextSha256": "2e04e4e84e1e4d8af8c16fe333086fbb936e5cd13bb7551ecb159b5e0a80eadf",
+      "releaseContextSteps": 139
+    },
+    {
+      "playIndex": 19,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "zone-2-1-2",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "52348cd10edf374ae7b6b15fbf52ef45209df6f90b92b33dd029008b46151981",
+      "steps": 365,
+      "dependenciesSha256": "3cd36ee95331cef31ba0664e2735786b3143f7122c1e44f578f42566267578d9",
+      "dependenciesSteps": 352,
+      "ballStateSha256": "52adbc1c1b7394331726f47ea4d88c016d946d8659f832533709e0146e21db28",
+      "ballStateSteps": 339,
+      "responsibilitiesSha256": "0449745de5934de30424899bd115c07ec55437b4a09fdb1e2e372d0f1c51158c",
+      "responsibilitiesSteps": 339,
+      "congestionSha256": "006b3694371fc54165294836aa9fb460889e4506445007e36bbf91af666684b4",
+      "congestionSteps": 320,
+      "releaseContextSha256": "371c46f1ab89574e38a69ef756f1e44e4c7e815262c6a77393363b167fbb7389",
+      "releaseContextSteps": 320
+    },
+    {
+      "playIndex": 20,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "zone-1-2-2",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "f7e860dbf83f6d83375c2818d808b9d0bf89a870267b935008f705dfcfb2df24",
+      "steps": 313,
+      "dependenciesSha256": "c3e095ec409803ea0eb44e4ad93dd7c3c84bf67a6f1e1e3598363579384d729c",
+      "dependenciesSteps": 301,
+      "ballStateSha256": "e20bdc24e786bacb5cb8c5c8ba6555c2c1329328ecff17b82e61893b534f60d0",
+      "ballStateSteps": 294,
+      "responsibilitiesSha256": "e23e1ebb85ce3a56d65b0327671d72e4a26e734ccd0da87b594d517877dca45b",
+      "responsibilitiesSteps": 304,
+      "congestionSha256": "e23e1ebb85ce3a56d65b0327671d72e4a26e734ccd0da87b594d517877dca45b",
+      "congestionSteps": 304,
+      "releaseContextSha256": "edcf538f5175e0459dc06cac055728f4e5cb09d7f4eea6e0d33468699f9866b6",
+      "releaseContextSteps": 304
+    },
+    {
+      "playIndex": 21,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "matchup-1-1-3",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "24400cd54707ac367f6f718796b81852ff5a78ce92fa7daef1ac266cc6a9d4f2",
+      "steps": 363,
+      "dependenciesSha256": "e4ba552aca0c8384fb65c61469b8f0c9ef4de5d996e80ae4249bd5709bf62771",
+      "dependenciesSteps": 357,
+      "ballStateSha256": "19e13183090ae7bc287097484e7296350ec7edd05986e5ba911a03a294ae779a",
+      "ballStateSteps": 361,
+      "responsibilitiesSha256": "87cec03016b06271189921362bb3ee7b2389b5b2400a186c8a248eef12ddd898",
+      "responsibilitiesSteps": 361,
+      "congestionSha256": "10b5bcbf442e745d7cf2be4e519891bc105a64f3d1d6eab98b5e7a7355071700",
+      "congestionSteps": 361,
+      "releaseContextSha256": "fb75b0edcb9dc4d966c18cd594eef85ebaf3b6b657a9c4e1ab61ed763399fbde",
+      "releaseContextSteps": 361
+    },
+    {
+      "playIndex": 22,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "box-and-one",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "9b126157504fba30f63b5344f0363b9c23e058a51d044985beaf7e93376de418",
+      "steps": 369,
+      "dependenciesSha256": "7f837eb9871f6f224ab3b6237ee5b560319fad309f59b194aba7de0ed3930f8f",
+      "dependenciesSteps": 341,
+      "ballStateSha256": "bc50b2e9ae63cd67a9a39fc0157f83d919bc8423cadd222c7e0b31df00d7b485",
+      "ballStateSteps": 346,
+      "responsibilitiesSha256": "433501c3d33a1409928b90093502623d02c3e7337b411b97a62ddfee46528729",
+      "responsibilitiesSteps": 345,
+      "congestionSha256": "002d093811080b387706ae91b883e31948f3ea1dc1136623c79034758d1ec594",
+      "congestionSteps": 338,
+      "releaseContextSha256": "d5d19e6ee279e548852eb0eb577e6ac302a41d050ffdb0c667ea431d986cd757",
+      "releaseContextSteps": 346
+    },
+    {
+      "playIndex": 23,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "triangle-and-two",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "5095dc5668d8eba96bb96d635ea296c7bee28c73cb8f119169694b489c965e72",
+      "steps": 281,
+      "dependenciesSha256": "cebc2096587842265d22d0016843437539acfcc244e55b85d41b6c06907200ba",
+      "dependenciesSteps": 251,
+      "ballStateSha256": "8df188223181a4562cff8457ba7fff30882cb468d78aa51c8caa19b9b9d19041",
+      "ballStateSteps": 251,
+      "responsibilitiesSha256": "14f5b21a0e2fb3296dcc739b5f2272032bf17ad640af2325bcb8e03f2c20d556",
+      "responsibilitiesSteps": 251,
+      "congestionSha256": "f8ec29bcd7a2cb4dbc7a1e7f3f1822b96a8fd78009480ef79e4029bc33b78b81",
+      "congestionSteps": 251,
+      "releaseContextSha256": "08f438869252a00a9d6e6763d7bcf15e89d263bfef380f698514f5ce810f823e",
+      "releaseContextSteps": 251
+    },
+    {
+      "playIndex": 0,
+      "settings": {
+        "offenseOffBall": "off",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "4ffc2ea4b62990281c77d5b23f4b1be2c3e254d856e955e263e8e08fe63a187d",
+      "steps": 309,
+      "dependenciesSha256": "9e102abf7f0a3b097fc2506caa40c8b3c4a2fa2cb07dcd3d05ae266eaee47a46",
+      "dependenciesSteps": 276,
+      "ballStateSha256": "41d2f807c7528aa06a1dc2ca90fedf52aaaa6862170d12c0cd9996e67028bf9a",
+      "ballStateSteps": 276,
+      "responsibilitiesSha256": "49426ddd30db26716b2407bf9b0dbdd7c4c48c565c833ba5d9ebe568ac060f5a",
+      "responsibilitiesSteps": 262,
+      "congestionSha256": "131716cbb999983e9fb001ae1f349e5d9836bcf136ea7aad83e6b315ff60570e",
+      "congestionSteps": 292,
+      "releaseContextSha256": "e8e79badbfe706f80f7f1279e41faefa647fdbcb4c2636bb24c8e047b8465910",
+      "releaseContextSteps": 292
+    },
+    {
+      "playIndex": 1,
+      "settings": {
+        "offenseOffBall": "spacing",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "f5c851eab6a49771c3f6aeffa9ac52ccc993c324e68e4f682b867e6d50a35d8f",
+      "steps": 311,
+      "dependenciesSha256": "d460ebe3517287ca7d58d18273f2262e56f05ffa004eb7eb42b54c39cfea47a9",
+      "dependenciesSteps": 262,
+      "ballStateSha256": "294eab6d527f7ee5f6d9714b276b9a38fa6613949856d0fb146c1cf3a07b9381",
+      "ballStateSteps": 262,
+      "responsibilitiesSha256": "9fad67aa80aab4d6696c1475541415ca385929f4272dac2f47beee237900329c",
+      "responsibilitiesSteps": 281,
+      "congestionSha256": "6399566f8075255b025d28152ca510c77d922ace3b32192986cb031b01d45c2f",
+      "congestionSteps": 328,
+      "releaseContextSha256": "56ac52d2d49efa9380aebcd87b73bee18097bc5579ea9db5fcb9599ee5b46603",
+      "releaseContextSteps": 328
+    },
+    {
+      "playIndex": 2,
+      "settings": {
+        "offenseOffBall": "cuts",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "735ad9a4ac543e0bc0098360a5e41aa28ed212f13354e165ad82555633d443be",
+      "steps": 247,
+      "dependenciesSha256": "7f191eba1529c345d587d76b6eef6255cf3f4271d2629ae2dad73b49450a3e21",
+      "dependenciesSteps": 242,
+      "ballStateSha256": "da059d23fe3022753cc7b7c7304ed1d07bb1e4b072b6f64d86c7f009d45458b7",
+      "ballStateSteps": 246,
+      "responsibilitiesSha256": "3100b52c453059aca89c467c403a852b269b08515a7d0109d8c9a96c5b59bb76",
+      "responsibilitiesSteps": 244,
+      "congestionSha256": "3100b52c453059aca89c467c403a852b269b08515a7d0109d8c9a96c5b59bb76",
+      "congestionSteps": 244,
+      "releaseContextSha256": "05bb9335badf5ad195f31bd38f1b7e4affd0c999e7d971a1f12c13c8e812c9fc",
+      "releaseContextSteps": 244
+    },
+    {
+      "playIndex": 3,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "e28639ed9f36fa6a4a9a36233d9e01a547f6e30eb4f36b40107dd7341ece8c53",
+      "steps": 336,
+      "dependenciesSha256": "206b4ee8a941f93c8885d5cb3d3c7355d235eeed56aef028dd41a77389b97553",
+      "dependenciesSteps": 288,
+      "ballStateSha256": "1aa2d0954d4b18d668d2bb15dbe622d9518d21945863c92bc051611e47fd18f2",
+      "ballStateSteps": 288,
+      "responsibilitiesSha256": "0d0a53355f2a2a0fc05bce7657372a7d5eff2a935f489b8a1fc66f49e022ecd8",
+      "responsibilitiesSteps": 288,
+      "congestionSha256": "5c474838588dac0b70f68e3f13854c3245263949e49b466670f15e070d1b7c5e",
+      "congestionSteps": 288,
+      "releaseContextSha256": "9e066e18b9941ec5c651f06e2bbf25062049d8472c508fdaaeaf921fcd7b121c",
+      "releaseContextSteps": 288
+    },
+    {
+      "playIndex": 4,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": -10,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "be2767c3f294fe4907b4eef9b58f7bb766ee73f65f1e2954e64f99dd8aa20927",
+      "steps": 320,
+      "dependenciesSha256": "507932fed1034a4f5a68db74de537a1fa419939c3148f34754cf79431bc623aa",
+      "dependenciesSteps": 316,
+      "ballStateSha256": "38a656b8fb1508a9a6bb39bc3ebfdfc8de940a1d2ffc833332ff9d9feb97926b",
+      "ballStateSteps": 316,
+      "responsibilitiesSha256": "5689289925288db6489ded26bbaa2cc92b429654ec62f219af7a404e11cc3c74",
+      "responsibilitiesSteps": 359,
+      "congestionSha256": "f512c0743abee54ac3ac984b59754ccf82a674945587acbeaaa31bbaed56ae5e",
+      "congestionSteps": 362,
+      "releaseContextSha256": "7cc4ce8742cbcbff832f1ffd45453d2f45296355223d8e5f89c153a7c192b445",
+      "releaseContextSteps": 362
+    },
+    {
+      "playIndex": 5,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 0,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "63087eb61d3e84762597b61b8cf6f7505929bb4bbafa59243d4e86e17c1a2278",
+      "steps": 289,
+      "dependenciesSha256": "ef4247b0cae6f266d432ef085d2a5cb4dd4fea93c427abdaa3997d2e1bc6ebd7",
+      "dependenciesSteps": 265,
+      "ballStateSha256": "5336de57cf653b5e8f97d4add5b5ef6f8f608cdfff8c76cc5d28d8be1caffa81",
+      "ballStateSteps": 262,
+      "responsibilitiesSha256": "b1f9546d0e2932c177775fe37869cd73804d3ad90b4c6c01d5b3c7c67acc0c81",
+      "responsibilitiesSteps": 263,
+      "congestionSha256": "0e5b6702a5400f33bdb8f5f02650ad0501c5d1618216f7b51371581257b02bc1",
+      "congestionSteps": 252,
+      "releaseContextSha256": "f28da491c4cc7f85c5f0b7f7bc99bb422946fc808834ec989d735d3d23a4a06c",
+      "releaseContextSteps": 252
+    },
+    {
+      "playIndex": 6,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 0.5,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "b22fd2db29cb8ae2d6101ec863fc13e61db7d3ce5c0ddf27aeb08e296011b299",
+      "steps": 322,
+      "dependenciesSha256": "ca37224b379c8862c291901b6af35ea0a3e7be639c225d3341be8ee6a62eafce",
+      "dependenciesSteps": 275,
+      "ballStateSha256": "b4a6d33e0c828baee82fcc1f2f440e26e08e7c5cc76d39b568b942e98f00ddc1",
+      "ballStateSteps": 275,
+      "responsibilitiesSha256": "3db39f8add540a47f8600b4c7f1d109d91c5a0a8a6e97dacf10f4916fb058c50",
+      "responsibilitiesSteps": 259,
+      "congestionSha256": "28583225acbb4d2e909394fd0ce7dc6de961b68b09a78a8db6fb7864bae00a4e",
+      "congestionSteps": 259,
+      "releaseContextSha256": "6aa7e8d12947772847b2496b6275cfd5517863700e82e6e4ffd375b0f98889a6",
+      "releaseContextSteps": 259
+    },
+    {
+      "playIndex": 7,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 35,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "5ebba0e81c8fd3b9f7cdb1606dfac4e424412dc9a69786bb3ffc63c2bceaa7f7",
+      "steps": 270,
+      "dependenciesSha256": "453f73c600d702f9661b785d889df975eb4f6f9080fb96bf43464cb5af6c535c",
+      "dependenciesSteps": 301,
+      "ballStateSha256": "ddbd8857461c4269e5b16cf20072820fe0d621862a670366aedcce435b6603ef",
+      "ballStateSteps": 309,
+      "responsibilitiesSha256": "cfe660794a868b495081f3a07916518ade9c7d07af72fea339576ac9043ddc68",
+      "responsibilitiesSteps": 245,
+      "congestionSha256": "9322f27bcf527355ce4a0968675b59a96db3bd0832fc44ddd5335353960204ca",
+      "congestionSteps": 295,
+      "releaseContextSha256": "8995b9b354d5f447e912b8f75fc88e4e3b2ceb6fb80dfa484a0d7afd6373d377",
+      "releaseContextSteps": 295
+    },
+    {
+      "playIndex": 8,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 100,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "737a1c352c55d6db24046863728ac7324917e2a37695b7c07887b24688e6f696",
+      "steps": 276,
+      "dependenciesSha256": "60e00224996b4edf8bb2746b9ba3e628889f816093c4cf405ed7aa00ea8e497c",
+      "dependenciesSteps": 266,
+      "ballStateSha256": "cf081780ae5ec9cd2e0081a81cdd30b0102696da6d4f7e3023af011c1c3ac4e9",
+      "ballStateSteps": 266,
+      "responsibilitiesSha256": "898970fddad3554e3880ef5f796b7a64a978c81704620f298c8665c04c7b83f1",
+      "responsibilitiesSteps": 266,
+      "congestionSha256": "3db061d6293310a5ebe358aa5ae6f8537c1037599dc3cc4bf235120e55ef65d2",
+      "congestionSteps": 266,
+      "releaseContextSha256": "b01146cb795e72312e4a3be1bd270c55c740946e85a4963534353d46d7d6ee49",
+      "releaseContextSteps": 266
+    },
+    {
+      "playIndex": 9,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 150,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "ef11d2e6273e5d59917ad5fd6ce46cfba1ba23300715947673493a5284b356c3",
+      "steps": 322,
+      "dependenciesSha256": "76fce911ac78781bf4a08443f46e974410cebbbf252ec89dbf5358fb302e5b3c",
+      "dependenciesSteps": 287,
+      "ballStateSha256": "9683e796e0314b64027f8bf76961eebd335fa3db96f0fa4cb28c6d66be56b776",
+      "ballStateSteps": 287,
+      "responsibilitiesSha256": "8ddfb0b9f1e4c54b030861b56d27ed3ff0c6b7c3af43fb6178d413626b90a37c",
+      "responsibilitiesSteps": 286,
+      "congestionSha256": "2809a6c6df38d9cb2b556ed8263005a777f6cb673f0dbc8a28a9a749b03722a4",
+      "congestionSteps": 286,
+      "releaseContextSha256": "79ab6fa4b3343e59ade0ad4ec98efe779af87f760877b37322b6778b16a9004c",
+      "releaseContextSteps": 286
+    },
+    {
+      "playIndex": 10,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": false,
+          "handoff": false,
+          "pickRoll": false,
+          "offBallScreen": false
+        }
+      },
+      "sha256": "1c20fb9c3afce90f9d544327bf7b35c45affc7255f53edc8c82c6f68096f645a",
+      "steps": 287,
+      "dependenciesSha256": "247bc1ade2fedffe7790bba171ab12ff3c401d75879bc8b8e178a8ea876a9949",
+      "dependenciesSteps": 287,
+      "ballStateSha256": "392d12d0baa7d9d1ec3f5b1fac7a058d3b18f7ff0d402ee2cf3d056c9a9807a2",
+      "ballStateSteps": 279,
+      "responsibilitiesSha256": "ecf29fc416da7b88b4c58db5efe28993297665b30b0bbdf8273ded603de6e54f",
+      "responsibilitiesSteps": 289,
+      "congestionSha256": "25565a54567843143a9787e3f2daa22f9489e1cc98af4f7a57cea5533a5e2eb3",
+      "congestionSteps": 259,
+      "releaseContextSha256": "cf04d7fb2e5f050be431c0576c674b2cc53c10b090b6a27dc9f71ef4a8c41c0c",
+      "releaseContextSteps": 259
+    },
+    {
+      "playIndex": 11,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": false,
+          "pickRoll": false,
+          "offBallScreen": false
+        }
+      },
+      "sha256": "ad583cb277bd37cc8888e3ef5f378c4947d425aa87e5ad21bad4c5167ee3701d",
+      "steps": 262,
+      "dependenciesSha256": "f9b6cdc1b6f15f558fb591e2aa621db8177270650e46857b6e2039bdbec31fd3",
+      "dependenciesSteps": 262,
+      "ballStateSha256": "83b01375c1f62b8b41112ef4a31945a2d8f157a3af920081f2ffa936fe1a9609",
+      "ballStateSteps": 262,
+      "responsibilitiesSha256": "74453d9149208c07cd4046e8bdd4a27ca35feffea588adf8af29f84dd61fed2b",
+      "responsibilitiesSteps": 261,
+      "congestionSha256": "27645075785870569632e5ef9166c30ac310c498cc7f37a3724ae94fa44f65b6",
+      "congestionSteps": 245,
+      "releaseContextSha256": "bdc6d1b5dad63f5045a45fc8d6aea9dcbdf0a1a37a55f65dbb81490a3f89c815",
+      "releaseContextSteps": 245
+    },
+    {
+      "playIndex": 12,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": false,
+          "handoff": true,
+          "pickRoll": false,
+          "offBallScreen": false
+        }
+      },
+      "sha256": "a1a42d7d720f82b7b22b03d52ea337697d983012ad3d0cc4024bcca195610d67",
+      "steps": 188,
+      "dependenciesSha256": "36eaec5cb494ad216a67ffab7c7212f8cf6072d42c98ea9446f09eb873773f4e",
+      "dependenciesSteps": 188,
+      "ballStateSha256": "63d3e9f95d70ad748420a9e144171c8d4a17376d6b870f30aa30d1e90d24d122",
+      "ballStateSteps": 207,
+      "responsibilitiesSha256": "47c77fc2b89e2eb42a795d0943af18f675f4509a3b88dd09ae1d5a0be71b248e",
+      "responsibilitiesSteps": 128,
+      "congestionSha256": "47c77fc2b89e2eb42a795d0943af18f675f4509a3b88dd09ae1d5a0be71b248e",
+      "congestionSteps": 128,
+      "releaseContextSha256": "725f3110de72a802a23b01126037891746ea2297a121acbc2916643b32e6c8ee",
+      "releaseContextSteps": 128
+    },
+    {
+      "playIndex": 13,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": false,
+          "offBallScreen": false
+        }
+      },
+      "sha256": "cb2ca61a7468a7e630b574d00abb22ae7156e50d6e845cdd10d4f03b8b6ec405",
+      "steps": 280,
+      "dependenciesSha256": "4014be7da21ac9390c881f305868384a445398a7802c5a98691858d8f6acb44f",
+      "dependenciesSteps": 298,
+      "ballStateSha256": "27f62d8e5787d942adbc4cba5ff34f1348882080200c9d0a220c8d5a7f940601",
+      "ballStateSteps": 330,
+      "responsibilitiesSha256": "33822fc1796c0d5da863d07ea0fce809f6d226826a8d244368a4e46be8c20faa",
+      "responsibilitiesSteps": 330,
+      "congestionSha256": "226b529e2aa752ea51a5d7c082dbf70b926fc631eff6bfe89257f04ea64b0be5",
+      "congestionSteps": 327,
+      "releaseContextSha256": "f1832f543c8fe8bca787c1aac5e51d4cb0e2d01ced4521d8b9d1725b2267eebd",
+      "releaseContextSteps": 327
+    },
+    {
+      "playIndex": 14,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": false,
+          "handoff": false,
+          "pickRoll": true,
+          "offBallScreen": false
+        }
+      },
+      "sha256": "afad66c6d30070d9917393ad16212d7b6f927c97b3c06c90dc2b071e07b0c36f",
+      "steps": 331,
+      "dependenciesSha256": "c80fa749e9f44e1c25ab41527c5bc6e49db8e59e4b370990b23327a9d49465d6",
+      "dependenciesSteps": 347,
+      "ballStateSha256": "7f4e62b6216797fbd3ba9f7cb42676653d6bf291e626744af08135362ad56858",
+      "ballStateSteps": 339,
+      "responsibilitiesSha256": "5a64acd9be7c50df0d674c47aacd289a7dc4a50ceabb968f0eab5eb223966fe1",
+      "responsibilitiesSteps": 343,
+      "congestionSha256": "5a64acd9be7c50df0d674c47aacd289a7dc4a50ceabb968f0eab5eb223966fe1",
+      "congestionSteps": 343,
+      "releaseContextSha256": "a75eacb12f526f6b8b5f2e93602a506d9110e6ae77dae8f4b5e7dfb735704af0",
+      "releaseContextSteps": 343
+    },
+    {
+      "playIndex": 15,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": false,
+          "pickRoll": true,
+          "offBallScreen": false
+        }
+      },
+      "sha256": "5c5bac2351bcd5a721ef1b397a5c3882e671513262bead352ee8117071ac71ac",
+      "steps": 214,
+      "dependenciesSha256": "c3beb29e2b3ad25423d187f5598d30d68b49cd591af0b0995c6c848e9b504509",
+      "dependenciesSteps": 240,
+      "ballStateSha256": "a948bc136c4081a9f9c75e488077f497f6fef7acbdfeae2d4da11cc721d8aeea",
+      "ballStateSteps": 263,
+      "responsibilitiesSha256": "93912b72693cbd97b200ee55106ea3b9fcfa4457fabb665d5909adfcde45487a",
+      "responsibilitiesSteps": 247,
+      "congestionSha256": "95d0e1078a88c6f27c21daa2f29a4e6b70b41892053c35bfafed8fedbf8c3701",
+      "congestionSteps": 247,
+      "releaseContextSha256": "c67f2dd7d225b91b914ea42db2a8dc31cef728f53fcc8e2a19cc962b421a78d6",
+      "releaseContextSteps": 247
+    },
+    {
+      "playIndex": 16,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": false,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": false
+        }
+      },
+      "sha256": "4e54242e6dd699bdd1633ea0c74743672720cac88a7dc56441fc6275d54cc274",
+      "steps": 299,
+      "dependenciesSha256": "33a0e09aaccba64c14bc084fc477bb73e49f8d37b456779a5363645ff3ec6286",
+      "dependenciesSteps": 286,
+      "ballStateSha256": "3ffef651151177c56e2167854fbff2f004ce7b973c44e958e25f3475526797a2",
+      "ballStateSteps": 274,
+      "responsibilitiesSha256": "77a50fdadd7bbf75de09dc657c717a44928ec1e11b7d651aae2afc8008bc6c7c",
+      "responsibilitiesSteps": 280,
+      "congestionSha256": "7594fa2dd12dc16ea310ae26303ed892f73dbe5c570ad8362b8a43995289b3ed",
+      "congestionSteps": 280,
+      "releaseContextSha256": "462173ff714add48fa2f90ffe04a4bfa0462eb4c79863bd4818bada925c8eee8",
+      "releaseContextSteps": 280
+    },
+    {
+      "playIndex": 17,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": false
+        }
+      },
+      "sha256": "065c46ac381c49ca89be2cb8397014aedda1461ff5594fcc3dd81b76e2e451f4",
+      "steps": 196,
+      "dependenciesSha256": "a6a9efbd2f49058d6369a7e3d9b3c30c6894765e3d06752ea40aed7d3e14f414",
+      "dependenciesSteps": 194,
+      "ballStateSha256": "943fa54a6b2585afd8ae70d74e01a8c3c651d528e7aa6fa9111c55e5107940e8",
+      "ballStateSteps": 193,
+      "responsibilitiesSha256": "28f92cff8fdd630fbb219cdd2319c001b7069acf158b752ca49834d908dc0617",
+      "responsibilitiesSteps": 193,
+      "congestionSha256": "9c699a1b0d2c03024d587eaf0288cb692a6900fc0b7567e2609366c5350ce5c5",
+      "congestionSteps": 193,
+      "releaseContextSha256": "76fd1046f4d4e4dbe4b8755680e7cc549d5dda596a686c8bd0d28c5e679f77bc",
+      "releaseContextSteps": 193
+    },
+    {
+      "playIndex": 18,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": false,
+          "handoff": false,
+          "pickRoll": false,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "419e6ddf540eebfd3d20338bb781be27ae647883807d08bd90784f991803b812",
+      "steps": 150,
+      "dependenciesSha256": "b5786f74bc2e7fd619286ee838542f72e729b53b140f1341ed3b24757159aa63",
+      "dependenciesSteps": 149,
+      "ballStateSha256": "dbab1715cb98445f20afce6aa35d22ee6bf05a3a5868f9ee1a16f01fb2ebfb3b",
+      "ballStateSteps": 148,
+      "responsibilitiesSha256": "6ce5656ab1185c00acc696461b029e5320c0500de0e92367134a96bceb071aad",
+      "responsibilitiesSteps": 161,
+      "congestionSha256": "aacc415789cdf5e4c06f1493fc120d15f98879dd8c14a19453ea038aab71056e",
+      "congestionSteps": 161,
+      "releaseContextSha256": "4decb07102e91b7e6351ef35a3f7ec9f32782c25d65a38c5d494a7be230c2e70",
+      "releaseContextSteps": 161
+    },
+    {
+      "playIndex": 19,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": false,
+          "pickRoll": false,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "96c88fe3aae98596e655b736bc932adff0b6782c11c7615ac5434f5f09b315df",
+      "steps": 376,
+      "dependenciesSha256": "98cd94f2ab3da96c0639d98a72ce45885d47c5bdbe7d393c90beb5183b60b575",
+      "dependenciesSteps": 334,
+      "ballStateSha256": "27b601e360092c80b346bd1a01237f34627e1b0c468208de658002336bd9083e",
+      "ballStateSteps": 339,
+      "responsibilitiesSha256": "58d3435c54a5e09862d3cb62572ef11d4f00b2491c0bf83de1d04941c19c1a5f",
+      "responsibilitiesSteps": 339,
+      "congestionSha256": "dc1a79ad5efca540f1c48f1e4f85ed891d0cfc229971cecfbc9b48f6b0f09eb2",
+      "congestionSteps": 339,
+      "releaseContextSha256": "822d94a997ca0cd504fbf066a6823a66643794c6f4d0973a75d379b924649519",
+      "releaseContextSteps": 339
+    },
+    {
+      "playIndex": 20,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": false,
+          "handoff": true,
+          "pickRoll": false,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "3fed95898ef429d1fce78912e31160d5734d0035d381705f9a2a30575e309914",
+      "steps": 240,
+      "dependenciesSha256": "3fb47bcef788f70120279d2c98d08a252090bef0a0b94b44501de117f9d44d42",
+      "dependenciesSteps": 295,
+      "ballStateSha256": "06fcf85b1e1b9cbfcf341d660d546e3dd6858be52b1de9ecb0c4fb4154df9b35",
+      "ballStateSteps": 286,
+      "responsibilitiesSha256": "fcf3eba6361d53ef5b2426a24a529d4348406bd224f36cdfc52b5ede4b727dc0",
+      "responsibilitiesSteps": 291,
+      "congestionSha256": "fcf3eba6361d53ef5b2426a24a529d4348406bd224f36cdfc52b5ede4b727dc0",
+      "congestionSteps": 291,
+      "releaseContextSha256": "a7fe740f91e5b55b9af33dfc7272fc98f24adb1b0e4b22c0cfa04fb5a5eba0f7",
+      "releaseContextSteps": 291
+    },
+    {
+      "playIndex": 21,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": false,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "f36228b5a08de3dec01d440fa51d0044303a186a1708408a7b8b70f169f90fc3",
+      "steps": 396,
+      "dependenciesSha256": "25b41141b0c174011a17fda759429ddbca4ddf8fe777f10bd9b6ed36911fc3c8",
+      "dependenciesSteps": 353,
+      "ballStateSha256": "8ca8a7533aedd25306a95e2d6c04abd27b7ce3cda8b710751095387c91ad02f7",
+      "ballStateSteps": 354,
+      "responsibilitiesSha256": "058a7ae420c3975e8c152617e9a6fd3f7f6070e1acd8db22c099de16eb12dcce",
+      "responsibilitiesSteps": 353,
+      "congestionSha256": "0e0dff05c18cbf1dad98ff130ff7796bfeb7be0a93db3e5b5d6124b49716dcf2",
+      "congestionSteps": 355,
+      "releaseContextSha256": "7efa8db7122a498c1ef862c940804eef56d3104012f8a25decc73746cb42fc3b",
+      "releaseContextSteps": 355
+    },
+    {
+      "playIndex": 22,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": false,
+          "handoff": false,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "de1fad50816d41ba3fccc6d00baefaf0413ac634083ebab050cf0ae06b3a66be",
+      "steps": 261,
+      "dependenciesSha256": "4e6155920119ba35c87a32f1728aa4592fd2a3bb90f66a7ef6d183c1e012aad6",
+      "dependenciesSteps": 261,
+      "ballStateSha256": "67015e68a017e5856cdf285ffb7bb46c050bebc612e80412dc583a3cdfd3dad4",
+      "ballStateSteps": 265,
+      "responsibilitiesSha256": "6b59a1dd09b4a38eb083e27bb1b02c5f416f81b7fcd81823a5e84782cb10f454",
+      "responsibilitiesSteps": 265,
+      "congestionSha256": "26f39c2bd42ab790b23a34436207dbc6c7f5eab24b0f07b067aa0e2641913d82",
+      "congestionSteps": 223,
+      "releaseContextSha256": "837f54c2904b253e01a4d2190dbbb97809a6ea533f2f73bcd60ef0d6fd36f16e",
+      "releaseContextSteps": 223
+    },
+    {
+      "playIndex": 23,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": false,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "4528d1249db66fc4a3c13d788da5c4a5fce89ff2ed1438d6b5629c36acec2f62",
+      "steps": 275,
+      "dependenciesSha256": "4d7ea595cb796cfb58a192c0e53cfd26fc697573f00dddcb0fc62042c0581ba3",
+      "dependenciesSteps": 245,
+      "ballStateSha256": "1d7c06a8a26bd021ac64c3b6253c8e239dcdc3be086c7ce2b81bc2715bd94c73",
+      "ballStateSteps": 245,
+      "responsibilitiesSha256": "f17e62abf66b74bf3fd678d141cc2fb3bba272055eddd519c20618234f6286b7",
+      "responsibilitiesSteps": 250,
+      "congestionSha256": "2bed45af9a1628bd8631d5c7302e7f1de609ac58d66e164eb1c8fedbefb2752a",
+      "congestionSteps": 250,
+      "releaseContextSha256": "0572073777871d901aebff026386ba4412fdb7bb808d2bf0794a99ddc9a5e7d0",
+      "releaseContextSteps": 250
+    },
+    {
+      "playIndex": 0,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": false,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "e92e9fb60b6f8677e84b04f7d28514bc79fd076d0f1a36ce6cfc29718450cd06",
+      "steps": 316,
+      "dependenciesSha256": "3029bf8a0a2b0bc2849067ded83a8812906fccdb75d75eb72b47c09e54d2608e",
+      "dependenciesSteps": 319,
+      "ballStateSha256": "9c9d12a293fc1e90b4faf2c5b611fa7b7a1da5834de6fcf8e18aa7e000193e8c",
+      "ballStateSteps": 317,
+      "responsibilitiesSha256": "54e16a4d39e6bbb23590da975a041a71a585da8ffa5fa0ff57269592eab65034",
+      "responsibilitiesSteps": 262,
+      "congestionSha256": "7cc127a9551a80a0df74eee47047e9ad31a5fbedec814e6f6611789b645c531a",
+      "congestionSteps": 319,
+      "releaseContextSha256": "f1fe5bcd8395a7d8feddfffaf5c44774102cfbec8eb22095d86824e947e740b8",
+      "releaseContextSteps": 319
+    },
+    {
+      "playIndex": 1,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        }
+      },
+      "sha256": "bc494925116b9fa5628ea59a119116473ca29fd8e4dc5dbda2d76fa753919b6a",
+      "steps": 316,
+      "dependenciesSha256": "71cdec7ed4d16af26e486e601c5ddde0e643e65c448bd293414c94add5c3a0cd",
+      "dependenciesSteps": 268,
+      "ballStateSha256": "a30eff9340ea3985f21e21405f354da4a3021944aa2ce8a310c0a4b4bc621afc",
+      "ballStateSteps": 269,
+      "responsibilitiesSha256": "52543183ec98c0823dcc4060fec74cf775c7d4350580cd70e862ee2a44765ee1",
+      "responsibilitiesSteps": 293,
+      "congestionSha256": "6d97db254f4871cc3e1c45392736b38779b3afaca4fc03eedc65cc3afa10c310",
+      "congestionSteps": 290,
+      "releaseContextSha256": "32db64bcecc67c2d5d5b6e7e91423b2a038b066311c2c7007308a583995ff0d0",
+      "releaseContextSteps": 290
+    },
+    {
+      "playIndex": 2,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        },
+        "offenseMode": "scripted"
+      },
+      "sha256": "48c163c581880993098e24fd2955245a53b468822d4f00e5063e9bf66a37aa03",
+      "steps": 108,
+      "dependenciesSha256": "686308f790110c0d4e406a26f274ffa7f320b96c3541d00b762f7389c17ba207",
+      "dependenciesSteps": 102,
+      "ballStateSha256": "3785c00bbf6c1931ed92029ff31946456fc406da415cf270825891b2c82d871f",
+      "ballStateSteps": 103,
+      "responsibilitiesSha256": "0cfe99b6378d02937739d166242edb0b60cb6fa719a552917e16db59e97ca84b",
+      "responsibilitiesSteps": 103,
+      "congestionSha256": "0cfe99b6378d02937739d166242edb0b60cb6fa719a552917e16db59e97ca84b",
+      "congestionSteps": 103,
+      "releaseContextSha256": "d9f18ca641b83e78e7e5f1f61dab3e9081944ec4415ba1f5cf952cba091c7808",
+      "releaseContextSteps": 103
+    },
+    {
+      "playIndex": 3,
+      "settings": {
+        "offenseOffBall": "read-react",
+        "defenseScheme": "auto",
+        "defenseStrategy": "help",
+        "offBallIntensity": 70,
+        "automaticActions": {
+          "screen": true,
+          "handoff": true,
+          "pickRoll": true,
+          "offBallScreen": true
+        },
+        "offenseMode": "adaptive"
+      },
+      "sha256": "e28639ed9f36fa6a4a9a36233d9e01a547f6e30eb4f36b40107dd7341ece8c53",
+      "steps": 336,
+      "dependenciesSha256": "206b4ee8a941f93c8885d5cb3d3c7355d235eeed56aef028dd41a77389b97553",
+      "dependenciesSteps": 288,
+      "ballStateSha256": "1aa2d0954d4b18d668d2bb15dbe622d9518d21945863c92bc051611e47fd18f2",
+      "ballStateSteps": 288,
+      "responsibilitiesSha256": "0d0a53355f2a2a0fc05bce7657372a7d5eff2a935f489b8a1fc66f49e022ecd8",
+      "responsibilitiesSteps": 288,
+      "congestionSha256": "5c474838588dac0b70f68e3f13854c3245263949e49b466670f15e070d1b7c5e",
+      "congestionSteps": 288,
+      "releaseContextSha256": "9e066e18b9941ec5c651f06e2bbf25062049d8472c508fdaaeaf921fcd7b121c",
+      "releaseContextSteps": 288
+    }
+  ]
+}

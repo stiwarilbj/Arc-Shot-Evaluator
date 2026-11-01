@@ -1,0 +1,778 @@
+[
+  {
+    "name": "horizontal",
+    "arrow": {
+      "id": "route-0",
+      "kind": "movement",
+      "sequence": 1,
+      "path": "curve",
+      "actor_id": 1,
+      "start": {
+        "x": 20,
+        "y": 50
+      },
+      "end": {
+        "x": 80,
+        "y": 50
+      }
+    },
+    "editorControl": {
+      "x": 50,
+      "y": 35.95744680851064
+    },
+    "editorPath": "M200 470 Q500 338 800 470",
+    "samples": [
+      {
+        "t": -0.5,
+        "editor": {
+          "x": 20,
+          "y": 50
+        }
+      },
+      {
+        "t": 0,
+        "editor": {
+          "x": 20,
+          "y": 50
+        }
+      },
+      {
+        "t": 0.125,
+        "editor": {
+          "x": 27.5,
+          "y": 46.9281914893617
+        }
+      },
+      {
+        "t": 0.5,
+        "editor": {
+          "x": 50,
+          "y": 42.97872340425532
+        }
+      },
+      {
+        "t": 0.875,
+        "editor": {
+          "x": 72.5,
+          "y": 46.9281914893617
+        }
+      },
+      {
+        "t": 1,
+        "editor": {
+          "x": 80,
+          "y": 50
+        }
+      },
+      {
+        "t": 1.5,
+        "editor": {
+          "x": 80,
+          "y": 50
+        }
+      }
+    ],
+    "engineRoutes": [
+      {
+        "actionId": "route-0",
+        "sequence": 1,
+        "importance": "main",
+        "id": "route-0:1:actor",
+        "kind": "movement",
+        "scope": "on-ball",
+        "playerId": 1,
+        "start": {
+          "x": 20,
+          "y": 50
+        },
+        "end": {
+          "x": 80,
+          "y": 50
+        },
+        "control": {
+          "x": 50,
+          "y": 37
+        }
+      }
+    ]
+  },
+  {
+    "name": "vertical",
+    "arrow": {
+      "id": "route-1",
+      "kind": "movement",
+      "sequence": 1,
+      "path": "curve",
+      "actor_id": 1,
+      "start": {
+        "x": 50,
+        "y": 80
+      },
+      "end": {
+        "x": 50,
+        "y": 20
+      }
+    },
+    "editorControl": {
+      "x": 37.592000000000006,
+      "y": 50
+    },
+    "editorPath": "M500 752 Q375.92 470 500 188",
+    "samples": [
+      {
+        "t": -0.5,
+        "editor": {
+          "x": 50,
+          "y": 80
+        }
+      },
+      {
+        "t": 0,
+        "editor": {
+          "x": 50,
+          "y": 80
+        }
+      },
+      {
+        "t": 0.125,
+        "editor": {
+          "x": 47.28575,
+          "y": 72.5
+        }
+      },
+      {
+        "t": 0.5,
+        "editor": {
+          "x": 43.79600000000001,
+          "y": 50
+        }
+      },
+      {
+        "t": 0.875,
+        "editor": {
+          "x": 47.28575,
+          "y": 27.5
+        }
+      },
+      {
+        "t": 1,
+        "editor": {
+          "x": 50,
+          "y": 20
+        }
+      },
+      {
+        "t": 1.5,
+        "editor": {
+          "x": 50,
+          "y": 20
+        }
+      }
+    ],
+    "engineRoutes": [
+      {
+        "actionId": "route-1",
+        "sequence": 1,
+        "importance": "main",
+        "id": "route-1:1:actor",
+        "kind": "movement",
+        "scope": "on-ball",
+        "playerId": 1,
+        "start": {
+          "x": 50,
+          "y": 80
+        },
+        "end": {
+          "x": 50,
+          "y": 20
+        },
+        "control": {
+          "x": 37,
+          "y": 50
+        }
+      }
+    ]
+  },
+  {
+    "name": "diagonal",
+    "arrow": {
+      "id": "route-2",
+      "kind": "movement",
+      "sequence": 1,
+      "path": "curve",
+      "actor_id": 1,
+      "start": {
+        "x": 20,
+        "y": 75
+      },
+      "end": {
+        "x": 82,
+        "y": 18
+      }
+    },
+    "editorControl": {
+      "x": 41.845941706276655,
+      "y": 35.231274486930516
+    },
+    "editorPath": "M200 705 Q418.4594170627666 331.1739801771468 820 169.2",
+    "samples": [
+      {
+        "t": -0.5,
+        "editor": {
+          "x": 20,
+          "y": 75
+        }
+      },
+      {
+        "t": 0,
+        "editor": {
+          "x": 20,
+          "y": 75
+        }
+      },
+      {
+        "t": 0.125,
+        "editor": {
+          "x": 25.74754974824802,
+          "y": 65.40996629401604
+        }
+      },
+      {
+        "t": 0.5,
+        "editor": {
+          "x": 46.422970853138324,
+          "y": 40.86563724346526
+        }
+      },
+      {
+        "t": 0.875,
+        "editor": {
+          "x": 72.24754974824802,
+          "y": 22.65996629401605
+        }
+      },
+      {
+        "t": 1,
+        "editor": {
+          "x": 82,
+          "y": 18
+        }
+      },
+      {
+        "t": 1.5,
+        "editor": {
+          "x": 82,
+          "y": 18
+        }
+      }
+    ],
+    "engineRoutes": [
+      {
+        "actionId": "route-2",
+        "sequence": 1,
+        "importance": "main",
+        "id": "route-2:1:actor",
+        "kind": "movement",
+        "scope": "on-ball",
+        "playerId": 1,
+        "start": {
+          "x": 20,
+          "y": 75
+        },
+        "end": {
+          "x": 82,
+          "y": 18
+        },
+        "control": {
+          "x": 42.20160960851948,
+          "y": 36.92982097768786
+        }
+      }
+    ]
+  },
+  {
+    "name": "short authored route",
+    "arrow": {
+      "id": "route-3",
+      "kind": "movement",
+      "sequence": 1,
+      "path": "curve",
+      "actor_id": 1,
+      "start": {
+        "x": 40,
+        "y": 50
+      },
+      "end": {
+        "x": 40.02,
+        "y": 50.03
+      }
+    },
+    "editorControl": {
+      "x": 41.70199999999989,
+      "y": 48.738404255318855
+    },
+    "editorPath": "M400 470 Q417.0199999999989 458.14099999999723 400.20000000000005 470.282",
+    "samples": [
+      {
+        "t": -0.5,
+        "editor": {
+          "x": 40,
+          "y": 50
+        }
+      },
+      {
+        "t": 0,
+        "editor": {
+          "x": 40,
+          "y": 50
+        }
+      },
+      {
+        "t": 0.125,
+        "editor": {
+          "x": 40.37262499999998,
+          "y": 49.724494680851
+        }
+      },
+      {
+        "t": 0.5,
+        "editor": {
+          "x": 40.855999999999945,
+          "y": 49.37670212765943
+        }
+      },
+      {
+        "t": 0.875,
+        "editor": {
+          "x": 40.38762499999998,
+          "y": 49.746994680851
+        }
+      },
+      {
+        "t": 1,
+        "editor": {
+          "x": 40.02,
+          "y": 50.03
+        }
+      },
+      {
+        "t": 1.5,
+        "editor": {
+          "x": 40.02,
+          "y": 50.03
+        }
+      }
+    ],
+    "engineRoutes": [
+      {
+        "actionId": "route-3",
+        "sequence": 1,
+        "importance": "main",
+        "id": "route-3:1:actor",
+        "kind": "movement",
+        "scope": "on-ball",
+        "playerId": 1,
+        "start": {
+          "x": 40,
+          "y": 50
+        },
+        "end": {
+          "x": 40.02,
+          "y": 50.03
+        },
+        "control": {
+          "x": 40.16000000000001,
+          "y": 49.914999999999985
+        }
+      }
+    ]
+  },
+  {
+    "name": "stationary",
+    "arrow": {
+      "id": "route-4",
+      "kind": "movement",
+      "sequence": 1,
+      "path": "curve",
+      "actor_id": 1,
+      "start": {
+        "x": 50,
+        "y": 50
+      },
+      "end": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    "editorControl": {
+      "x": 50,
+      "y": 50
+    },
+    "editorPath": "M500 470 Q500 470 500 470",
+    "samples": [
+      {
+        "t": -0.5,
+        "editor": {
+          "x": 50,
+          "y": 50
+        }
+      },
+      {
+        "t": 0,
+        "editor": {
+          "x": 50,
+          "y": 50
+        }
+      },
+      {
+        "t": 0.125,
+        "editor": {
+          "x": 50,
+          "y": 50
+        }
+      },
+      {
+        "t": 0.5,
+        "editor": {
+          "x": 50,
+          "y": 50
+        }
+      },
+      {
+        "t": 0.875,
+        "editor": {
+          "x": 50,
+          "y": 50
+        }
+      },
+      {
+        "t": 1,
+        "editor": {
+          "x": 50,
+          "y": 50
+        }
+      },
+      {
+        "t": 1.5,
+        "editor": {
+          "x": 50,
+          "y": 50
+        }
+      }
+    ],
+    "engineRoutes": [
+      {
+        "actionId": "route-4",
+        "sequence": 1,
+        "importance": "main",
+        "id": "route-4:1:actor",
+        "kind": "movement",
+        "scope": "on-ball",
+        "playerId": 1,
+        "start": {
+          "x": 50,
+          "y": 50
+        },
+        "end": {
+          "x": 50,
+          "y": 50
+        },
+        "control": {
+          "x": 50,
+          "y": 50
+        }
+      }
+    ]
+  },
+  {
+    "name": "boundary control clamping",
+    "arrow": {
+      "id": "route-5",
+      "kind": "movement",
+      "sequence": 1,
+      "path": "curve",
+      "actor_id": 1,
+      "start": {
+        "x": 2,
+        "y": 2
+      },
+      "end": {
+        "x": 98,
+        "y": 2
+      }
+    },
+    "editorControl": {
+      "x": 50,
+      "y": 2
+    },
+    "editorPath": "M20 18.8 Q500 18.8 980 18.8",
+    "samples": [
+      {
+        "t": -0.5,
+        "editor": {
+          "x": 2,
+          "y": 2
+        }
+      },
+      {
+        "t": 0,
+        "editor": {
+          "x": 2,
+          "y": 2
+        }
+      },
+      {
+        "t": 0.125,
+        "editor": {
+          "x": 14,
+          "y": 2
+        }
+      },
+      {
+        "t": 0.5,
+        "editor": {
+          "x": 50,
+          "y": 2
+        }
+      },
+      {
+        "t": 0.875,
+        "editor": {
+          "x": 86,
+          "y": 2
+        }
+      },
+      {
+        "t": 1,
+        "editor": {
+          "x": 98,
+          "y": 2
+        }
+      },
+      {
+        "t": 1.5,
+        "editor": {
+          "x": 98,
+          "y": 2
+        }
+      }
+    ],
+    "engineRoutes": [
+      {
+        "actionId": "route-5",
+        "sequence": 1,
+        "importance": "main",
+        "id": "route-5:1:actor",
+        "kind": "movement",
+        "scope": "on-ball",
+        "playerId": 1,
+        "start": {
+          "x": 2,
+          "y": 2
+        },
+        "end": {
+          "x": 98,
+          "y": 2
+        },
+        "control": {
+          "x": 50,
+          "y": 2.4000000000000004
+        }
+      }
+    ]
+  },
+  {
+    "name": "explicit control",
+    "arrow": {
+      "id": "route-6",
+      "kind": "movement",
+      "sequence": 1,
+      "path": "curve",
+      "actor_id": 1,
+      "start": {
+        "x": 20,
+        "y": 70
+      },
+      "end": {
+        "x": 80,
+        "y": 30
+      },
+      "control": {
+        "x": 25,
+        "y": 15
+      }
+    },
+    "editorControl": {
+      "x": 25,
+      "y": 15
+    },
+    "editorPath": "M200 658 Q250 141 800 282",
+    "samples": [
+      {
+        "t": -0.5,
+        "editor": {
+          "x": 20,
+          "y": 70
+        }
+      },
+      {
+        "t": 0,
+        "editor": {
+          "x": 20,
+          "y": 70
+        }
+      },
+      {
+        "t": 0.125,
+        "editor": {
+          "x": 22.03125,
+          "y": 57.34375
+        }
+      },
+      {
+        "t": 0.5,
+        "editor": {
+          "x": 37.5,
+          "y": 32.5
+        }
+      },
+      {
+        "t": 0.875,
+        "editor": {
+          "x": 67.03125,
+          "y": 27.34375
+        }
+      },
+      {
+        "t": 1,
+        "editor": {
+          "x": 80,
+          "y": 30
+        }
+      },
+      {
+        "t": 1.5,
+        "editor": {
+          "x": 80,
+          "y": 30
+        }
+      }
+    ],
+    "engineRoutes": [
+      {
+        "actionId": "route-6",
+        "sequence": 1,
+        "importance": "main",
+        "id": "route-6:1:actor",
+        "kind": "movement",
+        "scope": "on-ball",
+        "playerId": 1,
+        "start": {
+          "x": 20,
+          "y": 70
+        },
+        "end": {
+          "x": 80,
+          "y": 30
+        },
+        "control": {
+          "x": 25,
+          "y": 15
+        }
+      }
+    ]
+  },
+  {
+    "name": "straight boundary route",
+    "arrow": {
+      "id": "route-7",
+      "kind": "movement",
+      "sequence": 1,
+      "path": "straight",
+      "actor_id": 1,
+      "start": {
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    "editorControl": {
+      "x": 59.588740122750416,
+      "y": 39.148098548267974
+    },
+    "editorPath": "M0 0 L1000 940",
+    "samples": [
+      {
+        "t": -0.5,
+        "editor": {
+          "x": 2,
+          "y": 2
+        }
+      },
+      {
+        "t": 0,
+        "editor": {
+          "x": 2,
+          "y": 2
+        }
+      },
+      {
+        "t": 0.125,
+        "editor": {
+          "x": 12.5,
+          "y": 12.5
+        }
+      },
+      {
+        "t": 0.5,
+        "editor": {
+          "x": 50,
+          "y": 50
+        }
+      },
+      {
+        "t": 0.875,
+        "editor": {
+          "x": 87.5,
+          "y": 87.5
+        }
+      },
+      {
+        "t": 1,
+        "editor": {
+          "x": 98,
+          "y": 98
+        }
+      },
+      {
+        "t": 1.5,
+        "editor": {
+          "x": 98,
+          "y": 98
+        }
+      }
+    ],
+    "engineRoutes": [
+      {
+        "actionId": "route-7",
+        "sequence": 1,
+        "importance": "main",
+        "id": "route-7:1:actor",
+        "kind": "movement",
+        "scope": "on-ball",
+        "playerId": 1,
+        "start": {
+          "x": 0,
+          "y": 0
+        },
+        "end": {
+          "x": 100,
+          "y": 100
+        }
+      }
+    ]
+  }
+]

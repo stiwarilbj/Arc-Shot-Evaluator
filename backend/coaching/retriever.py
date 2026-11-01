@@ -143,6 +143,7 @@ def build_coaching_tip(
 
 def clean_coaching_text(text: str) -> str:
     """Keep the compact Coach Notes style consistent across old and new tips."""
+    text = re.sub(r"(?<!\d)\.(?=\s+[A-Z])", " ·", text)
     return re.sub(r"[.!]+$", "", text.replace("—", "-").strip())
 
 

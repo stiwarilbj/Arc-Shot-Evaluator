@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "seed": 1107,
+  "engineVersion": 8,
+  "layout": "curves",
+  "settings": {
+    "offenseOffBall": "read-react",
+    "defenseScheme": "man-to-man",
+    "defenseStrategy": "off",
+    "offBallIntensity": 70,
+    "automaticActions": {
+      "screen": true,
+      "handoff": true,
+      "pickRoll": true,
+      "offBallScreen": true
+    },
+    "offenseMode": "scripted"
+  },
+  "drawing": {
+    "version": 1,
+    "id": "crowded-cuts",
+    "name": "Curved crossing with a conflicting route",
+    "defenders_visible": true,
+    "players": [
+      {
+        "id": 1,
+        "x": 30,
+        "y": 55
+      },
+      {
+        "id": 2,
+        "x": 60,
+        "y": 55
+      },
+      {
+        "id": 3,
+        "x": 45,
+        "y": 70
+      }
+    ],
+    "defenders": [
+      {
+        "id": 1,
+        "x": 85,
+        "y": 15
+      }
+    ],
+    "ball": null,
+    "arrows": [
+      {
+        "id": "cross-a",
+        "kind": "movement",
+        "actor_id": 1,
+        "sequence": 1,
+        "timing": 4,
+        "path": "curve",
+        "control": {
+          "x": 45,
+          "y": 70
+        },
+        "start": {
+          "x": 30,
+          "y": 55
+        },
+        "end": {
+          "x": 60,
+          "y": 55
+        }
+      },
+      {
+        "id": "cross-b",
+        "kind": "movement",
+        "actor_id": 2,
+        "sequence": 1,
+        "timing": 4,
+        "start": {
+          "x": 60,
+          "y": 55
+        },
+        "end": {
+          "x": 30,
+          "y": 55
+        }
+      },
+      {
+        "id": "conflict",
+        "kind": "movement",
+        "actor_id": 1,
+        "sequence": 1,
+        "timing": 4,
+        "start": {
+          "x": 30,
+          "y": 55
+        },
+        "end": {
+          "x": 30,
+          "y": 70
+        }
+      }
+    ]
+  },
+  "commands": [
+    {
+      "kind": "finish",
+      "maxSteps": 3000
+    }
+  ]
+}

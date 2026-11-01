@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { smallPlayerCrop, sourceCrop, acceptRefinement } from '../frontend/src/features/jumper/smallPlayer.ts';
+import { validateMaskRequest, maskResult } from '../frontend/src/features/jumper/domain.ts';
+const fixtures=JSON.parse(readFileSync(new URL('../tests/fixtures/jumper/small-player.json',import.meta.url)));
+const fill=(a,w,rect,value)=>{for(let y=rect[1];y<rect[3];y++)a.fill(value,y*w+rect[0],y*w+rect[2]);};
+for(const f of fixtures){
+ const coarse=new Float32Array(f.width*f.height).fill(-3);fill(coarse,f.width,f.body,3);
+ const before=coarse.slice(), crop=smallPlayerCrop(coarse,f.width,f.height);
+ assert(crop&&!crop.unusable);assert(crop.height<f.height*.6);
+ const candidate=new Float32Array(crop.width*crop.height).fill(-3);
+ const local=r=>[r[0]-crop.x,r[1]-crop.y,r[2]-crop.x,r[3]-crop.y];
+ fill(candidate,crop.width,local(f.replace??f.body),3);
+ if(f.edit)fill(candidate,crop.width,local(f.edit),3);
+ if(f.edge)candidate[0]=3;
+ if(f.nan)candidate[0]=NaN;
+ const owners=new Uint8Array(coarse.length);fill(owners,f.width,f.body,1);
+ if(f.occupied)fill(owners,f.width,f.occupied,2);
+ const refined=acceptRefinement(coarse,candidate,crop,f.width,f.height,owners,1);
+ assert.equal(!!refined,f.expected,f.name);assert.deepEqual(coarse,before);
+ if(refined)assert.notEqual(refined,coarse);
+ const region=sourceCrop(crop,f.width,f.height,1920,1080);
+ assert.equal(region.x,crop.x*6);assert.equal(region.width,crop.width*6);
+ const corrected=smallPlayerCrop(coarse,f.width,f.height,{frame:0,points:[[.47,.4],[.42,.4]],labels:[1,0]});
+ assert.equal(corrected.labels.at(-1),0);assert.equal(corrected.points.length,crop.points.length+2);
+ const outside=smallPlayerCrop(coarse,f.width,f.height,{frame:0,points:[[.99,.99]],labels:[1]});assert(outside.unusable);
+}
+const large=new Float32Array(320*180).fill(-3);fill(large,320,[40,20,160,160],3);assert.equal(smallPlayerCrop(large,320,180),undefined);
+const tiny=new Float32Array(320*180).fill(-3);fill(tiny,320,[1,1,3,3],3);assert(smallPlayerCrop(tiny,320,180).unusable);
+assert.equal(smallPlayerCrop(new Float32Array(320*180).fill(-3),320,180),undefined);
+const request={start:0,end:1,target_id:1,refine_small_players:true,objects:[{id:1,prompts:[{frame:0,box:[.1,.1,.2,.2]}]}]};validateMaskRequest(request);
+for(const flag of [1,'true',null])assert.throws(()=>validateMaskRequest({...request,refine_small_players:flag}));
+const blob=new Blob(['video'],{type:'video/mp4'});assert(maskResult({duration:1,highlight:blob,quiz:blob,reveal:blob,warnings:[{frame:0,kind:'refinement_uncertain',track_ids:[1]}]}));
+console.log('Small-player crop geometry, detail acceptance, occlusion/leak refusal, correction prompts, immutability and runtime contracts passed');

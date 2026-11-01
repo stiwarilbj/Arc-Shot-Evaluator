@@ -1,13 +1,15 @@
 [project]
 name = "arc-shot-evaluator"
 version = "3.0.0"
-description = "Private, local basketball shot and form analysis"
+description = "ARCade Hoops: private shot analysis, play design, defensive simulations, and silhouette quizzes"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "av==16.0.1",
   "fastapi>=0.141,<1",
   "imageio-ffmpeg>=0.6,<1",
   "numpy>=2.2,<3",
   "opencv-python-headless>=4.11,<5.1",
+  "psutil>=7.2,<8",
   "python-multipart>=0.0.20,<1",
   "torch>=2.7,<3",
   "ultralytics>=8.4,<9",

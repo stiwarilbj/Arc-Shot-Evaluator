@@ -1,0 +1,211 @@
+[
+  {
+    "name": "same explicit coordinate",
+    "points": [
+      [
+        0.5,
+        0.5
+      ],
+      [
+        0.5,
+        0.5
+      ]
+    ],
+    "labels": [
+      1,
+      0
+    ],
+    "conflict": true
+  },
+  {
+    "name": "nearby clicks same model pixel",
+    "points": [
+      [
+        0.5001,
+        0.5001
+      ],
+      [
+        0.5002,
+        0.5002
+      ]
+    ],
+    "labels": [
+      1,
+      0
+    ],
+    "conflict": true
+  },
+  {
+    "name": "same-label duplicates preserve first",
+    "points": [
+      [
+        0.5001,
+        0.5001
+      ],
+      [
+        0.5002,
+        0.5002
+      ],
+      [
+        0.8,
+        0.8
+      ]
+    ],
+    "labels": [
+      1,
+      1,
+      0
+    ],
+    "keep": [
+      0,
+      2
+    ]
+  },
+  {
+    "name": "negative duplicates",
+    "points": [
+      [
+        0.2,
+        0.2
+      ],
+      [
+        0.20001,
+        0.20001
+      ]
+    ],
+    "labels": [
+      0,
+      0
+    ],
+    "keep": [
+      0
+    ]
+  },
+  {
+    "name": "adjacent model pixels",
+    "points": [
+      [
+        0.5001,
+        0.5
+      ],
+      [
+        0.5011,
+        0.5
+      ]
+    ],
+    "labels": [
+      1,
+      0
+    ],
+    "keep": [
+      0,
+      1
+    ]
+  },
+  {
+    "name": "different vertical pixel",
+    "points": [
+      [
+        0.5,
+        0.5001
+      ],
+      [
+        0.5,
+        0.5011
+      ]
+    ],
+    "labels": [
+      1,
+      0
+    ],
+    "keep": [
+      0,
+      1
+    ]
+  },
+  {
+    "name": "right bottom boundary",
+    "points": [
+      [
+        1,
+        1
+      ],
+      [
+        0.9999,
+        0.9999
+      ]
+    ],
+    "labels": [
+      1,
+      0
+    ],
+    "conflict": true
+  },
+  {
+    "name": "left top boundary",
+    "points": [
+      [
+        0,
+        0
+      ],
+      [
+        0.0001,
+        0.0001
+      ]
+    ],
+    "labels": [
+      1,
+      0
+    ],
+    "conflict": true
+  },
+  {
+    "name": "float32 rounds onto boundary",
+    "points": [
+      [
+        0.4999999990234375,
+        0.5
+      ],
+      [
+        0.5,
+        0.5
+      ]
+    ],
+    "labels": [
+      1,
+      0
+    ],
+    "conflict": true
+  },
+  {
+    "name": "box corners are not corrective labels",
+    "box": [
+      0.5,
+      0.5,
+      0.9,
+      0.9
+    ],
+    "points": [
+      [
+        0.5,
+        0.5
+      ]
+    ],
+    "labels": [
+      0
+    ],
+    "keep": [
+      0
+    ]
+  },
+  {
+    "name": "box only",
+    "box": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "keep": []
+  }
+]

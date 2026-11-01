@@ -58,7 +58,7 @@ export function ExampleVideoLibrary({ examples, loading, error, onSelect, shotMo
           ))}
         </div>
       ) : (
-        <div className="examples-state"><Film size={18} />Add videos above to build your own examples.</div>
+        <div className="examples-state"><Film size={18} />Add videos above to build your own examples</div>
       )}
     </section>
   );

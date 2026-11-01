@@ -1,0 +1,251 @@
+import type { DefensiveResponsibility } from "./defensiveResponsibilities.ts";
+import type { BallPhase } from "./ballState.ts";
+import type { ShotReleaseContext } from "./shotReleaseContext.ts";
+import type { CourtRoute } from "./arrowVisibility";
+import type { ReplayArchive } from "./counterLabReplayArchive.ts";
+import type { CourtPoint, DefenseScheme, DefenseStrategy, PlaybookDraft } from "./types";
+import { bindAuthoredActions, DEFENSE_SCHEME_ORDER, type ActionDiagnostic } from "./simulation.ts";
+import type { DefenderDilemmaChoice, DefenderDilemmaConfiguration, DefenderDilemmaChoiceSummary, DefenderDilemmaProgress } from "./defenderDilemma.ts";
+import type { SimulationFrame } from "./simulation.ts";
+
+export type CounterLabMode = "scripted" | "adaptive";
+export type CounterLabProfile = { id: string; label: string; strategy: DefenseStrategy; scheme: Exclude<DefenseScheme, "auto"> };
+export type PassDiagnostic = {
+  actionId: string; sequence: number; actorId: number | null; playerId: number | null;
+  status: "delivered" | "failed" | "interrupted"; atMs: number;
+  unsafeAtMs: number | null; receiverGap: number; laneGap: number;
+};
+export type CounterLabEvent = { kind: "opening-lost" | "failed-pass" | "obstructed-action" | "action-conflict"; atMs: number; sequence: number | null; actionId: string | null; playerId: number | null };
+export type CounterLabFrame = {
+  defensiveResponsibilities?: DefensiveResponsibility[];
+  ballPhase?: BallPhase;
+  elapsedMs: number; sequence: number | null; action: string | null; ballHandlerId: number | null;
+  assignments: Array<{ defenderId: number; playerId: number }>;
+  opportunities: CounterLabOpportunity[];
+  blockedPass: { actionId: string; sequence: number; playerId: number; receiverGap: number; laneGap: number } | null;
+  involvedPlayerIds: number[];
+  execution?: ActionDiagnostic[];
+  activeRoutes: CourtRoute[];
+  players: Array<{ id: number; x: number; y: number }>;
+  defenders: Array<{ id: number; x: number; y: number }>;
+  ball: CourtPoint | null; shotPhase: "idle" | "setup" | "air" | "result";
+  defenderDilemma?: SimulationFrame["defenderDilemma"];
+};
+export type CounterLabOpportunity = { kind: "shot" | "pass" | "drive"; playerId: number; quality: number; score: number; receiverGap: number; laneGap: number };
+export type AdvantageRelayEvidence = {
+  snapshotMs: number;
+  ballHandlerId: number | null;
+  sequence: number | null;
+  action: string | null;
+  actionId: string | null;
+  opportunities: CounterLabOpportunity[];
+  assignments: Array<{ defenderId: number; playerId: number }>;
+};
+export type AdvantageRelayTransfer = {
+  actionId: string;
+  sequence: number;
+  kind: "pass" | "handoff";
+  giverId: number;
+  receiverId: number;
+  releasedAtMs: number;
+  caughtAtMs: number;
+  continuationAtMs: number;
+  passOpportunity: CounterLabOpportunity;
+  continuationOpportunity: CounterLabOpportunity;
+};
+export type AdvantageRelayEvent = {
+  id: string;
+  kind: "created" | "transferred" | "lost";
+  atMs: number;
+  confirmedAtMs: number | null;
+  playerIds: number[];
+  sequence: number | null;
+  actionId: string | null;
+  note: string | null;
+  evidence: AdvantageRelayEvidence;
+  transfer: AdvantageRelayTransfer | null;
+};
+export type AdvantageRelaySupportingTransfer = {
+  id: string;
+  actionId: string;
+  sequence: number;
+  kind: "pass" | "handoff";
+  outcome: "caught" | "failed" | "interrupted";
+  giverId: number;
+  receiverId: number;
+  atMs: number;
+};
+export type AdvantageRelay = { version: 1; status: "recorded" | "none"; durationMs: number; events: AdvantageRelayEvent[]; supportingTransfers: AdvantageRelaySupportingTransfer[] };
+export type CounterLabResult = {
+  shotRelease?: ShotReleaseContext | null;
+  advantageRelay: AdvantageRelay;
+  key: string; profile: CounterLabProfile; mode: CounterLabMode; score: number; finalShotQuality: number;
+  createdAdvantage: boolean; outcome: string; firstLostOpeningMs: number | null;
+  firstBlockedPass: (PassDiagnostic & { playerId: number }) | null;
+  firstUnsafePass: PassDiagnostic | null; passDiagnostics: PassDiagnostic[];
+  firstBreakdown: CounterLabEvent | null; releasedAtMs: number | null;
+  adaptiveAttempts: number; adaptiveSuccesses: number; recoveredAtMs: number | null;
+  actionDiagnostics: ActionDiagnostic[];
+  actions: string[]; notice: string | null; trace: CounterLabFrame[];
+};
+export type RepairEvidence = { key: string; gain: number; verified: boolean; cleared: boolean; opening: "cleared" | "delayed" | "still failing" | "not created" | "unchanged"; delayMs: number; passCleared: boolean };
+export type CounterLabSummary = Omit<CounterLabResult, "trace">;
+export type CounterLabRepair = { id: string; name: string; reason: string; play: PlaybookDraft; results: CounterLabSummary[]; evidence: RepairEvidence[]; averageGain: number; bestGain: number; resolvedBreakdowns: number };
+export type CounterLabProgress = { completed: number; total: number; label: string; stage: "defenses" | "repairs" };
+export type CounterLabRequest =
+  | { type: "analyze"; id: string; draft: PlaybookDraft; profiles: CounterLabProfile[]; modes: CounterLabMode[] }
+  | { type: "details"; id: string; detailId: string; key: string; repairId: string }
+  | { type: "dilemma"; id: string; dilemmaId: string; draft: PlaybookDraft; profile: CounterLabProfile; mode: CounterLabMode; configuration: DefenderDilemmaConfiguration; seed: number }
+  | { type: "dilemma-details"; id: string; dilemmaId: string; detailId: string; choice: DefenderDilemmaChoice }
+  | { type: "dilemma-cancel"; id: string; dilemmaId: string }
+  | { type: "cancel"; id: string }
+  | { type: "release"; id: string };
+export type CounterLabMessage =
+  | ({ type: "progress"; id: string } & CounterLabProgress)
+  | { type: "baseline"; id: string; results: CounterLabSummary[] }
+  | { type: "complete"; id: string; results: CounterLabSummary[]; repairs: CounterLabRepair[] }
+  | { type: "cancelled"; id: string }
+  | { type: "details"; id: string; detailId: string; key: string; repairId: string; original: ReplayArchive | null; repaired: ReplayArchive | null }
+  | ({ type: "dilemma-progress"; id: string; dilemmaId: string } & DefenderDilemmaProgress)
+  | { type: "dilemma-complete"; id: string; dilemmaId: string; summaries: DefenderDilemmaChoiceSummary[] }
+  | { type: "dilemma-cancelled"; id: string; dilemmaId: string }
+  | { type: "dilemma-details"; id: string; dilemmaId: string; detailId: string; choice: DefenderDilemmaChoice; archive: ReplayArchive | null }
+  | { type: "dilemma-error"; id: string; dilemmaId: string; message: string; detailId?: string }
+  | { type: "error"; id: string; message: string; detailId?: string };
+
+export const COUNTER_LAB_DEFAULT_PROFILES: CounterLabProfile[] = [
+  { id: "contain", label: "Contain", strategy: "contain", scheme: "man-to-man" },
+  { id: "help", label: "Help & recover", strategy: "help", scheme: "man-to-man" },
+  { id: "switch", label: "Switch", strategy: "switch", scheme: "man-to-man" },
+  { id: "drop", label: "Drop", strategy: "drop", scheme: "man-to-man" },
+  { id: "hedge", label: "Hedge", strategy: "hedge", scheme: "man-to-man" },
+  { id: "trap", label: "Trap & rotate", strategy: "trap-rotate", scheme: "man-to-man" },
+];
+export const COUNTER_LAB_EXTRA_STRATEGIES: CounterLabProfile[] = [
+  { id: "fight-over", label: "Fight over", strategy: "fight-over", scheme: "man-to-man" },
+  { id: "go-under", label: "Go under", strategy: "go-under", scheme: "man-to-man" },
+  { id: "deny-lanes", label: "Deny lanes", strategy: "deny-lanes", scheme: "man-to-man" },
+  { id: "protect-paint", label: "Protect paint", strategy: "protect-paint", scheme: "man-to-man" },
+  { id: "off", label: "Hold positions", strategy: "off", scheme: "man-to-man" },
+];
+export const COUNTER_LAB_EXTRA_SCHEMES = DEFENSE_SCHEME_ORDER
+  .filter((scheme) => scheme !== "man-to-man")
+  .map((scheme) => ({ id: scheme, label: scheme.replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()), strategy: "help" as const, scheme }));
+
+export function eligibleCounterLabSchemes(defenderCount: number, offensivePlayerCount: number) {
+  if (defenderCount < 5) return [];
+  return COUNTER_LAB_EXTRA_SCHEMES.filter((profile) => profile.scheme !== "triangle-and-two" || offensivePlayerCount >= 2);
+}
+
+/** Keep a generated repair from silently changing the contract of an authored timing wait. */
+export function preservesTimingContracts(original: PlaybookDraft, candidate: PlaybookDraft) {
+  const originals = new Map(original.arrows.map((arrow) => [arrow.id, arrow]));
+  const candidates = new Map(candidate.arrows.map((arrow) => [arrow.id, arrow]));
+  const originalBindings = new Map(bindAuthoredActions(original).map((action) => [action.arrow.id, action]));
+  const candidateBindings = new Map(bindAuthoredActions(candidate).map((action) => [action.arrow.id, action]));
+  const screenEvents = new Set(["screen", "pick-roll", "pick-pop", "off-ball-screen", "pin-down"]);
+  const routeSignature = (arrow: PlaybookDraft["arrows"][number]) => JSON.stringify({
+    kind: arrow.kind, start: arrow.start, end: arrow.end, control: arrow.control ?? null,
+    exit: arrow.exit_target ?? null, path: arrow.path ?? "straight", actor: arrow.actor_id ?? null,
+    recipient: arrow.recipient_id ?? null, screener: arrow.screener_id ?? null,
+    cutter: arrow.cutter_id ?? null, handler: arrow.handler_id ?? null,
+  });
+
+  for (const source of original.arrows) {
+    for (const wait of source.timingPlan?.waits ?? []) {
+      const before = originals.get(wait.actionId);
+      const after = candidates.get(wait.actionId);
+      if (!before || !after) return false;
+      if (wait.event === "catch") {
+        const beforeBinding = originalBindings.get(before.id), afterBinding = candidateBindings.get(after.id);
+        if (!["pass", "handoff"].includes(after.kind) || beforeBinding?.actorId !== afterBinding?.actorId || beforeBinding?.recipientId !== afterBinding?.recipientId) return false;
+      }
+      if ((wait.event === "screen-set" || wait.event === "screen-use") && !screenEvents.has(after.kind)) return false;
+      if (wait.event === "route-point") {
+        const beforeBinding = originalBindings.get(before.id), afterBinding = candidateBindings.get(after.id);
+        const participant = wait.playerId;
+        const roles = (binding: typeof beforeBinding) => binding ? [binding.actorId, binding.recipientId, binding.partnerId] : [];
+        if (routeSignature(before) !== routeSignature(after) || !roles(beforeBinding).includes(participant) || !roles(afterBinding).includes(participant)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+const point = (x: number, y: number): CourtPoint => ({ x, y });
+const clamp = (value: number) => Math.max(4, Math.min(96, value));
+
+export function createCounterLabRepairs(draft: PlaybookDraft): Array<Pick<CounterLabRepair, "id" | "name" | "reason" | "play">> {
+  const repairs: Array<Pick<CounterLabRepair, "id" | "name" | "reason" | "play">> = [];
+  const authored = bindAuthoredActions(draft);
+  for (const [index, arrow] of draft.arrows.entries()) {
+    const move = arrow.sequence ?? index + 1;
+    if ((arrow.kind === "screen" || arrow.kind === "pick-roll") && arrow.screener_id != null) {
+      const play = structuredClone(draft);
+      play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
+        ? { ...candidate, kind: "slip-screen", timing: Math.max(0.5, (candidate.timing ?? 1.2) * 0.8) }
+        : candidate);
+      repairs.push({ id: `slip-${arrow.id}`, name: "Slip the screen", reason: "Roll before the switch can settle, then test whether the handler or screener gains a cleaner option", play });
+    }
+    if (arrow.kind === "pick-roll" || arrow.kind === "pick-pop") {
+      const play = structuredClone(draft);
+      play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
+        ? { ...candidate, kind: arrow.kind === "pick-roll" ? "pick-pop" : "pick-roll", exit_target: candidate.exit_target ?? { x: clamp(candidate.end.x + (candidate.end.x < 50 ? -12 : 12)), y: clamp(candidate.end.y + 5) } }
+        : candidate);
+      repairs.push({ id: `roll-pop-${arrow.id}`, name: arrow.kind === "pick-roll" ? "Pop instead of roll" : "Roll instead of pop", reason: "Change the screener's finish and compare the newly available lane or perimeter shot", play });
+    }
+    if (arrow.kind === "screen" || arrow.kind === "pick-roll" || arrow.kind === "pick-pop" || arrow.kind === "pass" || arrow.kind === "movement") {
+      for (const change of [-0.25, 0.25]) {
+        const play = structuredClone(draft);
+        play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
+          ? { ...candidate, timing: Math.max(0.5, Math.min(4, Math.round(((candidate.timing ?? 1.2) + change) * 100) / 100)) }
+          : candidate);
+        repairs.push({ id: `timing-${arrow.id}-${change}`, name: `${change < 0 ? "Quicker" : "More time for"} ${arrow.kind.replaceAll("-", " ")} · Move ${move}`, reason: `${change < 0 ? "Shorten" : "Lengthen"} the action duration by ${Math.abs(change).toFixed(2)} seconds · Later moves shift with the sequence`, play });
+      }
+    }
+    if (arrow.kind === "pass") {
+      const bound = authored.find((action) => action.arrow.id === arrow.id);
+      const originalReceiver = bound?.recipientId;
+      // Build-time participant binding uses predicted positions at this phase,
+      // so use those positions rather than the initial roster coordinates.
+      const phasePositions = bindAuthoredActions({ ...draft, arrows: draft.arrows.filter((item, i) => (item.sequence ?? i + 1) < move) });
+      const positions = phasePositions.length ? draft.players.map((player) => {
+        const route = [...phasePositions].reverse().find((action) => action.actorId === player.id && action.arrow.kind === "movement");
+        return route ? { ...player, ...route.arrow.end } : player;
+      }) : draft.players;
+      for (const recipient of positions.filter((player) => player.id !== bound?.actorId && player.id !== originalReceiver).slice(0, 2)) {
+        const play = structuredClone(draft);
+        play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id ? { ...candidate, recipient_id: recipient.id, end: point(recipient.x, recipient.y) } : candidate);
+        const redirected = bindAuthoredActions(play).find((action) => action.arrow.id === arrow.id);
+        if (redirected?.recipientId !== recipient.id || redirected.recipientId === originalReceiver || redirected.recipientId === redirected.actorId) continue;
+        repairs.push({ id: `pass-${arrow.id}-${recipient.id}`, name: `Pass to Player ${recipient.id} · Move ${move}`, reason: "Test a different receiver against the same starting court and defense", play });
+      }
+    }
+
+    if (arrow.kind === "off-ball-screen" || arrow.kind === "pin-down") {
+      const play = structuredClone(draft);
+      play.arrows = play.arrows.map((candidate) => candidate.id === arrow.id
+        ? { ...candidate, end: point(clamp(candidate.end.x + (candidate.end.x < 50 ? -4 : 4)), candidate.end.y) }
+        : candidate);
+      repairs.push({ id: `space-${arrow.id}`, name: "Move the screen angle", reason: "Change the screening angle slightly and see whether the cutter gains space", play });
+    }
+  }
+  const unique = new Map<string, Pick<CounterLabRepair, "id" | "name" | "reason" | "play">>();
+  repairs.forEach((repair) => { if (!unique.has(JSON.stringify(repair.play.arrows))) unique.set(JSON.stringify(repair.play.arrows), repair); });
+  const signature = (play: PlaybookDraft) => JSON.stringify(bindAuthoredActions(play).map((action) => ({ kind: action.arrow.kind, actor: action.actorId, recipient: action.recipientId, start: action.startTime, duration: action.durationMs, end: action.arrow.end, exit: action.arrow.exit_target, control: action.arrow.control })));
+  const original = signature(draft);
+  const effective = [...unique.values()].filter((repair) => signature(repair.play) !== original && preservesTimingContracts(draft, repair.play));
+  // Reserve space for different edit families instead of filling the budget
+  // with duration edits from the first few moves.
+  const families = ["slip-", "roll-pop-", "pass-", "space-", "timing-"];
+  const bounded: typeof repairs = [];
+  for (let round = 0; bounded.length < 8; round++) {
+    let added = false;
+    for (const family of families) {
+      const candidate = effective.filter((repair) => repair.id.startsWith(family))[round];
+      if (candidate && bounded.length < 8) { bounded.push(candidate); added = true; }
+    }
+    if (!added) break;
+  }
+  return bounded;
+}

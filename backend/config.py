@@ -1,4 +1,4 @@
-"""Shared filesystem locations for the local ARC application."""
+"""Shared filesystem locations for the local ARCade Hoops application."""
 
 from pathlib import Path
 
@@ -9,3 +9,4 @@ EXAMPLE_VIDEOS_DIR = PROJECT_ROOT / "examples"
 MODEL_WEIGHTS_DIR = PROJECT_ROOT / "models"
 ANALYSIS_SESSIONS_DIR = PROJECT_ROOT / "sessions"
 PLAYBOOKS_DIR = PROJECT_ROOT / "playbooks"
+POCKET_ACTIONS_DIR = PROJECT_ROOT / "pocket-actions"

@@ -15,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.analysis.pipeline import analyze_video, probe_video, refresh_saved_analysis
 from backend.api.playbooks import router as playbooks_router
+from backend.api.pocket_actions import router as pocket_actions_router
+from backend.api import jumper as jumper_api
 from backend.config import (
     ANALYSIS_SESSIONS_DIR,
     EXAMPLE_VIDEOS_DIR,
@@ -47,8 +49,10 @@ EXAMPLE_FILES = (
     "YTDown.com_YouTube_LeBron-Jokes-After-Steph-Misses-Free-Thr_Media_welHDbZ0KBY_001_720p.mp4",
 )
 
-app = FastAPI(title="ARC Local Shot Analysis", version="3.1.0")
+app = FastAPI(title="ARCade Hoops Local Shot Analysis", version="3.1.0")
 app.include_router(playbooks_router)
+app.include_router(pocket_actions_router)
+app.include_router(jumper_api.router)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 job_cancel_events: dict[str, threading.Event] = {}
@@ -63,6 +67,7 @@ try:
 except ValueError:
     ANALYSIS_WORKERS = 1
 executor = ThreadPoolExecutor(max_workers=ANALYSIS_WORKERS, thread_name_prefix="arc-analysis")
+jumper_api.configure(executor)
 
 
 def _job_state_path(session_dir: Path) -> Path:
@@ -727,13 +732,13 @@ def serve_frontend_app(path: str):
     if not index.is_file():
         return JSONResponse(
             status_code=503,
-            content={"detail": "Frontend is not built. Run pnpm --dir frontend build."},
+            content={"detail": "Frontend is not built · Run pnpm --dir frontend build"},
         )
     return FileResponse(index)
 
 
 def run_local_server() -> None:
-    """Run ARC on the local-only development port."""
+    """Run ARCade Hoops on the local-only development port."""
     import uvicorn
 
     port = int(os.environ.get("ARC_PORT", "7888"))

@@ -1,0 +1,119 @@
+{
+  "baselineCommit": "ab6e3db56221b9c9b42d06f5c6a5829560f258cc",
+  "engineVersion": 6,
+  "controlledFixtures": [
+    {
+      "name": "head-on passage",
+      "before": [
+        0.0655,
+        0.0655
+      ],
+      "after": [
+        0.0661,
+        0.0654
+      ]
+    },
+    {
+      "name": "crossing cuts",
+      "before": [
+        0.0644,
+        0.0666
+      ],
+      "after": [
+        0.0659,
+        0.0654
+      ]
+    },
+    {
+      "name": "crowded paint",
+      "before": [
+        0.0652,
+        0.0661,
+        0.0636,
+        0.0649
+      ],
+      "after": [
+        0.065,
+        0.0653,
+        0.0666,
+        0.0656
+      ]
+    },
+    {
+      "name": "baseline congestion",
+      "before": [
+        0.0659,
+        0,
+        11.5137
+      ],
+      "after": [
+        0.0656,
+        0,
+        0.0655
+      ]
+    }
+  ],
+  "deterministicScenarios": {
+    "historicalTracesReproduced": 52,
+    "scenarios": 52,
+    "changedDuration": 28,
+    "changedQuality": 26,
+    "before": {
+      "completed": 195,
+      "obstructed": 103
+    },
+    "after": {
+      "completed": 205,
+      "obstructed": 98
+    },
+    "decisions": {
+      "yielding": 6,
+      "detouring": 10,
+      "blocked": 8
+    }
+  },
+  "starterMatrixBefore": {
+    "bodyRadiusFeet": 1,
+    "measurement": "Live authored action positions from 300ms onward; imported overlaps separate gradually.",
+    "before": {
+      "trials": 288,
+      "trialsWithCentersBelowOneFoot": 261
+    },
+    "after": {
+      "trials": 288,
+      "trialsWithCentersBelowOneFoot": 0,
+      "minimumGapFeet": 1.939478,
+      "minimumGapTrial": "Elevator / contain / scripted"
+    },
+    "additional": {
+      "trials": 674
+    },
+    "outcomes": {
+      "completed": 2830,
+      "obstructed": 1396,
+      "conflict": 0
+    }
+  },
+  "starterMatrixAfter": {
+    "bodyRadiusFeet": 1,
+    "measurement": "Live authored action positions from 300ms onward; imported overlaps separate gradually.",
+    "before": {
+      "trials": 288,
+      "trialsWithCentersBelowOneFoot": 261
+    },
+    "after": {
+      "trials": 288,
+      "trialsWithCentersBelowOneFoot": 0,
+      "minimumGapFeet": 1.939478,
+      "minimumGapTrial": "Elevator / contain / scripted"
+    },
+    "additional": {
+      "trials": 674
+    },
+    "outcomes": {
+      "completed": 2734,
+      "obstructed": 1468,
+      "conflict": 0
+    }
+  }
+}

@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { linearRoutePoint, quadraticRoutePoint, perpendicularRouteControl } from '../frontend/src/features/playbook/routeGeometry.ts';
+import { arrowControl, actionPath, actionPointAt } from '../frontend/src/features/playbook/playbookPaths.ts';
+import { authoredCourtRoutes } from '../frontend/src/features/playbook/simulation.ts';
 import assert from 'node:assert/strict';
 import {
   COURT_MARKING_PATHS,
@@ -54,3 +58,35 @@ near(pointerPoint.y, marker.y);
 assert.equal(clientPointToCourt(120, 38, { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 }), null, 'singular SVG transforms are rejected');
 
 console.log('Playbook court geometry tests passed: NBA dimensions, lane and circle, three-point arc, marker transforms, and pointer-coordinate round trips');
+
+// Recorded before extracting the shared math: preserve each caller's unit and
+// boundary policy, including deliberately different default curve bends.
+const fixtures = JSON.parse(readFileSync(new URL('../tests/fixtures/route-geometry.json', import.meta.url)));
+for (const fixture of fixtures) {
+  const arrow = structuredClone(fixture.arrow);
+  const before = structuredClone(arrow);
+  const play = { version: 1, id: 'draft-fixture', name: fixture.name, players: [{ id: 1, ...arrow.start }], defenders: [], defenders_visible: false, arrows: [arrow], ball: null };
+  assert.deepEqual(arrowControl(arrow), fixture.editorControl, `${fixture.name}: editor control`);
+  assert.equal(actionPath(arrow), fixture.editorPath, `${fixture.name}: exported SVG path`);
+  assert.deepEqual(authoredCourtRoutes(play), fixture.engineRoutes, `${fixture.name}: engine preview routes`);
+  for (const { t, editor } of fixture.samples) {
+    assert.deepEqual(actionPointAt(arrow, t), editor, `${fixture.name}: editor sample ${t}`);
+    const raw = arrow.path === 'curve' ? quadraticRoutePoint(arrow.start, arrow.end, arrowControl(arrow), t) : linearRoutePoint(arrow.start, arrow.end, t);
+    near(Math.max(2, Math.min(98, raw.x)), editor.x);
+    near(Math.max(2, Math.min(98, raw.y)), editor.y);
+    if (arrow.path === 'curve') {
+      // Affine conversion must commute with evaluation; do not mix normalized
+      // points with SVG controls (the court's x/y scales differ).
+      const svg = quadraticRoutePoint(courtPointToSvg(arrow.start), courtPointToSvg(arrow.end), courtPointToSvg(arrowControl(arrow)), t);
+      const converted = courtSvgToPoint(svg);
+      near(converted.x, raw.x); near(converted.y, raw.y);
+    }
+  }
+  assert.deepEqual(arrow, before, 'route calculation never mutates the authored drawing');
+}
+assert.deepEqual(linearRoutePoint({ x: -5, y: 105 }, { x: 105, y: -5 }, 0), { x: -5, y: 105 }, 'shared math does not apply editor or engine bounds');
+assert.deepEqual(quadraticRoutePoint({ x: -5, y: 105 }, { x: 105, y: -5 }, { x: 200, y: -50 }, 2), { x: 105, y: -5 }, 'progress clamps without clamping coordinates');
+assert.deepEqual(perpendicularRouteControl(Object.freeze({ x: 50, y: 50 }), Object.freeze({ x: 50, y: 50 }), 5, 13), { x: 50, y: 50 }, 'stationary routes stay finite');
+const bend = perpendicularRouteControl({ x: 20, y: 50 }, { x: 80, y: 50 }, 5, 13);
+assert.deepEqual(bend, { x: 50, y: 37 }, 'normalized engine bend retains its own maximum');
+console.log('Shared route geometry passed: recorded editor/engine fixtures, explicit/default controls, short/stationary/boundary routes, progress bounds, coordinate-space conversions and immutable drawings');

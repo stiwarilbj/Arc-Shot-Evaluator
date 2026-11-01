@@ -1,6 +1,6 @@
-# ARC project map
+# ARCade Hoops project map
 
-ARC is split by responsibility, so the folder name tells you which part of the product lives there.
+ARCade Hoops is split by responsibility, so the folder name tells you which part of the product lives there.
 
 ```text
 arc-shot-evaluator/
@@ -16,7 +16,7 @@ arc-shot-evaluator/
 │   ├── src/domain/   TypeScript versions of the analysis data models
 │   ├── src/services/ Browser calls to the local API
 │   ├── src/layout/   App-wide layout components
-│   └── src/styles/   The ARC visual system and responsive rules
+│   └── src/styles/   The ARCade Hoops visual system and responsive rules
 ├── tests/            Behavior tests for API, tracking, media, and coaching
 ├── examples/         Videos shown in the test library
 ├── models/           Local YOLO detector and pose weights
