@@ -14,6 +14,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+# This standard-library-only import must precede NumPy and OpenCV so it can
+# cap native thread-pool environment variables before those libraries load.
+from backend.runtime import configure_opencv_threads, configure_torch_threads
+
 import cv2
 import numpy as np
 
@@ -33,6 +37,8 @@ from backend.prediction.jump_models import JUMP_MODEL_VERSION
 from backend.coaching.retriever import attach_coaching
 from backend.config import ANALYSIS_SESSIONS_DIR, MODEL_WEIGHTS_DIR
 from backend.domain.models import BoundingBox, BallCandidate, FrameDetections, PlayerPose, ShotAnalysis, BallTrackPoint
+
+configure_opencv_threads()
 
 
 Progress = Callable[[str, int, int], None]
@@ -60,6 +66,7 @@ def get_shared_vision_models() -> BasketballVisionModels:
     if _MODEL_SUITE is None:
         with _MODEL_SUITE_LOCK:
             if _MODEL_SUITE is None:
+                configure_torch_threads()
                 _MODEL_SUITE = BasketballVisionModels(
                     MODEL_WEIGHTS_DIR / "ebard-yolov8n.pt",
                     MODEL_WEIGHTS_DIR / "yolo11n-pose.pt",

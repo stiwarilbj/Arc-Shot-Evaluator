@@ -9,6 +9,10 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
+# Import before FastAPI, NumPy, OpenCV, or PyTorch so native libraries inherit
+# the same process-wide worker and thread budget.
+from backend.runtime import ANALYSIS_WORKERS
+
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -58,14 +62,6 @@ jobs_lock = threading.Lock()
 job_cancel_events: dict[str, threading.Event] = {}
 job_futures: dict[str, Future] = {}
 job_session_dirs: dict[str, Path] = {}
-try:
-    # One local vision/render pipeline at a time is substantially faster and
-    # more predictable on typical laptops than competing model loads. Users
-    # can opt into a higher value with ARC_WORKERS when they have the hardware
-    # for it.
-    ANALYSIS_WORKERS = max(1, min(4, int(os.environ.get("ARC_WORKERS", "1"))))
-except ValueError:
-    ANALYSIS_WORKERS = 1
 executor = ThreadPoolExecutor(max_workers=ANALYSIS_WORKERS, thread_name_prefix="arc-analysis")
 jumper_api.configure(executor)
 

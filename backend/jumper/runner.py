@@ -9,6 +9,8 @@ import shutil
 import sys
 import time
 
+from backend.runtime import configure_opencv_threads, configure_torch_threads
+
 from backend.jumper.pipeline import extract, render, track
 from backend.jumper.export_checkpoint import render_with_retry
 from backend.jumper.model_install import ensure_checkpoint
@@ -17,6 +19,8 @@ from backend.jumper.resources import (
     estimate_resources,
     resident_memory,
 )
+
+configure_opencv_threads()
 
 CHECKPOINT_URL = (
     "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt"
@@ -107,6 +111,7 @@ def run(directory: Path):
                 directory / "source", directory / "detail-frames",
                 job["start"], job["end"], maximum=(2560, 1440), frame_map=job.get("frame_map")
             )
+        configure_torch_threads()
         import torch
         from backend.config import MODEL_WEIGHTS_DIR
 
@@ -129,7 +134,6 @@ def run(directory: Path):
         # the whole process (which cannot be caught as a Python exception).
         if device == "mps":
             torch.mps.set_per_process_memory_fraction(0.5)
-        torch.set_num_threads(min(4, os.cpu_count() or 1))
         progress("Tracking players · " + device.upper())
         original_objects = copy.deepcopy(job["objects"])
         try:
