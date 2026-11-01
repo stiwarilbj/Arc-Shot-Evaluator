@@ -9,7 +9,6 @@ import shutil
 import threading
 import time
 import uuid
-from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -54,7 +53,6 @@ PREDICTION_STATUS = "unavailable_unvalidated"
 _MODEL_SUITE: BasketballVisionModels | None = None
 _MODEL_SUITE_LOCK = threading.Lock()
 _MODEL_INFERENCE_LOCK = threading.Lock()
-_FRAME_INFERENCE_CACHE_SIZE = 64
 
 
 def get_shared_vision_models() -> BasketballVisionModels:
@@ -125,12 +123,6 @@ def read_video_frame_batch(capture: cv2.VideoCapture, size: int) -> list[np.ndar
     return frames
 
 
-@dataclass(slots=True)
-class _FrameInferenceCacheEntry:
-    detections: FrameDetections
-    poses: list[PlayerPose] | None = None
-
-
 def _frame_fingerprint(frame: np.ndarray) -> bytes:
     contiguous = np.ascontiguousarray(frame)
     digest = hashlib.blake2b(digest_size=32, person=b"arc-shot-frame")
@@ -184,7 +176,8 @@ def collect_evidence(
     batch_size = 6 if deep else 12
     completed = 0
     previous_gray: np.ndarray | None = None
-    inference_cache: OrderedDict[bytes, _FrameInferenceCacheEntry] = OrderedDict()
+    frame_evidence_by_fingerprint: dict[bytes, int] = {}
+    pose_inferred_fingerprints: set[bytes] = set()
     while True:
         frames = read_video_frame_batch(capture, batch_size)
         if not frames:
@@ -193,19 +186,16 @@ def collect_evidence(
         pose_stride = 4 if fast else 1 if deep else 2
         detector_frame_indexes: list[int] = []
         for frame_index, fingerprint in enumerate(unique_fingerprints):
-            if fingerprint not in inference_cache:
+            if fingerprint not in frame_evidence_by_fingerprint:
                 detector_frame_indexes.append(frame_index)
-            else:
-                inference_cache.move_to_end(fingerprint)
         pose_frame_indexes: list[int] = []
         pose_frames: list[np.ndarray] = []
         for offset in range(0, len(frames), pose_stride):
             frame_index = frame_indexes[offset]
             fingerprint = unique_fingerprints[frame_index]
-            cached = inference_cache.get(fingerprint)
             if (
                 frame_index not in pose_frame_indexes
-                and (cached is None or cached.poses is None)
+                and fingerprint not in pose_inferred_fingerprints
             ):
                 pose_frame_indexes.append(frame_index)
                 pose_frames.append(unique_frames[frame_index])
@@ -223,28 +213,34 @@ def collect_evidence(
                 else []
             )
             pose_results = suite.infer_pose(pose_frames, deep=deep, fast=fast) if pose_frames else []
-        for frame_index, item in zip(detector_frame_indexes, detected, strict=True):
-            inference_cache[unique_fingerprints[frame_index]] = _FrameInferenceCacheEntry(item)
-        for frame_index, poses in zip(pose_frame_indexes, pose_results, strict=True):
-            fingerprint = unique_fingerprints[frame_index]
-            cached = inference_cache.get(fingerprint)
-            if cached is None:
-                raise RuntimeError("Pose inference completed without matching frame detections")
-            cached.poses = poses
-            inference_cache.move_to_end(fingerprint)
+        detected_by_frame = dict(zip(detector_frame_indexes, detected, strict=True))
+        pose_by_frame = dict(zip(pose_frame_indexes, pose_results, strict=True))
+        pose_inferred_fingerprints.update(
+            unique_fingerprints[frame_index] for frame_index in pose_frame_indexes
+        )
         for offset, (frame, frame_index) in enumerate(zip(frames, frame_indexes, strict=True)):
-            cached = inference_cache.get(unique_fingerprints[frame_index])
-            if cached is None:
-                raise RuntimeError("Frame inference result expired before timeline assembly")
-            item = copy.deepcopy(cached.detections)
-            item.balls = merge_ball_candidates(item.balls, color_ball_candidates(frame))
-            item.hoops = add_model_hoops(color_rim_candidates(frame), item.hoops)
-            item.poses = (
-                copy.deepcopy(cached.poses)
-                if offset % pose_stride == 0 and cached.poses is not None
-                else []
-            )
-            item.sharpness = frame_sharpness(frame)
+            fingerprint = unique_fingerprints[frame_index]
+            prior_index = frame_evidence_by_fingerprint.get(fingerprint)
+            if prior_index is None:
+                item = copy.deepcopy(detected_by_frame[frame_index])
+                item.balls = merge_ball_candidates(item.balls, color_ball_candidates(frame))
+                item.hoops = add_model_hoops(color_rim_candidates(frame), item.hoops)
+                item.sharpness = frame_sharpness(frame)
+            else:
+                # Reuse only image-derived evidence. Timeline-specific fields
+                # are reset below and recomputed for this original frame.
+                item = copy.deepcopy(evidence[prior_index])
+            if offset % pose_stride == 0:
+                if frame_index in pose_by_frame:
+                    item.poses = copy.deepcopy(pose_by_frame[frame_index])
+                elif prior_index is not None and fingerprint in pose_inferred_fingerprints:
+                    item.poses = copy.deepcopy(evidence[prior_index].poses)
+                else:
+                    item.poses = []
+            else:
+                item.poses = []
+            item.scene_cut = False
+            item.duplicate_frame = False
             gray = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (96, 54))
             if previous_gray is not None:
                 # A cut/replay boundary is a high-signal event, not a reason
@@ -262,8 +258,9 @@ def collect_evidence(
                 )
             previous_gray = gray
             evidence.append(item)
-        while len(inference_cache) > _FRAME_INFERENCE_CACHE_SIZE:
-            inference_cache.popitem(last=False)
+            frame_evidence_by_fingerprint.setdefault(fingerprint, len(evidence) - 1)
+            if offset % pose_stride == 0:
+                frame_evidence_by_fingerprint[fingerprint] = len(evidence) - 1
         completed += len(frames)
         if progress:
             progress("Tracking ball, rim, and pose", completed, meta.frame_count)
