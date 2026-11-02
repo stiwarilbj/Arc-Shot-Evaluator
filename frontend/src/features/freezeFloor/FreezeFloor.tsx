@@ -44,6 +44,8 @@ import { normalizeImage, readImageHeader } from "./images.ts";
 import {
   deleteProject,
   listProjects,
+  ProjectConflictError,
+  projectRevision,
   saveProject,
   type UnavailableProject,
 } from "./storage.ts";
@@ -156,6 +158,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   videoSourceRef.current = videoSource;
   const current = useRef<FloorProject | null>(null),
     revision = useRef(0),
+    storedVersion = useRef<{ revision: string | null }>({ revision: null }),
     controller = useRef<AbortController | null>(null),
     loadToken = useRef(0),
     libraryRequest = useRef(0),
@@ -312,11 +315,16 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       loadToken.current++;
     };
   }, []);
-  function install(project: FloorProject, blob: Blob, isSaved = false) {
+  function install(
+    project: FloorProject,
+    blob: Blob,
+    savedRevision: string | null = null,
+  ) {
     stop();
     revision.current++;
     setHistory({ past: [], present: project, future: [] });
     current.current = project;
+    storedVersion.current = { revision: savedRevision };
     setImage(blob);
     setSelected(null);
     setPending(null);
@@ -324,7 +332,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setDragProject(null);
     gesture.current = null;
     setMode("inspect");
-    setSaved(isSaved);
+    setSaved(savedRevision !== null);
     setChooser(false);
     setVideoChooser(false);
     setError("");
@@ -387,7 +395,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         bitmap.close();
       }
       if (token !== loadToken.current || !mounted.current) return;
-      install(s.project, s.image, true);
+      install(s.project, s.image, projectRevision(s));
       setNotice("Opened private saved project");
     } catch (e) {
       if (token === loadToken.current) setError(message(e));
@@ -830,19 +838,30 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setSaving(true);
     setError("");
     const value = { ...p, updatedAt: new Date().toISOString() },
-      rev = revision.current;
+      rev = revision.current,
+      baseline = storedVersion.current;
     try {
-      await saveProject({ project: value, image });
+      const nextRevision = await saveProject(
+        { project: value, image },
+        baseline.revision,
+      );
+      // Later edits still descend from this save, but reopening a source does not
+      if (storedVersion.current === baseline) baseline.revision = nextRevision;
       if (current.current?.id === value.id && revision.current === rev) {
         setSaved(true);
         setNotice("Saved on this device");
       }
       await refresh();
     } catch (e) {
-      if (current.current?.id === value.id && revision.current === rev) {
+      if (
+        current.current?.id === value.id &&
+        storedVersion.current === baseline &&
+        (revision.current === rev || e instanceof ProjectConflictError)
+      ) {
         setError(message(e));
         setSaved(false);
       }
+      if (e instanceof ProjectConflictError) await refresh();
     } finally {
       setSaving(false);
     }
@@ -1132,29 +1151,39 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                         s.project.name,
                       );
                       if (!name?.trim()) return;
-                      const rev = revision.current;
+                      const rev = revision.current,
+                        baseline = storedVersion.current,
+                        expected = projectRevision(s);
                       try {
-                        await saveProject({
-                          ...s,
-                          project: {
-                            ...s.project,
-                            name: name.trim().slice(0, 80),
-                            updatedAt: new Date().toISOString(),
+                        const nextRevision = await saveProject(
+                          {
+                            ...s,
+                            project: {
+                              ...s.project,
+                              name: name.trim().slice(0, 80),
+                              updatedAt: new Date().toISOString(),
+                            },
                           },
-                        });
+                          expected,
+                        );
                         if (
                           current.current?.id === s.project.id &&
-                          revision.current === rev
+                          storedVersion.current === baseline &&
+                          baseline.revision === expected
                         ) {
-                          update((p) => ({
-                            ...p,
-                            name: name.trim().slice(0, 80),
-                          }));
-                          setSaved(false);
+                          baseline.revision = nextRevision;
+                          if (revision.current === rev) {
+                            update((p) => ({
+                              ...p,
+                              name: name.trim().slice(0, 80),
+                            }));
+                            setSaved(false);
+                          }
                         }
                         await refresh();
                       } catch (e) {
                         setError(message(e));
+                        if (e instanceof ProjectConflictError) await refresh();
                       }
                     }}
                   >

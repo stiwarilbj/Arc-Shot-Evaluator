@@ -40,7 +40,12 @@ export type FloorProject = {
   videoFrame?: VideoFrameSource;
   updatedAt: string;
 };
-export type StoredProject = { project: FloorProject; image: Blob };
+export type StoredProject = {
+  project: FloorProject;
+  image: Blob;
+  // Older saved projects acquire a revision on their next successful save
+  revision?: string;
+};
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_PIXELS = 24_000_000;
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;

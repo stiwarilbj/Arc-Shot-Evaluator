@@ -1,6 +1,7 @@
 import {
   MAX_LIBRARY_BYTES,
   MAX_PROJECTS,
+  id,
   validateProject,
   type StoredProject,
 } from "./types.ts";
@@ -10,6 +11,12 @@ export type ProjectListing = {
   projects: StoredProject[];
   unavailable: UnavailableProject[];
 };
+export class ProjectConflictError extends Error {}
+export function projectRevision(value: StoredProject): string {
+  return value.revision === undefined
+    ? `legacy:${value.project.updatedAt}`
+    : `saved:${value.revision}`;
+}
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const r = indexedDB.open(DB, 1);
@@ -43,6 +50,10 @@ function valid(v: unknown): v is StoredProject {
     return (
       !!s &&
       validateProject(s.project) &&
+      (s.revision === undefined ||
+        (typeof s.revision === "string" &&
+          s.revision.length > 0 &&
+          s.revision.length <= 100)) &&
       s.image instanceof Blob &&
       s.image.size > 0 &&
       s.image.size <= 20 * 1024 * 1024 &&
@@ -92,7 +103,10 @@ export async function listProjects(): Promise<ProjectListing> {
     db.close();
   }
 }
-export async function saveProject(value: StoredProject): Promise<void> {
+export async function saveProject(
+  value: StoredProject,
+  expectedRevision: string | null,
+): Promise<string> {
   if (!valid(value))
     throw Error(
       "Project could not be validated · Current image remains available",
@@ -108,13 +122,30 @@ export async function saveProject(value: StoredProject): Promise<void> {
     check.close();
   }
   const db = await open();
+  const next = { ...value, revision: id() };
   try {
-    await new Promise<void>((resolve, reject) => {
+    return await new Promise<string>((resolve, reject) => {
       const tx = db.transaction("projects", "readwrite"),
         store = tx.objectStore("projects"),
         request = store.getAll();
       let failure: Error | undefined;
       request.onsuccess = () => {
+        const stored = (request.result as StoredProject[]).find(
+          (s) => s.project?.id === value.project.id,
+        );
+        if (
+          expectedRevision === null
+            ? stored !== undefined
+            : !stored ||
+              !valid(stored) ||
+              projectRevision(stored) !== expectedRevision
+        ) {
+          failure = new ProjectConflictError(
+            `${stored ? "This project changed in another tab" : "This project was deleted"} · Your edits are still here · Download a PNG before reopening the saved project`,
+          );
+          tx.abort();
+          return;
+        }
         const others = (request.result as StoredProject[]).filter(
           (s) => s.project?.id !== value.project.id,
         );
@@ -142,9 +173,9 @@ export async function saveProject(value: StoredProject): Promise<void> {
           tx.abort();
           return;
         }
-        store.put(value);
+        store.put(next);
       };
-      tx.oncomplete = () => resolve();
+      tx.oncomplete = () => resolve(projectRevision(next));
       tx.onabort = () =>
         reject(
           failure ||
