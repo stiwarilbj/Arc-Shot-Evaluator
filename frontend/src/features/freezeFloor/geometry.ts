@@ -223,9 +223,12 @@ export function align(anchors: Anchor[], reviewed = false): Alignment {
     rms: 0,
     hull: [],
   };
-  const a = anchors.filter(
-    (a) => a.enabled && LANDMARKS.some((l) => l.id === a.landmark),
-  );
+  // Stable input order makes the seeded fit independent of inspector ordering.
+  const a = anchors
+    .filter((a) => a.enabled && LANDMARKS.some((l) => l.id === a.landmark))
+    .sort((a, b) =>
+      a.landmark < b.landmark ? -1 : a.landmark > b.landmark ? 1 : 0,
+    );
   if (new Set(a.map((a) => a.landmark)).size !== a.length)
     return {
       ...empty,
@@ -242,7 +245,8 @@ export function align(anchors: Anchor[], reviewed = false): Alignment {
     const chosen = new Set<number>();
     while (chosen.size < 4) {
       seed = (Math.imul(1664525, seed) + 1013904223) >>> 0;
-      chosen.add(seed % a.length);
+      // Low LCG bits cycle through only a few subsets for power-of-two counts.
+      chosen.add(Math.floor((seed / 0x100000000) * a.length));
     }
     const indices = [...chosen],
       h = fit(

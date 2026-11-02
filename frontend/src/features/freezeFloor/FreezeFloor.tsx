@@ -582,13 +582,8 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       )[0] ?? null
     );
   }
-  function down(e: PointerEvent<SVGSVGElement>, view: "photo" | "court") {
-    if (e.button !== 0 || !p) return;
-    const v = pointFrom(e, view);
-    if (!v) return;
-    e.currentTarget.focus();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setCursor(v);
+  function placePoint(v: Point, view: "photo" | "court") {
+    if (!p) return;
     if (mode === "anchor") {
       if (view !== "photo") return;
       if (p.anchors.length >= 64) {
@@ -637,19 +632,8 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       setInspector(true);
       return;
     }
-    const anchor =
-      check && view === "photo"
-        ? p.anchors.find(
-            (a) =>
-              Math.hypot(
-                (a.image.x - v.x) * p.width,
-                (a.image.y - v.y) * p.height,
-              ) <
-              Math.max(p.width, p.height) * 0.016,
-          )
-        : undefined;
-    const contact = anchor ? null : hitAt(v, view);
     if (mode === "measure") {
+      const contact = hitAt(v, view);
       const endpoint = contact
         ? { image: contact.image, contactId: contact.id }
         : { image: v };
@@ -671,6 +655,30 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       setPending(null);
       return;
     }
+  }
+  function down(e: PointerEvent<SVGSVGElement>, view: "photo" | "court") {
+    if (e.button !== 0 || !p) return;
+    const v = pointFrom(e, view);
+    if (!v) return;
+    e.currentTarget.focus();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setCursor(v);
+    if (mode !== "inspect") {
+      placePoint(v, view);
+      return;
+    }
+    const anchor =
+      check && view === "photo"
+        ? p.anchors.find(
+            (a) =>
+              Math.hypot(
+                (a.image.x - v.x) * p.width,
+                (a.image.y - v.y) * p.height,
+              ) <
+              Math.max(p.width, p.height) * 0.016,
+          )
+        : undefined;
+    const contact = anchor ? null : hitAt(v, view);
     if (anchor || contact) {
       stop();
       revision.current++;
@@ -727,7 +735,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setPending(null);
     if (mode === "contact" || mode === "anchor") setMode("inspect");
   }
-  function key(e: KeyboardEvent<SVGSVGElement>) {
+  function key(e: KeyboardEvent<SVGSVGElement>, view: "photo" | "court") {
     if (e.key === "Escape") {
       cancelGesture();
       return;
@@ -737,54 +745,26 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       e.shiftKey ? redo() : undo();
       return;
     }
-    if ((e.key === "Enter" || e.key === " ") && mode !== "inspect" && p) {
+    if (!p) return;
+    const selectedAnchor = p.anchors.find((a) => a.id === selected);
+    const selectedContact = p.contacts.find((c) => c.id === selected);
+    // Overhead interaction needs a usable projection, just like pointer input.
+    if (view === "court" && (!alignment?.h || !alignment.inverse)) return;
+    if ((e.key === "Enter" || e.key === " ") && mode !== "inspect") {
       e.preventDefault();
-      const v = cursor ?? { x: 0.5, y: 0.5 };
-      if (
-        mode === "anchor" &&
-        p.anchors.length < 64 &&
-        !p.anchors.some((a) => a.enabled && a.landmark === landmark)
-      ) {
-        const anchor: Anchor = {
-          id: id(),
-          landmark,
-          image: v,
-          enabled: true,
-          origin: "manual",
-          confidence: 1,
-        };
-        update((p) => ({
-          ...p,
-          anchors: [...p.anchors, anchor],
-          reviewed: false,
-        }));
-        setSelected(anchor.id);
-        setMode("inspect");
-      } else if (mode === "contact" && p.contacts.length < 40) {
-        const c: Contact = {
-          id: id(),
-          label: String(
-            Math.max(0, ...p.contacts.map((c) => Number(c.label) || 0)) + 1,
-          ),
-          image: v,
-          status: "uncertain",
-        };
-        update((p) => ({ ...p, contacts: [...p.contacts, c] }));
-        setSelected(c.id);
-        setMode("inspect");
-      } else if (mode === "measure") {
-        if (!pending) setPending({ image: v });
-        else if (p.measurements.length < 20) {
-          update((p) => ({
-            ...p,
-            measurements: [
-              ...p.measurements,
-              { id: id(), a: pending, b: { image: v } },
-            ],
-          }));
-          setPending(null);
-        }
+      const v =
+        cursor ??
+        selectedContact?.image ??
+        (view === "court"
+          ? project(alignment!.h!, { x: 25, y: 23.5 })
+          : { x: 0.5, y: 0.5 });
+      if (!v || v.x < 0 || v.x > 1 || v.y < 0 || v.y > 1) return;
+      if (view === "court") {
+        const floor = project(alignment!.inverse!, v);
+        if (!floor || !inCourt(floor)) return;
       }
+      setCursor(v);
+      placePoint(v, view);
       return;
     }
     const delta: { [key: string]: Point } = {
@@ -793,43 +773,51 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       ArrowUp: { x: 0, y: -1 },
       ArrowDown: { x: 0, y: 1 },
     };
-    if (!delta[e.key] || !p) return;
+    if (!delta[e.key]) return;
     e.preventDefault();
+    if (
+      view === "court" &&
+      (mode === "anchor" || (mode === "inspect" && selectedAnchor))
+    )
+      return;
     const d = delta[e.key],
       factor = e.shiftKey ? 10 : 1;
-    if (!selected || mode !== "inspect") {
-      const v = cursor ?? { x: 0.5, y: 0.5 };
-      setCursor({
+    const target =
+      mode === "inspect" ? (selectedAnchor ?? selectedContact) : undefined;
+    const v =
+      target?.image ??
+      cursor ??
+      (view === "court"
+        ? project(alignment!.h!, { x: 25, y: 23.5 })
+        : { x: 0.5, y: 0.5 });
+    if (!v) return;
+    let next: Point | null;
+    if (view === "court") {
+      const floor = project(alignment!.inverse!, v);
+      if (!floor) return;
+      next = project(alignment!.h!, {
+        x: Math.max(0, Math.min(50, floor.x + d.x * factor * 0.1)),
+        y: Math.max(0, Math.min(47, floor.y + d.y * factor * 0.1)),
+      });
+      if (!next || next.x < 0 || next.x > 1 || next.y < 0 || next.y > 1) return;
+    } else {
+      next = {
         x: clamp(v.x + (d.x * factor) / p.width),
         y: clamp(v.y + (d.y * factor) / p.height),
-      });
-      return;
+      };
     }
+    setCursor(next);
+    if (!target) return;
+    const point = next;
     update((p) => ({
       ...p,
       anchors: p.anchors.map((a) =>
-        a.id === selected
-          ? {
-              ...a,
-              image: {
-                x: clamp(a.image.x + (d.x * factor) / p.width),
-                y: clamp(a.image.y + (d.y * factor) / p.height),
-              },
-            }
-          : a,
+        a.id === target.id ? { ...a, image: point } : a,
       ),
       contacts: p.contacts.map((c) =>
-        c.id === selected
-          ? {
-              ...c,
-              image: {
-                x: clamp(c.image.x + (d.x * factor) / p.width),
-                y: clamp(c.image.y + (d.y * factor) / p.height),
-              },
-            }
-          : c,
+        c.id === target.id ? { ...c, image: point } : c,
       ),
-      reviewed: p.anchors.some((a) => a.id === selected) ? false : p.reviewed,
+      reviewed: selectedAnchor ? false : p.reviewed,
     }));
   }
   async function save() {
@@ -840,14 +828,16 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       rev = revision.current;
     try {
       await saveProject({ project: value, image });
-      if (current.current?.imageId === p.imageId && revision.current === rev) {
+      if (current.current?.id === value.id && revision.current === rev) {
         setSaved(true);
         setNotice("Saved on this device");
       }
       await refresh();
     } catch (e) {
-      setError(message(e));
-      setSaved(false);
+      if (current.current?.id === value.id && revision.current === rev) {
+        setError(message(e));
+        setSaved(false);
+      }
     } finally {
       setSaving(false);
     }
@@ -891,7 +881,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
             setHovered(null);
           }
         }}
-        onKeyDown={key}
+        onKeyDown={(e) => key(e, view)}
       />
     ) : null;
   return (
@@ -1110,6 +1100,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                         s.project.name,
                       );
                       if (!name?.trim()) return;
+                      const rev = revision.current;
                       try {
                         await saveProject({
                           ...s,
@@ -1119,7 +1110,10 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                             updatedAt: new Date().toISOString(),
                           },
                         });
-                        if (p?.id === s.project.id) {
+                        if (
+                          current.current?.id === s.project.id &&
+                          revision.current === rev
+                        ) {
                           update((p) => ({
                             ...p,
                             name: name.trim().slice(0, 80),
@@ -1145,7 +1139,8 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                         return;
                       try {
                         await deleteProject(s.project.id);
-                        if (p?.id === s.project.id) setSaved(false);
+                        if (current.current?.id === s.project.id)
+                          setSaved(false);
                         await refresh();
                       } catch (e) {
                         setError(message(e));
@@ -1322,8 +1317,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                     : "Inspect a player or a floor point · Free-space cursors are floor projections"}
               <br />
               <span>
-                Hidden or airborne feet remain uncertain · Arrows aim or nudge ·
-                Shift moves 10 pixels · Enter places a point
+                Hidden or airborne feet remain uncertain · Arrow keys move 1
+                photo pixel or 0.1 ft on the court · Shift moves 10× · Enter
+                places a point
               </span>
             </p>
             <span>{saved ? "Saved on this device" : "Unsaved project"}</span>

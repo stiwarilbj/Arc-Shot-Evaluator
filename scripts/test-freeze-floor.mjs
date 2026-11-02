@@ -82,6 +82,48 @@ const outlier = {
 const withOutlier = align([...anchors, outlier], true);
 assert.ok(withOutlier.rejected.includes("outlier"));
 assert.equal(withOutlier.status, "review");
+// Eight anchors exposed low-bit RANSAC sampling that repeatedly chose only two
+// subsets, each containing an outlier, and missed the six-anchor consensus.
+const eight = [...keys, "corner-left", "corner-right"].map((landmark, i) => ({
+  ...anchors[0],
+  id: `a${i}`,
+  landmark,
+  image: [0, 3].includes(i)
+    ? { x: 0.95 - i * 0.03, y: 0.85 - i * 0.02 }
+    : project(h, LANDMARKS.find((l) => l.id === landmark).court),
+}));
+const robust = align(eight, true);
+assert.equal(robust.status, "review");
+assert.equal(robust.inliers.length, 6);
+assert.deepEqual([...robust.rejected].sort(), ["a0", "a3"]);
+// Every pair of bad observations must leave the other six available to fit.
+for (let first = 0; first < eight.length; first++) {
+  for (let second = first + 1; second < eight.length; second++) {
+    const candidates = eight.map((a, i) => ({
+      ...a,
+      image: [first, second].includes(i)
+        ? { x: 0.95 - i * 0.03, y: 0.85 - i * 0.02 }
+        : project(h, LANDMARKS.find((l) => l.id === a.landmark).court),
+    }));
+    const result = align(candidates, true);
+    assert.equal(result.status, "review");
+    assert.equal(result.inliers.length, 6);
+    assert.deepEqual([...result.rejected].sort(), [`a${first}`, `a${second}`]);
+  }
+}
+for (let offset = 0; offset < eight.length; offset++) {
+  const shuffled = [
+    ...eight.slice(offset),
+    ...eight.slice(0, offset),
+  ].reverse();
+  const result = align(shuffled, true);
+  assert.deepEqual(result.inliers, robust.inliers);
+  assert.deepEqual(result.rejected, robust.rejected);
+  const q = project(result.h, { x: 25, y: 19 });
+  const expected = project(h, { x: 25, y: 19 });
+  close(q.x, expected.x);
+  close(q.y, expected.y);
+}
 assert.equal(
   fit(
     [

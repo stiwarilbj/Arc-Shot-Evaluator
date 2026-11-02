@@ -24,6 +24,8 @@ Three licensed real photographs are supplied · Two wide images have manually in
 8. Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
 9. Save explicitly, or download the combined photograph/overhead PNG · No photo is uploaded
 
+Keyboard selection uses the same player-contact checks as pointer selection · Hidden, airborne, and uncertain contacts keep measurements withheld after save/reopen · Arrow keys nudge by one photograph pixel or 0.1 foot along overhead court axes, with Shift for ten times the step · Place and adjust floor landmarks on the photograph; overhead interaction requires an available alignment
+
 Numeric distances are restricted to the convex floor region enclosed by the accepted anchors · Outside this region, on unstable projections, or with unconfirmed feet, the editor keeps the endpoints but withholds the number
 
 The indicated range estimates sensitivity to point placement and residual landmark error · It is **not a calibrated confidence interval** and does not fully account for lens distortion, nonplanar floors, mistaken landmark meaning, or hidden feet
@@ -80,7 +82,7 @@ Asset licenses, model digests, explicit 48-slot inclusion/exclusion map, and sam
 
 ## Private projects
 
-The normalized JPEG and versioned metadata are committed together in one IndexedDB transaction · Saved status appears only after completion · A failed write leaves the current project and PNG export available
+The normalized JPEG and versioned metadata are committed together in one IndexedDB transaction · Saved status appears only after completion · A failed write leaves the current project and PNG export available · If a save, rename, or deletion finishes after another project is opened, it cannot overwrite that project’s name or saved status
 
 The library is limited to 20 projects and 200 MiB, including images and metadata · Save updates the current project identity rather than duplicating it · Choose photo exposes saved projects, rename, and deletion · No automatic deletion frees capacity · Removing a player also cancels any unfinished measurement that refers to that contact
 
@@ -95,6 +97,7 @@ uv run --python .venv/bin/python scripts/freeze-floor-prepare-model.py /path/to/
 pnpm --dir frontend test:freeze-floor
 pnpm --dir frontend test:navigation
 node scripts/test-freeze-floor-browser.mjs
+node scripts/test-freeze-floor-interactions.mjs
 node scripts/test-freeze-floor-upload.mjs
 FREEZE_FLOOR_CPU=1 node scripts/test-freeze-floor-upload.mjs
 node scripts/test-freeze-floor-failures.mjs
@@ -102,7 +105,7 @@ pnpm --dir frontend build
 VITE_DEPLOY_TARGET=github-pages pnpm --dir frontend build
 ```
 
-The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, measurement, private save/reopen, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
+The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, keyboard/pointer measurement parity, axis-correct court nudging, private save/reopen, delayed storage-operation isolation, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
 
 For the real-photo acceptance gate, supply independent licensed images and annotations with disjoint training/camera groups · Use at least 40 supported and 20 unsuitable photographs across independent groups · Every accepted photograph needs four or more independent floor checks that were not used for fitting
 
