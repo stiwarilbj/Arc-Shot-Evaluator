@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { COURT_MODEL } from "../frontend/src/features/freezeFloor/model.ts";
 const require = createRequire(
   new URL("../frontend/package.json", import.meta.url),
 );
@@ -21,13 +22,21 @@ page.on("pageerror", (e) => {
   console.log("ERROR", e.message);
 });
 const requests = [];
+const courtDownloads = [];
 page.on("request", (r) => {
   if (r.method() !== "GET") requests.push(r.url());
+  if (new URL(r.url()).pathname.endsWith(COURT_MODEL.file)) courtDownloads.push(r.url());
 });
 await page.goto(
   process.env.FREEZE_FLOOR_URL || "http://127.0.0.1:5178/#freeze-floor",
 );
 await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+// A damaged model must recover automatically without touching unrelated cache data
+await page.evaluate(async (asset) => {
+  const cache = await caches.open("arc-freeze-floor-models-v1");
+  await cache.put(new URL(asset.file, location.href).href, new Response(new Uint8Array([1, 2, 3])));
+  await cache.put(new URL("freeze-floor/cache-test-sentinel", location.href).href, new Response("keep"));
+}, COURT_MODEL);
 await page
   .getByLabel("Upload basketball image", { exact: true })
   .setInputFiles(
@@ -44,6 +53,16 @@ console.log(
   "Inference",
   await page.locator(".ff-notice,.ff-error").allTextContents(),
 );
+expect(courtDownloads).toHaveLength(1);
+const recovered = await page.evaluate(async (asset) => {
+  const cache = await caches.open("arc-freeze-floor-models-v1");
+  const response = await cache.match(new URL(asset.file, location.href).href);
+  const digest = response && Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await response.arrayBuffer())),
+    (x) => x.toString(16).padStart(2, "0")).join("");
+  const sentinel = await cache.match(new URL("freeze-floor/cache-test-sentinel", location.href).href);
+  return { digest, sentinel: await sentinel?.text() };
+}, COURT_MODEL);
+expect(recovered).toEqual({ digest: COURT_MODEL.sha256, sentinel: "keep" });
 // Remove automatic proposals to exercise manual alignment independently.
 while (await page.getByRole("button", { name: /^Delete landmark / }).count())
   await page
@@ -127,7 +146,7 @@ await (await promise).saveAs("/tmp/freeze-floor-upload-export.png");
 expect(errors).toEqual([]);
 expect(requests).toEqual([]);
 console.log(
-  "Real upload → proposals → manual alignment → contact correction → measurement → save/reload → PNG passed",
+  "Real upload → one-shot corrupt model recovery → proposals → manual alignment → contact correction → measurement → save/reload → PNG passed",
   process.env.FREEZE_FLOOR_CPU ? "CPU" : "WebGPU",
 );
 await browser.close();

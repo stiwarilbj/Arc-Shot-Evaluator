@@ -82,91 +82,163 @@ const asset = {
   sha256: createHash("sha256").update(payload).digest("hex"),
   bytes: 4,
 };
-let cached = () => new Response(new Uint8Array(5)),
-  reads = 0,
-  writes = 0,
-  removals = 0;
+const modelUrl = "https://test.invalid/model";
+let cached, reads = 0, writes = 0, removals = 0, requestOptions;
+let fetched = () => new Response(payload);
 const cache = {
-  match: async () => cached?.(),
-  delete: async () => {
+  match: async (url) => { assert.equal(url, modelUrl); return cached?.(); },
+  delete: async (url) => {
+    assert.equal(url, modelUrl, "eviction must target only the rejected model");
     cached = undefined;
     removals++;
     return true;
   },
-  put: async (_url, response) => {
+  put: async (url, response) => {
+    assert.equal(url, modelUrl);
     const b = await response.arrayBuffer();
     cached = () => new Response(b);
     writes++;
   },
 };
-try {
-  globalThis.caches = { open: async () => cache };
-  globalThis.fetch = async () => {
+const storage = { open: async (name) => {
+  assert.equal(name, "arc-freeze-floor-models-v1");
+  return cache;
+} };
+const reset = (entry) => {
+  cached = entry;
+  reads = writes = removals = 0;
+  requestOptions = undefined;
+  fetched = () => new Response(payload);
+  globalThis.caches = storage;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, modelUrl);
     reads++;
-    return new Response(payload);
+    requestOptions = options;
+    return fetched();
   };
-  await assert.rejects(
-    checkedAsset("https://test.invalid/model", asset),
-    /size limit/,
-  );
-  assert.equal(removals, 1);
-  assert.equal(reads, 0);
-  assert.deepEqual(
-    await checkedAsset("https://test.invalid/model", asset),
-    payload,
-  );
-  assert.equal(reads, 1);
-  assert.equal(writes, 1);
-  assert.deepEqual(
-    await checkedAsset("https://test.invalid/model", asset),
-    payload,
-  );
-  assert.equal(reads, 1);
-  assert.equal(writes, 1, "Verified cache hits must not be rewritten");
-  cached = () => new Response(new Uint8Array([9]));
-  await assert.rejects(
-    checkedAsset("https://test.invalid/model", asset),
-    /integrity/,
-  );
-  assert.equal(removals, 2);
-  cached = () =>
-    new Response(
-      new ReadableStream({
-        start(controller) {
-          controller.error(Error("interrupted cache"));
-        },
-      }),
-    );
-  await assert.rejects(
-    checkedAsset("https://test.invalid/model", asset),
-    /interrupted cache/,
-  );
-  assert.equal(removals, 3);
+};
+const interrupted = () => new Response(new ReadableStream({ start(c) {
+  c.error(Error("interrupted stream"));
+} }));
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+};
+const load = (signal) => checkedAsset(modelUrl, asset, signal);
+try {
+  for (const entry of [
+    () => new Response(new Uint8Array(5)),
+    () => new Response(new Uint8Array([9])),
+    () => new Response(null),
+    () => new Response(null, { status: 500 }),
+    interrupted,
+  ]) {
+    reset(entry);
+    assert.deepEqual(await load(), payload);
+    assert.deepEqual([removals, reads, writes], [1, 1, 1]);
+    assert.equal(requestOptions.cache, "reload", "recovery bypasses the HTTP cache");
+    assert.deepEqual(await load(), payload);
+    assert.deepEqual([removals, reads, writes], [1, 1, 1],
+      "verified cache hits must not download or rewrite");
+  }
+  reset(undefined);
+  assert.deepEqual(await load(), payload);
+  assert.deepEqual([removals, reads, writes], [0, 1, 1]);
+  assert.equal(requestOptions.cache, "default");
+
+  // Neither a cache miss nor a rejected hit may retry a failed fresh response
+  for (const entry of [undefined, () => new Response(new Uint8Array([9]))]) {
+    for (const [download, error] of [
+      [() => new Response(null, { status: 404 }), /download failed/],
+      [() => new Response(null), /empty/],
+      [() => new Response(new Uint8Array([9])), /integrity/],
+      [() => new Response(new Uint8Array(5)), /size limit/],
+      [interrupted, /interrupted stream/],
+      [() => { throw Error("offline"); }, /offline/],
+    ]) {
+      reset(entry);
+      fetched = download;
+      await assert.rejects(load(), error);
+      assert.deepEqual([removals, reads, writes], [entry ? 1 : 0, 1, 0]);
+      assert.equal(cached, undefined, "a failed download must not enter storage");
+    }
+  }
+  reset(() => new Response(new Uint8Array([9])));
   let cancelled = false;
-  cached = undefined;
-  globalThis.fetch = async () =>
-    new Response(
-      new ReadableStream({
-        pull(c) {
-          c.enqueue(new Uint8Array(5));
-        },
-        cancel() {
-          cancelled = true;
-        },
-      }),
-    );
-  await assert.rejects(
-    checkedAsset("https://test.invalid/model", asset),
-    /size limit/,
-  );
-  assert.equal(cancelled, true);
+  fetched = () => new Response(new ReadableStream({
+    pull(c) { c.enqueue(new Uint8Array(5)); },
+    cancel() { cancelled = true; },
+  }));
+  await assert.rejects(load(), /size limit/);
+  assert.ok(cancelled, "the recovery stream is cancelled on actual-byte overflow");
+  assert.deepEqual([removals, reads, writes], [1, 1, 0]);
+
+  reset(() => new Response(new Uint8Array([9])));
+  const before = new AbortController();
+  before.abort();
+  await assert.rejects(load(before.signal), { name: "AbortError" });
+  assert.deepEqual([removals, reads, writes], [0, 0, 0]);
+
+  // Cancellation of a cached read is not corruption and must never start recovery
+  reset(undefined);
+  const reading = deferred(), duringRead = new AbortController();
+  let cachedCancelled = false;
+  const response = new Response(new ReadableStream({
+    pull() { reading.resolve(); },
+    cancel() { cachedCancelled = true; },
+  }, { highWaterMark: 0 }));
+  cached = () => response;
+  const readAbort = assert.rejects(load(duringRead.signal), { name: "AbortError" });
+  await reading.promise;
+  duringRead.abort();
+  await readAbort;
+  assert.ok(cachedCancelled);
+  assert.equal(response.body.locked, false);
+  assert.deepEqual([removals, reads, writes], [0, 0, 0]);
+
+  // Cancellation during eviction cannot slip through to the recovery fetch
+  reset(() => new Response(new Uint8Array([9])));
+  const deleting = deferred(), resumeDelete = deferred(), duringDelete = new AbortController();
+  const remove = cache.delete;
+  cache.delete = async (...args) => { deleting.resolve(); await resumeDelete.promise; return remove(...args); };
+  try {
+    const deleteAbort = assert.rejects(load(duringDelete.signal), { name: "AbortError" });
+    await deleting.promise;
+    duringDelete.abort();
+    resumeDelete.resolve();
+    await deleteAbort;
+    assert.deepEqual([removals, reads, writes], [1, 0, 0]);
+  } finally { cache.delete = remove; }
+
+  reset(() => new Response(new Uint8Array([9])));
+  const downloading = deferred(), duringDownload = new AbortController();
+  let freshCancelled = false;
+  const fresh = new Response(new ReadableStream({
+    pull() { downloading.resolve(); },
+    cancel() { freshCancelled = true; },
+  }, { highWaterMark: 0 }));
+  fetched = () => fresh;
+  const downloadAbort = assert.rejects(load(duringDownload.signal), { name: "AbortError" });
+  await downloading.promise;
+  assert.strictEqual(requestOptions.signal, duringDownload.signal);
+  duringDownload.abort();
+  await downloadAbort;
+  assert.ok(freshCancelled);
+  assert.equal(fresh.body.locked, false);
+  assert.deepEqual([removals, reads, writes], [1, 1, 0]);
+
+  reset(undefined);
+  globalThis.caches = { open: async () => { throw Error("storage blocked"); } };
+  assert.deepEqual(await load(), payload, "unavailable caching must remain playable");
+  assert.deepEqual([reads, writes], [1, 0]);
 } finally {
   globalThis.fetch = originalFetch;
   if (originalCaches === undefined) delete globalThis.caches;
   else globalThis.caches = originalCaches;
 }
 console.log(
-  "Freeze Floor media: video limits, seek bounds, timestamps, still metadata, corrupt/oversized/interrupted cache eviction and cache reuse passed",
+  "Freeze Floor media: video limits, seek bounds, timestamps, still metadata, one-shot corrupt-cache recovery, strict fresh-response verification, byte limits, cancellation and cache reuse passed",
 );
 
 const publicRoot = new URL("../frontend/public/freeze-floor/", import.meta.url);

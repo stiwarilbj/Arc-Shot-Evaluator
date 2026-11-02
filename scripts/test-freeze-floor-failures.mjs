@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
+import { COURT_MODEL } from "../frontend/src/features/freezeFloor/model.ts";
 const require = createRequire(
   new URL("../frontend/package.json", import.meta.url),
 );
@@ -14,7 +15,21 @@ const page = await browser.newPage({
   acceptDownloads: true,
 });
 const errors = [];
+let courtDownloads = 0;
 page.on("pageerror", (e) => errors.push(e.message));
+page.on("request", (r) => {
+  if (new URL(r.url()).pathname.endsWith(COURT_MODEL.file)) courtDownloads++;
+});
+async function corruptCache() {
+  await page.evaluate(async (asset) => {
+    const cache = await caches.open("arc-freeze-floor-models-v1");
+    await cache.put(new URL(asset.file, location.href).href, new Response(new Uint8Array([9])));
+  }, COURT_MODEL);
+}
+async function hasCachedModel() {
+  return page.evaluate(async (asset) => !!(await (await caches.open("arc-freeze-floor-models-v1"))
+    .match(new URL(asset.file, location.href).href)), COURT_MODEL);
+}
 await page.goto(
   process.env.FREEZE_FLOOR_URL || "http://127.0.0.1:5178/#freeze-floor",
 );
@@ -38,6 +53,7 @@ await page.getByRole("button", { name: "Dismiss error" }).click();
 await page
   .getByRole("button", { name: "Check the alignment", exact: true })
   .click();
+await corruptCache();
 await page.route("**/freeze-floor/models/court-keypoints.onnx", (r) =>
   r.fulfill({
     contentType: "application/octet-stream",
@@ -48,9 +64,12 @@ await page.getByRole("button", { name: "Retry automatic proposals" }).click();
 await expect(page.getByRole("alert")).toContainText("integrity", {
   timeout: 30000,
 });
+expect(courtDownloads).toBe(1);
+expect(await hasCachedModel()).toBe(false);
 await expect(page.locator(".ff-status")).toContainText("Alignment ready");
 await page.getByRole("button", { name: "Dismiss error" }).click();
 await page.unroute("**/freeze-floor/models/court-keypoints.onnx");
+await corruptCache();
 await page.route("**/freeze-floor/models/court-keypoints.onnx", async (r) => {
   await new Promise((resolve) => setTimeout(resolve, 3000));
   try {
@@ -59,6 +78,7 @@ await page.route("**/freeze-floor/models/court-keypoints.onnx", async (r) => {
 });
 await page.getByRole("button", { name: "Retry automatic proposals" }).click();
 await expect(page.locator(".ff-progress")).toBeVisible();
+await expect.poll(() => courtDownloads).toBe(2);
 await page
   .locator(".ff-progress")
   .getByRole("button", { name: "Cancel", exact: true })
@@ -67,6 +87,8 @@ await expect(page.locator(".ff-progress")).toHaveCount(0);
 await expect(page.locator(".ff-status")).toContainText("Alignment ready");
 await page.waitForTimeout(3300);
 await expect(page.getByRole("alert")).toHaveCount(0);
+expect(courtDownloads).toBe(2);
+expect(await hasCachedModel()).toBe(false);
 await page.evaluate(() => {
   indexedDB.open = () => {
     throw new DOMException("Storage blocked", "SecurityError");
