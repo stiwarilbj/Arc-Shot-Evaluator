@@ -30,6 +30,19 @@ The indicated range estimates sensitivity to point placement and residual landma
 
 ## Choose a moment from a video
 
+Open **Example videos** for four short, locally hosted clips with thumbnail previews · Select a card to open the existing frame picker
+
+| Example | Length | Source |
+| --- | --- | --- |
+| Kobe Bryant · Warmup | 3.8 seconds | randychiu · [CC BY 2.0](https://commons.wikimedia.org/wiki/File:Kobe_Bryant.ogv) |
+| Mad Ants vs Drive · Possession | 4.5 seconds | Tamara Chaos-Events · [CC BY 3.0](https://commons.wikimedia.org/wiki/File:Mad_Ants_VS_Drive.webm) · source 16.5–21 seconds |
+| Mad Ants vs Drive · Free throw | 3.5 seconds | Same source · 30.5–34 seconds |
+| Mad Ants vs Drive · Wide view | 5 seconds | Same source · 105–110 seconds |
+
+The Mad Ants–Drive footage is a G League game, with NBA-sized court markings · Examples are trimmed, muted H264 copies of two source videos, totaling approximately 4.8 MiB · They are playback examples, not reviewed calibrations or independent benchmark samples · The source pages, license evidence, modifications, source intervals, and pinned file checksums are recorded in `frontend/public/freeze-floor/provenance.json` and `NOTICE.txt`
+
+Only the selected clip downloads · Selecting or playing a clip does not initialize inference · Downloads are size-bounded and checksum-verified · Interrupted or invalid downloads leave the current project intact and can be retried · Source credits appear in the picker and carry into captured projects and combined PNG exports
+
 **Upload video** accepts local MP4, WebM, M4V, or MOV files when the browser can decode their video codec · Limits are 100 MiB, 10 minutes, and 24 megapixels per frame · Unsupported files leave the current photo and project intact
 
 Use Play/Pause, the scrubber, or a numeric time · Step buttons change the requested time by 1/30 second · These are time steps, not a claim that every source has 30 distinct frames per second · The browser supplies the decoded recorded frame, including its supported orientation handling · Playback speed offers 0.25×, 0.5×, 1×, and 2×, plus optional looping · Preview audio stays muted

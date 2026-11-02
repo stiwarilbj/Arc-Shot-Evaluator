@@ -701,3 +701,36 @@
     flex-basis: 100%;
   }
 }
+
+.ff-video-samples {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-height: 440px;
+  overflow: auto;
+}
+.ff-video-samples img {
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #0c1011;
+}
+.ff-video-picker p.ff-video-credit {
+  margin-top: 10px;
+  line-height: 1.6;
+}
+.ff-video-credit a {
+  color: var(--orange);
+}
+@media (max-width: 1000px) {
+  .ff-video-samples {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .ff-video-samples img {
+    height: 90px;
+  }
+  .ff-video-samples {
+    grid-template-columns: 1fr;
+    max-height: 330px;
+  }
+}

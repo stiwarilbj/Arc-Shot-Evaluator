@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import {
+  VIDEO_SAMPLES,
+  readSampleVideo,
+} from "../frontend/src/features/freezeFloor/videoSamples.ts";
+import { readImageHeader } from "../frontend/src/features/freezeFloor/images.ts";
 import {
   validateVideoFile,
   validateVideoMetadata,
@@ -161,4 +167,132 @@ try {
 }
 console.log(
   "Freeze Floor media: video limits, seek bounds, timestamps, still metadata, corrupt/oversized/interrupted cache eviction and cache reuse passed",
+);
+
+const publicRoot = new URL("../frontend/public/freeze-floor/", import.meta.url);
+const provenance = JSON.parse(
+  readFileSync(new URL("provenance.json", publicRoot), "utf8"),
+);
+const ids = new Set(),
+  hashes = new Set();
+try {
+  for (const sample of VIDEO_SAMPLES) {
+    assert.ok(!ids.has(sample.id));
+    ids.add(sample.id);
+    assert.ok(
+      !hashes.has(sample.sha256),
+      "Each example must be distinct footage",
+    );
+    hashes.add(sample.sha256);
+    assert.match(sample.file, /^[a-z0-9-]+\.mp4$/);
+    assert.match(sample.poster, /^[a-z0-9-]+\.jpg$/);
+    const bytes = readFileSync(new URL(`videos/${sample.file}`, publicRoot));
+    const record = provenance.videoSamples.find((v) => v.id === sample.id);
+    assert.equal(bytes.length, sample.bytes);
+    assert.equal(record.sha256, sample.sha256);
+    assert.equal(record.source, sample.attribution.url);
+    assert.equal(record.licenseUrl, sample.licenseUrl);
+    assert.equal(record.creator, sample.attribution.creator);
+    assert.equal(record.license, sample.attribution.license);
+    const poster = readFileSync(new URL(`videos/${sample.poster}`, publicRoot));
+    assert.equal(
+      createHash("sha256").update(poster).digest("hex"),
+      record.posterSha256,
+    );
+    const header = readImageHeader(poster);
+    assert.ok(header.width > 0 && header.height > 0);
+    assert.ok(
+      validateProject({
+        ...p,
+        attribution: sample.attribution,
+        videoFrame: { seconds: 1, duration: 5 },
+      }),
+    );
+    globalThis.fetch = async (url, options) => {
+      assert.equal(
+        url,
+        `/Arc-Shot-Evaluator/freeze-floor/videos/${sample.file}`,
+      );
+      assert.ok(options.signal);
+      return new Response(bytes);
+    };
+    const file = await readSampleVideo(
+      sample,
+      "/Arc-Shot-Evaluator/",
+      new AbortController().signal,
+    );
+    assert.equal(file.name, sample.file);
+    assert.equal(file.size, bytes.length);
+    assert.equal(file.type, "video/mp4");
+  }
+  assert.equal(VIDEO_SAMPLES.length, 4);
+  const sample = { ...VIDEO_SAMPLES[0], ...asset };
+  const read = (signal) =>
+    readSampleVideo(sample, "/", signal ?? new AbortController().signal);
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    return new Response(payload);
+  };
+  const before = new AbortController();
+  before.abort();
+  await assert.rejects(read(before.signal), { name: "AbortError" });
+  assert.equal(requests, 0, "Already cancelled selection must never download");
+  for (const [response, error] of [
+    [new Response(null, { status: 404 }), /could not load/],
+    [new Response(null), /empty/],
+    [new Response(new Uint8Array(3)), /interrupted/],
+    [new Response(new Uint8Array(4)), /integrity/],
+  ]) {
+    globalThis.fetch = async () => response;
+    await assert.rejects(read(), error);
+  }
+  let cancelled = false;
+  globalThis.fetch = async () =>
+    new Response(
+      new ReadableStream({
+        pull(c) {
+          c.enqueue(new Uint8Array(5));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+    );
+  await assert.rejects(read(), /exceeded/);
+  assert.equal(cancelled, true);
+  cancelled = false;
+  const during = new AbortController();
+  globalThis.fetch = async () =>
+    new Response(
+      new ReadableStream({
+        pull(c) {
+          c.enqueue(payload);
+          during.abort();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+    );
+  await assert.rejects(read(during.signal), { name: "AbortError" });
+  assert.equal(
+    cancelled,
+    true,
+    "Cancelled reads must release the response stream",
+  );
+  globalThis.fetch = async () =>
+    new Response(
+      new ReadableStream({
+        start(c) {
+          c.error(Error("interrupted example"));
+        },
+      }),
+    );
+  await assert.rejects(read(), /interrupted example/);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+console.log(
+  "Freeze Floor examples: four distinct assets, provenance, thumbnails, checksums, bounded downloads, aborts and recoverable failures passed",
 );

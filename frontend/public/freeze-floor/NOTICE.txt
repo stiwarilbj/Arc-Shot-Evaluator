@@ -23,3 +23,27 @@ https://creativecommons.org/licenses/by-sa/4.0/
 All supplied photographs were normalized/re-encoded; the finals image was downscaled
 The finals example is intentionally unsuitable for alignment
 Automatic alignment is experimental, not independently benchmark-certified
+
+Video examples and their JPEG thumbnails
+Kobe Bryant — randychiu — Creative Commons Attribution 2.0
+https://commons.wikimedia.org/wiki/File:Kobe_Bryant.ogv
+https://creativecommons.org/licenses/by/2.0/
+Original creator: https://www.flickr.com/photos/randychiu/3291728131/
+Prepared file: videos/kobe-warmup.mp4 — source interval 0–3.8 seconds
+
+Mad Ants VS Drive — Tamara Chaos-Events — Creative Commons Attribution 3.0
+https://commons.wikimedia.org/wiki/File:Mad_Ants_VS_Drive.webm
+https://creativecommons.org/licenses/by/3.0/
+Original creator: https://www.youtube.com/watch?v=zhYLJLxzkoo
+Prepared files and source intervals
+videos/mad-ants-possession.mp4 — 16.5–21 seconds
+videos/mad-ants-free-throw.mp4 — 30.5–34 seconds
+videos/mad-ants-wide.mp4 — 105–110 seconds
+Commons declares the creator's YouTube CC BY license; its external-license review is pending
+Commons documents removal of original music of unknown provenance; the downloaded source has no audio
+
+All examples were trimmed, re-encoded as H264 MP4, and stripped of audio and source metadata
+JPEG thumbnails are derived from those examples
+Intervals, source and prepared checksums, and license evidence: provenance.json
+NBA warmup and G League footage are examples for choosing stills, not reviewed automatic alignments
+Each captured still requires its own alignment and contact review

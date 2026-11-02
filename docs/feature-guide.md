@@ -9,7 +9,7 @@ This guide contains detailed workspace behavior, local setup, development checks
 Open **Others → Freeze Floor** at `#freeze-floor` · Inspect a real photograph or selected video still beside a linked NBA half-court
 
 - Upload JPEG, PNG, or WebP up to 20 MiB and 24 megapixels · Orientation is respected and the working image is normalized to a maximum 2048-pixel edge
-- Upload a local MP4, WebM, or browser-supported MOV up to 100 MiB and 10 minutes · Scrub, step by 1/30 second, change speed, or loop · Use a frozen frame for alignment or download it as JPEG · New frames never reuse old calibration
+- Choose from four **Example videos** with thumbnails and source credits, or upload a local MP4, WebM, or browser-supported MOV up to 100 MiB and 10 minutes · Scrub, step by 1/30 second, change speed, or loop · Use a frozen frame for alignment or download it as JPEG · New frames never reuse old calibration
 - Review proposed floor landmarks using **Check the alignment** · Add, reassign, exclude, drag, or nudge anchors · At least four well-spread correspondences and an explicit overlay review are required for measurement
 - Confirm player contacts as grounded, uncertain, hidden, or airborne · Remove spectators and add missed people · Hidden or airborne feet never receive numeric distance measurements
 - Select two grounded floor points in either view · Distances and sensitivity ranges are approximate and restricted to the floor region enclosed by the anchors · Independent paint, corner, and restricted-area toggles use NBA dimensions

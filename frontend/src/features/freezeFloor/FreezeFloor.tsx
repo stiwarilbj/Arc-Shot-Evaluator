@@ -37,6 +37,11 @@ import { normalizeImage, readImageHeader } from "./images.ts";
 import { deleteProject, listProjects, saveProject } from "./storage.ts";
 import { analyzePhoto } from "./inference.ts";
 import { SAMPLES, type Sample } from "./samples.ts";
+import {
+  VIDEO_SAMPLES,
+  readSampleVideo,
+  type VideoSample,
+} from "./videoSamples.ts";
 import { VideoFramePicker } from "./VideoFramePicker";
 import { validateVideoFile, videoTime, type CapturedFrame } from "./video.ts";
 import "./freeze-floor.css";
@@ -109,6 +114,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   const [mode, setMode] = useState<Mode>("inspect"),
     [check, setCheck] = useState(false),
     [chooser, setChooser] = useState(false),
+    [videoChooser, setVideoChooser] = useState(false),
     [selected, setSelected] = useState<string | null>(null),
     [hovered, setHovered] = useState<string | null>(null),
     [cursor, setCursor] = useState<Point | null>(null),
@@ -128,6 +134,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   const [videoSource, setVideoSource] = useState<{
     file: File;
     key: string;
+    sample?: VideoSample;
   } | null>(null);
   const videoSourceRef = useRef(videoSource),
     videoInput = useRef<HTMLInputElement>(null);
@@ -139,6 +146,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     activeRef = useRef(active),
     fileInput = useRef<HTMLInputElement>(null),
     chooserButton = useRef<HTMLButtonElement>(null),
+    videoChooserButton = useRef<HTMLButtonElement>(null),
     mounted = useRef(true);
   const gesture = useRef<{
     before: FloorProject;
@@ -294,10 +302,12 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setMode("inspect");
     setSaved(isSaved);
     setChooser(false);
+    setVideoChooser(false);
     setError("");
     setCheck(false);
   }
   async function loadSample(sample: Sample) {
+    setVideoChooser(false);
     setVideoSource(null);
     stop();
     const token = ++loadToken.current;
@@ -326,6 +336,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     }
   }
   async function openSaved(s: StoredProject) {
+    setVideoChooser(false);
     setVideoSource(null);
     stop();
     const token = ++loadToken.current;
@@ -361,6 +372,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     }
   }
   async function upload(file: File) {
+    setVideoChooser(false);
     setVideoSource(null);
     stop();
     const token = ++loadToken.current;
@@ -386,13 +398,52 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       if (token === loadToken.current && !controller.current) setBusy("");
     }
   }
-  function chooseVideo(file: File) {
+  async function loadVideoSample(sample: VideoSample) {
+    stop();
+    const token = ++loadToken.current;
+    const c = new AbortController();
+    controller.current = c;
+    setBusy("Opening example video");
+    setError("");
+    try {
+      const file = await readSampleVideo(
+        sample,
+        import.meta.env.BASE_URL,
+        c.signal,
+      );
+      if (
+        c.signal.aborted ||
+        token !== loadToken.current ||
+        !mounted.current ||
+        !activeRef.current ||
+        document.hidden
+      )
+        return;
+      chooseVideo(file, sample);
+      setNotice(sample.note);
+    } catch (e) {
+      if (
+        !c.signal.aborted &&
+        controller.current === c &&
+        token === loadToken.current
+      )
+        setError(message(e));
+    } finally {
+      if (controller.current === c) {
+        controller.current = null;
+        setBusy("");
+      }
+    }
+  }
+  function chooseVideo(file: File, sample?: VideoSample) {
     try {
       validateVideoFile(file);
       stop();
       loadToken.current++;
       setError("");
-      setVideoSource({ file, key: id() });
+      setVideoSource({ file, key: id(), sample });
+      setVideoChooser(false);
+      setChooser(false);
       setNotice(
         "Choose a clear floor moment · Video preview stays on this device",
       );
@@ -414,9 +465,10 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       ...newProject(
         frame.width,
         frame.height,
-        `${source.file.name.replace(/\.[^.]+$/, "")} · ${videoTime(frame.seconds)}`,
+        `${source.sample?.name ?? source.file.name.replace(/\.[^.]+$/, "")} · ${videoTime(frame.seconds)}`,
       ),
       videoFrame: { seconds: frame.seconds, duration: frame.duration },
+      ...(source.sample ? { attribution: source.sample.attribution } : {}),
     };
     install(next, frame.blob);
     setNotice(
@@ -858,7 +910,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           aria-expanded={chooser}
           aria-controls="ff-chooser"
           onClick={() => {
+            if (videoChooser) stop();
             setChooser((v) => !v);
+            setVideoChooser(false);
             void refresh();
           }}
         >
@@ -884,6 +938,18 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           }}
           aria-label="Upload basketball image"
         />
+        <button
+          ref={videoChooserButton}
+          aria-expanded={videoChooser}
+          aria-controls="ff-video-chooser"
+          onClick={() => {
+            if (videoChooser) stop();
+            setVideoChooser((v) => !v);
+            setChooser(false);
+          }}
+        >
+          <Video size={17} /> Example videos
+        </button>
         <button onClick={() => videoInput.current?.click()}>
           <Video size={17} />
           Upload video
@@ -945,10 +1011,52 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         <VideoFramePicker
           key={videoSource.key}
           file={videoSource.file}
-          active={active}
+          active={active && !videoChooser && !chooser}
+          sample={videoSource.sample}
           onCapture={(frame) => useVideoFrame(frame, videoSource.key)}
           onClose={() => setVideoSource(null)}
         />
+      ) : null}
+      {videoChooser ? (
+        <section
+          className="ff-chooser"
+          id="ff-video-chooser"
+          aria-label="Choose an example video"
+        >
+          <div className="ff-section-head">
+            <h2>Example videos</h2>
+            <button
+              aria-label="Close video examples"
+              onClick={() => {
+                stop();
+                setVideoChooser(false);
+                videoChooserButton.current?.focus();
+              }}
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <p className="ff-help">
+            Choose a clip, then freeze a clear floor moment · Examples need
+            alignment review · No model runs until you use a frame
+          </p>
+          <div className="ff-samples ff-video-samples">
+            {VIDEO_SAMPLES.map((sample) => (
+              <button
+                key={sample.id}
+                onClick={() => void loadVideoSample(sample)}
+              >
+                <img
+                  src={`${import.meta.env.BASE_URL}freeze-floor/videos/${sample.poster}`}
+                  alt=""
+                  loading="lazy"
+                />
+                <strong>{sample.name}</strong>
+                <small>{sample.summary}</small>
+              </button>
+            ))}
+          </div>
+        </section>
       ) : null}
       {chooser ? (
         <section

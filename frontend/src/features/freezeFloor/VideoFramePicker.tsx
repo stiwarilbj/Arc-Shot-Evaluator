@@ -17,13 +17,22 @@ import {
   type CapturedFrame,
 } from "./video.ts";
 
+import type { VideoSample } from "./videoSamples.ts";
+
 type Props = {
   file: File;
   active: boolean;
+  sample?: VideoSample;
   onCapture: (frame: CapturedFrame) => void;
   onClose: () => void;
 };
-export function VideoFramePicker({ file, active, onCapture, onClose }: Props) {
+export function VideoFramePicker({
+  file,
+  active,
+  sample,
+  onCapture,
+  onClose,
+}: Props) {
   const video = useRef<HTMLVideoElement>(null),
     alive = useRef(false),
     capturingRef = useRef(false);
@@ -131,6 +140,19 @@ export function VideoFramePicker({ file, active, onCapture, onClose }: Props) {
           <X size={18} />
         </button>
       </div>
+      {sample ? (
+        <p className="ff-video-credit">
+          <strong>{sample.name}</strong> ·{" "}
+          <a href={sample.attribution.url} target="_blank" rel="noreferrer">
+            Source: {sample.attribution.creator}
+          </a>{" "}
+          ·{" "}
+          <a href={sample.licenseUrl} target="_blank" rel="noreferrer">
+            {sample.attribution.license}
+          </a>{" "}
+          · Excerpt, muted and re-encoded · {sample.note}
+        </p>
+      ) : null}
       <video
         ref={video}
         muted
