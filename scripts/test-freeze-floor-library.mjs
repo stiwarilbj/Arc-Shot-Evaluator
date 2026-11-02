@@ -31,6 +31,42 @@ async function refresh() {
   await page.getByRole("button", { name: "Close photo chooser" }).click();
   await chooser.click();
 }
+// Hold delivery after a real readonly transaction finishes, releasing its locks
+// so subsequent saves/deletions can complete before the older promise settles
+async function holdNextListing(fail = false) {
+  await page.evaluate((fail) => {
+    window.releaseListing = undefined;
+    const original = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (...args) {
+      const tx = original.apply(this, args);
+      if (this.name === "arc-freeze-floor-v1" && tx.mode === "readonly") {
+        IDBDatabase.prototype.transaction = original;
+        const deliveries = [];
+        for (const event of ["complete", "error", "abort"]) {
+          Object.defineProperty(tx, `on${event}`, {
+            set(callback) {
+              tx.addEventListener(event, (e) => {
+                deliveries.push(() => callback.call(tx, e));
+                window.releaseListing = () => deliveries.splice(0).forEach((deliver) => deliver());
+              });
+            },
+          });
+        }
+        if (fail) queueMicrotask(() => tx.abort());
+      }
+      return tx;
+    };
+  }, fail);
+  await refresh();
+  await expect.poll(() => page.evaluate(() => typeof window.releaseListing)).toBe("function");
+}
+async function releaseListing() {
+  await page.evaluate(async () => {
+    window.releaseListing();
+    // Let React commit any stale update before asserting the visible result
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+}
 async function records() {
   return page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
@@ -99,6 +135,34 @@ try {
   await expect(library.getByRole("button", { name: "Healthy newest project", exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
 
+  // An older snapshot must not hide a project saved by a newer refresh
+  await holdNextListing();
+  await page.getByRole("button", { name: /Knicks at the Garden.*Reviewed manual alignment/ }).click();
+  await expect(page.getByLabel("Project name")).toHaveValue("Knicks at the Garden · Wide view");
+  await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await page.getByLabel("Project name").fill("Newly saved project");
+  await choose();
+  await page.getByRole("button", { name: "Save project", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await expect(library.getByRole("button", { name: "Newly saved project", exact: true })).toBeVisible();
+  await releaseListing();
+  await expect(library.getByRole("button", { name: "Newly saved project", exact: true })).toBeVisible();
+  await expect(page.locator(".ff-chooser h3")).toContainText("2/20");
+
+  // A captured card must not return after its actual deletion has committed
+  await holdNextListing();
+  page.once("dialog", (dialog) => dialog.accept());
+  await library.getByRole("button", { name: "Delete Newly saved project", exact: true }).click();
+  await expect(library.getByRole("button", { name: "Newly saved project", exact: true })).toHaveCount(0);
+  await releaseListing();
+  await expect(library.getByRole("button", { name: "Newly saved project", exact: true })).toHaveCount(0);
+  await expect(page.locator(".ff-chooser h3")).toContainText("1/20");
+  await library.getByRole("button", { name: "Healthy newest project", exact: true }).click();
+  await expect(page.getByLabel("Project name")).toHaveValue("Healthy newest project");
+  await choose();
+
+  // An older clean read cannot clear a newer damaged-record warning
+  await holdNextListing();
   // Seed real IndexedDB with one older healthy project and four malformed records
   await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
@@ -148,6 +212,10 @@ try {
     await expect(warning).toContainText(label);
   await expect(warning).toContainText("preserved for recovery");
   await expect(page.locator(".ff-chooser h3")).toContainText("6/20");
+  await releaseListing();
+  await expect(warning).toContainText("4 saved projects unavailable");
+  await expect(library.getByRole("button", { name: "Healthy older project", exact: true })).toBeVisible();
+  await expect(page.locator(".ff-chooser h3")).toContainText("6/20");
   assert.deepEqual(await records(), original, "listing must not rewrite or delete any record");
 
   // Healthy projects still open, and source changes cannot erase the library warning
@@ -161,6 +229,16 @@ try {
   assert.deepEqual((await records()).filter((r) => String(r.key).startsWith("damaged-")),
     original.filter((r) => String(r.key).startsWith("damaged-")),
     "saving a healthy project must preserve damaged metadata and media");
+
+  // An older failure cannot replace a newer save's success notice
+  await holdNextListing(true);
+  const paint = page.getByRole("checkbox", { name: "Paint", exact: true });
+  await paint.setChecked(!(await paint.isChecked()));
+  await page.getByRole("button", { name: "Save project", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await expect(page.locator(".ff-notice")).toHaveText("Saved on this device");
+  await releaseListing();
+  await expect(page.locator(".ff-notice")).toHaveText("Saved on this device");
 
   // A genuinely interrupted read must reject, retaining the last known library
   await page.evaluate(() => {
@@ -204,8 +282,11 @@ try {
   assert.deepEqual(await records(), original.filter((r) => String(r.key).startsWith("damaged-")));
 
   // Remove only test fixtures to verify a later complete read clears the warning
+  await holdNextListing();
   await deleteKeys(["damaged-metadata", "damaged-image", "damaged-nested"]);
   await refresh();
+  await expect(warning).toContainText("1 saved project unavailable");
+  await releaseListing();
   await expect(warning).toContainText("1 saved project unavailable");
   await deleteKeys(["damaged-unnamed"]);
   await refresh();
@@ -215,7 +296,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
-  console.log("Freeze Floor library passed: healthy/partial/damaged/empty listings, stored identities, chronological order, unchanged recovery records, open/save/reload, interrupted reads, mobile/light layout, no runtime errors or uploads");
+  console.log("Freeze Floor library passed: out-of-order saves/deletions/warnings/errors, healthy/partial/damaged/empty listings, stored identities, chronological order, unchanged recovery records, open/save/reload, interrupted reads, mobile/light layout, no runtime errors or uploads");
 } finally {
   await browser.close();
 }

@@ -158,6 +158,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     revision = useRef(0),
     controller = useRef<AbortController | null>(null),
     loadToken = useRef(0),
+    libraryRequest = useRef(0),
     activeRef = useRef(active),
     fileInput = useRef<HTMLInputElement>(null),
     chooserButton = useRef<HTMLButtonElement>(null),
@@ -256,14 +257,16 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       setSelected(null);
   }, [p, selected]);
   async function refresh() {
+    const request = ++libraryRequest.current;
     try {
       const v = await listProjects();
-      if (mounted.current) {
+      if (mounted.current && request === libraryRequest.current) {
         setLibrary(v.projects);
         setUnavailableProjects(v.unavailable);
       }
     } catch (e) {
-      if (mounted.current) setNotice(message(e));
+      if (mounted.current && request === libraryRequest.current)
+        setNotice(message(e));
     }
   }
   useEffect(() => {
@@ -271,6 +274,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     void refresh();
     return () => {
       mounted.current = false;
+      libraryRequest.current++;
       controller.current?.abort();
       loadToken.current++;
     };
