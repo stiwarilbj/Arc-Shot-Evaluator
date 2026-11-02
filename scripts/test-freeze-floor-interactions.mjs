@@ -94,6 +94,58 @@ try {
   await page
     .getByRole("button", { name: "Check the alignment", exact: true })
     .click();
+  // Perspective-compressed photo pixels must not create a huge overhead hit area.
+  await page
+    .getByRole("button", { name: "Add player contact", exact: true })
+    .click();
+  await clickCourt(25, 10);
+  await page.getByLabel("Player 3 contact status").selectOption("grounded");
+  await page
+    .getByRole("button", { name: "Measure distance", exact: true })
+    .click();
+  await clickCourt(17.75, 12.75);
+  await clickCourt(31, 3);
+  await expect(page.getByRole("region", { name: "Distances" })).toContainText(
+    "Approx 16.5 ft",
+  );
+  await page.getByRole("button", { name: "Inspect", exact: true }).click();
+  await clickCourt(17.75, 12.75);
+  await expect(page.getByLabel("Contact X (px)")).toHaveCount(0);
+  await clickCourt(25.2, 10);
+  await expect(page.getByLabel("Contact X (px)")).toBeVisible();
+  await page.getByLabel("Player 3 contact status").selectOption("hidden");
+  await expect(page.getByRole("region", { name: "Distances" })).toContainText(
+    "Approx 16.5 ft",
+  );
+  // Repeat at a narrow touch-sized viewport and in light mode.
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.getByRole("button", { name: "Light", exact: true }).click();
+  await clickCourt(17.75, 12.75);
+  await expect(page.getByLabel("Contact X (px)")).toHaveCount(0);
+  await clickCourt(25.2, 10);
+  await expect(page.getByLabel("Contact X (px)")).toBeVisible();
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByLabel("Project name")
+    .fill("Perspective selection regression");
+  await save();
+  await page.reload();
+  await openSaved("Perspective selection regression");
+  await expect(page.getByRole("region", { name: "Distances" })).toContainText(
+    "Approx 16.5 ft",
+  );
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download PNG", exact: true }).click();
+  const download = await downloadPromise;
+  await download.saveAs("/tmp/freeze-floor-perspective-export.png");
+  assert.equal(await download.failure(), null);
+  await court.screenshot({ path: "/tmp/freeze-floor-hit-after.png" });
+  await page.reload();
+  await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await page
+    .getByRole("button", { name: "Check the alignment", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Add player contact", exact: true })
     .click();
@@ -279,7 +331,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(uploads, []);
   console.log(
-    "Freeze Floor browser regressions passed: contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, no runtime errors or uploads",
+    "Freeze Floor browser regressions passed: perspective-safe selection and measurements, PNG export, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, no runtime errors or uploads",
   );
 } finally {
   await browser.close();

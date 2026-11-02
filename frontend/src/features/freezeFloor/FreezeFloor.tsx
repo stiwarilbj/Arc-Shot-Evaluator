@@ -23,7 +23,14 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { FloorScene } from "./FloorScene";
-import { align, LANDMARKS, measure, project, inCourt } from "./geometry.ts";
+import {
+  align,
+  LANDMARKS,
+  measure,
+  project,
+  inCourt,
+  findContactAt,
+} from "./geometry.ts";
 import {
   id,
   newProject,
@@ -561,26 +568,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     return r && r.x >= 0 && r.x <= 1 && r.y >= 0 && r.y <= 1 ? r : null;
   }
   function hitAt(v: Point, view: "photo" | "court") {
-    if (!p) return null;
-    // Photo selection uses visible person boxes, so a body hover highlights the foot contact.
-    const contacts = p.contacts.filter(
-      (c) =>
-        Math.hypot((c.image.x - v.x) * p.width, (c.image.y - v.y) * p.height) <
-          Math.max(p.width, p.height) * 0.02 ||
-        (view === "photo" &&
-          c.box &&
-          v.x >= c.box[0] &&
-          v.x <= c.box[2] &&
-          v.y >= c.box[1] &&
-          v.y <= c.box[3]),
-    );
-    return (
-      contacts.sort(
-        (a, b) =>
-          Math.hypot(a.image.x - v.x, a.image.y - v.y) -
-          Math.hypot(b.image.x - v.x, b.image.y - v.y),
-      )[0] ?? null
-    );
+    return p && alignment ? findContactAt(p, alignment, v, view) : null;
   }
   function placePoint(v: Point, view: "photo" | "court") {
     if (!p) return;

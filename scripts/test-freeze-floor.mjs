@@ -12,6 +12,7 @@ import {
   regionPolygons,
   COURT,
   courtLines,
+  findContactAt,
 } from "../frontend/src/features/freezeFloor/geometry.ts";
 import {
   newProject,
@@ -215,6 +216,117 @@ assert.ok(
     warnings: [],
   }),
 );
+// Use a real sample's perspective, with a synthetic contact at a known floor
+// point. The old photo-space court hit test snapped a click almost 8 ft away.
+const hitProject = {
+  ...newProject(1600, 1200, "Selection regression"),
+  anchors: SAMPLES[0].anchors,
+  contacts: [{ id: "target", label: "3", status: "grounded", image: null }],
+};
+const hitAlignment = align(hitProject.anchors, true);
+hitProject.contacts[0].image = project(hitAlignment.h, { x: 25, y: 10 });
+const farClick = project(hitAlignment.h, { x: 17.75, y: 12.75 });
+assert.ok(
+  Math.hypot(
+    (farClick.x - hitProject.contacts[0].image.x) * 1600,
+    (farClick.y - hitProject.contacts[0].image.y) * 1200,
+  ) < 32,
+);
+assert.equal(findContactAt(hitProject, hitAlignment, farClick, "court"), null);
+assert.equal(
+  findContactAt(hitProject, hitAlignment, farClick, "photo")?.id,
+  "target",
+);
+const endpoint = (floor) => {
+  const image = project(hitAlignment.h, floor);
+  const hit = findContactAt(hitProject, hitAlignment, image, "court");
+  return hit ? { image: hit.image, contactId: hit.id } : { image };
+};
+close(
+  measure(
+    hitProject,
+    hitAlignment,
+    endpoint({ x: 17.75, y: 12.75 }),
+    endpoint({ x: 31, y: 3 }),
+  ).value,
+  Math.hypot(13.25, -9.75),
+);
+for (const mirror of [false, true]) {
+  const contacts = [
+    {
+      ...hitProject.contacts[0],
+      image: { x: 0.55, y: 0.6 },
+      box: [0.5, 0.3, 0.6, 0.61],
+    },
+    { ...hitProject.contacts[0], id: "other", image: { x: 0.57, y: 0.6 } },
+  ];
+  const transform = [
+    mirror ? -0.02 : 0.02,
+    0,
+    mirror ? 1 : 0,
+    0,
+    0.02,
+    0,
+    0,
+    0,
+    1,
+  ];
+  const alignment = {
+    ...hitAlignment,
+    h: transform,
+    inverse: invert(transform),
+  };
+  const projectValue = { ...hitProject, contacts };
+  const floor = project(alignment.inverse, contacts[0].image);
+  assert.equal(
+    findContactAt(projectValue, alignment, contacts[0].image, "court")?.id,
+    "target",
+  );
+  assert.equal(
+    findContactAt(
+      projectValue,
+      alignment,
+      project(transform, { x: floor.x, y: floor.y - 0.5 }),
+      "court",
+    )?.id,
+    "target",
+  );
+  assert.equal(
+    findContactAt(
+      projectValue,
+      alignment,
+      project(transform, { x: floor.x, y: floor.y - 1.1 }),
+      "court",
+    ),
+    null,
+  );
+  assert.equal(
+    findContactAt(projectValue, alignment, contacts[1].image, "court")?.id,
+    "other",
+  );
+  // Person boxes are a photograph-only convenience, never an overhead hit area.
+  assert.equal(
+    findContactAt(projectValue, alignment, { x: 0.55, y: 0.35 }, "photo")?.id,
+    "target",
+  );
+  assert.equal(
+    findContactAt(projectValue, alignment, { x: 0.55, y: 0.35 }, "court"),
+    null,
+  );
+  assert.equal(
+    findContactAt(
+      projectValue,
+      { ...alignment, inverse: undefined },
+      contacts[0].image,
+      "court",
+    ),
+    null,
+  );
+  assert.equal(
+    findContactAt(projectValue, alignment, { x: NaN, y: 0.6 }, "court"),
+    null,
+  );
+}
 const png = new Uint8Array(24);
 png.set([137, 80, 78, 71, 13, 10, 26, 10], 0);
 png.set([73, 72, 68, 82], 12);

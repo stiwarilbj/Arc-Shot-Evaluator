@@ -1,5 +1,11 @@
 import { Matrix, SingularValueDecomposition } from "ml-matrix";
-import type { Anchor, FloorProject, MeasurePoint, Point } from "./types.ts";
+import type {
+  Anchor,
+  Contact,
+  FloorProject,
+  MeasurePoint,
+  Point,
+} from "./types.ts";
 export const COURT = {
   width: 50,
   length: 47,
@@ -334,6 +340,51 @@ export function align(anchors: Anchor[], reviewed = false): Alignment {
 }
 export function inCourt(p: Point) {
   return p.x >= 0 && p.x <= 50 && p.y >= 0 && p.y <= 47;
+}
+// Hit testing must use the coordinates of the view the user is interacting with.
+// A small photograph gap can represent many feet on the overhead court.
+export function findContactAt(
+  p: FloorProject,
+  alignment: Alignment,
+  image: Point,
+  view: "photo" | "court",
+): Contact | null {
+  const photo = view === "photo";
+  const position = (image: Point) =>
+    photo
+      ? { x: image.x * p.width, y: image.y * p.height }
+      : alignment.inverse
+        ? project(alignment.inverse, image)
+        : null;
+  const query = position(image);
+  if (
+    !query ||
+    !Number.isFinite(query.x) ||
+    !Number.isFinite(query.y) ||
+    (!photo && !inCourt(query))
+  )
+    return null;
+  // One court foot covers the displayed marker with a small aiming margin.
+  const radius = photo ? Math.max(p.width, p.height) * 0.02 : 1;
+  let nearest: Contact | null = null,
+    nearestDistance = Infinity;
+  for (const c of p.contacts) {
+    const point = position(c.image);
+    if (!point || (!photo && !inCourt(point))) continue;
+    const d = distance(point, query);
+    const bodyHit =
+      photo &&
+      c.box &&
+      image.x >= c.box[0] &&
+      image.x <= c.box[2] &&
+      image.y >= c.box[1] &&
+      image.y <= c.box[3];
+    if ((d < radius || bodyHit) && d < nearestDistance) {
+      nearest = c;
+      nearestDistance = d;
+    }
+  }
+  return nearest;
 }
 export function supported(p: Point, a: Alignment) {
   if (!inCourt(p) || a.hull.length < 3) return false;

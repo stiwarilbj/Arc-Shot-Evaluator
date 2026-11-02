@@ -24,6 +24,8 @@ Three licensed real photographs are supplied · Two wide images have manually in
 8. Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
 9. Save explicitly, or download the combined photograph/overhead PNG · No photo is uploaded
 
+Overhead selection uses a small court-space area around each player marker rather than photograph proximity · Empty court points remain floor endpoints instead of snapping to a distant person · On the photograph, selecting a person’s body still highlights their foot contact
+
 Keyboard selection uses the same player-contact checks as pointer selection · Hidden, airborne, and uncertain contacts keep measurements withheld after save/reopen · Arrow keys nudge by one photograph pixel or 0.1 foot along overhead court axes, with Shift for ten times the step · Place and adjust floor landmarks on the photograph; overhead interaction requires an available alignment
 
 Numeric distances are restricted to the convex floor region enclosed by the accepted anchors · Outside this region, on unstable projections, or with unconfirmed feet, the editor keeps the endpoints but withholds the number
@@ -105,7 +107,7 @@ pnpm --dir frontend build
 VITE_DEPLOY_TARGET=github-pages pnpm --dir frontend build
 ```
 
-The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, keyboard/pointer measurement parity, axis-correct court nudging, private save/reopen, delayed storage-operation isolation, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
+The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, perspective-safe overhead selection, keyboard/pointer measurement parity, axis-correct court nudging, private save/reopen, delayed storage-operation isolation, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
 
 For the real-photo acceptance gate, supply independent licensed images and annotations with disjoint training/camera groups · Use at least 40 supported and 20 unsuitable photographs across independent groups · Every accepted photograph needs four or more independent floor checks that were not used for fitting
 
