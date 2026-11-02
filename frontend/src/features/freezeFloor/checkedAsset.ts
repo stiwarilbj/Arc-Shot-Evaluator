@@ -1,4 +1,40 @@
 // Shared with the worker · Recover once from a rejected cached model response
+const DOWNLOAD_IDLE_MS = 30_000;
+
+function downloadDeadline(parent?: AbortSignal) {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => clearTimeout(timer);
+  const abort = () => {
+    stop();
+    controller.abort(parent?.reason);
+  };
+  const reset = () => {
+    stop();
+    if (!controller.signal.aborted)
+      timer = setTimeout(() => {
+        controller.abort(
+          new DOMException(
+            "Model download stalled · No data received for 30 seconds · Retry automatic proposals or use manual landmarks",
+            "TimeoutError",
+          ),
+        );
+      }, DOWNLOAD_IDLE_MS);
+  };
+  parent?.addEventListener("abort", abort, { once: true });
+  if (parent?.aborted) abort();
+  else reset();
+  return {
+    signal: controller.signal,
+    reset,
+    stop,
+    dispose() {
+      stop();
+      parent?.removeEventListener("abort", abort);
+    },
+  };
+}
+
 export async function checkedAsset(
   url: string,
   asset: { sha256: string; bytes: number },
@@ -17,8 +53,12 @@ export async function checkedAsset(
     cache = undefined;
   }
   signal?.throwIfAborted();
-  const verify = async (response: Response) => {
-    signal?.throwIfAborted();
+  const verify = async (
+    response: Response,
+    download?: ReturnType<typeof downloadDeadline>,
+  ) => {
+    const readSignal = download?.signal ?? signal;
+    readSignal?.throwIfAborted();
     if (!response.ok)
       throw Error(
         "Model download failed · Retry automatic alignment or use manual landmarks",
@@ -30,14 +70,15 @@ export async function checkedAsset(
     const abort = () => {
       void reader.cancel().catch(() => {});
     };
-    signal?.addEventListener("abort", abort, { once: true });
+    readSignal?.addEventListener("abort", abort, { once: true });
     try {
-      if (signal?.aborted) abort();
-      signal?.throwIfAborted();
+      if (readSignal?.aborted) abort();
+      readSignal?.throwIfAborted();
       while (true) {
         const { done, value } = await reader.read();
-        signal?.throwIfAborted();
+        readSignal?.throwIfAborted();
         if (done) break;
+        if (value.length) download?.reset();
         total += value.length;
         if (total > asset.bytes) {
           await reader.cancel().catch(() => {});
@@ -45,6 +86,8 @@ export async function checkedAsset(
         }
         chunks.push(value);
       }
+      // Hashing and inference are processing time, not download inactivity
+      download?.stop();
       const bytes = new Uint8Array(total);
       let offset = 0;
       for (const chunk of chunks) {
@@ -55,14 +98,15 @@ export async function checkedAsset(
         new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
         (x) => x.toString(16).padStart(2, "0"),
       ).join("");
-      signal?.throwIfAborted();
+      readSignal?.throwIfAborted();
       if (digest !== asset.sha256)
         throw Error(
           "Model integrity check failed · Retry to download a verified copy",
         );
       return bytes;
     } finally {
-      signal?.removeEventListener("abort", abort);
+      download?.stop();
+      readSignal?.removeEventListener("abort", abort);
       reader.releaseLock();
     }
   };
@@ -81,11 +125,20 @@ export async function checkedAsset(
     }
   }
   // A fresh failure is final · Do not recursively retry an unverified download
-  const response = await fetch(url, {
-    signal,
-    cache: hit ? "reload" : "default",
-  });
-  const bytes = await verify(response);
+  const download = downloadDeadline(signal);
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    const response = await fetch(url, {
+      signal: download.signal,
+      cache: hit ? "reload" : "default",
+    });
+    bytes = await verify(response, download);
+  } catch (e) {
+    download.signal.throwIfAborted();
+    throw e;
+  } finally {
+    download.dispose();
+  }
   signal?.throwIfAborted();
   try {
     await cache?.put(url, new Response(bytes));

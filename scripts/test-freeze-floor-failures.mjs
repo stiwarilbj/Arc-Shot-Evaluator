@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
-import { COURT_MODEL } from "../frontend/src/features/freezeFloor/model.ts";
+import { COURT_MODEL, PERSON_MODEL } from "../frontend/src/features/freezeFloor/model.ts";
 const require = createRequire(
   new URL("../frontend/package.json", import.meta.url),
 );
@@ -89,6 +89,64 @@ await page.waitForTimeout(3300);
 await expect(page.getByRole("alert")).toHaveCount(0);
 expect(courtDownloads).toBe(2);
 expect(await hasCachedModel()).toBe(false);
+await page.unroute("**/freeze-floor/models/court-keypoints.onnx");
+
+// Browser plugin not available · Exercise the real worker deadline with a
+// test-only partial network body, leaving inference and production code intact
+const workerUrl = /\/(?:assets\/inference\.worker-[^/]+\.js|src\/features\/freezeFloor\/inference\.worker\.ts)(?:\?.*)?$/;
+let stalledBodyReleased = false;
+let stalledModelFile = COURT_MODEL.file;
+page.on("console", (message) => {
+  if (message.text() === "freeze-floor-test-stalled-body-released") stalledBodyReleased = true;
+});
+const stallWorker = async (route) => {
+  const response = await route.fetch();
+  const source = await response.text();
+  const fixture = `{
+    const originalFreezeFloorFetch = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = (input, options) => String(input).endsWith("${stalledModelFile}")
+      ? Promise.resolve(new Response(new ReadableStream({
+          start(controller) { controller.enqueue(new Uint8Array([1, 2, 3])); },
+          cancel() { console.info("freeze-floor-test-stalled-body-released"); },
+        })))
+      : originalFreezeFloorFetch(input, options);
+  }\n`;
+  await route.fulfill({ response, body: fixture + source });
+};
+await page.route(workerUrl, stallWorker);
+const stallStarted = Date.now();
+await page.getByRole("button", { name: "Retry automatic proposals" }).click();
+await expect(page.locator(".ff-progress")).toBeVisible();
+await expect(page.getByRole("alert")).toContainText("Model download stalled", { timeout: 45000 });
+await expect(page.getByRole("alert")).toContainText("No data received for 30 seconds");
+expect(Date.now() - stallStarted).toBeLessThan(45000);
+await expect.poll(() => stalledBodyReleased).toBe(true);
+await expect(page.locator(".ff-progress")).toHaveCount(0);
+await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+expect(await hasCachedModel()).toBe(false);
+await page.getByRole("alert").scrollIntoViewIfNeeded();
+await page.screenshot({ path: "/tmp/freeze-floor-download-stalled.png" });
+await page.unroute(workerUrl);
+await page.getByRole("button", { name: "Dismiss error" }).click();
+await page.route("**/freeze-floor/models/court-keypoints.onnx", (route) =>
+  route.fulfill({ contentType: "application/octet-stream", body: Buffer.from([9]) }));
+await page.getByRole("button", { name: "Retry automatic proposals" }).click();
+await expect(page.getByRole("alert")).toContainText("integrity", { timeout: 30000 });
+expect(courtDownloads).toBe(3);
+await page.unroute("**/freeze-floor/models/court-keypoints.onnx");
+await page.getByRole("button", { name: "Dismiss error" }).click();
+// A person-model stall must retain the successful court result and explain the
+// download failure instead of hiding it behind a generic proposal warning
+stalledModelFile = PERSON_MODEL.file;
+stalledBodyReleased = false;
+await page.route(workerUrl, stallWorker);
+await page.getByRole("button", { name: "Retry automatic proposals" }).click();
+await expect(page.locator(".ff-notice")).toContainText(
+  "Player proposals unavailable · Model download stalled", { timeout: 60000 });
+await expect.poll(() => stalledBodyReleased).toBe(true);
+await expect(page.locator(".ff-progress")).toHaveCount(0);
+await expect(page.getByRole("alert")).toHaveCount(0);
+await page.unroute(workerUrl);
 await page.evaluate(() => {
   indexedDB.open = () => {
     throw new DOMException("Storage blocked", "SecurityError");
@@ -189,6 +247,6 @@ for (const type of ["image/png", "image/webp"]) {
 await rotatedContext.close();
 expect(errors).toEqual([]);
 console.log(
-  "Invalid files, oversized files, corrupt models, cancellation, retained manual alignment, storage failure, PNG recovery, light theme, mobile, EXIF rotation, PNG and WebP decoding passed",
+  "Invalid files, oversized files, corrupt models, stalled streamed-model deadline and retry, cancellation, retained manual alignment, storage failure, PNG recovery, light theme, mobile, EXIF rotation, PNG and WebP decoding passed",
 );
 await browser.close();

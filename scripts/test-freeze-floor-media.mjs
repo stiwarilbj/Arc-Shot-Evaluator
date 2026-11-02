@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mock } from "node:test";
 import {
   VIDEO_SAMPLES,
   readSampleVideo,
@@ -221,9 +222,10 @@ try {
   fetched = () => fresh;
   const downloadAbort = assert.rejects(load(duringDownload.signal), { name: "AbortError" });
   await downloading.promise;
-  assert.strictEqual(requestOptions.signal, duringDownload.signal);
+  assert.equal(requestOptions.signal.aborted, false);
   duringDownload.abort();
   await downloadAbort;
+  assert.equal(requestOptions.signal.aborted, true);
   assert.ok(freshCancelled);
   assert.equal(fresh.body.locked, false);
   assert.deepEqual([removals, reads, writes], [1, 1, 0]);
@@ -232,13 +234,132 @@ try {
   globalThis.caches = { open: async () => { throw Error("storage blocked"); } };
   assert.deepEqual(await load(), payload, "unavailable caching must remain playable");
   assert.deepEqual([reads, writes], [1, 0]);
+
+  // Simulated elapsed time keeps inactivity checks deterministic and fast
+  mock.timers.enable({ apis: ["setTimeout"] });
+  const idleMs = 30_000;
+  const nextTurn = () => new Promise(setImmediate);
+  try {
+    for (const entry of [undefined, () => new Response(new Uint8Array([9]))]) {
+      for (const partial of [false, true]) {
+        reset(entry);
+        const ready = deferred();
+        let streamCancelled = false;
+        const stalled = new Response(new ReadableStream({
+          start(c) { if (partial) c.enqueue(payload.slice(0, 1)); },
+          pull() { ready.resolve(); },
+          cancel() { streamCancelled = true; },
+        }, { highWaterMark: 0 }));
+        fetched = () => stalled;
+        const rejected = assert.rejects(load(), /Model download stalled.*30 seconds.*Retry/);
+        await ready.promise;
+        mock.timers.tick(idleMs);
+        await nextTurn();
+        assert.equal(streamCancelled, true, "an idle response must release its stream promptly");
+        await rejected;
+        assert.equal(stalled.body.locked, false);
+        assert.deepEqual([removals, reads, writes], [entry ? 1 : 0, 1, 0],
+          "a stalled fresh copy must not retry or enter the cache");
+      }
+    }
+
+    reset(undefined);
+    const headers = deferred();
+    let headerCancelled = false;
+    fetched = () => new Promise((_resolve, reject) => {
+      requestOptions.signal?.addEventListener("abort", () => {
+        headerCancelled = true;
+        reject(new DOMException("Network aborted", "AbortError"));
+      }, { once: true });
+      headers.resolve();
+    });
+    const noHeaders = assert.rejects(load(), /Model download stalled/);
+    await headers.promise;
+    mock.timers.tick(idleMs);
+    await nextTurn();
+    assert.equal(headerCancelled, true, "waiting for response headers is also download inactivity");
+    await noHeaders;
+
+    reset(undefined);
+    let controller;
+    const started = deferred();
+    fetched = () => new Response(new ReadableStream({
+      start(c) { controller = c; started.resolve(); },
+    }));
+    const slow = load();
+    await started.promise;
+    await nextTurn();
+    for (const byte of payload) {
+      mock.timers.tick(idleMs - 1);
+      controller.enqueue(Uint8Array.of(byte));
+      await nextTurn();
+      assert.equal(requestOptions.signal.aborted, false,
+        "received bytes reset the deadline even when total download time exceeds it");
+    }
+    controller.close();
+    assert.deepEqual(await slow, payload);
+    mock.timers.tick(idleMs * 2);
+    assert.equal(requestOptions.signal.aborted, false, "successful reads clear the deadline");
+    assert.deepEqual([reads, writes], [1, 1]);
+
+    reset(undefined);
+    const hashing = deferred(), finishHashing = deferred();
+    const originalDigest = crypto.subtle.digest;
+    crypto.subtle.digest = async function (...args) {
+      hashing.resolve();
+      await finishHashing.promise;
+      return originalDigest.apply(this, args);
+    };
+    try {
+      const checking = load();
+      await hashing.promise;
+      mock.timers.tick(idleMs * 2);
+      assert.equal(requestOptions.signal.aborted, false, "slow checksum work is processing, not stalled download data");
+      finishHashing.resolve();
+      assert.deepEqual(await checking, payload);
+    } finally {
+      finishHashing.resolve();
+      crypto.subtle.digest = originalDigest;
+    }
+
+    reset(undefined);
+    let emptyController, emptyCancelled = false;
+    const emptyReady = deferred();
+    fetched = () => new Response(new ReadableStream({
+      start(c) { emptyController = c; emptyReady.resolve(); },
+      cancel() { emptyCancelled = true; },
+    }));
+    const empty = assert.rejects(load(), /Model download stalled/);
+    await emptyReady.promise;
+    await nextTurn();
+    mock.timers.tick(idleMs - 1);
+    emptyController.enqueue(new Uint8Array(0));
+    await nextTurn();
+    mock.timers.tick(1);
+    await nextTurn();
+    assert.equal(emptyCancelled, true, "empty chunks must not extend the deadline");
+    await empty;
+
+    reset(undefined);
+    const abortReady = deferred(), abortIdle = new AbortController();
+    fetched = () => new Response(new ReadableStream({ pull() { abortReady.resolve(); } }, { highWaterMark: 0 }));
+    const cancelled = assert.rejects(load(abortIdle.signal), { name: "AbortError" });
+    await abortReady.promise;
+    mock.timers.tick(idleMs - 1);
+    abortIdle.abort();
+    await cancelled;
+    mock.timers.tick(idleMs * 2);
+    assert.deepEqual([removals, reads, writes], [0, 1, 0], "cancellation never becomes recovery or a late cache write");
+  } finally {
+    mock.timers.reset();
+  }
 } finally {
   globalThis.fetch = originalFetch;
   if (originalCaches === undefined) delete globalThis.caches;
   else globalThis.caches = originalCaches;
 }
 console.log(
-  "Freeze Floor media: video limits, seek bounds, timestamps, still metadata, one-shot corrupt-cache recovery, strict fresh-response verification, byte limits, cancellation and cache reuse passed",
+  "Freeze Floor media: video limits, seek bounds, timestamps, still metadata, one-shot corrupt-cache recovery, strict fresh-response verification, byte limits, inactivity deadlines, cancellation and cache reuse passed",
 );
 
 const publicRoot = new URL("../frontend/public/freeze-floor/", import.meta.url);

@@ -271,8 +271,12 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           box: c.box,
         });
       }
-    } catch {
-      warnings.push("Player proposals unavailable · Add contacts manually");
+    } catch (e) {
+      warnings.push(
+        e instanceof Error && e.name === "TimeoutError"
+          ? `Player proposals unavailable · ${e.message}`
+          : "Player proposals unavailable · Add contacts manually",
+      );
     }
     send({ type: "result", anchors, contacts, provider, warnings } as Payload);
   } catch (e) {
