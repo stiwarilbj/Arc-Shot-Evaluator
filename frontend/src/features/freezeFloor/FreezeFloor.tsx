@@ -50,6 +50,7 @@ import {
   type UnavailableProject,
 } from "./storage.ts";
 import { analyzePhoto } from "./inference.ts";
+import { mergeContactProposals } from "./contactProposals.ts";
 import { SAMPLES, type Sample } from "./samples.ts";
 import {
   VIDEO_SAMPLES,
@@ -536,26 +537,14 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       const additions = result.anchors
         .filter((a) => !existing.has(a.landmark))
         .slice(0, 64 - projectValue.anchors.length);
-      const contacts = [...projectValue.contacts];
-      for (const c of result.contacts) {
-        if (
-          contacts.length < 40 &&
-          !contacts.some(
-            (x) =>
-              Math.hypot(x.image.x - c.image.x, x.image.y - c.image.y) < 0.035,
-          )
-        )
-          contacts.push({
-            ...c,
-            label: String(
-              Math.max(0, ...contacts.map((x) => Number(x.label) || 0)) + 1,
-            ),
-          });
-      }
+      const merged = mergeContactProposals(
+        projectValue.contacts,
+        result.contacts,
+      );
       const next = {
         ...projectValue,
         anchors: [...projectValue.anchors, ...additions],
-        contacts,
+        contacts: merged.contacts,
         reviewed: additions.length ? false : projectValue.reviewed,
       };
       controller.current = null;
@@ -563,7 +552,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       setCheck(true);
       setInspector(true);
       setNotice(
-        result.warnings.join(" · ") +
+        [...result.warnings, ...merged.warnings].join(" · ") +
           ` · ${result.provider === "wasm" ? "CPU processing" : "WebGPU processing"}`,
       );
     } catch (e) {

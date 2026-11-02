@@ -24,6 +24,8 @@ Three licensed real photographs are supplied · Two wide images have manually in
 8. Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
 9. Save explicitly, or download the combined photograph/overhead PNG · No photo is uploaded
 
+Automatic retries reuse an existing contact for a proposal only when nearby foot points and strong person-box agreement provide a clear match in both directions · Similar competing boxes prevent automatic matching · Different people returned in the same batch are kept separate · Missing boxes, ambiguous overlaps, and competing matches produce a review warning listing the affected player numbers, while new contacts remain uncertain · Existing identities, corrected locations, and grounding choices stay unchanged · Check the boxes in the contact inspector, remove duplicates or spectators, and add anyone the detector missed · Reaching the 40-contact limit reports omitted proposals rather than silently discarding them
+
 Overhead selection uses a small court-space area around each player marker rather than photograph proximity · Empty court points remain floor endpoints instead of snapping to a distant person · On the photograph, selecting a person’s body still highlights their foot contact
 
 Keyboard selection uses the same player-contact checks as pointer selection · Hidden, airborne, and uncertain contacts keep measurements withheld after save/reopen · Arrow keys nudge by one photograph pixel or 0.1 foot along overhead court axes, with Shift for ten times the step · Place and adjust floor landmarks on the photograph; overhead interaction requires an available alignment
@@ -114,6 +116,7 @@ node scripts/test-freeze-floor-browser.mjs
 node scripts/test-freeze-floor-interactions.mjs
 node scripts/test-freeze-floor-library.mjs
 node scripts/test-freeze-floor-conflicts.mjs
+node scripts/test-freeze-floor-proposals.mjs
 node scripts/test-freeze-floor-upload.mjs
 FREEZE_FLOOR_CPU=1 node scripts/test-freeze-floor-upload.mjs
 node scripts/test-freeze-floor-failures.mjs

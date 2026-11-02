@@ -23,10 +23,67 @@ import {
 import { readImageHeader } from "../frontend/src/features/freezeFloor/images.ts";
 import { SAMPLES } from "../frontend/src/features/freezeFloor/samples.ts";
 import { COURT_MODEL } from "../frontend/src/features/freezeFloor/model.ts";
+import { mergeContactProposals } from "../frontend/src/features/freezeFloor/contactProposals.ts";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 const close = (a, b, t = 1e-7) =>
   assert.ok(Math.abs(a - b) < t, `${a} != ${b}`);
+const person = (id, box, x = 0.5, y = 0.8) => ({
+  id, label: id, image: { x, y }, status: "uncertain", ...(box ? { box } : {}),
+});
+const left = person("left", [0.45, 0.3, 0.53, 0.82]);
+const right = person("right", [0.51, 0.4, 0.59, 0.82], 0.52);
+const overlap = person("overlap", [0.47, 0.32, 0.55, 0.82], 0.52);
+const repeat = person("repeat", [0.451, 0.301, 0.531, 0.821], 0.501);
+const corrected = { ...left, label: "7", status: "grounded" };
+const source = structuredClone({ corrected, right, overlap, repeat });
+// Nearby feet from the same batch never suppress a second returned person
+assert.equal(mergeContactProposals([], [left, right]).contacts.length, 2);
+let merged = mergeContactProposals([corrected], [right]);
+assert.equal(merged.contacts.length, 2, "distinct boxes defeat foot-point proximity");
+assert.deepEqual(merged.contacts.map((c) => c.label), ["7", "8"]);
+merged = mergeContactProposals([corrected], [repeat, right]);
+assert.equal(merged.contacts.length, 2);
+assert.strictEqual(merged.contacts[0], corrected, "duplicate proposals preserve corrected contacts");
+assert.equal(merged.contacts[1].id, "right");
+assert.equal(merged.contacts[1].status, "uncertain");
+assert.equal(mergeContactProposals(merged.contacts, [repeat, right]).contacts.length, 2,
+  "a clear retry cannot accumulate duplicates");
+for (const proposal of [overlap, person("no-box"), person("moved", left.box, 0.5, 0.35)]) {
+  merged = mergeContactProposals([corrected], [proposal]);
+  assert.equal(merged.contacts.length, 2);
+  assert.match(merged.warnings.join(" "), /Players 7, 8 remain separate/);
+  assert.equal(merged.contacts[1].status, "uncertain");
+}
+merged = mergeContactProposals([person("manual")], [left]);
+assert.equal(merged.contacts.length, 2, "a missing existing box cannot justify a merge");
+assert.match(merged.warnings.join(" "), /need review/);
+merged = mergeContactProposals([], [left, overlap]);
+assert.equal(merged.contacts.length, 2);
+assert.match(merged.warnings.join(" "), /Players 1, 2 remain separate/);
+merged = mergeContactProposals([corrected, { ...left, id: "other", label: "9" }], [repeat]);
+assert.equal(merged.contacts.length, 3, "a proposal cannot arbitrarily choose between two people");
+assert.match(merged.warnings.join(" "), /need review/);
+merged = mergeContactProposals([
+  corrected,
+  { ...person("similar", [0.4575, 0.3075, 0.5375, 0.8275]), label: "9" },
+], [repeat]);
+assert.equal(merged.contacts.length, 3, "near-equal box matches straddling a threshold remain ambiguous");
+assert.match(merged.warnings.join(" "), /need review/);
+merged = mergeContactProposals([corrected], [repeat, { ...repeat, id: "second" }]);
+assert.equal(merged.contacts.length, 3, "two proposals cannot silently claim the same contact");
+assert.match(merged.warnings.join(" "), /need review/);
+for (const existing of [[corrected], []]) {
+  const forward = mergeContactProposals(existing, [repeat, right, overlap]);
+  const reverse = mergeContactProposals(existing, [overlap, right, repeat]);
+  assert.deepEqual(forward.contacts.map((c) => c.id).sort(), reverse.contacts.map((c) => c.id).sort(),
+    "contact retention cannot depend on proposal order");
+}
+const full = Array.from({ length: 40 }, (_, i) => person(String(i + 1), undefined, 0, i / 100));
+merged = mergeContactProposals(full, [right]);
+assert.equal(merged.contacts.length, 40);
+assert.match(merged.warnings.join(" "), /1 player proposal could not be added/);
+assert.deepEqual({ corrected, right, overlap, repeat }, source, "merging cannot mutate source evidence");
 const h = [0.015, 0.002, 0.08, -0.001, 0.012, 0.25, 0.001, 0.002, 1];
 const keys = [
   "baseline-left",
