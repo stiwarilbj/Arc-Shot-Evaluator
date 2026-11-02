@@ -120,9 +120,71 @@ try {
   await page.locator(".ff-notice").scrollIntoViewIfNeeded();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: "/tmp/freeze-floor-proposals-mobile.png" });
+
+  // Capacity notices count omitted additions and leave reviewed contacts intact
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await sample();
+  const crowd = Array.from({ length: 39 }, (_, i) => {
+    const x = 0.05 + (i % 10) * 0.1, y = 0.1 + Math.floor(i / 10) * 0.15;
+    return { ...person(`crowd-${i}`, [x - 0.02, y - 0.05, x + 0.02, y + 0.01], x), image: { x, y } };
+  });
+  const extras = [0.2, 0.5, 0.8].map((x, i) => ({
+    ...person(`extra-${i}`, [x - 0.02, 0.85, x + 0.02, 0.95], x), image: { x, y: 0.9 },
+  }));
+  await propose(crowd);
+  await expect(statuses()).toHaveCount(39);
+  await page.getByRole("button", { name: "Player 1", exact: true }).click();
+  await page.getByLabel("Player 1 contact status").selectOption("grounded");
+  const contactX = page.getByLabel("Contact X (px)", { exact: true });
+  const correctedX = String(Number(await contactX.inputValue()) + 1);
+  await contactX.fill(correctedX);
+  await contactX.press("Tab");
+  const retryBatch = [{ ...crowd[0], id: "retry-crowd-0" }, ...extras];
+  await propose(retryBatch);
+  await expect(statuses()).toHaveCount(40);
+  await expect(page.locator(".ff-notice")).toContainText("2 player proposals could not be added");
+  await expect(page.locator(".ff-notice")).toContainText("Existing contacts and corrections kept");
+  await expect(page.locator(".ff-notice")).toContainText("Remove spectators, then retry automatic proposals");
+  await expect(page.getByLabel("Player 1 contact status")).toHaveValue("grounded");
+  await expect(contactX).toHaveValue(correctedX);
+  await expect(page.locator('.ff-photo [data-contact="crowd-0"]')).toHaveCount(1);
+  await expect(page.locator('.ff-photo [data-contact="extra-0"]')).toHaveCount(1);
+  await expect(page.locator('.ff-photo [data-contact="extra-1"]')).toHaveCount(0);
+  await page.locator(".ff-notice").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "/tmp/freeze-floor-capacity-desktop.png" });
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.getByRole("button", { name: "Light", exact: true }).click();
+  await page.locator(".ff-notice").scrollIntoViewIfNeeded();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: "/tmp/freeze-floor-capacity-mobile.png" });
+  await page.getByLabel("Project name").fill("Contact capacity review");
+  await page.getByRole("button", { name: "Save project", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await page.getByRole("button", { name: "Choose photo", exact: true }).click();
+  await page.locator(".ff-library").getByRole("button", { name: "Contact capacity review", exact: true }).click();
+  await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
+  await expect(statuses()).toHaveCount(40);
+  await page.getByRole("button", { name: "Player 1", exact: true }).click();
+  await expect(page.getByLabel("Player 1 contact status")).toHaveValue("grounded");
+  await expect(contactX).toHaveValue(correctedX);
+  await page.getByRole("button", { name: "Remove player 2", exact: true }).click();
+  await propose(retryBatch);
+  await expect(statuses()).toHaveCount(40);
+  await expect(page.locator(".ff-notice")).toContainText("1 player proposal could not be added");
+  await expect(page.locator('.ff-photo [data-contact="extra-1"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Remove player 3", exact: true }).click();
+  await propose(retryBatch);
+  await expect(statuses()).toHaveCount(40);
+  await expect(page.locator(".ff-notice")).not.toContainText("could not be added");
+  await expect(page.locator('.ff-photo [data-contact="extra-2"]')).toHaveCount(1);
+  await expect(page.getByLabel("Player 1 contact status")).toHaveValue("grounded");
+  await expect(contactX).toHaveValue(correctedX);
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
-  console.log("Freeze Floor proposal UI passed: nearby players, box-based retries, ambiguous overlap warnings, preserved corrections/identities, save/reload, undo/redo, missing boxes, mobile/light layout, no errors or uploads");
+  console.log("Freeze Floor proposal UI passed: nearby players, box-based retries, ambiguous overlap warnings, exact capacity counts, spectator-removal retries, preserved corrections/identities, save/reload, undo/redo, missing boxes, mobile/light layout, no errors or uploads");
 } finally { await browser.close(); }

@@ -83,6 +83,42 @@ const full = Array.from({ length: 40 }, (_, i) => person(String(i + 1), undefine
 merged = mergeContactProposals(full, [right]);
 assert.equal(merged.contacts.length, 40);
 assert.match(merged.warnings.join(" "), /1 player proposal could not be added/);
+// Count only additions blocked by capacity, not proposals matched to saved contacts
+const capacityContacts = Array.from({ length: 40 }, (_, i) => {
+  const x = 0.05 + (i % 10) * 0.1, y = 0.1 + Math.floor(i / 10) * 0.15;
+  return { ...person(`saved-${i}`, [x - 0.02, y - 0.05, x + 0.02, y + 0.01], x, y),
+    label: String(i + 1), status: i % 2 ? "hidden" : "grounded" };
+});
+const capacityBefore = structuredClone(capacityContacts);
+const newSuggestions = [0.2, 0.5, 0.8].map((x, i) =>
+  person(`new-${i}`, [x - 0.02, 0.85, x + 0.02, 0.95], x, 0.9));
+const matchedRetry = { ...capacityContacts[39], id: "retry-saved", status: "uncertain" };
+merged = mergeContactProposals(capacityContacts, [newSuggestions[0], matchedRetry, ...newSuggestions.slice(1)]);
+assert.equal(merged.contacts.length, 40);
+assert.deepEqual(merged.warnings, [
+  "3 player proposals could not be added · 40-contact limit reached · Existing contacts and corrections kept · Remove spectators, then retry automatic proposals or add missing players manually",
+]);
+capacityContacts.forEach((c, i) => assert.strictEqual(merged.contacts[i], c));
+assert.deepEqual(mergeContactProposals(capacityContacts, [matchedRetry]).warnings, [],
+  "a matched retry consumes no capacity and is not omitted");
+assert.deepEqual(mergeContactProposals(capacityContacts, []).warnings, []);
+merged = mergeContactProposals(capacityContacts.slice(0, 38), newSuggestions);
+assert.equal(merged.contacts.length, 40);
+assert.deepEqual(merged.contacts.slice(38).map((c) => c.id), ["new-0", "new-1"]);
+assert.match(merged.warnings.join(" "), /^1 player proposal could not be added/);
+assert.deepEqual(mergeContactProposals(capacityContacts.slice(0, 38), newSuggestions.slice(0, 2)).warnings, [],
+  "filling the final slots exactly must not report omitted suggestions");
+merged = mergeContactProposals(capacityContacts.slice(0, 39), [matchedRetry, newSuggestions[0]]);
+assert.equal(merged.contacts.length, 40);
+assert.equal(merged.contacts[39].id, "retry-saved");
+assert.match(merged.warnings.join(" "), /^1 player proposal could not be added/);
+// Remove one spectator and retry while retaining every other correction
+merged = mergeContactProposals(capacityContacts.slice(1), [matchedRetry, newSuggestions[0]]);
+assert.equal(merged.contacts.length, 40);
+assert.deepEqual(merged.warnings, []);
+capacityContacts.slice(1).forEach((c, i) => assert.strictEqual(merged.contacts[i], c));
+assert.equal(merged.contacts[39].id, "new-0");
+assert.deepEqual(capacityContacts, capacityBefore);
 assert.deepEqual({ corrected, right, overlap, repeat }, source, "merging cannot mutate source evidence");
 const h = [0.015, 0.002, 0.08, -0.001, 0.012, 0.25, 0.001, 0.002, 1];
 const keys = [

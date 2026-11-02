@@ -101,7 +101,7 @@ export function mergeContactProposals(existing: Contact[], proposals: Contact[])
   }
   if (omitted)
     warnings.push(
-      `${omitted} player proposal${omitted === 1 ? "" : "s"} could not be added · Limit 40 contacts · Remove spectators and retry or add missing players manually`,
+      `${omitted} player proposal${omitted === 1 ? "" : "s"} could not be added · 40-contact limit reached · Existing contacts and corrections kept · Remove spectators, then retry automatic proposals or add missing players manually`,
     );
   return { contacts, warnings };
 }
