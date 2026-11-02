@@ -24,6 +24,8 @@ Three licensed real photographs are supplied · Two wide images have manually in
 8. Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
 9. Save explicitly, or download the combined photograph/overhead PNG · No photo is uploaded
 
+Switching photographs or opening a saved project cancels the previous load and aborts its sample download · The latest image identity is checked before decoding, before JPEG conversion, and before installation · Browser decoding and conversion already in progress cannot be interrupted, but obsolete results are discarded, decoded bitmaps close promptly, and conversion canvases are released · Only the latest uploaded image can start analysis · Leaving the workspace or hiding the tab also cancels pending loads without replacing the current project or showing a cancellation error
+
 Automatic retries reuse an existing contact for a proposal only when nearby foot points and strong person-box agreement provide a clear match in both directions · Similar competing boxes prevent automatic matching · Different people returned in the same batch are kept separate · Missing boxes, ambiguous overlaps, and competing matches produce a review warning listing the affected player numbers, while new contacts remain uncertain · Existing identities, corrected locations, and grounding choices stay unchanged · Check the boxes in the contact inspector, remove duplicates or spectators, and add anyone the detector missed
 
 At the 40-contact limit, the notice reports the exact number of new suggestions that could not be added and confirms that existing contacts and corrections were kept · Clear matches to existing contacts do not count as omissions · Remove spectators to free slots, then retry automatic proposals or add the missing players manually
@@ -119,6 +121,7 @@ node scripts/test-freeze-floor-interactions.mjs
 node scripts/test-freeze-floor-library.mjs
 node scripts/test-freeze-floor-conflicts.mjs
 node scripts/test-freeze-floor-proposals.mjs
+node scripts/test-freeze-floor-image-loading.mjs
 node scripts/test-freeze-floor-upload.mjs
 FREEZE_FLOOR_CPU=1 node scripts/test-freeze-floor-upload.mjs
 node scripts/test-freeze-floor-failures.mjs

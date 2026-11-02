@@ -195,6 +195,20 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     controller.current = null;
     setBusy("");
   }
+  function beginImageLoad() {
+    stop();
+    const token = ++loadToken.current;
+    const c = new AbortController();
+    controller.current = c;
+    return {
+      c,
+      isCurrent: () =>
+        !c.signal.aborted &&
+        controller.current === c &&
+        token === loadToken.current &&
+        mounted.current,
+    };
+  }
   function commit(next: FloorProject) {
     stop();
     revision.current++;
@@ -280,6 +294,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       mounted.current = false;
       libraryRequest.current++;
       controller.current?.abort();
+      controller.current = null;
       loadToken.current++;
     };
   }, []);
@@ -342,17 +357,24 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   async function loadSample(sample: Sample) {
     setVideoChooser(false);
     setVideoSource(null);
-    stop();
-    const token = ++loadToken.current;
+    const { c, isCurrent } = beginImageLoad();
     setBusy("Opening photograph");
+    setError("");
     try {
       const r = await fetch(
         `${import.meta.env.BASE_URL}freeze-floor/${sample.file}`,
+        { signal: c.signal },
       );
+      if (!isCurrent()) return;
       if (!r.ok)
         throw Error("Sample photograph could not load · Upload your own image");
-      const normalized = await normalizeImage(await r.blob());
-      if (token !== loadToken.current || !mounted.current) return;
+      const blob = await r.blob();
+      if (!isCurrent()) return;
+      const normalized = await normalizeImage(blob, {
+        signal: c.signal,
+        isCurrent,
+      });
+      if (!isCurrent()) return;
       const next = {
         ...newProject(normalized.width, normalized.height, sample.name),
         anchors: structuredClone(sample.anchors),
@@ -360,24 +382,29 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         attribution: sample.attribution,
         reviewed: sample.anchors.length >= 4,
       };
+      controller.current = null;
       install(next, normalized.blob);
       setNotice(sample.note);
     } catch (e) {
-      if (token === loadToken.current) setError(message(e));
+      if (isCurrent()) setError(message(e));
     } finally {
-      if (token === loadToken.current) setBusy("");
+      if (controller.current === c) {
+        controller.current = null;
+        setBusy("");
+      }
     }
   }
   async function openSaved(s: StoredProject) {
     setVideoChooser(false);
     setVideoSource(null);
-    stop();
-    const token = ++loadToken.current;
+    const { c, isCurrent } = beginImageLoad();
     setBusy("Checking saved image");
     try {
-      const header = readImageHeader(
-        new Uint8Array(await s.image.slice(0, 512 * 1024).arrayBuffer()),
+      const bytes = new Uint8Array(
+        await s.image.slice(0, 512 * 1024).arrayBuffer(),
       );
+      if (!isCurrent()) return;
+      const header = readImageHeader(bytes);
       if (
         header.width !== s.project.width ||
         header.height !== s.project.height
@@ -387,6 +414,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         );
       const bitmap = await createImageBitmap(s.image);
       try {
+        if (!isCurrent()) return;
         if (
           bitmap.width !== s.project.width ||
           bitmap.height !== s.project.height
@@ -395,30 +423,34 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       } finally {
         bitmap.close();
       }
-      if (token !== loadToken.current || !mounted.current) return;
+      if (!isCurrent()) return;
+      controller.current = null;
       install(s.project, s.image, projectRevision(s));
       setNotice("Opened private saved project");
     } catch (e) {
-      if (token === loadToken.current) setError(message(e));
+      if (isCurrent()) setError(message(e));
     } finally {
-      if (token === loadToken.current) setBusy("");
+      if (controller.current === c) {
+        controller.current = null;
+        setBusy("");
+      }
     }
   }
   async function upload(file: File) {
     setVideoChooser(false);
     setVideoSource(null);
-    stop();
-    const token = ++loadToken.current;
+    const { c, isCurrent } = beginImageLoad();
     setBusy("Checking image dimensions and orientation");
     setError("");
     try {
-      const n = await normalizeImage(file);
-      if (token !== loadToken.current || !mounted.current) return;
+      const n = await normalizeImage(file, { signal: c.signal, isCurrent });
+      if (!isCurrent()) return;
       const next = newProject(
         n.width,
         n.height,
         file.name.replace(/\.[^.]+$/, "") || "My photo",
       );
+      controller.current = null;
       install(next, n.blob);
       setNotice(
         "Your image stays on this device · Automatic landmarks need your review",
@@ -426,9 +458,12 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       if (activeRef.current && !document.hidden)
         void runInference(next, n.blob);
     } catch (e) {
-      if (token === loadToken.current) setError(message(e));
+      if (isCurrent()) setError(message(e));
     } finally {
-      if (token === loadToken.current && !controller.current) setBusy("");
+      if (controller.current === c) {
+        controller.current = null;
+        setBusy("");
+      }
     }
   }
   async function loadVideoSample(sample: VideoSample) {
