@@ -5,6 +5,11 @@ import {
   type StoredProject,
 } from "./types.ts";
 const DB = "arc-freeze-floor-v1";
+export type UnavailableProject = { key: IDBValidKey; name?: string };
+export type ProjectListing = {
+  projects: StoredProject[];
+  unavailable: UnavailableProject[];
+};
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const r = indexedDB.open(DB, 1);
@@ -34,40 +39,52 @@ function open(): Promise<IDBDatabase> {
 }
 function valid(v: unknown): v is StoredProject {
   const s = v as StoredProject;
-  return (
-    !!s &&
-    validateProject(s.project) &&
-    s.image instanceof Blob &&
-    s.image.size > 0 &&
-    s.image.size <= 20 * 1024 * 1024 &&
-    s.image.type === "image/jpeg"
-  );
+  try {
+    return (
+      !!s &&
+      validateProject(s.project) &&
+      s.image instanceof Blob &&
+      s.image.size > 0 &&
+      s.image.size <= 20 * 1024 * 1024 &&
+      s.image.type === "image/jpeg"
+    );
+  } catch {
+    // Malformed nested values must remain unavailable, not interrupt the listing
+    return false;
+  }
 }
-export async function listProjects(): Promise<StoredProject[]> {
+export async function listProjects(): Promise<ProjectListing> {
   const db = await open();
   try {
     return await new Promise((resolve, reject) => {
       const t = db.transaction("projects", "readonly"),
-        r = t.objectStore("projects").getAll();
-      let items: StoredProject[] = [];
+        r = t.objectStore("projects").openCursor();
+      const projects: StoredProject[] = [],
+        unavailable: UnavailableProject[] = [];
       r.onsuccess = () => {
-        items = r.result;
+        const cursor = r.result;
+        if (!cursor) return;
+        const value: unknown = cursor.value;
+        if (valid(value)) projects.push(value);
+        else {
+          const name = (value as Partial<StoredProject> | null)?.project?.name;
+          unavailable.push({
+            key: cursor.primaryKey,
+            name: typeof name === "string" ? name.trim().slice(0, 80) : undefined,
+          });
+        }
+        cursor.continue();
       };
       t.oncomplete = () =>
-        items.every(valid)
-          ? resolve(
-              items.sort(
-                (a, b) =>
-                  Date.parse(b.project.updatedAt) -
-                  Date.parse(a.project.updatedAt),
-              ),
-            )
-          : reject(
-              Error(
-                "A saved project is damaged · Storage was preserved for recovery",
-              ),
-            );
-      t.onerror = () => reject(t.error);
+        resolve({
+          projects: projects.sort(
+            (a, b) =>
+              Date.parse(b.project.updatedAt) - Date.parse(a.project.updatedAt),
+          ),
+          unavailable,
+        });
+      t.onerror = () =>
+        reject(t.error || Error("Project listing was interrupted"));
       t.onabort = () =>
         reject(t.error || Error("Project listing was interrupted"));
     });

@@ -41,7 +41,12 @@ import {
   type Contact,
 } from "./types.ts";
 import { normalizeImage, readImageHeader } from "./images.ts";
-import { deleteProject, listProjects, saveProject } from "./storage.ts";
+import {
+  deleteProject,
+  listProjects,
+  saveProject,
+  type UnavailableProject,
+} from "./storage.ts";
 import { analyzePhoto } from "./inference.ts";
 import { SAMPLES, type Sample } from "./samples.ts";
 import {
@@ -131,6 +136,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     } | null>(null),
     [landmark, setLandmark] = useState("lane-left-base");
   const [library, setLibrary] = useState<StoredProject[]>([]),
+    [unavailableProjects, setUnavailableProjects] = useState<UnavailableProject[]>(
+      [],
+    ),
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
@@ -250,7 +258,10 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   async function refresh() {
     try {
       const v = await listProjects();
-      if (mounted.current) setLibrary(v);
+      if (mounted.current) {
+        setLibrary(v.projects);
+        setUnavailableProjects(v.unavailable);
+      }
     } catch (e) {
       if (mounted.current) setNotice(message(e));
     }
@@ -1072,10 +1083,37 @@ export default function FreezeFloor({ active }: { active: boolean }) {
               </button>
             ))}
           </div>
-          <h3>Saved on this browser origin · {library.length}/20</h3>
+          <h3>
+            Saved on this browser origin ·{" "}
+            {library.length + unavailableProjects.length}/20
+          </h3>
           <p className="ff-help">
             Hosted and downloaded libraries are separate · No image is uploaded
           </p>
+          {unavailableProjects.length ? (
+            <div
+              className="ff-library-warning"
+              role="status"
+              aria-label="Unavailable saved projects"
+            >
+              <strong>
+                {unavailableProjects.length} saved project
+                {unavailableProjects.length === 1 ? "" : "s"} unavailable
+              </strong>
+              <p>
+                These entries could not be validated · Their stored data is
+                preserved for recovery
+              </p>
+              <ul>
+                {unavailableProjects.map((entry, index) => (
+                  <li key={index}>
+                    {entry.name || "Unnamed project"} · Storage key{" "}
+                    <code>{String(entry.key)}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {library.length ? (
             <div className="ff-library">
               {library.map((s) => (
@@ -1144,8 +1182,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
             </div>
           ) : (
             <p className="ff-help">
-              Save your first project to keep its image, contacts, and
-              measurements together
+              {unavailableProjects.length
+                ? "No saved projects are currently available · Unavailable entries remain stored"
+                : "Save your first project to keep its image, contacts, and measurements together"}
             </p>
           )}
         </section>

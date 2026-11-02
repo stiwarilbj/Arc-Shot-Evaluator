@@ -92,6 +92,8 @@ The normalized JPEG and versioned metadata are committed together in one Indexed
 
 The library is limited to 20 projects and 200 MiB, including images and metadata · Save updates the current project identity rather than duplicating it · Choose photo exposes saved projects, rename, and deletion · No automatic deletion frees capacity · Removing a player also cancels any unfinished measurement that refers to that contact
 
+If a saved record fails validation, **Choose photo** still lists healthy projects in newest-first order · A persistent warning identifies unavailable entries by their stored name, when available, and storage key · Damaged records remain unchanged for recovery and still count toward storage limits · An entirely unavailable library is distinguished from an empty one · A failed or interrupted storage read retains the previously displayed library rather than reporting a complete empty result
+
 Hosted and downloaded libraries belong to different browser origins · Browser data clearing removes this library · Projects are not uploaded or shared and do not change saved Playbook formats
 
 ## Reproduce and finish validation
@@ -104,6 +106,7 @@ pnpm --dir frontend test:freeze-floor
 pnpm --dir frontend test:navigation
 node scripts/test-freeze-floor-browser.mjs
 node scripts/test-freeze-floor-interactions.mjs
+node scripts/test-freeze-floor-library.mjs
 node scripts/test-freeze-floor-upload.mjs
 FREEZE_FLOOR_CPU=1 node scripts/test-freeze-floor-upload.mjs
 node scripts/test-freeze-floor-failures.mjs
@@ -111,7 +114,7 @@ pnpm --dir frontend build
 VITE_DEPLOY_TARGET=github-pages pnpm --dir frontend build
 ```
 
-The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, exact selected-time and video-pixel preservation across unchanged focus/blur, numeric time edits and cancellation, frame JPEG download, undo/redo during contact and landmark drags, perspective-safe overhead selection, keyboard/pointer measurement parity, axis-correct court nudging, private save/reopen, delayed storage-operation isolation, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
+The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, exact selected-time and video-pixel preservation across unchanged focus/blur, numeric time edits and cancellation, frame JPEG download, undo/redo during contact and landmark drags, perspective-safe overhead selection, keyboard/pointer measurement parity, axis-correct court nudging, private save/reopen, damaged-record isolation and preservation, interrupted library reads, delayed storage-operation isolation, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
 
 For the real-photo acceptance gate, supply independent licensed images and annotations with disjoint training/camera groups · Use at least 40 supported and 20 unsuitable photographs across independent groups · Every accepted photograph needs four or more independent floor checks that were not used for fitting
 
