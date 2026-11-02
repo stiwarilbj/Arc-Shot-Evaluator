@@ -31,6 +31,9 @@ async function choose(page) {
 async function openSaved(page, title, saving = false) {
   await choose(page);
   await page.locator(".ff-library").getByRole("button", { name: title, exact: true }).click();
+  const protection = page.getByRole("dialog", { name: "Keep your corrections?" });
+  if (await protection.isVisible())
+    await protection.getByRole("button", { name: "Discard", exact: true }).click();
   await expect(name(page)).toHaveValue(title);
   if (!saving) await expect(saved(page)).toBeVisible();
   if (!(await name(page).isVisible()))

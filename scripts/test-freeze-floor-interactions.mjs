@@ -56,6 +56,9 @@ async function openSaved(name) {
     .locator(".ff-library")
     .getByRole("button", { name, exact: true })
     .click();
+  const protection = page.getByRole("dialog", { name: "Keep your corrections?" });
+  if (await protection.isVisible())
+    await protection.getByRole("button", { name: "Discard", exact: true }).click();
   await expect(page.getByLabel("Project name")).toHaveValue(name);
 }
 const saved = () => page.getByRole("button", { name: "Saved", exact: true });

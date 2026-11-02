@@ -24,6 +24,8 @@ Three licensed real photographs are supplied · Two wide images have manually in
 8. Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
 9. Save explicitly, or download the combined photograph/overhead PNG · No photo is uploaded
 
+Before replacing an edited photograph with a sample, uploaded image, saved project, or captured video frame, choose **Save**, **Discard**, or **Cancel** · Save finishes successfully before the replacement opens · Storage failures and revision conflicts keep your photograph, corrections, and replacement choice available for retry · Cancel or Escape keeps editing the current photograph · Untouched samples switch immediately, and undoing back to the loaded or last saved state removes the prompt · Browsing videos alone does not replace your photograph
+
 Switching photographs or opening a saved project cancels the previous load and aborts its sample download · The latest image identity is checked before decoding, before JPEG conversion, and before installation · Browser decoding and conversion already in progress cannot be interrupted, but obsolete results are discarded, decoded bitmaps close promptly, and conversion canvases are released · Only the latest uploaded image can start analysis · Leaving the workspace or hiding the tab also cancels pending loads without replacing the current project or showing a cancellation error
 
 Automatic retries reuse an existing contact for a proposal only when nearby foot points and strong person-box agreement provide a clear match in both directions · Similar competing boxes prevent automatic matching · Different people returned in the same batch are kept separate · Missing boxes, ambiguous overlaps, and competing matches produce a review warning listing the affected player numbers, while new contacts remain uncertain · Existing identities, corrected locations, and grounding choices stay unchanged · Check the boxes in the contact inspector, remove duplicates or spectators, and add anyone the detector missed
@@ -95,7 +97,7 @@ Asset licenses, model digests, explicit 48-slot inclusion/exclusion map, and sam
 
 ## Private projects
 
-The normalized JPEG and versioned metadata are committed together in one IndexedDB transaction · Saved status appears only after completion · A failed write leaves the current project and PNG export available · If a save, rename, or deletion finishes after another project is opened, it cannot overwrite that project’s name or saved status
+The normalized JPEG and versioned metadata are committed together in one IndexedDB transaction · Saved status appears only after completion · A failed write leaves the current project and PNG export available · If a save, rename, or deletion finishes after another project is opened, it cannot overwrite that project’s name or saved status · Cancelling a replacement during its save keeps the current photograph open even if that save subsequently succeeds · Leaving the workspace or hiding the tab also cancels queued replacement choices
 
 Saves and library renames compare the originally loaded revision with the stored revision inside the same write transaction · If another tab saved first, the write is rejected and your draft stays editable and downloadable · Download a PNG before reopening the latest saved project from **Choose photo** · A stale tab also cannot recreate a project deleted elsewhere · Existing projects without a revision remain readable and acquire a fresh token on their next successful save, without changing their image or editing history
 
@@ -120,6 +122,7 @@ pnpm --dir frontend test:navigation
 node scripts/test-freeze-floor-browser.mjs
 node scripts/test-freeze-floor-interactions.mjs
 node scripts/test-freeze-floor-library.mjs
+node scripts/test-freeze-floor-unsaved.mjs
 node scripts/test-freeze-floor-conflicts.mjs
 node scripts/test-freeze-floor-proposals.mjs
 node scripts/test-freeze-floor-image-loading.mjs
@@ -131,6 +134,8 @@ VITE_DEPLOY_TARGET=github-pages pnpm --dir frontend build
 ```
 
 The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, exact selected-time and video-pixel preservation across unchanged focus/blur, numeric time edits and cancellation, frame JPEG download, undo/redo during contact and landmark drags, perspective-safe overhead selection, keyboard/pointer measurement parity, axis-correct court nudging, private save/reopen, damaged-record isolation and preservation, interrupted library reads, out-of-order refreshes after saves and deletions including stale warnings and errors, two-tab conflicts and simultaneous saves, legacy revision upgrades, failed-write retries, delayed storage-operation isolation, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
+
+The unsaved-corrections browser test uses a worker fixture to isolate replacement decisions from inference · It exercises real image/video decoding and IndexedDB for Save/Discard/Cancel, undo-to-baseline switching, fresh same-project reopening, failed and conflicting saves, cancellation during a save, workspace changes, keyboard focus, and mobile layouts · The separate upload test checks actual model execution
 
 For the real-photo acceptance gate, supply independent licensed images and annotations with disjoint training/camera groups · Use at least 40 supported and 20 unsuitable photographs across independent groups · Every accepted photograph needs four or more independent floor checks that were not used for fitting
 

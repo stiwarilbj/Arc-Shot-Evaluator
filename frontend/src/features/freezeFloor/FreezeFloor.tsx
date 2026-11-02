@@ -51,6 +51,8 @@ import {
 } from "./storage.ts";
 import { analyzePhoto } from "./inference.ts";
 import { mergeContactProposals } from "./contactProposals.ts";
+import { hasProjectChanges } from "./projectChanges.ts";
+import { UnsavedPhotoDialog } from "./UnsavedPhotoDialog";
 import { SAMPLES, type Sample } from "./samples.ts";
 import {
   VIDEO_SAMPLES,
@@ -66,6 +68,7 @@ type History = {
   present: FloorProject;
   future: FloorProject[];
 };
+type PhotoReplacement = { run: () => void | Promise<void>; name: string };
 function Numeric({
   label,
   value,
@@ -149,6 +152,8 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     [saving, setSaving] = useState(false),
     [exporting, setExporting] = useState(false),
     [inspector, setInspector] = useState(false);
+  const [replacement, setReplacement] = useState<PhotoReplacement | null>(null);
+  const replacementRef = useRef<PhotoReplacement | null>(null);
   const [videoSource, setVideoSource] = useState<{
     file: File;
     key: string;
@@ -159,7 +164,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   videoSourceRef.current = videoSource;
   const current = useRef<FloorProject | null>(null),
     revision = useRef(0),
-    storedVersion = useRef<{ revision: string | null }>({ revision: null }),
+    storedVersion = useRef<{ revision: string | null; project: FloorProject | null }>({
+      revision: null, project: null,
+    }),
     controller = useRef<AbortController | null>(null),
     loadToken = useRef(0),
     libraryRequest = useRef(0),
@@ -194,6 +201,31 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     controller.current?.abort();
     controller.current = null;
     setBusy("");
+  }
+  function cancelReplacement() {
+    replacementRef.current = null;
+    setReplacement(null);
+  }
+  function requestReplacement(name: string, run: PhotoReplacement["run"]) {
+    if (!activeRef.current || replacementRef.current) return;
+    if (!hasProjectChanges(current.current, storedVersion.current.project)) {
+      void run();
+      return;
+    }
+    stop();
+    setError("");
+    const request = { name, run };
+    replacementRef.current = request;
+    setReplacement(request);
+  }
+  async function confirmReplacement(saveFirst: boolean) {
+    const request = replacementRef.current;
+    if (!request || (saveFirst && saving)) return;
+    if (saveFirst && !(await save())) return;
+    if (replacementRef.current !== request || !mounted.current || !activeRef.current)
+      return;
+    cancelReplacement();
+    void request.run();
   }
   function beginImageLoad() {
     stop();
@@ -292,6 +324,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     void refresh();
     return () => {
       mounted.current = false;
+      replacementRef.current = null;
       libraryRequest.current++;
       controller.current?.abort();
       controller.current = null;
@@ -310,6 +343,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) {
       stop();
+      cancelReplacement();
       setPending(null);
       setCursor(null);
       setDragProject(null);
@@ -318,6 +352,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     const hidden = () => {
       if (document.hidden) {
         stop();
+        cancelReplacement();
         setDragProject(null);
         gesture.current = null;
       }
@@ -340,7 +375,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     revision.current++;
     setHistory({ past: [], present: project, future: [] });
     current.current = project;
-    storedVersion.current = { revision: savedRevision };
+    storedVersion.current = { revision: savedRevision, project };
     setImage(blob);
     setSelected(null);
     setPending(null);
@@ -394,12 +429,19 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       }
     }
   }
-  async function openSaved(s: StoredProject) {
+  async function openSaved(selected: StoredProject) {
     setVideoChooser(false);
     setVideoSource(null);
     const { c, isCurrent } = beginImageLoad();
     setBusy("Checking saved image");
     try {
+      // Save-before-open may have just replaced this library card's revision
+      const s = (await listProjects()).projects.find(
+        (s) => s.project.id === selected.project.id,
+      );
+      if (!isCurrent()) return;
+      if (!s)
+        throw Error("Saved project is unavailable · Your current photograph remains open");
       const bytes = new Uint8Array(
         await s.image.slice(0, 512 * 1024).arrayBuffer(),
       );
@@ -528,7 +570,6 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       document.hidden
     )
       return;
-    loadToken.current++;
     const next: FloorProject = {
       ...newProject(
         frame.width,
@@ -538,11 +579,15 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       videoFrame: { seconds: frame.seconds, duration: frame.duration },
       ...(source.sample ? { attribution: source.sample.attribution } : {}),
     };
-    install(next, frame.blob);
-    setNotice(
-      "New video still · Prior anchors and contacts are not reused · Review this frame’s alignment",
-    );
-    void runInference(next, frame.blob);
+    requestReplacement(next.name, () => {
+      if (videoSourceRef.current?.key !== sourceKey) return;
+      loadToken.current++;
+      install(next, frame.blob);
+      setNotice(
+        "New video still · Prior anchors and contacts are not reused · Review this frame’s alignment",
+      );
+      void runInference(next, frame.blob);
+    });
   }
   async function runInference(projectValue = current.current, blob = image) {
     if (!projectValue || !blob || !activeRef.current || document.hidden) return;
@@ -858,7 +903,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     }));
   }
   async function save() {
-    if (!p || !image || saving) return;
+    if (!p || !image || saving) return false;
     setSaving(true);
     setError("");
     const value = { ...p, updatedAt: new Date().toISOString() },
@@ -870,12 +915,16 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         baseline.revision,
       );
       // Later edits still descend from this save, but reopening a source does not
-      if (storedVersion.current === baseline) baseline.revision = nextRevision;
+      if (storedVersion.current === baseline) {
+        baseline.revision = nextRevision;
+        baseline.project = value;
+      }
       if (current.current?.id === value.id && revision.current === rev) {
         setSaved(true);
         setNotice("Saved on this device");
       }
       await refresh();
+      return storedVersion.current === baseline && revision.current === rev;
     } catch (e) {
       if (
         current.current?.id === value.id &&
@@ -886,6 +935,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         setSaved(false);
       }
       if (e instanceof ProjectConflictError) await refresh();
+      return false;
     } finally {
       setSaving(false);
     }
@@ -972,7 +1022,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = "";
-            if (f) void upload(f);
+            if (f) requestReplacement(f.name, () => upload(f));
           }}
           aria-label="Upload basketball image"
         />
@@ -1049,7 +1099,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         <VideoFramePicker
           key={videoSource.key}
           file={videoSource.file}
-          active={active && !videoChooser && !chooser}
+          active={active && !videoChooser && !chooser && !replacement}
           sample={videoSource.sample}
           onCapture={(frame) => useVideoFrame(frame, videoSource.key)}
           onClose={() => setVideoSource(null)}
@@ -1116,7 +1166,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           </div>
           <div className="ff-samples">
             {SAMPLES.map((s) => (
-              <button key={s.id} onClick={() => void loadSample(s)}>
+              <button key={s.id} onClick={() => requestReplacement(s.name, () => loadSample(s))}>
                 <img
                   src={`${import.meta.env.BASE_URL}freeze-floor/${s.file}`}
                   alt=""
@@ -1165,7 +1215,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
             <div className="ff-library">
               {library.map((s) => (
                 <div key={s.project.id}>
-                  <button onClick={() => void openSaved(s)}>
+                  <button onClick={() => requestReplacement(s.project.name, () => openSaved(s))}>
                     {s.project.name}
                   </button>
                   <button
@@ -1196,6 +1246,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                           baseline.revision === expected
                         ) {
                           baseline.revision = nextRevision;
+                          baseline.project = { ...s.project, name: name.trim().slice(0, 80) };
                           if (revision.current === rev) {
                             update((p) => ({
                               ...p,
@@ -1246,7 +1297,17 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           )}
         </section>
       ) : null}
-      {error ? (
+      {replacement ? (
+        <UnsavedPhotoDialog
+          target={replacement.name}
+          saving={saving}
+          error={error}
+          onSave={() => void confirmReplacement(true)}
+          onDiscard={() => void confirmReplacement(false)}
+          onCancel={cancelReplacement}
+        />
+      ) : null}
+      {error && !replacement ? (
         <div className="ff-error" role="alert">
           {error}
           <button aria-label="Dismiss error" onClick={() => setError("")}>

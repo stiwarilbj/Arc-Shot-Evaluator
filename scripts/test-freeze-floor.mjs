@@ -24,10 +24,36 @@ import { readImageHeader } from "../frontend/src/features/freezeFloor/images.ts"
 import { SAMPLES } from "../frontend/src/features/freezeFloor/samples.ts";
 import { COURT_MODEL } from "../frontend/src/features/freezeFloor/model.ts";
 import { mergeContactProposals } from "../frontend/src/features/freezeFloor/contactProposals.ts";
+import { hasProjectChanges } from "../frontend/src/features/freezeFloor/projectChanges.ts";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 const close = (a, b, t = 1e-7) =>
   assert.ok(Math.abs(a - b) < t, `${a} != ${b}`);
+const clean = {
+  ...newProject(1600, 1200, "Clean sample"),
+  anchors: structuredClone(SAMPLES[0].anchors),
+  contacts: structuredClone(SAMPLES[0].contacts),
+};
+assert.equal(hasProjectChanges(null, null), false);
+assert.equal(hasProjectChanges(clean, clean), false);
+assert.equal(hasProjectChanges(structuredClone(clean), clean), false);
+assert.equal(hasProjectChanges({ ...clean, updatedAt: "2030-01-01T00:00:00Z" }, clean), false);
+for (const edited of [
+  { ...clean, name: "Renamed" },
+  { ...clean, units: "m" },
+  { ...clean, regions: { ...clean.regions, paint: true } },
+  { ...clean, reviewed: true },
+  { ...clean, anchors: clean.anchors.slice(1) },
+  { ...clean, contacts: clean.contacts.map((c, i) => i ? c : { ...c, status: "hidden" }) },
+  { ...clean, measurements: [{ id: "distance", a: { image: { x: 0.1, y: 0.2 } }, b: { image: { x: 0.3, y: 0.4 } } }] },
+]) {
+  const before = structuredClone({ clean, edited });
+  assert.equal(hasProjectChanges(edited, clean), true);
+  assert.equal(hasProjectChanges(clean, clean), false, "undoing all edits restores the loaded baseline");
+  assert.equal(hasProjectChanges(edited, edited), false, "saving establishes a new clean baseline");
+  assert.equal(hasProjectChanges(clean, edited), true, "undoing a saved edit is a new unsaved change");
+  assert.deepEqual({ clean, edited }, before, "comparison does not mutate the project or baseline");
+}
 const person = (id, box, x = 0.5, y = 0.8) => ({
   id, label: id, image: { x, y }, status: "uncertain", ...(box ? { box } : {}),
 });
