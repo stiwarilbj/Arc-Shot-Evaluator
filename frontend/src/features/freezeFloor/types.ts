@@ -22,6 +22,7 @@ export type Attribution = {
   license: string;
   url: string;
 };
+export type VideoFrameSource = { seconds: number; duration: number };
 export type FloorProject = {
   version: 1;
   id: string;
@@ -36,11 +37,14 @@ export type FloorProject = {
   units: "ft" | "m";
   regions: { paint: boolean; corners: boolean; restricted: boolean };
   attribution?: Attribution;
+  videoFrame?: VideoFrameSource;
   updatedAt: string;
 };
 export type StoredProject = { project: FloorProject; image: Blob };
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_PIXELS = 24_000_000;
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+export const MAX_VIDEO_SECONDS = 600;
 export const MAX_PROJECTS = 20;
 export const MAX_LIBRARY_BYTES = 200 * 1024 * 1024;
 export const id = () => crypto.randomUUID();
@@ -144,6 +148,8 @@ export function validateProject(v: unknown): v is FloorProject {
     !unique(p.measurements)
   )
     return false;
+  if (p.videoFrame !== undefined && !validVideoFrameSource(p.videoFrame))
+    return false;
   if (
     p.attribution &&
     (!text(p.attribution.title, 250) ||
@@ -154,6 +160,18 @@ export function validateProject(v: unknown): v is FloorProject {
   )
     return false;
   return true;
+}
+export function validVideoFrameSource(v: unknown): v is VideoFrameSource {
+  const f = v as VideoFrameSource;
+  return (
+    !!f &&
+    finite(f.seconds) &&
+    finite(f.duration) &&
+    f.duration > 0 &&
+    f.duration <= MAX_VIDEO_SECONDS &&
+    f.seconds >= 0 &&
+    f.seconds <= f.duration
+  );
 }
 export function newProject(
   width: number,

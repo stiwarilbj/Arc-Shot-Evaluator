@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   Camera,
+  Video,
   Upload,
   Crosshair,
   Ruler,
@@ -36,6 +37,8 @@ import { normalizeImage, readImageHeader } from "./images.ts";
 import { deleteProject, listProjects, saveProject } from "./storage.ts";
 import { analyzePhoto } from "./inference.ts";
 import { SAMPLES, type Sample } from "./samples.ts";
+import { VideoFramePicker } from "./VideoFramePicker";
+import { validateVideoFile, videoTime, type CapturedFrame } from "./video.ts";
 import "./freeze-floor.css";
 type Mode = "inspect" | "measure" | "anchor" | "contact";
 type History = {
@@ -122,6 +125,13 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     [saving, setSaving] = useState(false),
     [exporting, setExporting] = useState(false),
     [inspector, setInspector] = useState(false);
+  const [videoSource, setVideoSource] = useState<{
+    file: File;
+    key: string;
+  } | null>(null);
+  const videoSourceRef = useRef(videoSource),
+    videoInput = useRef<HTMLInputElement>(null);
+  videoSourceRef.current = videoSource;
   const current = useRef<FloorProject | null>(null),
     revision = useRef(0),
     controller = useRef<AbortController | null>(null),
@@ -161,6 +171,16 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     stop();
     revision.current++;
     setSaved(false);
+    if (
+      pending?.contactId &&
+      !next.contacts.some((c) => c.id === pending.contactId)
+    )
+      setPending(null);
+    if (
+      selected &&
+      ![...next.anchors, ...next.contacts].some((v) => v.id === selected)
+    )
+      setSelected(null);
     setHistory((h) =>
       h
         ? { past: [...h.past, h.present].slice(-50), present: next, future: [] }
@@ -202,6 +222,14 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     );
     setPending(null);
   }
+  useEffect(() => {
+    if (
+      p &&
+      selected &&
+      ![...p.anchors, ...p.contacts].some((v) => v.id === selected)
+    )
+      setSelected(null);
+  }, [p, selected]);
   async function refresh() {
     try {
       const v = await listProjects();
@@ -270,6 +298,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setCheck(false);
   }
   async function loadSample(sample: Sample) {
+    setVideoSource(null);
     stop();
     const token = ++loadToken.current;
     setBusy("Opening photograph");
@@ -297,6 +326,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     }
   }
   async function openSaved(s: StoredProject) {
+    setVideoSource(null);
     stop();
     const token = ++loadToken.current;
     setBusy("Checking saved image");
@@ -331,6 +361,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     }
   }
   async function upload(file: File) {
+    setVideoSource(null);
     stop();
     const token = ++loadToken.current;
     setBusy("Checking image dimensions and orientation");
@@ -354,6 +385,44 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     } finally {
       if (token === loadToken.current && !controller.current) setBusy("");
     }
+  }
+  function chooseVideo(file: File) {
+    try {
+      validateVideoFile(file);
+      stop();
+      loadToken.current++;
+      setError("");
+      setVideoSource({ file, key: id() });
+      setNotice(
+        "Choose a clear floor moment · Video preview stays on this device",
+      );
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+  function useVideoFrame(frame: CapturedFrame, sourceKey: string) {
+    const source = videoSourceRef.current;
+    if (
+      !source ||
+      source.key !== sourceKey ||
+      !activeRef.current ||
+      document.hidden
+    )
+      return;
+    loadToken.current++;
+    const next: FloorProject = {
+      ...newProject(
+        frame.width,
+        frame.height,
+        `${source.file.name.replace(/\.[^.]+$/, "")} · ${videoTime(frame.seconds)}`,
+      ),
+      videoFrame: { seconds: frame.seconds, duration: frame.duration },
+    };
+    install(next, frame.blob);
+    setNotice(
+      "New video still · Prior anchors and contacts are not reused · Review this frame’s alignment",
+    );
+    void runInference(next, frame.blob);
   }
   async function runInference(projectValue = current.current, blob = image) {
     if (!projectValue || !blob || !activeRef.current || document.hidden) return;
@@ -815,6 +884,22 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           }}
           aria-label="Upload basketball image"
         />
+        <button onClick={() => videoInput.current?.click()}>
+          <Video size={17} />
+          Upload video
+        </button>
+        <input
+          ref={videoInput}
+          type="file"
+          accept="video/mp4,video/webm,video/quicktime,video/x-m4v,.mp4,.m4v,.mov,.webm"
+          hidden
+          aria-label="Upload basketball video"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) chooseVideo(file);
+          }}
+        />
         <button
           aria-pressed={check}
           disabled={!p}
@@ -856,6 +941,15 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           </button>
         </div>
       </div>
+      {videoSource ? (
+        <VideoFramePicker
+          key={videoSource.key}
+          file={videoSource.file}
+          active={active}
+          onCapture={(frame) => useVideoFrame(frame, videoSource.key)}
+          onClose={() => setVideoSource(null)}
+        />
+      ) : null}
       {chooser ? (
         <section
           className="ff-chooser"
@@ -1007,6 +1101,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                 Photograph{" "}
                 <span>
                   {p.width} × {p.height}
+                  {p.videoFrame
+                    ? ` · Video still ${videoTime(p.videoFrame.seconds)}`
+                    : ""}
                 </span>
               </h2>
               <div className="ff-stage ff-photo">
@@ -1473,9 +1570,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           <details className="ff-help-box">
             <summary>How to read Freeze Floor</summary>
             <p>
-              Choose an NBA half-court image with visible floor markings ·
-              Review automatic landmarks or place at least four floor anchors ·
-              Check the line overlay before measuring
+              Choose an NBA half-court image, or upload a video and freeze a
+              clear moment · Review automatic landmarks or place at least four
+              floor anchors · Check the line overlay before measuring
             </p>
             <p>
               Confirm visible feet in the contact inspector · Numeric distances

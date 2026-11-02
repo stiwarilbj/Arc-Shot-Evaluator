@@ -59,7 +59,7 @@
     "test:box-score-error-hunt": "node --experimental-strip-types ../scripts/test-box-score-error-hunt.mjs",
     "test:swish-tuner": "node --experimental-strip-types ../scripts/test-swish-tuner.mjs",
     "test:shotform-jenga": "node --experimental-strip-types ../scripts/test-shotform-jenga.mjs",
-    "test:freeze-floor": "node --experimental-strip-types ../scripts/test-freeze-floor.mjs"
+    "test:freeze-floor": "node --experimental-strip-types ../scripts/test-freeze-floor.mjs && node --experimental-strip-types ../scripts/test-freeze-floor-media.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

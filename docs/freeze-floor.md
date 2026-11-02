@@ -4,7 +4,7 @@
 
 ## Current release status
 
-The linked editor, manual alignment, contact correction, sensitivity-based distances, private project storage, and PNG output work on both frontend targets
+The linked editor, local video-frame picker, manual alignment, contact correction, sensitivity-based distances, private project storage, and image downloads work on both frontend targets
 
 Automatic court landmarks and ankle proposals use real bundled neural models locally · **Automatic alignment is experimental, requires manual overlay review, and is not a validated measuring instrument**
 
@@ -28,6 +28,16 @@ Numeric distances are restricted to the convex floor region enclosed by the acce
 
 The indicated range estimates sensitivity to point placement and residual landmark error · It is **not a calibrated confidence interval** and does not fully account for lens distortion, nonplanar floors, mistaken landmark meaning, or hidden feet
 
+## Choose a moment from a video
+
+**Upload video** accepts local MP4, WebM, M4V, or MOV files when the browser can decode their video codec · Limits are 100 MiB, 10 minutes, and 24 megapixels per frame · Unsupported files leave the current photo and project intact
+
+Use Play/Pause, the scrubber, or a numeric time · Step buttons change the requested time by 1/30 second · These are time steps, not a claim that every source has 30 distinct frames per second · The browser supplies the decoded recorded frame, including its supported orientation handling · Playback speed offers 0.25×, 0.5×, 1×, and 2×, plus optional looping · Preview audio stays muted
+
+**Use this frame** pauses playback and creates a new normalized image project · Automatic analysis runs only for that still, not for every video frame · Every chosen moment gets fresh anchors, contacts, and alignment review because camera movement invalidates earlier calibration · **Download frame JPEG** exports the unannotated still without model inference · **Download PNG** exports the current photo/court project with its visible overlays
+
+The selected source time is saved with the normalized image and shown after reopening · The original video and its metadata are not stored in the project library · Closing the picker releases its video URL · Navigation and hidden tabs pause video playback and returning never resumes automatically
+
 ## Mouse, touch, and keyboard
 
 - Click or tap a contact or landmark, then drag to correct it · Each completed drag is one undo step · Escape cancels a pending placement, first measurement endpoint, or unfinished drag
@@ -48,7 +58,7 @@ Court-to-image fitting uses normalized DLT and SVD through pinned `ml-matrix` 6.
 - Court model: [koppolusameer/yolo11n-basketball-court-keypoints](https://huggingface.co/koppolusameer/yolo11n-basketball-court-keypoints), pinned revision `6cb899251439982067a81baa225b33f45f335981` · Publisher-declared AGPL-3.0
 - Person model: the existing local YOLO11n pose ONNX asset · Ankles suggest contacts and never establish grounding
 - Input: 640-square RGB float32 with neutral 114 letterbox padding · Court output has 48 keypoint slots · Only the explicitly mapped floor subset participates in fits
-- Downloads are bounded by actual received bytes and SHA-256 checked · Valid cache hits are reused without rewriting · Corrupt cached models are removed
+- Downloads are bounded by actual received bytes and SHA-256 checked · Valid cache hits are reused without rewriting · Corrupt, oversized, or interrupted cached models are removed so a retry can fetch a verified copy
 - A dedicated worker prefers WebGPU and falls back to WebAssembly CPU execution · Models load only for requested automatic proposals, not for pointer movement, measurement, region toggles, or manual anchor correction
 - Each operation carries image, job, and edit identities · Source changes, edits, navigation away, and hidden tabs cancel inference · Late responses cannot replace current edits
 - Raw upload metadata is stripped when creating the normalized JPEG · Model assets are served by the same website · No paid inference service or backend endpoint is used
@@ -59,7 +69,7 @@ Asset licenses, model digests, explicit 48-slot inclusion/exclusion map, and sam
 
 The normalized JPEG and versioned metadata are committed together in one IndexedDB transaction · Saved status appears only after completion · A failed write leaves the current project and PNG export available
 
-The library is limited to 20 projects and 200 MiB, including images and metadata · Save updates the current project identity rather than duplicating it · Choose photo exposes saved projects, rename, and deletion · No automatic deletion frees capacity
+The library is limited to 20 projects and 200 MiB, including images and metadata · Save updates the current project identity rather than duplicating it · Choose photo exposes saved projects, rename, and deletion · No automatic deletion frees capacity · Removing a player also cancels any unfinished measurement that refers to that contact
 
 Hosted and downloaded libraries belong to different browser origins · Browser data clearing removes this library · Projects are not uploaded or shared and do not change saved Playbook formats
 

@@ -44,6 +44,23 @@ await page.keyboard.press("ArrowRight");
 await expect(page.locator(".ff-status")).toContainText("Check alignment");
 await page.getByRole("button", { name: "Undo floor edit" }).click();
 await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+// Removing a chosen first endpoint must not leave an unsavable contact reference.
+await page
+  .getByRole("button", { name: "Measure distance", exact: true })
+  .click();
+await page.locator(".ff-photo>svg").scrollIntoViewIfNeeded();
+const contactPoint = await page.locator(".ff-photo>svg").evaluate((svg) => {
+  const p = new DOMPoint(256, 582).matrixTransform(svg.getScreenCTM());
+  return { x: p.x, y: p.y };
+});
+await page.mouse.click(contactPoint.x, contactPoint.y);
+await expect(page.locator(".ff-caption")).toContainText("Select the second");
+await page
+  .getByRole("button", { name: "Remove player 2", exact: true })
+  .click();
+await expect(page.locator(".ff-caption")).toContainText(
+  "Select two grounded floor points",
+);
 await page.getByRole("checkbox", { name: "Paint", exact: true }).check();
 await page
   .getByRole("checkbox", { name: "Restricted area", exact: true })
@@ -52,6 +69,7 @@ await page
 await page
   .getByRole("button", { name: "Measure distance", exact: true })
   .click();
+await page.locator(".ff-panel").nth(1).locator("svg").scrollIntoViewIfNeeded();
 for (const v of [
   { x: 22, y: 8 },
   { x: 27, y: 12 },

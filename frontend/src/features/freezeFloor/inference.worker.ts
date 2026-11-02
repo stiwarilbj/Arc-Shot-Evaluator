@@ -1,5 +1,6 @@
 import * as ort from "onnxruntime-web/webgpu";
 import { COURT_MODEL, PERSON_MODEL } from "./model.ts";
+import { checkedAsset } from "./checkedAsset.ts";
 import { LANDMARKS, align } from "./geometry.ts";
 import {
   id,
@@ -13,73 +14,12 @@ ort.env.wasm.numThreads = 1;
 import wasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import wasmMjs from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
 ort.env.wasm.wasmPaths = { wasm: wasmUrl, mjs: wasmMjs };
-async function checkedAsset(asset: {
-  file: string;
-  sha256: string;
-  bytes: number;
-}) {
+async function session(asset: typeof COURT_MODEL | typeof PERSON_MODEL) {
   const url = new URL(
     `${import.meta.env.BASE_URL}${asset.file}`,
     self.location.origin,
   ).href;
-  let cache: Cache | undefined;
-  try {
-    cache = await caches.open("arc-freeze-floor-models-v1");
-  } catch {}
-  let hit: Response | undefined;
-  try {
-    hit = await cache?.match(url);
-  } catch {
-    cache = undefined;
-  }
-  const response = hit ?? (await fetch(url));
-  if (!response.ok)
-    throw Error(
-      "Model download failed · Retry automatic alignment or use manual landmarks",
-    );
-  const reader = response.body?.getReader();
-  if (!reader) throw Error("Model download was empty");
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > asset.bytes) {
-        await reader.cancel();
-        throw Error("Model download exceeded its size limit");
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  const digest = Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-    (x) => x.toString(16).padStart(2, "0"),
-  ).join("");
-  if (digest !== asset.sha256) {
-    await cache?.delete(url);
-    throw Error(
-      "Model integrity check failed · Retry to download a verified copy",
-    );
-  }
-  if (!hit) {
-    try {
-      await cache?.put(url, new Response(bytes));
-    } catch {}
-  }
-  return bytes;
-}
-async function session(asset: typeof COURT_MODEL | typeof PERSON_MODEL) {
-  const data = await checkedAsset(asset);
+  const data = await checkedAsset(url, asset);
   try {
     return {
       data,

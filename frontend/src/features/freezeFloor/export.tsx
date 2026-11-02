@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { FloorScene } from "./FloorScene";
 import { align, measure } from "./geometry.ts";
 import type { FloorProject } from "./types.ts";
+import { videoTime } from "./video.ts";
 const escape = (s: string) =>
   s.replace(
     /[&<>"']/g,
@@ -53,7 +54,7 @@ export async function exportPng(p: FloorProject, blob: Blob, check: boolean) {
   const attribution = p.attribution
     ? `${p.attribution.title} · ${p.attribution.creator} · ${p.attribution.license} · ${p.attribution.url}`
     : "Your private photograph";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" font-family="Arial,sans-serif"><rect width="100%" height="100%" fill="#101516"/><text x="30" y="40" font-size="28" fill="#f8f5ee">Freeze Floor · ${escape(p.name)}</text><text x="30" y="72" font-size="16" fill="#b3bdbe">NBA half-court · ${escape(alignment.reason)}</text><text x="30" y="102" font-size="16" fill="white">Photograph</text><text x="${left + 45}" y="102" font-size="16" fill="white">Overhead court</text>${scene("photo", 30, Math.min(left, (photoH * p.width) / p.height), photoH)}${scene("court", left + 45, right, (right * 51) / 54)}${notes}<text x="30" y="${height - 67}" font-size="14" fill="#b3bdbe">Estimated sensitivity ranges are not calibrated confidence intervals · Hidden or airborne feet remain uncertain</text><foreignObject x="30" y="${height - 48}" width="1740" height="45"><div xmlns="http://www.w3.org/1999/xhtml" style="color:#b3bdbe;font:12px Arial">${escape(attribution)}</div></foreignObject></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" font-family="Arial,sans-serif"><rect width="100%" height="100%" fill="#101516"/><text x="30" y="40" font-size="28" fill="#f8f5ee">Freeze Floor · ${escape(p.name)}</text><text x="30" y="72" font-size="16" fill="#b3bdbe">NBA half-court · ${escape(alignment.reason)}</text><text x="30" y="102" font-size="16" fill="white">Photograph${p.videoFrame ? ` · Video still ${videoTime(p.videoFrame.seconds)}` : ""}</text><text x="${left + 45}" y="102" font-size="16" fill="white">Overhead court</text>${scene("photo", 30, Math.min(left, (photoH * p.width) / p.height), photoH)}${scene("court", left + 45, right, (right * 51) / 54)}${notes}<text x="30" y="${height - 67}" font-size="14" fill="#b3bdbe">Estimated sensitivity ranges are not calibrated confidence intervals · Hidden or airborne feet remain uncertain</text><foreignObject x="30" y="${height - 48}" width="1740" height="45"><div xmlns="http://www.w3.org/1999/xhtml" style="color:#b3bdbe;font:12px Arial">${escape(attribution)}</div></foreignObject></svg>`;
   // foreignObject is blocked by some image decoders, so keep attribution as wrapped SVG text.
   const clean = svg.replace(
     /<foreignObject[\s\S]*?<\/foreignObject>/,
