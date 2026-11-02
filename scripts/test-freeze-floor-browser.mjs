@@ -18,9 +18,10 @@ const page = await browser.newPage({
   acceptDownloads: true,
 });
 const errors = [];
-process.on("uncaughtException", async (error) => {
+process.once("uncaughtException", async (error) => {
+  console.error(error);
+  process.exitCode = 1;
   await browser.close();
-  throw error;
 });
 page.on("pageerror", (e) => {
   errors.push(e.message);
@@ -122,6 +123,82 @@ await expect(
 ).toBeVisible();
 await page.goBack();
 await expect(page.locator(".ff-measurements")).toContainText("Approx 2.0 m");
+// Rounded time labels must not become seeks when an untouched field loses focus.
+await page
+  .getByLabel("Upload basketball video", { exact: true })
+  .setInputFiles(
+    new URL(
+      "../frontend/public/freeze-floor/videos/kobe-warmup.mp4",
+      import.meta.url,
+    ).pathname,
+  );
+const video = page.getByLabel("Local video preview", { exact: true }),
+  seconds = page.getByLabel("Video moment in seconds", { exact: true }),
+  frameDownload = page.getByRole("button", {
+    name: "Download frame JPEG",
+    exact: true,
+  });
+await expect(frameDownload).toBeEnabled();
+async function frameState() {
+  return video.evaluate(async (v) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(v, 0, 0);
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const hash = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", data)),
+      (b) => b.toString(16).padStart(2, "0"),
+    ).join("");
+    return { seconds: v.currentTime, hash };
+  });
+}
+for (let step = 1; step <= 2; step++) {
+  await page
+    .getByRole("button", {
+      name: "Seek forward one thirtieth of a second",
+      exact: true,
+    })
+    .click();
+  await expect(seconds).toHaveValue(step === 1 ? "0.03" : "0.07");
+  await expect(frameDownload).toBeEnabled();
+  const before = await frameState();
+  for (const key of ["Tab", "Enter"]) {
+    await seconds.focus();
+    await page.keyboard.press(key);
+    await expect.poll(() => video.evaluate((v) => !v.seeking)).toBe(true);
+    expect(await frameState()).toEqual(before);
+  }
+}
+const beforeDraft = await frameState();
+await seconds.fill("1.25");
+// A pending pause/timeupdate event must not replace the typed draft.
+await video.evaluate((v) => v.dispatchEvent(new Event("timeupdate")));
+await expect(seconds).toHaveValue("1.25");
+await seconds.press("Escape");
+expect(await frameState()).toEqual(beforeDraft);
+await seconds.fill("");
+await seconds.press("Tab");
+expect(await frameState()).toEqual(beforeDraft);
+await seconds.fill("0.5");
+await seconds.press("Enter");
+await expect
+  .poll(() => video.evaluate((v) => !v.seeking && v.currentTime === 0.5))
+  .toBe(true);
+await expect(frameDownload).toBeEnabled();
+const framePromise = page.waitForEvent("download");
+await frameDownload.click();
+const frame = await framePromise;
+expect(frame.suggestedFilename()).toBe("freeze-floor-frame-0.50s.jpg");
+await frame.saveAs("/tmp/freeze-floor-video-time-frame.jpg");
+expect(await frame.failure()).toBe(null);
+await page
+  .locator(".ff-video-picker")
+  .screenshot({ path: "/tmp/freeze-floor-video-time-after.png" });
+await page
+  .getByRole("button", { name: "Close video picker", exact: true })
+  .click();
 await page.setViewportSize({ width: 360, height: 800 });
 if (process.env.FREEZE_FLOOR_SCREENSHOT)
   await page.screenshot({
@@ -132,6 +209,9 @@ expect(
   await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
 ).toBe(false);
 console.log("errors", errors, "nonGet", posts);
+console.log(
+  "Video timing: untouched blur/Enter preserve exact time and pixels, draft survives timeupdate, Escape/empty input preserve frame, intentional seek and JPEG download passed",
+);
 expect(errors).toEqual([]);
 expect(posts).toEqual([]);
 await browser.close();

@@ -47,7 +47,8 @@ export function VideoFramePicker({
     [rate, setRate] = useState(1),
     [loop, setLoop] = useState(false),
     [error, setError] = useState("");
-  const cancelledTime = useRef(false);
+  const cancelledTime = useRef(false),
+    editedTime = useRef(false);
   useEffect(() => {
     alive.current = true;
     const element = video.current!,
@@ -84,7 +85,8 @@ export function VideoFramePicker({
     if (!video.current || !alive.current) return;
     const n = video.current.currentTime;
     setPosition(n);
-    setDraft(n.toFixed(2));
+    // Pausing can deliver a timeupdate after the user starts editing.
+    if (!editedTime.current) setDraft(n.toFixed(2));
   };
   const seek = (n: number) => {
     const element = video.current,
@@ -308,9 +310,15 @@ export function VideoFramePicker({
             step={VIDEO_STEP}
             value={draft}
             disabled={unavailable}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              editedTime.current = true;
+              setDraft(e.target.value);
+            }}
             onBlur={() => {
-              if (cancelledTime.current) {
+              const edited = editedTime.current;
+              editedTime.current = false;
+              // The displayed hundredths are not the exact selected instant.
+              if (cancelledTime.current || !edited) {
                 cancelledTime.current = false;
                 setDraft(position.toFixed(2));
                 return;

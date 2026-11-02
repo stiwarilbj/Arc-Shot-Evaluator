@@ -53,6 +53,8 @@ Only the selected clip downloads · Selecting or playing a clip does not initial
 
 Use Play/Pause, the scrubber, or a numeric time · Step buttons change the requested time by 1/30 second · These are time steps, not a claim that every source has 30 distinct frames per second · The browser supplies the decoded recorded frame, including its supported orientation handling · Playback speed offers 0.25×, 0.5×, 1×, and 2×, plus optional looping · Preview audio stays muted
 
+The Seconds field displays hundredths, while the selected instant retains its underlying precision · Tab or Enter without typing leaves the frame unchanged · An edited time commits on Enter or leaving the field; Escape cancels it · Playback updates do not replace an unfinished time draft
+
 **Use this frame** pauses playback and creates a new normalized image project · Automatic analysis runs only for that still, not for every video frame · Every chosen moment gets fresh anchors, contacts, and alignment review because camera movement invalidates earlier calibration · **Download frame JPEG** exports the unannotated still without model inference · **Download PNG** exports the current photo/court project with its visible overlays
 
 The selected source time is saved with the normalized image and shown after reopening · The original video and its metadata are not stored in the project library · Closing the picker releases its video URL · Navigation and hidden tabs pause video playback and returning never resumes automatically
@@ -109,7 +111,7 @@ pnpm --dir frontend build
 VITE_DEPLOY_TARGET=github-pages pnpm --dir frontend build
 ```
 
-The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, undo/redo during contact and landmark drags, perspective-safe overhead selection, keyboard/pointer measurement parity, axis-correct court nudging, private save/reopen, delayed storage-operation isolation, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
+The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, exact selected-time and video-pixel preservation across unchanged focus/blur, numeric time edits and cancellation, frame JPEG download, undo/redo during contact and landmark drags, perspective-safe overhead selection, keyboard/pointer measurement parity, axis-correct court nudging, private save/reopen, delayed storage-operation isolation, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
 
 For the real-photo acceptance gate, supply independent licensed images and annotations with disjoint training/camera groups · Use at least 40 supported and 20 unsuitable photographs across independent groups · Every accepted photograph needs four or more independent floor checks that were not used for fitting
 
