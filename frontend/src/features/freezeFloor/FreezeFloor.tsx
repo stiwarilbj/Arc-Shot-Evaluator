@@ -224,6 +224,8 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   }
   function redo() {
     stop();
+    setDragProject(null);
+    gesture.current = null;
     revision.current++;
     setSaved(false);
     setHistory((h) =>

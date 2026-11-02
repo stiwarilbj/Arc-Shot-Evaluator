@@ -91,6 +91,66 @@ try {
     page.getByRole("heading", { name: "Freeze Floor", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  // An unfinished drag must not override restored history in either view.
+  for (const view of ["court", "photo"]) {
+    for (const action of ["redo", "undo"]) {
+      await page
+        .getByRole("button", { name: "Check the alignment", exact: true })
+        .click();
+      const paint = page.getByRole("checkbox", { name: "Paint", exact: true });
+      await paint.check();
+      if (action === "redo")
+        await page.getByRole("button", { name: "Undo floor edit" }).click();
+      const stage = view === "court" ? court : photo;
+      const marker = stage
+        .locator(view === "court" ? "[data-contact]" : "[data-anchor]")
+        .first()
+        .locator("circle");
+      const before = await circlePoint(marker);
+      await stage.scrollIntoViewIfNeeded();
+      const start = await marker.evaluate((c) => {
+        const point = new DOMPoint(
+          +c.getAttribute("cx"),
+          +c.getAttribute("cy"),
+        ).matrixTransform(c.getScreenCTM());
+        return { x: point.x, y: point.y };
+      });
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move(start.x + 15, start.y + 15, { steps: 5 });
+      assert.notDeepEqual(await circlePoint(marker), before);
+      await page.keyboard.press(
+        action === "redo" ? "Control+Shift+z" : "Control+z",
+      );
+      await expect(paint).toBeChecked({ checked: action === "redo" });
+      near((await circlePoint(marker)).x, before.x);
+      near((await circlePoint(marker)).y, before.y);
+      // Late pointer movement/release cannot resurrect the cancelled gesture.
+      await page.mouse.move(start.x + 25, start.y + 25);
+      await page.mouse.up();
+      await expect(paint).toBeChecked({ checked: action === "redo" });
+      near((await circlePoint(marker)).x, before.x);
+      near((await circlePoint(marker)).y, before.y);
+      // A completed new drag still creates exactly one undoable history entry.
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move(start.x + 15, start.y + 15, { steps: 5 });
+      await page.mouse.up();
+      const moved = await circlePoint(marker);
+      assert.notDeepEqual(moved, before);
+      await page.getByRole("button", { name: "Undo floor edit" }).click();
+      near((await circlePoint(marker)).x, before.x);
+      near((await circlePoint(marker)).y, before.y);
+      await expect(paint).toBeChecked({ checked: action === "redo" });
+      await page.getByRole("button", { name: "Redo floor edit" }).click();
+      near((await circlePoint(marker)).x, moved.x);
+      near((await circlePoint(marker)).y, moved.y);
+      if (view === "court" && action === "redo")
+        await page.screenshot({ path: "/tmp/freeze-floor-redo-after.png" });
+      await page.reload();
+      await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+    }
+  }
   await page
     .getByRole("button", { name: "Check the alignment", exact: true })
     .click();
@@ -331,7 +391,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(uploads, []);
   console.log(
-    "Freeze Floor browser regressions passed: perspective-safe selection and measurements, PNG export, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, no runtime errors or uploads",
+    "Freeze Floor browser regressions passed: undo/redo during contact and landmark drags, perspective-safe selection and measurements, PNG export, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, no runtime errors or uploads",
   );
 } finally {
   await browser.close();
