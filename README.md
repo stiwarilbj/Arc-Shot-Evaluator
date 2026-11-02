@@ -15,7 +15,7 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 | [Counter Lab](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#counter-lab)          | Test defenses, follow recorded openings through a possession, compare repairs, and replay a defender’s dilemma |
 | [Others → Guess the Jumper](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#jumper) | Mask and edit your own jumpshot videos, keep a private clip library, and guess the shooter from their motion  |
 
-**[Others → Freeze Floor](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#freeze-floor)** · Choose a photo or video still, link it to an NBA half-court, correct landmarks and contacts, measure approximate spacing, and save privately · Damaged entries and outdated refreshes cannot hide healthy projects, and conflicting saves preserve your edits · Automatic alignment remains experimental
+**[Others → Freeze Floor](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#freeze-floor)** · Choose a photo or video still, link it to an NBA half-court, correct landmarks and contacts, measure approximate spacing, and save privately · [Damaged entries](docs/freeze-floor.md#private-projects) and outdated refreshes cannot hide healthy projects, and conflicting saves preserve your edits · Automatic alignment remains experimental
 
 **[Games → Box-Score Error Hunt](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/box-score-error-hunt)** · Find the wrong total in fictional stat lines, build a streak, and unlock shooting percentages in endless practice
 

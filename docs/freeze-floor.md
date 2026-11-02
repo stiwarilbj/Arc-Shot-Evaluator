@@ -96,6 +96,8 @@ The library is limited to 20 projects and 200 MiB, including images and metadata
 
 If a saved record fails validation, **Choose photo** still lists healthy projects in newest-first order · A persistent warning identifies unavailable entries by their stored name, when available, and storage key · Damaged records remain unchanged for recovery and still count toward storage limits · An entirely unavailable library is distinguished from an empty one · A failed or interrupted storage read retains the previously displayed library rather than reporting a complete empty result
 
+Landmark and player-contact IDs must be unique across both collections, including disabled landmarks · Conflicting identities are rejected in projects and inference results so selection cannot address the wrong object · Saved records with these collisions remain unavailable and preserved for recovery
+
 Only the latest requested library refresh may update project cards, unavailable-entry warnings, or storage-error notices · An older read finishing after a save, rename, deletion, or newer refresh cannot replace those results · Leaving the workspace mounted preserves its library state, while unmounting invalidates pending refreshes
 
 Hosted and downloaded libraries belong to different browser origins · Browser data clearing removes this library · Projects are not uploaded or shared and do not change saved Playbook formats

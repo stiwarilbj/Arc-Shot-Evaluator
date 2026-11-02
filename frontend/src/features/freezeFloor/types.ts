@@ -139,7 +139,7 @@ export function validateProject(v: unknown): v is FloorProject {
             c.box[0] < c.box[2] &&
             c.box[1] < c.box[3])),
     ) ||
-    !unique(p.contacts)
+    !unique([...p.anchors, ...p.contacts])
   )
     return false;
   const mp = (m: MeasurePoint) =>

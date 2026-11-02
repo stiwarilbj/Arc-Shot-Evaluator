@@ -273,6 +273,29 @@ try {
   await expect(warning).toContainText("4 saved projects unavailable");
   await expect(library.getByRole("button", { name: "Healthy updated project", exact: true })).toBeVisible();
   await expect(library.getByRole("button", { name: "Healthy newest project", exact: true })).toBeVisible();
+  // Keep a real image and otherwise-valid metadata for the identity-only fixture
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const r = indexedDB.open("arc-freeze-floor-v1", 1);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("projects", "readonly");
+        const r = tx.objectStore("projects").get("healthy-older");
+        tx.oncomplete = () => {
+          const original = r.result;
+          window.identityCollisionRecord = { ...original, project: {
+            ...original.project, id: "damaged-identities", name: "Shared landmark/player ID",
+            contacts: [{ ...original.project.contacts[0], id: original.project.anchors[0].id }],
+          } };
+          resolve();
+        };
+        tx.onabort = () => reject(tx.error);
+      });
+    } finally { db.close(); }
+  });
   await deleteKeys((await records()).filter((r) => !String(r.key).startsWith("damaged-")).map((r) => r.key));
   await refresh();
   await expect(library).toHaveCount(0);
@@ -292,6 +315,30 @@ try {
   await refresh();
   await expect(warning).toHaveCount(0);
   await expect(page.locator(".ff-chooser")).toContainText("Save your first project");
+
+  // Cross-collection identity collisions remain stored, without exposing an
+  // ambiguous project that could select a landmark instead of its player
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const r = indexedDB.open("arc-freeze-floor-v1", 1);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("projects", "readwrite");
+        tx.objectStore("projects").put(window.identityCollisionRecord);
+        tx.oncomplete = resolve;
+        tx.onabort = () => reject(tx.error);
+      });
+    } finally { db.close(); }
+  });
+  const collisionRecord = await records();
+  await refresh();
+  await expect(warning).toContainText("Shared landmark/player ID");
+  await expect(warning).toContainText("damaged-identities");
+  await expect(library).toHaveCount(0);
+  assert.deepEqual(await records(), collisionRecord, "identity conflicts must remain unchanged for recovery");
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleIssues, []);

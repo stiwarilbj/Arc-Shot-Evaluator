@@ -192,6 +192,40 @@ assert.ok(
   }),
 );
 assert.ok(!validateProject({ ...p, anchors: [...anchors, { ...anchors[0] }] }));
+assert.ok(!validateProject({ ...p, contacts: [...p.contacts, { ...p.contacts[0] }] }));
+// Selection shares an identity namespace for landmarks and player contacts
+for (const anchor of anchors) {
+  const collision = {
+    ...p,
+    contacts: [{ ...p.contacts[0], id: anchor.id }],
+  };
+  assert.equal(validateProject(collision), false, `shared ID ${anchor.id}`);
+  assert.equal(
+    validateProject({
+      ...collision,
+      anchors: anchors.map((a) => ({ ...a, enabled: false })),
+    }),
+    false,
+    "disabled landmarks still participate in selection identities",
+  );
+  assert.equal(
+    validResponse({
+      type: "result",
+      imageId: "x",
+      jobId: "y",
+      revision: 0,
+      provider: "wasm",
+      anchors: collision.anchors,
+      contacts: collision.contacts,
+      warnings: [],
+    }),
+    false,
+    "inference results must reject the same identity collision",
+  );
+}
+assert.ok(validateProject({ ...p, contacts: [] }));
+assert.ok(validateProject({ ...p, anchors: [] }));
+assert.ok(validateProject(p), "distinct landmark and contact IDs remain valid");
 assert.ok(
   !validResponse({
     type: "result",
