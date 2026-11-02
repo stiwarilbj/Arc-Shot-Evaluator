@@ -36,6 +36,7 @@ import type {
 const BoxScoreErrorHunt = lazy(() => import("../features/games/BoxScoreErrorHunt"));
 const ShotformJenga = lazy(() => import("../features/games/ShotformJenga"));
 const SwishTuner = lazy(() => import("../features/games/SwishTuner"));
+const FreezeFloor = lazy(() => import("../features/freezeFloor/FreezeFloor"));
 const JumperLab = lazy(() => import("../features/jumper/JumperLab"));
 const CounterLab = lazy(() => import("../features/playbook/CounterLab").then((module) => ({ default: module.CounterLab })));
 
@@ -117,12 +118,14 @@ export function ArcShotEvaluatorApp() {
   const [boxScoreHasOpened, setBoxScoreHasOpened] = useState(workspace === "boxscore");
   const [shotformHasOpened, setShotformHasOpened] = useState(workspace === "shotform");
   const [swishHasOpened, setSwishHasOpened] = useState(workspace === "swish");
+  const [freezeFloorHasOpened, setFreezeFloorHasOpened] = useState(workspace === "freezefloor");
   const [jumperHasOpened, setJumperHasOpened] = useState(workspace === "jumper");
   const [counterLabHasOpened, setCounterLabHasOpened] = useState(workspace === "counterlab");
   useEffect(() => {
     if (workspace === "boxscore") setBoxScoreHasOpened(true);
     if (workspace === "shotform") setShotformHasOpened(true);
     if (workspace === "swish") setSwishHasOpened(true);
+    if (workspace === "freezefloor") setFreezeFloorHasOpened(true);
     if (workspace === "jumper") setJumperHasOpened(true);
     if (workspace === "counterlab") setCounterLabHasOpened(true);
   }, [workspace]);
@@ -531,6 +534,7 @@ export function ArcShotEvaluatorApp() {
         <PlaybookBoard active={workspace === "playbook"} view={playbookView} rolePlayerId={rolePlayerId} onViewChange={changePlaybookView} onTestInCounterLab={testInCounterLab} onDraftChange={setCounterLabPlay} requestedPlay={playbookRequest} />
       </div>
       {counterLabHasOpened || workspace === "counterlab" ? <div className={workspace === "counterlab" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "counterlab"}><Suspense fallback={<div className="counter-lab-loading" role="status">Loading Counter Lab…</div>}><CounterLab active={workspace === "counterlab"} currentDraft={counterLabPlay} requestedPlay={counterLabRequest} onOpenEditor={() => changeWorkspace("playbook")} onOpenInPlaybook={openSavedPlayInEditor} /></Suspense></div> : null}
+      {freezeFloorHasOpened || workspace === "freezefloor" ? <div className={workspace === "freezefloor" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "freezefloor"}><Suspense fallback={<p role="status">Opening Freeze Floor…</p>}><FreezeFloor active={workspace === "freezefloor"} /></Suspense></div> : null}
       {jumperHasOpened || workspace === "jumper" ? <div className={workspace === "jumper" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "jumper"}><Suspense fallback={<p role="status">Opening Guess the Jumper…</p>}><JumperLab active={workspace === "jumper"} tab={jumperView} onTabChange={changeJumperView} /></Suspense></div> : null}
       <div className={workspace === "analyzer" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "analyzer"}>
         {analyzerView}

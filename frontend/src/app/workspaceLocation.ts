@@ -3,6 +3,7 @@ export type AppWorkspace =
   | "analyzer"
   | "playbook"
   | "counterlab"
+  | "freezefloor"
   | "jumper"
   | "boxscore"
   | "swish"
@@ -47,6 +48,8 @@ export function readWorkspaceHash(
       return { ...current, workspace: "shotform" };
     case "#games/swish-tuner":
       return { ...current, workspace: "swish" };
+    case "#freeze-floor":
+      return { ...current, workspace: "freezefloor" };
     case "#counter-lab":
       return { ...current, workspace: "counterlab" };
     case "#jumper":
@@ -72,6 +75,7 @@ export function readWorkspaceHash(
 }
 
 export function workspaceHash(value: WorkspaceLocation): string {
+  if (value.workspace === "freezefloor") return "#freeze-floor";
   if (value.workspace === "shotform") return "#games/shotform-jenga";
   if (value.workspace === "swish") return "#games/swish-tuner";
   if (value.workspace === "boxscore") return "#games/box-score-error-hunt";

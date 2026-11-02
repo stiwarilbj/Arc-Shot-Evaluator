@@ -1,0 +1,92 @@
+# Freeze Floor · Use and accuracy guide
+
+[Open Freeze Floor](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#freeze-floor) · [Feature guide](feature-guide.md)
+
+## Current release status
+
+The linked editor, manual alignment, contact correction, sensitivity-based distances, private project storage, and PNG output work on both frontend targets
+
+Automatic court landmarks and ankle proposals use real bundled neural models locally · **Automatic alignment is experimental, requires manual overlay review, and is not a validated measuring instrument**
+
+The planned independent 60-photo acceptance benchmark is **not complete** · No trained alignment-confidence classifier is shipped · The checkpoint publisher supplies no authoritative 48-slot court map, so only the inspected floor-only subset is proposed and the remaining slots are excluded · The feature must not be described as fully validated automatic calibration
+
+Three licensed real photographs are supplied · Two wide images have manually inspected lane overlays, while the close-up deliberately demonstrates insufficient floor evidence · They are examples, not independent accuracy ground truth · The requested set of three accepted alignment/contact examples and the independent benchmark remain outstanding
+
+## Use the editor
+
+1. Open **Others → Freeze Floor** · The Garden sample opens immediately
+2. Choose another photograph or upload JPEG, PNG, or WebP · Limits are 20 MiB and 24 megapixels · Header dimensions are checked before decoding · EXIF orientation is applied and the working image is reduced to a maximum 2048-pixel edge
+3. Open **Check the alignment** · Green projected court lines should coincide with the visible floor markings of one NBA half-court · A full-court photo can be used by aligning just one half
+4. Correct the floor landmarks · Select an existing landmark to drag, nudge, enter pixel coordinates, reassign its meaning, exclude it, or delete it · Add at least four well-spread floor correspondences when automatic proposals are insufficient · Avoid points on raised equipment, shadows, and advertisements
+5. Select **I checked the floor-line overlay** · Conflicting enabled anchors prevent numeric measurements until corrected or excluded · **Alignment ready** records this manual review, not independent accuracy certification
+6. Expand **Player contacts** · Ankles are uncertain proposals · Confirm visible shoe-floor contact as grounded, correct the location, remove spectators, and add missed people · Hidden or airborne feet stay uncertain
+7. Use **Measure distance** to choose two floor points in either view · Hovering a person highlights the corresponding contact · A free-space cursor represents a floor-plane projection, not a position above the floor
+8. Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
+9. Save explicitly, or download the combined photograph/overhead PNG · No photo is uploaded
+
+Numeric distances are restricted to the convex floor region enclosed by the accepted anchors · Outside this region, on unstable projections, or with unconfirmed feet, the editor keeps the endpoints but withholds the number
+
+The indicated range estimates sensitivity to point placement and residual landmark error · It is **not a calibrated confidence interval** and does not fully account for lens distortion, nonplanar floors, mistaken landmark meaning, or hidden feet
+
+## Mouse, touch, and keyboard
+
+- Click or tap a contact or landmark, then drag to correct it · Each completed drag is one undo step · Escape cancels a pending placement, first measurement endpoint, or unfinished drag
+- Arrow keys aim on a focused view, or nudge its selected point by one image pixel · Shift changes that to ten pixels · Enter places an anchor, contact, or measurement endpoint in the chosen mode
+- Numeric pixel fields allow precise keyboard correction · Both views expose visible focus · Undo and redo retain the last 50 completed edits for the current photograph
+- The magnified aiming inset follows the image-space cursor · The split view stacks on narrow screens
+
+## Geometry
+
+Coordinates use feet on the NBA half-court, 50 wide and 47 from baseline to midcourt · The lane is 16 by 19 feet, the three-point radius is 23 feet 9 inches with straight portions 3 feet from each sideline, and the restricted area has a 4-foot radius with lines to the backboard plane
+
+Reference: [NBA Rule 1 · Court dimensions and equipment](https://official.nba.com/rule-no-1-court-dimensions-equipment/)
+
+Court-to-image fitting uses normalized DLT and SVD through pinned `ml-matrix` 6.15.1 · Seeded RANSAC rejects inconsistent evidence and refits accepted inliers · Inverse, spread, conditioning, finite values, and projection sensitivity are checked · A conflicting included anchor is never silently approved
+
+## Models and privacy
+
+- Court model: [koppolusameer/yolo11n-basketball-court-keypoints](https://huggingface.co/koppolusameer/yolo11n-basketball-court-keypoints), pinned revision `6cb899251439982067a81baa225b33f45f335981` · Publisher-declared AGPL-3.0
+- Person model: the existing local YOLO11n pose ONNX asset · Ankles suggest contacts and never establish grounding
+- Input: 640-square RGB float32 with neutral 114 letterbox padding · Court output has 48 keypoint slots · Only the explicitly mapped floor subset participates in fits
+- Downloads are bounded by actual received bytes and SHA-256 checked · Valid cache hits are reused without rewriting · Corrupt cached models are removed
+- A dedicated worker prefers WebGPU and falls back to WebAssembly CPU execution · Models load only for requested automatic proposals, not for pointer movement, measurement, region toggles, or manual anchor correction
+- Each operation carries image, job, and edit identities · Source changes, edits, navigation away, and hidden tabs cancel inference · Late responses cannot replace current edits
+- Raw upload metadata is stripped when creating the normalized JPEG · Model assets are served by the same website · No paid inference service or backend endpoint is used
+
+Asset licenses, model digests, explicit 48-slot inclusion/exclusion map, and sample sources are recorded in [`frontend/public/freeze-floor/provenance.json`](../frontend/public/freeze-floor/provenance.json)
+
+## Private projects
+
+The normalized JPEG and versioned metadata are committed together in one IndexedDB transaction · Saved status appears only after completion · A failed write leaves the current project and PNG export available
+
+The library is limited to 20 projects and 200 MiB, including images and metadata · Save updates the current project identity rather than duplicating it · Choose photo exposes saved projects, rename, and deletion · No automatic deletion frees capacity
+
+Hosted and downloaded libraries belong to different browser origins · Browser data clearing removes this library · Projects are not uploaded or shared and do not change saved Playbook formats
+
+## Reproduce and finish validation
+
+`scripts/freeze-floor-prepare-model.py` is an offline export utility · It is never called at startup, build, or deployment
+
+```sh
+uv run --python .venv/bin/python scripts/freeze-floor-prepare-model.py /path/to/private/freeze-floor --export
+pnpm --dir frontend test:freeze-floor
+pnpm --dir frontend test:navigation
+node scripts/test-freeze-floor-browser.mjs
+node scripts/test-freeze-floor-upload.mjs
+FREEZE_FLOOR_CPU=1 node scripts/test-freeze-floor-upload.mjs
+node scripts/test-freeze-floor-failures.mjs
+pnpm --dir frontend build
+VITE_DEPLOY_TARGET=github-pages pnpm --dir frontend build
+```
+
+The browser tests use installed Chrome and accept `FREEZE_FLOOR_URL` for a local, preview, or deployed target · They check real WebGPU and CPU model execution, correction, measurement, private save/reopen, PNG download, EXIF rotation, PNG/WebP decoding, narrow-screen overflow, cancellation, corrupt models, unavailable storage, and source-upload privacy
+
+For the real-photo acceptance gate, supply independent licensed images and annotations with disjoint training/camera groups · Use at least 40 supported and 20 unsuitable photographs across independent groups · Every accepted photograph needs four or more independent floor checks that were not used for fitting
+
+```sh
+node --experimental-strip-types scripts/evaluate-freeze-floor.mjs benchmark.json report.json
+```
+
+The gate requires acceptance of at least 70% of supported images, median independent floor-point error at most 0.3 m, 95th-percentile error at most 0.6 m, and at most one false acceptance among unsuitable images · It fails on insufficient data · Passing synthetic geometry tests or successfully running the checkpoint does not satisfy this gate
+
+Before automatic acceptance can be enabled, complete and inspect the mapping against real annotated photographs, improve or fine-tune the landmark detector as needed, train the confidence classifier on correct and incorrect real fits, validate on the independent groups, and review motion-free contacts and exports · No synthetic benchmark result substitutes for those requirements

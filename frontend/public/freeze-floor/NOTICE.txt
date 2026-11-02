@@ -1,0 +1,25 @@
+Freeze Floor assets and attribution
+
+Court landmark checkpoint
+koppolusameer/yolo11n-basketball-court-keypoints
+https://huggingface.co/koppolusameer/yolo11n-basketball-court-keypoints/tree/6cb899251439982067a81baa225b33f45f335981
+Publisher-declared license: GNU Affero General Public License v3.0
+ONNX export made with Ultralytics 8.4.157, ONNX 1.23.2, opset 17
+Source checkpoint, export metadata, checksums and mapping notes: provenance.json
+Reproduction utility: scripts/freeze-floor-prepare-model.py in the source repository
+https://github.com/stiwarilbj/Arc-Shot-Evaluator
+
+The person-pose checkpoint is the existing local Ultralytics YOLO11n-pose asset
+https://github.com/ultralytics/ultralytics
+
+Photographs
+Madison Square Garden court — Ganley894 — Public domain
+https://commons.wikimedia.org/wiki/File:Madison_Square_Garden_court.jpg
+Knicks playing at Madison Square Garden — GoCuse44 — Public domain
+https://commons.wikimedia.org/wiki/File:Knicks_playing_at_Madison_Square_Garden.jpg
+2019 NBA Finals Game 2 — Chensiyuan — Creative Commons Attribution-ShareAlike 4.0
+https://commons.wikimedia.org/wiki/File:2019_nba_finals_game_2.jpg
+https://creativecommons.org/licenses/by-sa/4.0/
+All supplied photographs were normalized/re-encoded; the finals image was downscaled
+The finals example is intentionally unsuitable for alignment
+Automatic alignment is experimental, not independently benchmark-certified

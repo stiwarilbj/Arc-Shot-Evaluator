@@ -52,6 +52,7 @@ export function useWorkspaceNavigation() {
       analyzer: "Shot Analyzer",
       playbook: location.playbookView === "practice" ? "Practice reads · Playbook" : location.playbookView === "role" ? "My Role · Playbook" : location.playbookView === "flipbook" ? "Play Flipbook · Playbook" : "Playbook",
       counterlab: "Counter Lab",
+      freezefloor: "Freeze Floor",
       boxscore: "Box-Score Error Hunt · Games",
       swish: "Swish Tuner · Games",
       shotform: "Shotform Jenga · Games",

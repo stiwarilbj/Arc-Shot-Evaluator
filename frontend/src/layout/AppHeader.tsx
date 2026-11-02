@@ -80,7 +80,7 @@ export function AppHeader({
             { label: "Swish Tuner", active: workspace === "swish", onSelect: () => onWorkspaceChange("swish") },
             { label: "Shotform Jenga", active: workspace === "shotform", onSelect: () => onWorkspaceChange("shotform") },
           ]} />
-          <WorkspaceMenu label="Others" id="others-workspace-menu" items={[{ label: "Guess the Jumper", active: workspace === "jumper", onSelect: () => onWorkspaceChange("jumper") }]} />
+          <WorkspaceMenu label="Others" id="others-workspace-menu" items={[{ label: "Guess the Jumper", active: workspace === "jumper", onSelect: () => onWorkspaceChange("jumper") }, { label: "Freeze Floor", active: workspace === "freezefloor", onSelect: () => onWorkspaceChange("freezefloor") }]} />
         </nav>
       ) : null}
       {filename ? (

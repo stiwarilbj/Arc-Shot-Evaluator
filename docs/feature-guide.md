@@ -4,6 +4,20 @@
 
 This guide contains detailed workspace behavior, local setup, development checks, and technical references
 
+## Freeze Floor
+
+Open **Others → Freeze Floor** at `#freeze-floor` · Inspect a real photograph beside a linked NBA half-court
+
+- Upload JPEG, PNG, or WebP up to 20 MiB and 24 megapixels · Orientation is respected and the working image is normalized to a maximum 2048-pixel edge
+- Review proposed floor landmarks using **Check the alignment** · Add, reassign, exclude, drag, or nudge anchors · At least four well-spread correspondences and an explicit overlay review are required for measurement
+- Confirm player contacts as grounded, uncertain, hidden, or airborne · Remove spectators and add missed people · Hidden or airborne feet never receive numeric distance measurements
+- Select two grounded floor points in either view · Distances and sensitivity ranges are approximate and restricted to the floor region enclosed by the anchors · Independent paint, corner, and restricted-area toggles use NBA dimensions
+- Save explicitly to this origin’s private IndexedDB library, limited to 20 projects and 200 MiB · Choose photo opens saved projects, rename, and deletion · Hosted and downloaded libraries are separate browser origins
+- Download a combined photograph/court PNG including visible overlays, distances, uncertainty, and sample attribution · No image upload, account, or paid service
+- Automatic CNN proposals run in a dedicated browser worker with WebGPU and CPU fallback · The required independent 60-photo benchmark and confidence-classifier training are incomplete · Two supplied wide views have manually reviewed lane alignments; the third demonstrates insufficient court evidence
+
+See the [Freeze Floor use, geometry, model, and accuracy guide](freeze-floor.md) for supported images, limitations, and local verification commands
+
 ## Games
 
 ### Box-Score Error Hunt
