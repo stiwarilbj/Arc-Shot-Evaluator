@@ -260,9 +260,7 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                   {c.label}
                   {uncertain ? " ?" : ""}
                 </text>
-                <title>
-                  Player {c.label} · {c.status}
-                </title>
+                <title>{`Player ${c.label} · ${c.status}`}</title>
               </g>
             );
           })}

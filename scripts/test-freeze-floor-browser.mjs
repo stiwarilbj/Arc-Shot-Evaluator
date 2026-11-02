@@ -26,6 +26,11 @@ page.on("pageerror", (e) => {
   errors.push(e.message);
   console.log("ERROR", e.message);
 });
+// React's development checks also report malformed SVG tooltip children here.
+page.on("console", (message) => {
+  if (message.type() === "error" && /React expects/.test(message.text()))
+    errors.push(message.text());
+});
 const posts = [];
 page.on("request", (r) => {
   if (r.method() !== "GET") posts.push(r.url());
