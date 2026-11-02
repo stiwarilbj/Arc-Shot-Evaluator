@@ -36,6 +36,10 @@ await page
   );
 await expect(page.locator(".ff-progress")).toBeVisible();
 await expect(page.locator(".ff-progress")).toHaveCount(0, { timeout: 120000 });
+await expect(page.locator(".ff-error")).toHaveCount(0);
+await expect(page.locator(".ff-notice")).toContainText(
+  process.env.FREEZE_FLOOR_CPU ? "CPU processing" : /(?:WebGPU|CPU) processing/,
+);
 console.log(
   "Inference",
   await page.locator(".ff-notice,.ff-error").allTextContents(),
