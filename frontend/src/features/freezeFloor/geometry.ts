@@ -460,15 +460,24 @@ export function uncertainty(
   width: number,
   height: number,
 ): number | null {
-  if (!a.inverse || !supported(p, a)) return null;
+  if (
+    !a.inverse ||
+    !supported(p, a) ||
+    !Number.isFinite(width) ||
+    width <= 0 ||
+    !Number.isFinite(height) ||
+    height <= 0
+  )
+    return null;
   const q = project(a.h!, p);
   if (!q) return null;
-  const eps = Math.max(2 / Math.min(width, height), a.rms * 2),
+  const epsX = Math.max(2 / width, a.rms * 2),
+    epsY = Math.max(2 / height, a.rms * 2),
     offsets = [
-      { x: q.x + eps, y: q.y },
-      { x: q.x - eps, y: q.y },
-      { x: q.x, y: q.y + eps },
-      { x: q.x, y: q.y - eps },
+      { x: q.x + epsX, y: q.y },
+      { x: q.x - epsX, y: q.y },
+      { x: q.x, y: q.y + epsY },
+      { x: q.x, y: q.y - epsY },
     ];
   const errors = offsets.map((q) => project(a.inverse!, q));
   if (errors.some((p) => !p)) return null;
