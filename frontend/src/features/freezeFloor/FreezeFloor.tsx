@@ -196,6 +196,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     chooserButton = useRef<HTMLButtonElement>(null),
     videoChooserButton = useRef<HTMLButtonElement>(null),
     mounted = useRef(true);
+  const libraryChannel = useRef<BroadcastChannel | null>(null);
   const gesture = useRef<{
     before: FloorProject;
     kind: "anchor" | "contact";
@@ -358,12 +359,47 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         setNotice(message(e));
     }
   }
+  function announceLibraryChange() {
+    try {
+      libraryChannel.current?.postMessage({ type: "library-changed", version: 1 });
+    } catch {
+      // The completed storage transaction remains authoritative if broadcasting is unavailable
+    }
+  }
   useEffect(() => {
     mounted.current = true;
     void refresh();
+    let channel: BroadcastChannel | null = null,
+      receive: ((event: MessageEvent<unknown>) => void) | null = null;
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        channel = new BroadcastChannel("arc-freeze-floor-library-v1");
+        libraryChannel.current = channel;
+        receive = (event) => {
+          const data = event.data;
+          if (
+            data &&
+            typeof data === "object" &&
+            (data as { type?: unknown }).type === "library-changed" &&
+            (data as { version?: unknown }).version === 1
+          )
+            void refresh();
+        };
+        channel.addEventListener("message", receive);
+      }
+    } catch {
+      if (channel && receive) channel.removeEventListener("message", receive);
+      channel?.close();
+      channel = null;
+      receive = null;
+      libraryChannel.current = null;
+    }
     return () => {
       mounted.current = false;
       replacementRef.current = null;
+      if (channel && receive) channel.removeEventListener("message", receive);
+      channel?.close();
+      if (libraryChannel.current === channel) libraryChannel.current = null;
       libraryRequest.current++;
       controller.current?.abort();
       controller.current = null;
@@ -967,6 +1003,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         { project: value, image },
         baseline.revision,
       );
+      announceLibraryChange();
       // Later edits still descend from this save, but reopening a source does not
       if (storedVersion.current === baseline) {
         baseline.revision = nextRevision;
@@ -1309,6 +1346,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                           },
                           expected,
                         );
+                        announceLibraryChange();
                         if (
                           current.current?.id === s.project.id &&
                           storedVersion.current === baseline &&
@@ -1345,6 +1383,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                       setError("");
                       try {
                         await deleteProject(s.project.id, projectRevision(s));
+                        announceLibraryChange();
                         if (current.current?.id === s.project.id)
                           setBaselineKind("unsaved");
                         await refresh();
