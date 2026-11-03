@@ -33,6 +33,7 @@ import {
   findContactAt,
   sameMeasurementLocation,
   findExistingMeasurement,
+  measurementPointSupported,
 } from "./geometry.ts";
 import {
   id,
@@ -147,6 +148,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     [imageUrl, setImageUrl] = useState("");
   const [mode, setMode] = useState<Mode>("inspect"),
     [check, setCheck] = useState(false),
+    [coverage, setCoverage] = useState(false),
     [chooser, setChooser] = useState(false),
     [videoChooser, setVideoChooser] = useState(false),
     [selected, setSelected] = useState<string | null>(null),
@@ -986,7 +988,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setError("");
     try {
       const { exportPng } = await import("./export.tsx");
-      await exportPng(p, image, check);
+      await exportPng(p, image, check, coverage);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -997,6 +999,12 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     selectedContact = display?.contacts.find((c) => c.id === selected);
   const aiming = cursor ?? selectedAnchor?.image ?? selectedContact?.image;
   const largestMismatch = displayAlignment?.mismatches[0];
+  const pendingImage = pending?.contactId
+    ? display?.contacts.find((c) => c.id === pending.contactId)?.image
+    : pending?.image;
+  const pendingOutside =
+    display && displayAlignment && pending &&
+    measurementPointSupported(display, displayAlignment, pending) === false;
   const existingDistance =
     mode === "measure" && measurementFeedback?.kind === "existing"
       ? p?.measurements.findIndex((m) => m.id === measurementFeedback.id) ?? -1
@@ -1011,10 +1019,11 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         imageUrl={imageUrl}
         view={view}
         check={check}
+        measurementCoverage={coverage}
         selected={selected}
         hovered={hovered}
         cursor={cursor}
-        pending={pending?.image}
+        pending={pendingImage}
         highlightedMeasurement={highlightedMeasurement}
         editing
         onPointerDown={(e) => down(e, view)}
@@ -1464,6 +1473,14 @@ export default function FreezeFloor({ active }: { active: boolean }) {
               </button>
             </div>
             <div className="ff-region-toggles">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={coverage}
+                  onChange={(e) => setCoverage(e.target.checked)}
+                />
+                Measurement coverage
+              </label>
               {(
                 [
                   ["paint", "Paint"],
@@ -1503,6 +1520,15 @@ export default function FreezeFloor({ active }: { active: boolean }) {
               </button>
             </div>
           </div>
+          {coverage ? (
+            <p className="ff-coverage-key" role="status">
+              {displayAlignment?.h &&
+              displayAlignment.inverse &&
+              displayAlignment.hull.length >= 3
+                ? "Dashed blue outline · Region supported by accepted landmarks"
+                : "Measurement coverage unavailable · Add well-spread floor landmarks"}
+            </p>
+          ) : null}
           <div className="ff-caption">
             <p>
               {mode === "measure"
@@ -1523,6 +1549,11 @@ export default function FreezeFloor({ active }: { active: boolean }) {
             </p>
             <span role="status" aria-label="Project save status">{saveStatus}</span>
           </div>
+          {mode === "measure" && pendingOutside ? (
+            <p className="ff-measurement-feedback" role="status">
+              Outside supported region · Escape cancels the first endpoint
+            </p>
+          ) : null}
           {mode === "measure" &&
           (measurementFeedback?.kind === "same" || existingDistance >= 0) ? (
             <p className="ff-measurement-feedback" role="status">
@@ -1535,6 +1566,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
             <section className="ff-measurements" aria-label="Distances">
               {p.measurements.map((m, i) => {
                 const r = measure(p, alignment, m.a, m.b);
+                const outside = [m.a, m.b].some((v) =>
+                  measurementPointSupported(p, alignment, v) === false,
+                );
                 return (
                   <div
                     key={m.id}
@@ -1551,7 +1585,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                       <small>
                         {r.value !== undefined
                           ? `Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units} · Sensitivity estimate, not a confidence interval`
-                          : r.reason}
+                          : outside && r.reason !== "Outside supported region"
+                            ? `Outside supported region · ${r.reason}`
+                            : r.reason}
                       </small>
                     </span>
                     <button

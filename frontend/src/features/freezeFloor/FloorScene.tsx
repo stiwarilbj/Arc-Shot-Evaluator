@@ -4,6 +4,7 @@ import {
   regionPolygons,
   project,
   measure,
+  measurementPointSupported,
   LANDMARKS,
   type Alignment,
 } from "./geometry.ts";
@@ -14,6 +15,7 @@ export type SceneProps = {
   imageUrl: string;
   view: "photo" | "court";
   check: boolean;
+  measurementCoverage?: boolean;
   selected?: string | null;
   hovered?: string | null;
   cursor?: Point | null;
@@ -59,6 +61,17 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
         .join(" ");
     const regions = regionPolygons(),
       r = 3.3 * unit;
+    const coverageVertices = p.alignment.hull.map(mapped);
+    const coverage =
+      p.measurementCoverage &&
+      p.alignment.h &&
+      p.alignment.inverse &&
+      coverageVertices.length >= 3 &&
+      coverageVertices.every((v) => v !== null)
+        ? coverageVertices
+            .map((v) => `${v!.x.toFixed(3)},${v!.y.toFixed(3)}`)
+            .join(" ")
+        : null;
     return (
       <svg
         ref={ref}
@@ -99,6 +112,28 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
               height={h}
               preserveAspectRatio="none"
             />
+          ) : null}
+          {coverage ? (
+            <g
+              data-measurement-coverage
+              aria-label="Measurement coverage boundary"
+              pointerEvents="none"
+              strokeLinejoin="round"
+              strokeDasharray={`${5 * unit} ${4 * unit}`}
+              fill="none"
+            >
+              <title>Floor region supported by accepted landmarks</title>
+              <polygon
+                points={coverage}
+                stroke={colors.ink}
+                strokeWidth={3.5 * unit}
+              />
+              <polygon
+                points={coverage}
+                stroke={colors.blue}
+                strokeWidth={1.8 * unit}
+              />
+            </g>
           ) : null}
           {!photo || p.alignment.h ? (
             <g strokeLinejoin="round">
@@ -164,11 +199,17 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
             const x = fromImage(a),
               y = fromImage(b),
               result = measure(p.project, p.alignment, m.a, m.b);
+            const endpointSupport = [m.a, m.b].map((v) =>
+              measurementPointSupported(p.project, p.alignment, v),
+            );
+            const outside = endpointSupport.includes(false);
             if (!x || !y) return null;
             const label =
-              result.value !== undefined
-                ? `≈ ${result.value.toFixed(1)} ${p.project.units}`
-                : "Uncertain";
+              outside
+                ? "Outside"
+                : result.value !== undefined
+                  ? `≈ ${result.value.toFixed(1)} ${p.project.units}`
+                  : "Uncertain";
             return (
               <g
                 key={m.id}
@@ -176,6 +217,7 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                 data-highlighted={highlighted}
                 pointerEvents="none"
               >
+                <title>{outside ? "Outside supported region" : result.reason}</title>
                 <line
                   x1={x.x}
                   y1={x.y}
@@ -193,8 +235,9 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                     cx={q.x}
                     cy={q.y}
                     r={r}
+                    data-outside={endpointSupport[i] === false}
                     fill={colors.ink}
-                    stroke={colors.orange}
+                    stroke={endpointSupport[i] === false ? "#ff8b8b" : colors.orange}
                     strokeWidth={(highlighted ? 2.5 : 1.3) * unit}
                   />
                 ))}
@@ -336,7 +379,13 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                     cy={q.y}
                     r={7 * unit}
                     fill="none"
-                    stroke={colors.orange}
+                    stroke={
+                      measurementPointSupported(p.project, p.alignment, {
+                        image: p.pending!,
+                      }) === false
+                        ? "#ff8b8b"
+                        : colors.orange
+                    }
                     strokeWidth={unit}
                   />
                 ) : null;

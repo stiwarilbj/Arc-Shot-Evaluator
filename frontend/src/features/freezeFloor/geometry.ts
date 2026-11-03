@@ -413,7 +413,19 @@ export function findContactAt(
   return nearest;
 }
 export function supported(p: Point, a: Alignment) {
-  if (!inCourt(p) || a.hull.length < 3) return false;
+  // Homography round trips can place a court-edge point a few ulps outside
+  // the court · Keep exact boundary points supported without widening coverage
+  const edgeTolerance = 1e-9;
+  if (
+    a.hull.length < 3 ||
+    !Number.isFinite(p.x) ||
+    !Number.isFinite(p.y) ||
+    p.x < -edgeTolerance ||
+    p.x > COURT.width + edgeTolerance ||
+    p.y < -edgeTolerance ||
+    p.y > COURT.length + edgeTolerance
+  )
+    return false;
   return a.hull.every(
     (q, i) => cross(q, a.hull[(i + 1) % a.hull.length], p) >= -0.001,
   );
@@ -443,6 +455,16 @@ function measurementImage(p: FloorProject, v: MeasurePoint): Point | undefined {
   return v.contactId
     ? p.contacts.find((c) => c.id === v.contactId)?.image
     : v.image;
+}
+export function measurementPointSupported(
+  p: FloorProject,
+  alignment: Alignment,
+  endpoint: MeasurePoint,
+): boolean | null {
+  if (!alignment.h || !alignment.inverse || alignment.hull.length < 3) return null;
+  const image = measurementImage(p, endpoint),
+    floor = image ? project(alignment.inverse, image) : null;
+  return floor ? supported(floor, alignment) : null;
 }
 export function sameMeasurementLocation(
   p: FloorProject,
@@ -494,7 +516,7 @@ export function measure(
   const x = project(a.inverse, srcA),
     y = project(a.inverse, srcB);
   if (!x || !y || !supported(x, a) || !supported(y, a))
-    return { reason: "Outside the floor region supported by the anchors" };
+    return { reason: "Outside supported region" };
   const ea = uncertainty(a, x, p.width, p.height),
     eb = uncertainty(a, y, p.width, p.height);
   if (ea === null || eb === null)

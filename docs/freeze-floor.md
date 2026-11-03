@@ -21,7 +21,7 @@ Three licensed real photographs are supplied · Two wide images have manually in
 5. Inspect each landmark’s **Fit mismatch** in working-image pixels · **Select largest mismatch** highlights that anchor in the photograph without changing it · Then select **I checked the floor-line overlay** · Conflicting enabled anchors prevent numeric measurements until corrected or excluded · **Alignment ready** records this manual review, not independent accuracy certification
 6. Expand **Player contacts** · Ankles are uncertain proposals · Confirm visible shoe-floor contact as grounded, correct the location, remove spectators, and add missed people · Hidden or airborne feet stay uncertain
 7. Use **Measure distance** to choose two different floor points in either view · Selecting the same player or floor location twice keeps the first endpoint and asks for a different second endpoint · Selecting an existing pair in either order highlights that distance in both views and the list without adding another entry, even at the 20-distance limit · Hovering a person highlights the corresponding contact · A free-space cursor represents a floor-plane projection, not a position above the floor
-8. Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
+8. Toggle **Measurement coverage** to show the supported floor boundary in both views · Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
 9. Save explicitly, or download the combined photograph/overhead PNG · No photo is uploaded
 
 Fit mismatches compare observed landmark positions with projections from the final fitted alignment, with width and height scaled separately · Excluded anchors also show their mismatch but do not influence the fit · Labels update after corrections and during landmark drags · An unavailable or unstable fit shows **Fit mismatch: unavailable** and disables largest-mismatch selection · A small mismatch is not proof that court labels or geometry are correct, especially with only four anchors
@@ -46,7 +46,11 @@ Keyboard selection uses the same player-contact checks as pointer selection · H
 
 Undo and Redo cancel an unfinished landmark or contact drag before restoring history · Moving or releasing the pointer afterward cannot replace that restored edit · Completed drags remain single undoable edits
 
-Numeric distances are restricted to the convex floor region enclosed by the accepted anchors · Outside this region, on unstable projections, or with unconfirmed feet, the editor keeps the endpoints but withholds the number
+Numeric distances are restricted to the convex floor region enclosed by the accepted anchors · **Measurement coverage** outlines that region with a dashed blue boundary on the photograph and overhead court without filling it or hiding players and markings · Rejected and excluded anchors do not expand the boundary · The outline updates with alignment corrections and undo/redo, and is unavailable when there is no usable fit · It describes geometric coverage, not certified accuracy or approval of the alignment
+
+An endpoint beyond the boundary shows **Outside supported region**, even when alignment review or unconfirmed feet also prevent measurement · Its marker is highlighted and its scene label says **Outside** · A pending first endpoint shows the same warning and can be cancelled with Escape · Boundary points count as supported · Outside this region, on unstable projections, or with unconfirmed feet, the editor keeps the endpoints but withholds the number
+
+Measurement coverage starts off and remains a view preference during the visit · Toggling it does not edit the project, mark it unsaved, or add an undo step · PNG downloads include the boundary when enabled and retain explanations for withheld distances
 
 The indicated range estimates sensitivity to point placement and residual landmark error · It is **not a calibrated confidence interval** and does not fully account for lens distortion, nonplanar floors, mistaken landmark meaning, or hidden feet
 

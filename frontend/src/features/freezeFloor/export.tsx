@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { FloorScene } from "./FloorScene";
-import { align, measure } from "./geometry.ts";
+import { align, measure, measurementPointSupported } from "./geometry.ts";
 import type { FloorProject } from "./types.ts";
 import { videoTime } from "./video.ts";
 const escape = (s: string) =>
@@ -15,7 +15,12 @@ const escape = (s: string) =>
         "'": "&apos;",
       })[c]!,
   );
-export async function exportPng(p: FloorProject, blob: Blob, check: boolean) {
+export async function exportPng(
+  p: FloorProject,
+  blob: Blob,
+  check: boolean,
+  coverage = false,
+) {
   const data = await new Promise<string>((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result as string);
@@ -41,6 +46,7 @@ export async function exportPng(p: FloorProject, blob: Blob, check: boolean) {
         imageUrl={data}
         view={view}
         check={check}
+        measurementCoverage={coverage}
       />,
     )
       .replace("<svg ", `<svg x="${x}" y="115" width="${w}" height="${h}" `)
@@ -48,7 +54,14 @@ export async function exportPng(p: FloorProject, blob: Blob, check: boolean) {
   const notes = p.measurements
     .map((m, i) => {
       const r = measure(p, alignment, m.a, m.b);
-      return `<text x="30" y="${Math.max(photoH, (right * 51) / 54) + 180 + i * 22}" fill="#d4dcdd" font-size="16">${escape(r.value === undefined ? `Measurement ${i + 1} withheld · ${r.reason}` : `Approx ${r.value.toFixed(1)} ${p.units} · Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units}`)}</text>`;
+      const outside = [m.a, m.b].some(
+        (v) => measurementPointSupported(p, alignment, v) === false,
+      );
+      const reason =
+        outside && r.reason !== "Outside supported region"
+          ? `Outside supported region · ${r.reason}`
+          : r.reason;
+      return `<text x="30" y="${Math.max(photoH, (right * 51) / 54) + 180 + i * 22}" fill="#d4dcdd" font-size="16">${escape(r.value === undefined ? `Measurement ${i + 1} withheld · ${reason}` : `Approx ${r.value.toFixed(1)} ${p.units} · Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units}`)}</text>`;
     })
     .join("");
   const attribution = p.attribution

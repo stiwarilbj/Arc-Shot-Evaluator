@@ -252,6 +252,11 @@
   gap: 20px;
   padding: 14px 0;
 }
+.ff-coverage-key {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
 .ff-caption p {
   margin: 0;
   line-height: 1.8;

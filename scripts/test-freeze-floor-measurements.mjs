@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { readFile } from "node:fs/promises";
 const require = createRequire(new URL("../frontend/package.json", import.meta.url));
 const { chromium, expect } = require("@playwright/test");
 // Browser plugin unavailable · Use installed Chrome against the real editor
@@ -47,9 +48,116 @@ async function expectDuplicate(count, distance) {
     await expect(marked.locator("line")).not.toHaveAttribute("stroke-dasharray");
   }
 }
+async function checkCoverage() {
+  const toggle = page.getByRole("checkbox", { name: "Measurement coverage", exact: true });
+  const outlines = page.locator("[data-measurement-coverage]");
+  const undo = page.getByRole("button", { name: "Undo floor edit" });
+  const legend = page.locator(".ff-coverage-key");
+  await expect(toggle).not.toBeChecked();
+  await expect(outlines).toHaveCount(0);
+  await expect(saveStatus).toHaveText("Sample unchanged");
+  await expect(undo).toBeDisabled();
+  await toggle.focus();
+  await toggle.press("Space");
+  await expect(toggle).toBeChecked();
+  await expect(outlines).toHaveCount(2);
+  await expect(legend).toContainText("Dashed blue outline");
+  await expect(saveStatus).toHaveText("Sample unchanged");
+  await expect(undo).toBeDisabled();
+  for (const outline of await outlines.all()) {
+    await expect(outline).toHaveAttribute("fill", "none");
+    await expect(outline).toHaveAttribute("pointer-events", "none");
+    await expect(outline.locator("polygon")).toHaveCount(2);
+  }
+  const courtPolygon = court.locator("[data-measurement-coverage] polygon").first();
+  const vertices = (await courtPolygon.getAttribute("points")).split(" ").map((v) => v.split(",").map(Number));
+  assert.deepEqual(vertices.map(([x, y]) => [x - 2, y - 2]).sort((a, b) => a[0] - b[0] || a[1] - b[1]), [[17, 0], [17, 19], [33, 0], [33, 19]]);
+  const photoVertices = (await photo.locator("[data-measurement-coverage] polygon").first().getAttribute("points"))
+    .split(" ").map((v) => v.split(",").map(Number));
+  for (const [x, y] of [[217, 623], [321, 704], [536, 598], [636, 653]]) {
+    assert.ok(photoVertices.some(([px, py]) => Math.hypot(px - x, py - y) < 0.01), "photo coverage uses the same accepted correspondences");
+  }
+  // Pointer hit testing remains available through the display-only outline
+  await measure();
+  await clickCourt(40, 10);
+  await expect(feedback).toContainText("Outside supported region");
+  await court.press("Escape");
+  await expect(feedback).toHaveCount(0);
+  await expect(rows).toHaveCount(0);
+  await clickCourt(25, 10);
+  await clickCourt(40, 10);
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Withheld");
+  await expect(rows.first()).toContainText("Outside supported region");
+  for (const stage of [photo, court]) {
+    await expect(stage.locator('[data-measurement] circle[data-outside="true"]')).toHaveCount(1);
+    await expect(stage.locator("[data-measurement] text")).toHaveText("Outside");
+  }
+  await page.screenshot({ path: "/tmp/freeze-floor-coverage-desktop.png", fullPage: true });
+  const getPng = async (path) => {
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download PNG", exact: true }).click();
+    const file = await download;
+    assert.ok(file.suggestedFilename().endsWith(".png"));
+    await file.saveAs(path);
+    return (await readFile(await file.path())).toString("base64");
+  };
+  const withCoverage = await getPng("/tmp/freeze-floor-coverage-export.png");
+  await toggle.uncheck();
+  await expect(outlines).toHaveCount(0);
+  await expect(rows.first()).toContainText("Outside supported region");
+  const withoutCoverage = await getPng("/tmp/freeze-floor-no-coverage-export.png");
+  const changedPixels = await page.evaluate(async (images) => {
+    const decode = async (base64) => {
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const img = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      if (img.width !== 1800) throw Error("Unexpected PNG dimensions");
+      const canvas = new OffscreenCanvas(img.width, img.height);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      img.close();
+      return ctx.getImageData(1095, 115, 690, 652).data;
+    };
+    const [withOutline, withoutOutline] = await Promise.all(images.map(decode));
+    let count = 0;
+    // Antialiased blue borders remain visible beside the normal court lines
+    for (let i = 0; i < withOutline.length; i += 4) {
+      const blueChange = withOutline[i + 2] - withoutOutline[i + 2];
+      const redChange = withOutline[i] - withoutOutline[i];
+      if (blueChange > 10 && blueChange > redChange + 10) count++;
+    }
+    return count;
+  }, [withCoverage, withoutCoverage]);
+  assert.ok(changedPixels > 100, `decoded PNG includes the coverage outline only when enabled (${changedPixels} changed blue edge pixels)`);
+  await toggle.check();
+  await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Include landmark 1", exact: true }).uncheck();
+  await expect(outlines).toHaveCount(0);
+  await expect(legend).toContainText("Measurement coverage unavailable");
+  await undo.click();
+  await expect(outlines).toHaveCount(2);
+  await expect(courtPolygon).toHaveAttribute("points", vertices.map((v) => v.map((q) => q.toFixed(3)).join(",")).join(" "));
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.getByRole("button", { name: "Light", exact: true }).click();
+  await toggle.scrollIntoViewIfNeeded();
+  const box = await toggle.boundingBox();
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(outlines).toHaveCount(0);
+  await toggle.check();
+  await expect(outlines).toHaveCount(2);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: "/tmp/freeze-floor-coverage-mobile.png", fullPage: true });
+  // Fresh page restores the sample without carrying test measurements forward
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.reload();
+  await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await expect(toggle).not.toBeChecked();
+}
 try {
   await page.goto(process.env.FREEZE_FLOOR_URL || "http://127.0.0.1:5178/Arc-Shot-Evaluator/#freeze-floor");
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await checkCoverage();
   await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
   for (const [label, x, y] of [["3", 22, 8], ["4", 27, 12]]) {
     await page.getByRole("button", { name: "Add player contact", exact: true }).click();
@@ -161,7 +269,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
-  console.log("Freeze Floor measurement regressions passed: repeated players and points, retained pending selection, reversed/cross-view duplicates, moved contacts, exact undo, full-limit reuse, Escape, reload, deletion, mobile, both themes, no errors or uploads");
+  console.log("Freeze Floor measurement regressions passed: accepted-landmark coverage in both views, outside-region endpoints, display-only toggles, insufficient fits and undo, decoded PNG coverage, repeated players and points, retained pending selection, reversed/cross-view duplicates, moved contacts, exact undo, full-limit reuse, Escape, reload, deletion, mobile, both themes, no errors or uploads");
 } finally {
   await browser.close();
 }
