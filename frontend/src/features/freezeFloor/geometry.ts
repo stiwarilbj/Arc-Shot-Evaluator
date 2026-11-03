@@ -285,8 +285,9 @@ export function align(
       ...empty,
       reason: "Landmarks do not support a stable floor alignment",
     };
-  const floorHull = hull(best.map((i) => src[i]));
-  if (area(floorHull) < 45 || area(hull(best.map((i) => dst[i]))) < 0.0015)
+  const candidateHull = hull(best.map((i) => src[i])),
+    candidateImageHull = hull(best.map((i) => dst[i]));
+  if (area(candidateHull) < 45 || area(candidateImageHull) < 0.0015)
     return {
       ...empty,
       reason:
@@ -298,11 +299,28 @@ export function align(
   );
   if (!h) return empty;
   const inverse = invert(h)!;
-  const denominators = floorHull.map((p) => h[6] * p.x + h[7] * p.y + h[8]);
-  const imageHull = hull(best.map((i) => dst[i])),
-    inverseDenominators = imageHull.map(
-      (p) => inverse[6] * p.x + inverse[7] * p.y + inverse[8],
-    );
+  const finalErrors = src.map((p, i) => {
+      const q = project(h, p);
+      return q ? distance(q, dst[i]) : Infinity;
+    }),
+    finalIndices = best.filter((i) => finalErrors[i] <= 0.009),
+    finalIndexSet = new Set(finalIndices),
+    finalFitRejected = best.filter((i) => !finalIndexSet.has(i)),
+    finalHull = hull(finalIndices.map((i) => src[i])),
+    finalImageHull = hull(finalIndices.map((i) => dst[i])),
+    hasFinalSupport =
+      finalIndices.length >= 4 &&
+      area(finalHull) >= 45 &&
+      area(finalImageHull) >= 0.0015,
+    validationHull = finalIndices.length >= 3 ? finalHull : candidateHull,
+    validationImageHull =
+      finalIndices.length >= 3 ? finalImageHull : candidateImageHull;
+  const denominators = validationHull.map(
+    (p) => h[6] * p.x + h[7] * p.y + h[8],
+  );
+  const inverseDenominators = validationImageHull.map(
+    (p) => inverse[6] * p.x + inverse[7] * p.y + inverse[8],
+  );
   const crossesHorizon = (values: number[]) =>
     values.some((v) => !Number.isFinite(v) || Math.abs(v) < 1e-7) ||
     values.some((v) => Math.sign(v) !== Math.sign(values[0]));
@@ -313,7 +331,7 @@ export function align(
         "The fitted horizon crosses the supported floor · Check landmark assignments",
     };
   if (
-    best.some((i) => {
+    (finalIndices.length >= 3 ? finalIndices : best).some((i) => {
       const q = project(inverse, dst[i]);
       return !q || distance(q, src[i]) > 2;
     })
@@ -323,10 +341,14 @@ export function align(
       reason: "Floor projection is unstable · Check the landmark labels",
     };
   const rms = Math.sqrt(
-    best.reduce((s, i) => s + distance(project(h, src[i])!, dst[i]) ** 2, 0) /
-      best.length,
+    finalIndices.reduce(
+      (s, i) => s + finalErrors[i] ** 2,
+      0,
+    ) / (finalIndices.length || 1),
   );
-  const rejected = a.filter((_, i) => !best.includes(i)).map((a) => a.id);
+  const rejected = a
+    .filter((_, i) => !finalIndexSet.has(i))
+    .map((anchor) => anchor.id);
   // Conflicting included anchors must be corrected or explicitly excluded before measurement.
   const status = rejected.length ? "review" : reviewed ? "ready" : "review";
   // Diagnostics use the final refit, including observations excluded from it
@@ -351,17 +373,19 @@ export function align(
   return {
     h,
     inverse,
-    inliers: best.map((i) => a[i].id),
+    inliers: finalIndices.map((i) => a[i].id),
     rejected,
     mismatches,
     rms,
-    hull: floorHull,
+    hull: hasFinalSupport ? finalHull : [],
     status,
-    reason: rejected.length
-      ? `${rejected.length} conflicting anchor${rejected.length === 1 ? "" : "s"} · Correct or exclude before measuring`
-      : reviewed
-        ? "Reviewed floor alignment · Distances remain approximate"
-        : "Review the court-line overlay before measuring",
+    reason: finalFitRejected.length
+      ? `${finalFitRejected.length} accepted anchor${finalFitRejected.length === 1 ? "" : "s"} exceed the final fit tolerance · Correct or exclude before measuring`
+      : rejected.length
+        ? `${rejected.length} conflicting anchor${rejected.length === 1 ? "" : "s"} · Correct or exclude before measuring`
+        : reviewed
+          ? "Reviewed floor alignment · Distances remain approximate"
+          : "Review the court-line overlay before measuring",
   };
 }
 export function inCourt(p: Point) {
