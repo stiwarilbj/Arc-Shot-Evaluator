@@ -45,10 +45,10 @@ function open(): Promise<IDBDatabase> {
   });
 }
 function valid(v: unknown): v is StoredProject {
-  const s = v as StoredProject;
   try {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+    const s = v as StoredProject;
     return (
-      !!s &&
       validateProject(s.project) &&
       (s.revision === undefined ||
         (typeof s.revision === "string" &&
@@ -153,51 +153,70 @@ export async function saveProject(
         store = tx.objectStore("projects"),
         request = store.getAll();
       let failure: Error | undefined;
+      const abortWith = (error: Error) => {
+        failure = error;
+        try {
+          tx.abort();
+        } catch {
+          reject(error);
+        }
+      };
       request.onsuccess = () => {
-        const stored = (request.result as StoredProject[]).find(
-          (s) => s.project?.id === value.project.id,
-        );
-        if (
-          expectedRevision === null
-            ? stored !== undefined
-            : !stored ||
-              !valid(stored) ||
-              projectRevision(stored) !== expectedRevision
-        ) {
-          failure = new ProjectConflictError(
-            `${stored ? "This project changed in another tab" : "This project was deleted"} · Your edits are still here · Download a PNG before reopening the saved project`,
+        const records: unknown = request.result;
+        if (!Array.isArray(records) || !records.every(valid)) {
+          abortWith(
+            Error(
+              "A saved entry could not be checked safely · No saved entries were changed · Your open project remains available",
+            ),
           );
-          tx.abort();
           return;
         }
-        const others = (request.result as StoredProject[]).filter(
-          (s) => s.project?.id !== value.project.id,
-        );
-        if (others.length >= MAX_PROJECTS) {
-          failure = Error(
-            "Your 20-project library is full · Delete a project first",
+        try {
+          const checked = records as StoredProject[],
+            stored = checked.find((s) => s.project.id === value.project.id),
+            others = checked.filter((s) => s.project.id !== value.project.id);
+          if (
+            expectedRevision === null
+              ? stored !== undefined
+              : !stored || projectRevision(stored) !== expectedRevision
+          ) {
+            abortWith(
+              new ProjectConflictError(
+                `${stored ? "This project changed in another tab" : "This project was deleted"} · Your edits are still here · Download a PNG before reopening the saved project`,
+              ),
+            );
+            return;
+          }
+          if (others.length >= MAX_PROJECTS) {
+            abortWith(
+              Error("Your 20-project library is full · Delete a project first"),
+            );
+            return;
+          }
+          const bytes =
+            others.reduce(
+              (s, v) =>
+                s +
+                v.image.size +
+                new Blob([JSON.stringify(v.project)]).size,
+              0,
+            ) +
+            value.image.size +
+            new Blob([JSON.stringify(value.project)]).size;
+          if (bytes > MAX_LIBRARY_BYTES) {
+            abortWith(
+              Error("Private library exceeds 200 MiB · Delete a project first"),
+            );
+            return;
+          }
+          store.put(next);
+        } catch {
+          abortWith(
+            Error(
+              "Saved library size or update could not be checked safely · No saved entries were changed · Your open project remains available",
+            ),
           );
-          tx.abort();
-          return;
         }
-        const bytes =
-          others.reduce(
-            (s, v) =>
-              s +
-              (v.image?.size || 0) +
-              new Blob([JSON.stringify(v.project)]).size,
-            0,
-          ) +
-          value.image.size +
-          new Blob([JSON.stringify(value.project)]).size;
-        if (bytes > MAX_LIBRARY_BYTES) {
-          failure = Error(
-            "Private library exceeds 200 MiB · Delete a project first",
-          );
-          tx.abort();
-          return;
-        }
-        store.put(next);
       };
       tx.oncomplete = () => resolve(projectRevision(next));
       tx.onabort = () =>
