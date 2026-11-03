@@ -90,7 +90,8 @@ export async function listProjects(): Promise<ProjectListing> {
         resolve({
           projects: projects.sort(
             (a, b) =>
-              Date.parse(b.project.updatedAt) - Date.parse(a.project.updatedAt),
+              Date.parse(b.project.updatedAt) - Date.parse(a.project.updatedAt) ||
+              (a.project.id < b.project.id ? -1 : a.project.id > b.project.id ? 1 : 0),
           ),
           unavailable,
         });

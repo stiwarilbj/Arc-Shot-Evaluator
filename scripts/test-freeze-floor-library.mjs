@@ -175,6 +175,51 @@ try {
   await expect(library.getByRole("button", { name: "Healthy newest project", exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
 
+  // Equal timestamps use stable IDs, regardless of names or cursor direction
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const r = indexedDB.open("arc-freeze-floor-v1", 1);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("projects", "readwrite"), store = tx.objectStore("projects");
+        const r = store.getAll();
+        r.onsuccess = () => {
+          for (const [id, name] of [["sort-z", "Alpha tied project"], ["sort-a", "Zulu tied project"]])
+            store.put({ ...r.result[0], project: {
+              ...r.result[0].project, id, name, updatedAt: "2020-01-01T00:00:00Z",
+            } });
+        };
+        tx.oncomplete = resolve;
+        tx.onabort = () => reject(tx.error);
+      });
+    } finally { db.close(); }
+  });
+  const beforeSorting = await records();
+  for (const direction of ["prev", "next", "prev"]) {
+    await page.evaluate((direction) => {
+      const original = IDBObjectStore.prototype.openCursor;
+      IDBObjectStore.prototype.openCursor = function (...args) {
+        if (this.transaction.db.name === "arc-freeze-floor-v1" &&
+          this.transaction.mode === "readonly") {
+          IDBObjectStore.prototype.openCursor = original;
+          return original.call(this, args[0], direction);
+        }
+        return original.apply(this, args);
+      };
+    }, direction);
+    await refresh();
+    await expect(library.locator(":scope > div > button:first-child")).toHaveText([
+      "Healthy newest project", "Zulu tied project", "Alpha tied project",
+    ]);
+  }
+  assert.deepEqual(await records(), beforeSorting, "sorting must not rewrite dates, names, revisions or images");
+  await deleteKeys(["sort-a", "sort-z"]);
+  await refresh();
+  await expect(page.locator(".ff-chooser h3")).toContainText("1/20");
+
   // An older snapshot must not hide a project saved by a newer refresh
   await holdNextListing();
   await page.getByRole("button", { name: /Knicks at the Garden.*Reviewed manual alignment/ }).click();
@@ -434,7 +479,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
-  console.log("Freeze Floor library passed: single-record loading, stale-card revision refresh, missing/damaged records, interrupted lookups and retries, out-of-order saves/deletions/warnings/errors, healthy/partial/damaged/empty listings, stored identities, chronological order, unchanged recovery records, open/save/reload, mobile/light layout, no runtime errors or uploads");
+  console.log("Freeze Floor library passed: stable ID ordering for tied dates across refreshes and cursor directions, single-record loading, stale-card revision refresh, missing/damaged records, interrupted lookups and retries, out-of-order saves/deletions/warnings/errors, healthy/partial/damaged/empty listings, stored identities, chronological order, unchanged recovery records, open/save/reload, mobile/light layout, no runtime errors or uploads");
 } finally {
   await browser.close();
 }
