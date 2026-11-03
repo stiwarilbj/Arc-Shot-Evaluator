@@ -270,6 +270,8 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     };
   }
   function commit(next: FloorProject) {
+    const before = current.current;
+    if (before && !hasProjectChanges(next, before)) return;
     stop();
     setMeasurementFeedback(null);
     revision.current++;
