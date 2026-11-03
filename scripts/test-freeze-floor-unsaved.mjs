@@ -80,16 +80,20 @@ try {
   await expect(page).toHaveTitle(/Freeze Floor/);
   assert.match(page.url(), /#freeze-floor$/);
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await expect(page.getByText("Sample unchanged", { exact: true })).toBeVisible();
+  await page.locator(".ff-caption").screenshot({ path: "/tmp/freeze-floor-status-sample.png" });
   await sample("Knicks at the Garden");
   await expect(dialog()).toHaveCount(0);
   await inspector();
   await expect(name()).toHaveValue(knicks);
+  await expect(page.getByText("Sample unchanged", { exact: true })).toBeVisible();
   await sample("Madison Square Garden");
   await expect(name()).toHaveValue(garden);
   await expect(dialog()).toHaveCount(0);
 
   await page.getByLabel("Player 1 contact status").selectOption("grounded");
   await page.getByRole("checkbox", { name: "Paint", exact: true }).check();
+  await expect(page.getByText("Unsaved project", { exact: true })).toBeVisible();
   const beforeImage = await page.locator(".ff-photo>svg image").getAttribute("href");
   await sample("Knicks at the Garden");
   await expect(dialog()).toBeVisible();
@@ -103,6 +107,7 @@ try {
   assert.equal(await page.locator(".ff-photo>svg image").getAttribute("href"), beforeImage);
   await page.getByRole("button", { name: "Undo floor edit" }).click();
   await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await expect(page.getByText("Sample unchanged", { exact: true })).toBeVisible();
   await sample("Knicks at the Garden");
   await expect(dialog()).toHaveCount(0);
   await expect(name()).toHaveValue(knicks);
@@ -124,11 +129,37 @@ try {
   await openSaved("Protected corrections");
   await expect(name()).toHaveValue("Protected corrections");
   await expect(page.getByLabel("Player 1 contact status")).toHaveValue("hidden");
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await page.getByLabel("Player 1 contact status").selectOption("airborne");
+  await expect(page.getByRole("button", { name: "Save project", exact: true })).toBeVisible();
+  await expect(page.getByText("Unsaved project", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Project save status", exact: true })).toHaveText("Saved on this device");
+  await page.locator(".ff-caption").screenshot({ path: "/tmp/freeze-floor-status-saved.png" });
+  await page.getByRole("button", { name: "Redo floor edit" }).click();
+  await expect(page.getByText("Unsaved project", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await name().fill("Temporary wording");
+  await expect(page.getByText("Unsaved project", { exact: true })).toBeVisible();
+  await name().fill("Protected corrections");
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  // Saving establishes a new comparison point · Undo and Redo cross it both ways
+  await page.getByRole("checkbox", { name: "Paint", exact: true }).check();
+  await save();
+  await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await expect(page.getByText("Unsaved project", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Redo floor edit" }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Project save status", exact: true })).toHaveText("Saved on this device");
+  await page.getByRole("checkbox", { name: "Paint", exact: true }).uncheck();
+  await save();
   await page.reload();
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
   await openSaved("Protected corrections");
   await inspector();
   await expect(name()).toHaveValue("Protected corrections");
+  await expect(page.getByRole("status", { name: "Project save status", exact: true })).toHaveText("Saved on this device");
 
   // Reopening the same card after Save must use the newly committed record
   await page.getByRole("checkbox", { name: "Paint", exact: true }).check();
@@ -214,6 +245,7 @@ try {
   await expect(dialog()).toHaveCount(0);
   await expect(name()).not.toHaveValue("In-flight protected");
   await expect(page.locator(".ff-progress")).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Project save status", exact: true })).toHaveText("Unsaved project");
   await page.getByRole("button", { name: "Close video picker" }).click();
 
   await name().fill("Mobile protected draft");
@@ -247,9 +279,31 @@ try {
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await expect(name()).toHaveValue("Mobile protected draft");
+  // A library rename updates the saved baseline · Deletion invalidates its status
+  await save();
+  await page.locator(".ff-caption").screenshot({ path: "/tmp/freeze-floor-status-mobile.png" });
+  await choose();
+  const currentCard = () => page.locator(".ff-library>div").filter({
+    has: page.getByRole("button", { name: "Mobile protected draft", exact: true }),
+  });
+  page.once("dialog", (d) => d.accept("Renamed saved status"));
+  await currentCard().getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(name()).toHaveValue("Renamed saved status");
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await expect(page.getByRole("status", { name: "Project save status", exact: true })).toHaveText("Unsaved project");
+  await page.getByRole("button", { name: "Redo floor edit" }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete Renamed saved status", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Delete Renamed saved status", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Project save status", exact: true })).toHaveText("Unsaved project");
+  await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await page.getByRole("button", { name: "Redo floor edit" }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toHaveCount(0);
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
-  console.log("Freeze Floor unsaved corrections passed: clean samples, undo baseline, Save/Discard/Cancel, fresh same-project open, reload, storage/conflict failures, cancelled saves, upload/video protection, keyboard, mobile, both themes and workspace navigation");
+  console.log("Freeze Floor unsaved corrections passed: sample/edited/saved labels, undo/redo and manual baseline restoration, updated save baseline, Save/Discard/Cancel, fresh same-project open, reload, storage/conflict failures, cancelled saves, upload/video protection, keyboard, mobile, both themes and workspace navigation");
 } finally { await browser.close(); }

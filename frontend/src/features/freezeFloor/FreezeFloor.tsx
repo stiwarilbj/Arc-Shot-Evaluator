@@ -148,7 +148,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
-    [saved, setSaved] = useState(false),
+    [baselineKind, setBaselineKind] = useState<"sample" | "unsaved" | "saved">("unsaved"),
     [saving, setSaving] = useState(false),
     [exporting, setExporting] = useState(false),
     [inspector, setInspector] = useState(false);
@@ -185,6 +185,13 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     view: "photo" | "court";
   } | null>(null);
   const p = history?.present ?? null;
+  const changed = hasProjectChanges(p, storedVersion.current.project);
+  const saved = baselineKind === "saved" && !changed;
+  const saveStatus = saved
+    ? "Saved on this device"
+    : baselineKind === "sample" && !changed
+      ? "Sample unchanged"
+      : "Unsaved project";
   current.current = p;
   activeRef.current = active;
   const alignment = useMemo(
@@ -244,7 +251,6 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   function commit(next: FloorProject) {
     stop();
     revision.current++;
-    setSaved(false);
     if (
       pending?.contactId &&
       !next.contacts.some((c) => c.id === pending.contactId)
@@ -269,7 +275,6 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setDragProject(null);
     gesture.current = null;
     revision.current++;
-    setSaved(false);
     setHistory((h) =>
       h && h.past.length
         ? {
@@ -286,7 +291,6 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setDragProject(null);
     gesture.current = null;
     revision.current++;
-    setSaved(false);
     setHistory((h) =>
       h && h.future.length
         ? {
@@ -370,6 +374,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     project: FloorProject,
     blob: Blob,
     savedRevision: string | null = null,
+    sample = false,
   ) {
     stop();
     revision.current++;
@@ -383,7 +388,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setDragProject(null);
     gesture.current = null;
     setMode("inspect");
-    setSaved(savedRevision !== null);
+    setBaselineKind(savedRevision !== null ? "saved" : sample ? "sample" : "unsaved");
     setChooser(false);
     setVideoChooser(false);
     setError("");
@@ -418,7 +423,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         reviewed: sample.anchors.length >= 4,
       };
       controller.current = null;
-      install(next, normalized.blob);
+      install(next, normalized.blob, null, true);
       setNotice(sample.note);
     } catch (e) {
       if (isCurrent()) setError(message(e));
@@ -918,9 +923,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       if (storedVersion.current === baseline) {
         baseline.revision = nextRevision;
         baseline.project = value;
+        setBaselineKind("saved");
       }
       if (current.current?.id === value.id && revision.current === rev) {
-        setSaved(true);
         setNotice("Saved on this device");
       }
       await refresh();
@@ -932,7 +937,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         (revision.current === rev || e instanceof ProjectConflictError)
       ) {
         setError(message(e));
-        setSaved(false);
+        if (e instanceof ProjectConflictError) setBaselineKind("unsaved");
       }
       if (e instanceof ProjectConflictError) await refresh();
       return false;
@@ -1247,12 +1252,12 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                         ) {
                           baseline.revision = nextRevision;
                           baseline.project = { ...s.project, name: name.trim().slice(0, 80) };
+                          setBaselineKind("saved");
                           if (revision.current === rev) {
                             update((p) => ({
                               ...p,
                               name: name.trim().slice(0, 80),
                             }));
-                            setSaved(false);
                           }
                         }
                         await refresh();
@@ -1276,7 +1281,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                       try {
                         await deleteProject(s.project.id);
                         if (current.current?.id === s.project.id)
-                          setSaved(false);
+                          setBaselineKind("unsaved");
                         await refresh();
                       } catch (e) {
                         setError(message(e));
@@ -1469,7 +1474,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                 places a point
               </span>
             </p>
-            <span>{saved ? "Saved on this device" : "Unsaved project"}</span>
+            <span role="status" aria-label="Project save status">{saveStatus}</span>
           </div>
           {p.measurements.length ? (
             <section className="ff-measurements" aria-label="Distances">

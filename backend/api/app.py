@@ -740,6 +740,10 @@ frontend_assets_dir = FRONTEND_DIST_DIR / "assets"
 if frontend_assets_dir.is_dir():
     app.mount("/assets", StaticFiles(directory=frontend_assets_dir), name="assets")
 
+freeze_floor_assets_dir = FRONTEND_DIST_DIR / "freeze-floor"
+if freeze_floor_assets_dir.is_dir():
+    app.mount("/freeze-floor", StaticFiles(directory=freeze_floor_assets_dir), name="freeze-floor")
+
 if EXAMPLE_VIDEOS_DIR.is_dir():
     app.mount("/examples", StaticFiles(directory=EXAMPLE_VIDEOS_DIR), name="examples")
 
