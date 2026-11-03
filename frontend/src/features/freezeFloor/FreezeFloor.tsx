@@ -213,6 +213,15 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     : baselineKind === "sample" && !changed
       ? "Sample unchanged"
       : "Unsaved project";
+  useEffect(() => {
+    if (!changed) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [changed]);
   current.current = p;
   activeRef.current = active;
   const alignment = useMemo(
