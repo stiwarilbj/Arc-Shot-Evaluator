@@ -204,6 +204,45 @@ const outlier = {
 const withOutlier = align([...anchors, outlier], true);
 assert.ok(withOutlier.rejected.includes("outlier"));
 assert.equal(withOutlier.status, "review");
+// Pixel diagnostics are derived from the final refit without altering it
+const imageSize = { width: 1600, height: 900 };
+const diagnosed = align([...anchors, outlier], true, imageSize);
+const { mismatches, ...diagnosedFit } = diagnosed;
+const { mismatches: omitted, ...originalFit } = withOutlier;
+assert.deepEqual(diagnosedFit, originalFit);
+assert.deepEqual(omitted, []);
+assert.equal(mismatches[0].id, "outlier");
+const expectedOutlier = project(h, LANDMARKS.find((l) => l.id === outlier.landmark).court);
+close(mismatches[0].pixels, Math.hypot(
+  (expectedOutlier.x - outlier.image.x) * imageSize.width,
+  (expectedOutlier.y - outlier.image.y) * imageSize.height,
+));
+for (const mismatch of mismatches.slice(1)) close(mismatch.pixels, 0);
+const excluded = {
+  ...anchors[0], id: "excluded", enabled: false,
+  image: { x: anchors[0].image.x + 12 / imageSize.width, y: anchors[0].image.y + 16 / imageSize.height },
+};
+const snapshot = structuredClone([...anchors, excluded]);
+const excludedFit = align(snapshot, true, imageSize);
+close(excludedFit.mismatches[0].pixels, 20);
+assert.equal(excludedFit.status, "ready");
+assert.equal(excludedFit.inliers.includes("excluded"), false);
+assert.deepEqual(snapshot, [...anchors, excluded], "diagnostics never move or remove anchors");
+const noisy = anchors.map((a, i) => ({ ...a, image: { x: a.image.x + (i % 2 ? 0.001 : -0.001), y: a.image.y } }));
+const noisyFit = align(noisy, true, imageSize);
+for (const entry of noisyFit.mismatches) {
+  const anchor = noisy.find((a) => a.id === entry.id);
+  const fitted = project(noisyFit.h, LANDMARKS.find((l) => l.id === anchor.landmark).court);
+  close(entry.pixels, Math.hypot((fitted.x - anchor.image.x) * 1600, (fitted.y - anchor.image.y) * 900));
+}
+for (const dimensions of [undefined, { width: 0, height: 900 }, { width: 1600, height: NaN }, { width: Infinity, height: 900 }]) {
+  assert.deepEqual(align(anchors, true, dimensions).mismatches, []);
+}
+assert.deepEqual(align(anchors.slice(0, 3), true, imageSize).mismatches, []);
+assert.deepEqual(align([...anchors, { ...anchors[0], id: "duplicate" }], true, imageSize).mismatches, []);
+const tied = [...anchors, { ...excluded, id: "z" }, { ...excluded, id: "a" }];
+assert.deepEqual(align(tied, true, imageSize).mismatches.slice(0, 2).map((m) => m.id), ["a", "z"]);
+assert.deepEqual(align([...tied].reverse(), true, imageSize).mismatches, align(tied, true, imageSize).mismatches);
 // Eight anchors exposed low-bit RANSAC sampling that repeatedly chose only two
 // subsets, each containing an outlier, and missed the six-anchor consensus.
 const eight = [...keys, "corner-left", "corner-right"].map((landmark, i) => ({

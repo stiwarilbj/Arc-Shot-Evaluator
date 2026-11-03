@@ -214,14 +214,14 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   current.current = p;
   activeRef.current = active;
   const alignment = useMemo(
-    () => (p ? align(p.anchors, p.reviewed) : null),
-    [p?.anchors, p?.reviewed],
+    () => (p ? align(p.anchors, p.reviewed, p) : null),
+    [p?.anchors, p?.reviewed, p?.width, p?.height],
   );
   const [dragProject, setDragProject] = useState<FloorProject | null>(null),
     display = dragProject ?? p;
   const displayAlignment = useMemo(
-    () => (display ? align(display.anchors, display.reviewed) : null),
-    [display?.anchors, display?.reviewed],
+    () => (display ? align(display.anchors, display.reviewed, display) : null),
+    [display?.anchors, display?.reviewed, display?.width, display?.height],
   );
   function stop() {
     controller.current?.abort();
@@ -996,6 +996,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   const selectedAnchor = display?.anchors.find((a) => a.id === selected),
     selectedContact = display?.contacts.find((c) => c.id === selected);
   const aiming = cursor ?? selectedAnchor?.image ?? selectedContact?.image;
+  const largestMismatch = displayAlignment?.mismatches[0];
   const existingDistance =
     mode === "measure" && measurementFeedback?.kind === "existing"
       ? p?.measurements.findIndex((m) => m.id === measurementFeedback.id) ?? -1
@@ -1619,54 +1620,94 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                     Add anchor
                   </button>
                 </div>
+                <button
+                  className="ff-largest-mismatch"
+                  disabled={!largestMismatch}
+                  onClick={() => {
+                    if (!largestMismatch) return;
+                    setSelected(largestMismatch.id);
+                    setCheck(true);
+                    setMode("inspect");
+                    setPending(null);
+                    setMeasurementFeedback(null);
+                    setCursor(
+                      p.anchors.find((a) => a.id === largestMismatch.id)?.image ??
+                        null,
+                    );
+                  }}
+                >
+                  Select largest mismatch
+                  {largestMismatch
+                    ? ` · L${p.anchors.findIndex((a) => a.id === largestMismatch.id) + 1} · ${Math.round(largestMismatch.pixels)} px`
+                    : " · Unavailable"}
+                </button>
+                <p className="ff-help">
+                  Mismatch compares each landmark with this fit · It does not
+                  confirm correct court placement
+                </p>
                 <div className="ff-items">
-                  {p.anchors.map((a, i) => (
-                    <div
-                      key={a.id}
-                      className={selected === a.id ? "ff-item-selected" : ""}
-                    >
-                      <input
-                        type="checkbox"
-                        aria-label={`Include landmark ${i + 1}`}
-                        checked={a.enabled}
-                        onChange={(e) =>
-                          update((p) => ({
-                            ...p,
-                            anchors: p.anchors.map((x) =>
-                              x.id === a.id
-                                ? { ...x, enabled: e.target.checked }
-                                : x,
-                            ),
-                            reviewed: false,
-                          }))
-                        }
-                      />
-                      <button
-                        onClick={() => {
-                          setSelected(a.id);
-                          setCheck(true);
-                        }}
-                        title={
-                          LANDMARKS.find((l) => l.id === a.landmark)?.label
-                        }
+                  {p.anchors.map((a, i) => {
+                    const mismatch = displayAlignment?.mismatches.find(
+                      (m) => m.id === a.id,
+                    );
+                    return (
+                      <div
+                        key={a.id}
+                        className={selected === a.id ? "ff-item-selected" : ""}
                       >
-                        L{i + 1} ·{" "}
-                        {LANDMARKS.find((l) => l.id === a.landmark)?.label}
-                      </button>
-                      <button
-                        aria-label={`Delete landmark ${i + 1}`}
-                        onClick={() =>
-                          update((p) => ({
-                            ...p,
-                            anchors: p.anchors.filter((x) => x.id !== a.id),
-                            reviewed: false,
-                          }))
-                        }
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
+                        <input
+                          type="checkbox"
+                          aria-label={`Include landmark ${i + 1}`}
+                          checked={a.enabled}
+                          onChange={(e) =>
+                            update((p) => ({
+                              ...p,
+                              anchors: p.anchors.map((x) =>
+                                x.id === a.id
+                                  ? { ...x, enabled: e.target.checked }
+                                  : x,
+                              ),
+                              reviewed: false,
+                            }))
+                          }
+                        />
+                        <button
+                          onClick={() => {
+                            setSelected(a.id);
+                            setCheck(true);
+                          }}
+                          title={
+                            LANDMARKS.find((l) => l.id === a.landmark)?.label
+                          }
+                        >
+                          <span className="ff-landmark-label">
+                            <span>
+                              L{i + 1} ·{" "}
+                              {LANDMARKS.find((l) => l.id === a.landmark)?.label}
+                            </span>
+                            <small>
+                              Fit mismatch:{" "}
+                              {mismatch
+                                ? `${Math.round(mismatch.pixels)} px`
+                                : "unavailable"}
+                            </small>
+                          </span>
+                        </button>
+                        <button
+                          aria-label={`Delete landmark ${i + 1}`}
+                          onClick={() =>
+                            update((p) => ({
+                              ...p,
+                              anchors: p.anchors.filter((x) => x.id !== a.id),
+                              reviewed: false,
+                            }))
+                          }
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
                 {selectedAnchor ? (
                   <>

@@ -502,6 +502,17 @@
 .ff-items .ff-item-selected {
   border-color: var(--orange);
 }
+.ff-landmark-label {
+  display: grid;
+  gap: 3px;
+}
+.ff-landmark-label small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.ff-largest-mismatch {
+  text-align: left;
+}
 .ff-items select {
   font-size: 11px;
   max-width: 110px;

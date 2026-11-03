@@ -48,6 +48,90 @@ async function circlePoint(locator) {
     y: +c.getAttribute("cy"),
   }));
 }
+async function checkLandmarkMismatches() {
+  await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
+  const floorInspector = page.locator(".ff-inspector-grid > section").first();
+  const labels = floorInspector.locator(".ff-landmark-label small");
+  const largest = page.getByRole("button", { name: /^Select largest mismatch/ });
+  await expect(labels).toHaveCount(4);
+  await expect(labels).toHaveText(Array(4).fill("Fit mismatch: 0 px"));
+  await largest.click();
+  await expect(page.getByRole("status", { name: "Project save status" })).toHaveText("Sample unchanged");
+  await expect(page.getByRole("button", { name: "Undo floor edit" })).toBeDisabled();
+  const boundary = (await photo.locator("polyline").first().getAttribute("points"))
+    .split(" ").slice(0, 2).map((s) => s.split(",").map(Number));
+  async function addAnchor(landmark, x, y) {
+    await page.getByLabel("Landmark to add", { exact: true }).selectOption(landmark);
+    await page.getByRole("button", { name: "Add anchor", exact: true }).click();
+    await photo.scrollIntoViewIfNeeded();
+    const q = await photo.evaluate((svg, p) => {
+      const q = new DOMPoint(p.x, p.y).matrixTransform(svg.getScreenCTM());
+      return { x: q.x, y: q.y };
+    }, { x, y });
+    await page.mouse.click(q.x, q.y);
+  }
+  // Add two consistent floor points from the actual overlay, then a bad seventh
+  await addAnchor("baseline-left", ...boundary[0]);
+  await addAnchor("baseline-right", ...boundary[1]);
+  await addAnchor("free-center", 1500, 150);
+  await expect(labels).toHaveCount(7);
+  const mismatchedLabel = labels.nth(6);
+  await expect(largest).toHaveText(/Select largest mismatch · L7 · [1-9]\d* px/);
+  const originalLabel = await mismatchedLabel.innerText();
+  const marker = photo.locator("[data-anchor]").nth(6).locator("circle");
+  const point = await circlePoint(marker);
+  await page.getByRole("button", { name: /^L1 ·/ }).click();
+  const smallRadius = await marker.getAttribute("r");
+  await largest.focus();
+  await largest.press("Enter");
+  assert.ok(Number(await marker.getAttribute("r")) > Number(smallRadius));
+  assert.deepEqual(await circlePoint(marker), point);
+  await expect(floorInspector.locator(".ff-item-selected")).toContainText("L7 · Free-throw line midpoint");
+  await expect(page.getByLabel("Reassign landmark")).toHaveValue("free-center");
+  await expect(page.getByLabel("Include landmark 7", { exact: true })).toBeChecked();
+  // Choosing the diagnostic adds no edit: undo removes the last authored anchor
+  await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await expect(labels).toHaveCount(6);
+  await page.getByRole("button", { name: "Redo floor edit" }).click();
+  await expect(mismatchedLabel).toHaveText(originalLabel);
+  await largest.click();
+  await page.getByLabel("Landmark X (px)", { exact: true }).fill("1450");
+  await page.getByLabel("Landmark X (px)", { exact: true }).press("Enter");
+  await expect(mismatchedLabel).not.toHaveText(originalLabel);
+  await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await expect(mismatchedLabel).toHaveText(originalLabel);
+  // Drag previews update diagnostics immediately; Escape restores them exactly
+  await photo.scrollIntoViewIfNeeded();
+  const dragStart = await marker.evaluate((c) => {
+    const q = new DOMPoint(+c.getAttribute("cx"), +c.getAttribute("cy")).matrixTransform(c.getScreenCTM());
+    return { x: q.x, y: q.y };
+  });
+  await page.mouse.move(dragStart.x, dragStart.y);
+  await page.mouse.down();
+  await page.mouse.move(dragStart.x - 20, dragStart.y + 10, { steps: 4 });
+  await expect(mismatchedLabel).not.toHaveText(originalLabel);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(mismatchedLabel).toHaveText(originalLabel);
+  assert.deepEqual(await circlePoint(marker), point);
+  await page.getByLabel("Include landmark 7", { exact: true }).uncheck();
+  await expect(mismatchedLabel).toHaveText(originalLabel);
+  await expect(largest).toContainText("L7");
+  await expect(page.locator(".ff-status")).toContainText("Check alignment");
+  await largest.click();
+  await floorInspector.screenshot({ path: "/tmp/freeze-floor-mismatch-desktop.png" });
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.getByRole("button", { name: "Light", exact: true }).click();
+  await floorInspector.screenshot({ path: "/tmp/freeze-floor-mismatch-mobile.png" });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  for (let i = 1; i <= 6; i++) await page.getByLabel(`Include landmark ${i}`, { exact: true }).uncheck();
+  await expect(labels).toHaveText(Array(7).fill("Fit mismatch: unavailable"));
+  await expect(largest).toBeDisabled();
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.reload();
+  await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+}
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
 async function checkNumeric(label, marker, axis) {
   const input = page.getByLabel(label, { exact: true });
@@ -129,6 +213,7 @@ try {
     page.getByRole("heading", { name: "Freeze Floor", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await checkLandmarkMismatches();
   await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
   await page.getByRole("button", { name: /^L1 ·/ }).click();
   const firstAnchor = photo.locator("[data-anchor]").first().locator("circle");
@@ -466,7 +551,7 @@ try {
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
   console.log(
-    "Freeze Floor browser regressions passed: accessible coordinate range errors, retained invalid drafts, Enter/blur/Escape, boundary/fractional edits, exact undo, selection isolation, undo/redo during contact and landmark drags, perspective-safe selection and measurements, PNG export, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, both themes, no runtime errors or uploads",
+    "Freeze Floor browser regressions passed: pixel-fit mismatch labels, largest-anchor keyboard selection without edits, correction/undo, excluded and unavailable diagnostics, accessible coordinate range errors, retained invalid drafts, Enter/blur/Escape, boundary/fractional edits, exact undo, selection isolation, undo/redo during contact and landmark drags, perspective-safe selection and measurements, PNG export, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, both themes, no runtime errors or uploads",
   );
 } finally {
   await browser.close();

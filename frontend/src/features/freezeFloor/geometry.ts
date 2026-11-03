@@ -109,6 +109,7 @@ export type Alignment = {
   inverse?: Transform;
   inliers: string[];
   rejected: string[];
+  mismatches: { id: string; pixels: number }[];
   rms: number;
   hull: Point[];
 };
@@ -220,12 +221,17 @@ export function fit(source: Point[], target: Point[]): Transform | null {
     return null;
   }
 }
-export function align(anchors: Anchor[], reviewed = false): Alignment {
+export function align(
+  anchors: Anchor[],
+  reviewed = false,
+  image?: { width: number; height: number },
+): Alignment {
   const empty: Alignment = {
     status: "insufficient",
     reason: "Add at least four well-spread floor landmarks",
     inliers: [],
     rejected: [],
+    mismatches: [],
     rms: 0,
     hull: [],
   };
@@ -323,11 +329,31 @@ export function align(anchors: Anchor[], reviewed = false): Alignment {
   const rejected = a.filter((_, i) => !best.includes(i)).map((a) => a.id);
   // Conflicting included anchors must be corrected or explicitly excluded before measurement.
   const status = rejected.length ? "review" : reviewed ? "ready" : "review";
+  // Diagnostics use the final refit, including observations excluded from it
+  // Convert each axis separately: normalized image coordinates are not pixels
+  const mismatches =
+    image &&
+    Number.isFinite(image.width) && image.width > 0 &&
+    Number.isFinite(image.height) && image.height > 0
+      ? anchors.flatMap((anchor) => {
+          const landmark = LANDMARKS.find((l) => l.id === anchor.landmark),
+            fitted = landmark ? project(h, landmark.court) : null;
+          if (!fitted) return [];
+          const pixels = Math.hypot(
+            (fitted.x - anchor.image.x) * image.width,
+            (fitted.y - anchor.image.y) * image.height,
+          );
+          return Number.isFinite(pixels) ? [{ id: anchor.id, pixels }] : [];
+        }).sort((a, b) =>
+          b.pixels - a.pixels || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+        )
+      : [];
   return {
     h,
     inverse,
     inliers: best.map((i) => a[i].id),
     rejected,
+    mismatches,
     rms,
     hull: floorHull,
     status,
