@@ -413,14 +413,46 @@ export function uncertainty(
   const e = Math.max(...errors.map((v) => distance(v!, p))) + 0.25;
   return Number.isFinite(e) && e < 3 ? e : null;
 }
+function measurementImage(p: FloorProject, v: MeasurePoint): Point | undefined {
+  return v.contactId
+    ? p.contacts.find((c) => c.id === v.contactId)?.image
+    : v.image;
+}
+export function sameMeasurementLocation(
+  p: FloorProject,
+  first: MeasurePoint,
+  second: MeasurePoint,
+): boolean {
+  const a = measurementImage(p, first),
+    b = measurementImage(p, second);
+  // Allow only subpixel round-off from moving between the two projections
+  return (
+    !!a &&
+    !!b &&
+    Math.hypot((a.x - b.x) * p.width, (a.y - b.y) * p.height) <= 0.001
+  );
+}
+export function findExistingMeasurement(
+  p: FloorProject,
+  first: MeasurePoint,
+  second: MeasurePoint,
+) {
+  const same = (a: MeasurePoint, b: MeasurePoint) =>
+    a.contactId && b.contactId
+      ? a.contactId === b.contactId
+      : sameMeasurementLocation(p, a, b);
+  return p.measurements.find(
+    (m) =>
+      (same(m.a, first) && same(m.b, second)) ||
+      (same(m.a, second) && same(m.b, first)),
+  );
+}
 export function measure(
   p: FloorProject,
   a: Alignment,
   first: MeasurePoint,
   second: MeasurePoint,
 ) {
-  const source = (v: MeasurePoint) =>
-    v.contactId ? p.contacts.find((c) => c.id === v.contactId)?.image : v.image;
   if (a.status !== "ready" || !a.inverse) return { reason: a.reason };
   if (
     [first, second].some(
@@ -430,8 +462,8 @@ export function measure(
     )
   )
     return { reason: "Confirm both contacts are grounded and visible" };
-  const srcA = source(first),
-    srcB = source(second);
+  const srcA = measurementImage(p, first),
+    srcB = measurementImage(p, second);
   if (!srcA || !srcB) return { reason: "Contact is unavailable" };
   const x = project(a.inverse, srcA),
     y = project(a.inverse, srcB);

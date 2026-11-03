@@ -531,6 +531,15 @@
   font-weight: 550;
   font-size: 13px;
 }
+.ff-measurements > div[data-highlighted="true"] {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 1px var(--orange);
+}
+.ff-measurement-feedback {
+  color: var(--text);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
 .ff-measurements small {
   display: block;
   color: var(--muted);

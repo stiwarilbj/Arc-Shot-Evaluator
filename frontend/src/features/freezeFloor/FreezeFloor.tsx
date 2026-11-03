@@ -31,6 +31,8 @@ import {
   project,
   inCourt,
   findContactAt,
+  sameMeasurementLocation,
+  findExistingMeasurement,
 } from "./geometry.ts";
 import {
   id,
@@ -154,6 +156,9 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       image: Point;
       contactId?: string;
     } | null>(null),
+    [measurementFeedback, setMeasurementFeedback] = useState<
+      { kind: "same" } | { kind: "existing"; id: string } | null
+    >(null),
     [landmark, setLandmark] = useState("lane-left-base");
   const [library, setLibrary] = useState<StoredProject[]>([]),
     [unavailableProjects, setUnavailableProjects] = useState<UnavailableProject[]>(
@@ -264,6 +269,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   }
   function commit(next: FloorProject) {
     stop();
+    setMeasurementFeedback(null);
     revision.current++;
     if (
       pending?.contactId &&
@@ -286,6 +292,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   }
   function undo() {
     stop();
+    setMeasurementFeedback(null);
     setDragProject(null);
     gesture.current = null;
     revision.current++;
@@ -302,6 +309,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   }
   function redo() {
     stop();
+    setMeasurementFeedback(null);
     setDragProject(null);
     gesture.current = null;
     revision.current++;
@@ -363,6 +371,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       stop();
       cancelReplacement();
       setPending(null);
+      setMeasurementFeedback(null);
       setCursor(null);
       setDragProject(null);
       gesture.current = null;
@@ -398,6 +407,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setImage(blob);
     setSelected(null);
     setPending(null);
+    setMeasurementFeedback(null);
     setCursor(null);
     setDragProject(null);
     gesture.current = null;
@@ -732,12 +742,24 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       return;
     }
     if (mode === "measure") {
+      setError("");
+      setMeasurementFeedback(null);
       const contact = hitAt(v, view);
       const endpoint = contact
         ? { image: contact.image, contactId: contact.id }
         : { image: v };
       if (!pending) {
         setPending(endpoint);
+        return;
+      }
+      if (sameMeasurementLocation(p, pending, endpoint)) {
+        setMeasurementFeedback({ kind: "same" });
+        return;
+      }
+      const existing = findExistingMeasurement(p, pending, endpoint);
+      if (existing) {
+        setMeasurementFeedback({ kind: "existing", id: existing.id });
+        setPending(null);
         return;
       }
       if (p.measurements.length >= 20) {
@@ -832,6 +854,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     gesture.current = null;
     setDragProject(null);
     setPending(null);
+    setMeasurementFeedback(null);
     if (mode === "contact" || mode === "anchor") setMode("inspect");
   }
   function key(e: KeyboardEvent<SVGSVGElement>, view: "photo" | "court") {
@@ -973,6 +996,12 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   const selectedAnchor = display?.anchors.find((a) => a.id === selected),
     selectedContact = display?.contacts.find((c) => c.id === selected);
   const aiming = cursor ?? selectedAnchor?.image ?? selectedContact?.image;
+  const existingDistance =
+    mode === "measure" && measurementFeedback?.kind === "existing"
+      ? p?.measurements.findIndex((m) => m.id === measurementFeedback.id) ?? -1
+      : -1;
+  const highlightedMeasurement =
+    existingDistance >= 0 ? p!.measurements[existingDistance].id : null;
   const scene = (view: "photo" | "court") =>
     display && displayAlignment ? (
       <FloorScene
@@ -985,6 +1014,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         hovered={hovered}
         cursor={cursor}
         pending={pending?.image}
+        highlightedMeasurement={highlightedMeasurement}
         editing
         onPointerDown={(e) => down(e, view)}
         onPointerMove={(e) => move(e, view)}
@@ -1414,6 +1444,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                 onClick={() => {
                   setMode("inspect");
                   setPending(null);
+                  setMeasurementFeedback(null);
                 }}
               >
                 <ScanLine size={16} />
@@ -1424,6 +1455,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                 onClick={() => {
                   setMode("measure");
                   setPending(null);
+                  setMeasurementFeedback(null);
                 }}
               >
                 <Ruler size={16} />
@@ -1490,12 +1522,23 @@ export default function FreezeFloor({ active }: { active: boolean }) {
             </p>
             <span role="status" aria-label="Project save status">{saveStatus}</span>
           </div>
+          {mode === "measure" &&
+          (measurementFeedback?.kind === "same" || existingDistance >= 0) ? (
+            <p className="ff-measurement-feedback" role="status">
+              {measurementFeedback?.kind === "same"
+                ? "Choose a different player or floor point for the second endpoint"
+                : `Distance ${existingDistance + 1} already exists · Highlighted in both views`}
+            </p>
+          ) : null}
           {p.measurements.length ? (
             <section className="ff-measurements" aria-label="Distances">
               {p.measurements.map((m, i) => {
                 const r = measure(p, alignment, m.a, m.b);
                 return (
-                  <div key={m.id}>
+                  <div
+                    key={m.id}
+                    data-highlighted={m.id === highlightedMeasurement}
+                  >
                     <Ruler size={16} />
                     <span>
                       <strong>

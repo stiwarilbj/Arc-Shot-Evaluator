@@ -18,6 +18,7 @@ export type SceneProps = {
   hovered?: string | null;
   cursor?: Point | null;
   pending?: Point | null;
+  highlightedMeasurement?: string | null;
   editing?: boolean;
   onPointerDown?: (e: PointerEvent<SVGSVGElement>) => void;
   onPointerMove?: (e: PointerEvent<SVGSVGElement>) => void;
@@ -153,6 +154,7 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
             </g>
           ) : null}
           {p.project.measurements.map((m) => {
+            const highlighted = m.id === p.highlightedMeasurement;
             const a =
                 p.project.contacts.find((c) => c.id === m.a.contactId)?.image ??
                 m.a.image,
@@ -168,15 +170,22 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                 ? `≈ ${result.value.toFixed(1)} ${p.project.units}`
                 : "Uncertain";
             return (
-              <g key={m.id} pointerEvents="none">
+              <g
+                key={m.id}
+                data-measurement={m.id}
+                data-highlighted={highlighted}
+                pointerEvents="none"
+              >
                 <line
                   x1={x.x}
                   y1={x.y}
                   x2={y.x}
                   y2={y.y}
                   stroke={colors.orange}
-                  strokeWidth={1.5 * unit}
-                  strokeDasharray={`${5 * unit} ${4 * unit}`}
+                  strokeWidth={(highlighted ? 3 : 1.5) * unit}
+                  strokeDasharray={
+                    highlighted ? undefined : `${5 * unit} ${4 * unit}`
+                  }
                 />
                 {[x, y].map((q, i) => (
                   <circle
@@ -186,7 +195,7 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                     r={r}
                     fill={colors.ink}
                     stroke={colors.orange}
-                    strokeWidth={1.3 * unit}
+                    strokeWidth={(highlighted ? 2.5 : 1.3) * unit}
                   />
                 ))}
                 <rect

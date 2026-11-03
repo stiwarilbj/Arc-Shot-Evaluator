@@ -13,6 +13,8 @@ import {
   COURT,
   courtLines,
   findContactAt,
+  sameMeasurementLocation,
+  findExistingMeasurement,
 } from "../frontend/src/features/freezeFloor/geometry.ts";
 import {
   newProject,
@@ -266,6 +268,48 @@ assert.equal(project([1, 0, 0, 0, 1, 0, 0, 0, 0], { x: 1, y: 1 }), null);
 let p = { ...newProject(1600, 1200, "Test"), anchors, reviewed: true };
 const a = { image: project(h, { x: 20, y: 20 }) },
   b = { image: project(h, { x: 23, y: 24 }) };
+// Repeated endpoints and pairs must not consume measurement slots or depend on
+// endpoint order, contact snapshots, units, grounding, or projection round-off
+const firstContact = { id: "first", label: "1", image: a.image, status: "grounded" };
+const secondContact = { id: "second", label: "2", image: b.image, status: "uncertain" };
+const boundA = { ...a, contactId: firstContact.id };
+const boundB = { ...b, contactId: secondContact.id };
+const measurementProject = {
+  ...p,
+  contacts: [firstContact, secondContact],
+  measurements: [{ id: "bound", a: boundA, b: boundB }, { id: "free", a, b }],
+};
+const initialMeasurements = structuredClone(measurementProject);
+assert.equal(sameMeasurementLocation(measurementProject, boundA, { image: b.image, contactId: "first" }), true);
+assert.equal(sameMeasurementLocation(measurementProject, a, boundA), true);
+assert.equal(sameMeasurementLocation(measurementProject, a, b), false);
+assert.equal(sameMeasurementLocation(measurementProject, a, {
+  image: { x: a.image.x + 1e-8, y: a.image.y - 1e-8 },
+}), true);
+assert.equal(sameMeasurementLocation(measurementProject, a, {
+  image: { ...a.image, x: a.image.x + 0.01 / p.width },
+}), false, "nearby distinct points are not merged");
+assert.equal(sameMeasurementLocation(measurementProject, a, { ...a, contactId: "missing" }), false);
+for (const [first, second] of [[boundA, boundB], [boundB, boundA], [a, b], [b, a]]) {
+  assert.equal(findExistingMeasurement(measurementProject, first, second)?.id, "bound");
+}
+const movedMeasurementProject = {
+  ...measurementProject,
+  units: "m",
+  contacts: measurementProject.contacts.map((c) => ({ ...c, image: { ...c.image, x: c.image.x + 0.02 } })),
+};
+const movedA = { contactId: "first", image: movedMeasurementProject.contacts[0].image };
+const movedB = { contactId: "second", image: movedMeasurementProject.contacts[1].image };
+assert.equal(findExistingMeasurement(movedMeasurementProject, movedB, movedA)?.id, "bound");
+assert.equal(sameMeasurementLocation(movedMeasurementProject, boundA, movedA), true);
+assert.equal(findExistingMeasurement({ ...measurementProject, measurements: measurementProject.measurements.slice(1) },
+  { image: project(h, project(invert(h), b.image)) }, a)?.id, "free", "projection round trips reuse free endpoints");
+assert.equal(findExistingMeasurement(measurementProject, a, { image: { ...b.image, x: b.image.x + 0.001 } }), undefined);
+const otherPerson = { ...firstContact, id: "third" };
+assert.equal(findExistingMeasurement({ ...measurementProject, contacts: [...measurementProject.contacts, otherPerson],
+  measurements: measurementProject.measurements.slice(0, 1) },
+  { ...boundA, contactId: "third" }, boundB), undefined, "distinct co-located player identities stay separate");
+assert.deepEqual(measurementProject, initialMeasurements, "checks never modify saved measurements or contacts");
 let m = measure(p, ready, a, b);
 close(m.value, 5);
 assert.ok(m.low < 5 && m.high > 5);
