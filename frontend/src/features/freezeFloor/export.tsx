@@ -27,17 +27,63 @@ export async function exportPng(
     r.onerror = () => reject(Error("Could not read current image"));
     r.readAsDataURL(blob);
   });
+  const textCanvas = document.createElement("canvas"),
+    textContext = textCanvas.getContext("2d");
+  if (!textContext) throw Error("PNG text layout unavailable");
+  const textWidth = 1740,
+    graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  const wrap = (text: string, fontSize: number): string[] => {
+    textContext.font = `${fontSize}px Arial,sans-serif`;
+    const lines: string[] = [];
+    for (const paragraph of text.split(/\r\n?|\n/u)) {
+      let line = "";
+      for (const word of paragraph.trim().split(/\s+/u)) {
+        if (!word) continue;
+        const joined = line ? `${line} ${word}` : word;
+        if (textContext.measureText(joined).width <= textWidth) {
+          line = joined;
+          continue;
+        }
+        if (textContext.measureText(word).width <= textWidth) {
+          if (line) lines.push(line);
+          line = word;
+          continue;
+        }
+        // Break long URLs and unspaced names without splitting Unicode glyphs
+        if (line) line += " ";
+        for (const { segment } of graphemes.segment(word)) {
+          if (line && textContext.measureText(line + segment).width > textWidth) {
+            lines.push(line.trimEnd());
+            line = "";
+          }
+          line += segment;
+        }
+      }
+      lines.push(line);
+    }
+    return lines;
+  };
+  const titleLines = wrap(`Freeze Floor · ${p.name}`, 28),
+    attribution = p.attribution
+      ? `${p.attribution.title} · ${p.attribution.creator} · ${p.attribution.license} · ${p.attribution.url}`
+      : "Your private photograph",
+    attributionLines = wrap(attribution, 11);
   const alignment = align(p.anchors, p.reviewed),
     width = 1800,
     left = 1050,
     right = width - left - 60,
     photoH = Math.min(900, (left * p.height) / p.width),
-    height = Math.ceil(
-      Math.max(photoH, (right * 51) / 54) +
-        250 +
-        p.measurements.length * 22 +
-        (p.attribution ? 50 : 0),
-    );
+    titleExtra = (titleLines.length - 1) * 34,
+    sceneY = 115 + titleExtra,
+    sceneBottom = sceneY + Math.max(photoH, (right * 51) / 54),
+    notesY = sceneBottom + 65,
+    disclaimerY = notesY + p.measurements.length * 22 + 30,
+    attributionY = disclaimerY + 30,
+    height = Math.ceil(attributionY + (attributionLines.length - 1) * 16 + 30);
+  const textLines = (lines: string[], y: number, step: number) =>
+    lines
+      .map((line, i) => `<tspan x="30" y="${y + i * step}">${escape(line)}</tspan>`)
+      .join("");
   const scene = (view: "photo" | "court", x: number, w: number, h: number) =>
     renderToStaticMarkup(
       <FloorScene
@@ -49,7 +95,7 @@ export async function exportPng(
         measurementCoverage={coverage}
       />,
     )
-      .replace("<svg ", `<svg x="${x}" y="115" width="${w}" height="${h}" `)
+      .replace("<svg ", `<svg x="${x}" y="${sceneY}" width="${w}" height="${h}" `)
       .replace(/style="[^"]*"/g, "");
   const notes = p.measurements
     .map((m, i) => {
@@ -61,19 +107,22 @@ export async function exportPng(
         outside && r.reason !== "Outside supported region"
           ? `Outside supported region · ${r.reason}`
           : r.reason;
-      return `<text x="30" y="${Math.max(photoH, (right * 51) / 54) + 180 + i * 22}" fill="#d4dcdd" font-size="16">${escape(r.value === undefined ? `Measurement ${i + 1} withheld · ${reason}` : `Approx ${r.value.toFixed(1)} ${p.units} · Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units}`)}</text>`;
+      return `<text x="30" y="${notesY + i * 22}" fill="#d4dcdd" font-size="16">${escape(r.value === undefined ? `Measurement ${i + 1} withheld · ${reason}` : `Approx ${r.value.toFixed(1)} ${p.units} · Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units}`)}</text>`;
     })
     .join("");
-  const attribution = p.attribution
-    ? `${p.attribution.title} · ${p.attribution.creator} · ${p.attribution.license} · ${p.attribution.url}`
-    : "Your private photograph";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" font-family="Arial,sans-serif"><rect width="100%" height="100%" fill="#101516"/><text x="30" y="40" font-size="28" fill="#f8f5ee">Freeze Floor · ${escape(p.name)}</text><text x="30" y="72" font-size="16" fill="#b3bdbe">NBA half-court · ${escape(alignment.reason)}</text><text x="30" y="102" font-size="16" fill="white">Photograph${p.videoFrame ? ` · Video still ${videoTime(p.videoFrame.seconds)}` : ""}</text><text x="${left + 45}" y="102" font-size="16" fill="white">Overhead court</text>${scene("photo", 30, Math.min(left, (photoH * p.width) / p.height), photoH)}${scene("court", left + 45, right, (right * 51) / 54)}${notes}<text x="30" y="${height - 67}" font-size="14" fill="#b3bdbe">Estimated sensitivity ranges are not calibrated confidence intervals · Hidden or airborne feet remain uncertain</text><foreignObject x="30" y="${height - 48}" width="1740" height="45"><div xmlns="http://www.w3.org/1999/xhtml" style="color:#b3bdbe;font:12px Arial">${escape(attribution)}</div></foreignObject></svg>`;
-  // foreignObject is blocked by some image decoders, so keep attribution as wrapped SVG text.
-  const clean = svg.replace(
-    /<foreignObject[\s\S]*?<\/foreignObject>/,
-    `<text x="30" y="${height - 28}" font-size="11" fill="#b3bdbe">${escape(attribution.slice(0, 240))}</text>`,
-  );
-  const url = URL.createObjectURL(new Blob([clean], { type: "image/svg+xml" }));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" font-family="Arial,sans-serif">
+    <rect width="100%" height="100%" fill="#101516"/>
+    <text id="ff-export-title" font-size="28" fill="#f8f5ee">${textLines(titleLines, 40, 34)}</text>
+    <text x="30" y="${72 + titleExtra}" font-size="16" fill="#b3bdbe">NBA half-court · ${escape(alignment.reason)}</text>
+    <text x="30" y="${102 + titleExtra}" font-size="16" fill="white">Photograph${p.videoFrame ? ` · Video still ${videoTime(p.videoFrame.seconds)}` : ""}</text>
+    <text x="${left + 45}" y="${102 + titleExtra}" font-size="16" fill="white">Overhead court</text>
+    ${scene("photo", 30, Math.min(left, (photoH * p.width) / p.height), photoH)}
+    ${scene("court", left + 45, right, (right * 51) / 54)}
+    ${notes}
+    <text x="30" y="${disclaimerY}" font-size="14" fill="#b3bdbe">Estimated sensitivity ranges are not calibrated confidence intervals · Hidden or airborne feet remain uncertain</text>
+    <text id="ff-export-attribution" font-size="11" fill="#b3bdbe">${textLines(attributionLines, attributionY, 16)}</text>
+  </svg>`;
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   try {
     const img = new Image();
     img.src = url;

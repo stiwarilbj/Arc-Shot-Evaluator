@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { readFile } from "node:fs/promises";
 const require = createRequire(
   new URL("../frontend/package.json", import.meta.url),
 );
@@ -47,6 +48,159 @@ async function circlePoint(locator) {
     x: +c.getAttribute("cx"),
     y: +c.getAttribute("cy"),
   }));
+}
+async function checkExportText() {
+  async function downloadTextCase(expectedTitle, expectedCredit, path) {
+    // Observe the real export SVG without replacing rendering or downloading
+    await page.evaluate(() => {
+      const original = URL.createObjectURL;
+      window.exportTextSvg = null;
+      URL.createObjectURL = function (blob) {
+        if (blob.type === "image/svg+xml") {
+          window.exportTextSvg = blob.text();
+          URL.createObjectURL = original;
+        }
+        return original.call(this, blob);
+      };
+    });
+    const nextDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download PNG", exact: true }).click();
+    const download = await nextDownload;
+    assert.equal(await download.failure(), null);
+    await download.saveAs(path);
+    const svg = await page.evaluate(async () => await window.exportTextSvg);
+    const png = (await readFile(path)).toString("base64");
+    const result = await page.evaluate(async ({ svgText, pngBase64 }) => {
+      const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
+      if (doc.querySelector("parsererror")) throw Error("Export SVG cannot be parsed");
+      const rendered = document.importNode(doc.documentElement, true);
+      rendered.style.cssText = "position:fixed;left:-10000px;top:0;font-family:Arial,sans-serif";
+      document.body.append(rendered);
+      try {
+        const info = (id) => {
+          const text = rendered.querySelector(id), box = text.getBBox();
+          return {
+            content: text.textContent,
+            bounds: { x: box.x, y: box.y, width: box.width, height: box.height },
+            lines: [...text.querySelectorAll("tspan")].map((line) => {
+              const b = line.getBBox();
+              return { text: line.textContent, x: b.x, end: b.x + b.width, y: b.y, bottom: b.y + b.height };
+            }),
+          };
+        };
+        const title = info("#ff-export-title"), credit = info("#ff-export-attribution");
+        const img = await createImageBitmap(new Blob([
+          Uint8Array.from(atob(pngBase64), (c) => c.charCodeAt(0)),
+        ], { type: "image/png" }));
+        try {
+          const canvas = new OffscreenCanvas(img.width, img.height), ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          const last = credit.lines.at(-1);
+          const pixels = ctx.getImageData(0, Math.floor(last.y), img.width, Math.ceil(last.bottom - last.y) + 1).data;
+          let ink = 0;
+          for (let i = 0; i < pixels.length; i += 4) if (pixels[i] > 70 && pixels[i + 1] > 70) ink++;
+          return {
+            title, credit, ink, width: img.width, height: img.height,
+            svgHeight: +rendered.getAttribute("height"),
+            scenes: [...rendered.querySelectorAll(":scope > svg")].map((scene) => ({ y: +scene.getAttribute("y"), height: +scene.getAttribute("height") })),
+            notes: [...rendered.querySelectorAll(':scope > text[fill="#d4dcdd"]')].map((note) => ({ text: note.textContent, y: +note.getAttribute("y") })),
+          };
+        } finally { img.close(); }
+      } finally { rendered.remove(); }
+    }, { svgText: svg, pngBase64: png });
+    const compact = (value) => value.replace(/\s+/gu, "");
+    assert.equal(compact(result.title.content), compact(`Freeze Floor · ${expectedTitle}`));
+    assert.equal(compact(result.credit.content), compact(expectedCredit), "complete title, creator, license and URL survive wrapping");
+    assert.equal(result.width, 1800);
+    assert.equal(result.height, result.svgHeight);
+    for (const line of [...result.title.lines, ...result.credit.lines]) {
+      assert.ok(line.x >= 29 && line.end <= 1772, `text stays inside its measured margin: ${line.end}`);
+      assert.ok(line.y >= 0 && line.bottom < result.height - 15);
+      assert.ok(!/^[\p{Mark}\u200d]/u.test(line.text), "wrapping keeps combining marks with their glyphs");
+    }
+    for (const scene of result.scenes) {
+      assert.ok(scene.y > result.title.bounds.y + result.title.bounds.height + 50);
+      assert.ok(scene.y + scene.height < result.credit.bounds.y - 30);
+    }
+    for (const note of result.notes) {
+      assert.ok(note.y > Math.max(...result.scenes.map((s) => s.y + s.height)) + 50);
+      assert.ok(note.y < result.credit.bounds.y - 30, "measurement notes stay between the courts and credits");
+    }
+    assert.ok(result.ink > 10, "independently decoded PNG contains the final credit line");
+    return result;
+  }
+  await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
+  await page.getByLabel("Project name").fill("Export text regression");
+  await save();
+  const baseline = await downloadTextCase("Export text regression", "Madison Square Garden court · Ganley894 · Public domain · https://commons.wikimedia.org/wiki/File:Madison_Square_Garden_court.jpg", "/tmp/freeze-floor-export-short-text.png");
+  const longName = "W".repeat(80);
+  const attribution = {
+    title: (`Court <photo> & \"credit\"\n` + "W".repeat(250)).slice(0, 250),
+    creator: "摄影者 · e\u0301 · 🏀 ".repeat(16) + "作者",
+    license: "License <permission> & " + "W".repeat(77),
+    url: "https://example.com/" + "W".repeat(980),
+  };
+  const ids = await page.evaluate(async ({ longName, attribution }) => {
+    const db = await new Promise((resolve, reject) => {
+      const r = indexedDB.open("arc-freeze-floor-v1", 1);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction("projects", "readwrite"), store = tx.objectStore("projects");
+        const read = store.getAll();
+        let ids;
+        read.onsuccess = () => {
+          const base = read.result.find((r) => r.project.name === "Export text regression");
+          const long = structuredClone(base), privatePhoto = structuredClone(base);
+          long.project = { ...long.project, id: "export-long", name: longName, attribution };
+          long.project.measurements = [{
+            id: "export-distance", a: { image: base.project.anchors[0].image }, b: { image: base.project.anchors[1].image },
+          }];
+          privatePhoto.project = { ...privatePhoto.project, id: "export-private", name: "Private <court> & notes" };
+          delete privatePhoto.project.attribution;
+          store.put(long);
+          store.put(privatePhoto);
+          ids = [base.project.id, long.project.id, privatePhoto.project.id];
+        };
+        tx.oncomplete = () => resolve(ids);
+        tx.onabort = () => reject(tx.error);
+        tx.onerror = () => {};
+      });
+    } finally { db.close(); }
+  }, { longName, attribution });
+  await openSaved(longName);
+  const fullCredit = [attribution.title, attribution.creator, attribution.license, attribution.url].join(" · ");
+  const longer = await downloadTextCase(longName, fullCredit, "/tmp/freeze-floor-export-long-text.png");
+  assert.ok(longer.title.lines.length > 1);
+  assert.ok(longer.credit.lines.length > 2);
+  assert.ok(longer.height > baseline.height, "wrapped title and full credits increase PNG height");
+  assert.equal(longer.notes.length, 1);
+  assert.match(longer.notes[0].text, /Approx 16\.0 ft/);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.getByRole("button", { name: "Light", exact: true }).click();
+  const mobile = await downloadTextCase(longName, fullCredit, "/tmp/freeze-floor-export-long-text-mobile.png");
+  assert.deepEqual(mobile, longer, "export text layout is independent of viewport and UI theme");
+  await openSaved("Private <court> & notes");
+  const privatePhoto = await downloadTextCase("Private <court> & notes", "Your private photograph", "/tmp/freeze-floor-export-private-text.png");
+  assert.equal(privatePhoto.credit.lines.length, 1);
+  // Remove only this regression's fixtures before the existing library tests
+  await page.evaluate(async (ids) => {
+    const db = await new Promise((resolve) => { const r = indexedDB.open("arc-freeze-floor-v1", 1); r.onsuccess = () => resolve(r.result); });
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("projects", "readwrite");
+        for (const id of ids) tx.objectStore("projects").delete(id);
+        tx.oncomplete = resolve;
+        tx.onabort = () => reject(tx.error);
+      });
+    } finally { db.close(); }
+  }, ids);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.reload();
+  await expect(page.locator(".ff-status")).toContainText("Alignment ready");
 }
 async function checkLandmarkMismatches() {
   await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
@@ -213,6 +367,7 @@ try {
     page.getByRole("heading", { name: "Freeze Floor", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await checkExportText();
   await checkLandmarkMismatches();
   await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
   await page.getByRole("button", { name: /^L1 ·/ }).click();
@@ -551,7 +706,7 @@ try {
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
   console.log(
-    "Freeze Floor browser regressions passed: pixel-fit mismatch labels, largest-anchor keyboard selection without edits, correction/undo, excluded and unavailable diagnostics, accessible coordinate range errors, retained invalid drafts, Enter/blur/Escape, boundary/fractional edits, exact undo, selection isolation, undo/redo during contact and landmark drags, perspective-safe selection and measurements, PNG export, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, both themes, no runtime errors or uploads",
+    "Freeze Floor browser regressions passed: measured PNG text wrapping, untruncated long credits and URLs, Unicode and XML escaping, decoded footer visibility, private-photo labels, viewport-independent exports, pixel-fit mismatch labels, largest-anchor keyboard selection without edits, correction/undo, excluded and unavailable diagnostics, accessible coordinate range errors, retained invalid drafts, Enter/blur/Escape, boundary/fractional edits, exact undo, selection isolation, undo/redo during contact and landmark drags, perspective-safe selection and measurements, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, both themes, no runtime errors or uploads",
   );
 } finally {
   await browser.close();
