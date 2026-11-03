@@ -187,14 +187,30 @@ export async function saveProject(
     db.close();
   }
 }
-export async function deleteProject(id: string) {
+export async function deleteProject(id: string, expectedRevision: string) {
   const db = await open();
   try {
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction("projects", "readwrite");
-      tx.objectStore("projects").delete(id);
+      const tx = db.transaction("projects", "readwrite"),
+        store = tx.objectStore("projects"),
+        request = store.get(id);
+      let failure: Error | undefined;
+      request.onsuccess = () => {
+        const stored: unknown = request.result;
+        if (!valid(stored) || projectRevision(stored) !== expectedRevision) {
+          failure = new ProjectConflictError(
+            stored === undefined
+              ? "This project was already deleted · Refresh the library before choosing another project"
+              : "This project changed in another tab · The saved version was kept · Refresh and review the library before confirming deletion again",
+          );
+          tx.abort();
+          return;
+        }
+        store.delete(id);
+      };
       tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(Error("Deletion did not finish · Retry"));
+      tx.onabort = () =>
+        reject(failure || Error("Deletion did not finish · Retry"));
       tx.onerror = () => {};
     });
   } finally {

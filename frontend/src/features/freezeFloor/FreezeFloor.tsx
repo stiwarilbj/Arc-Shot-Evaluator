@@ -1278,13 +1278,15 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                         )
                       )
                         return;
+                      setError("");
                       try {
-                        await deleteProject(s.project.id);
+                        await deleteProject(s.project.id, projectRevision(s));
                         if (current.current?.id === s.project.id)
                           setBaselineKind("unsaved");
                         await refresh();
                       } catch (e) {
                         setError(message(e));
+                        if (e instanceof ProjectConflictError) await refresh();
                       }
                     }}
                   >

@@ -232,11 +232,58 @@ try {
   await loser.locator(".ff-error").scrollIntoViewIfNeeded();
   await loser.screenshot({ path: "/tmp/freeze-floor-conflict-mobile.png" });
 
-  // A stale tab cannot resurrect a project that was deleted in the other tab
+  // A stale library card must not delete a newer revision, even at the same timestamp
+  await choose(loser);
+  await expect(loser.locator(".ff-library")).toContainText(committed[0].project.name);
+  await save(winner, "Newer before deletion");
+  const beforeDelete = await records(), draftName = await name(loser).inputValue();
+  assert.equal(beforeDelete[0].project.updatedAt, timestamp);
+  assert.notEqual(beforeDelete[0].revision, committed[0].revision);
+  await loser.getByRole("button", { name: "Dismiss error", exact: true }).click();
+  loser.once("dialog", (d) => d.accept());
+  await loser.getByRole("button", { name: `Delete ${committed[0].project.name}`, exact: true }).click();
+  await expect(conflict(loser)).toContainText("changed in another tab");
+  await expect(conflict(loser)).toContainText("review");
+  await expect(loser.locator(".ff-library")).toContainText("Newer before deletion");
+  assert.deepEqual(await records(), beforeDelete, "stale deletion must preserve metadata and image bytes");
+  await expect(name(loser)).toHaveValue(draftName);
+  await expect(saved(winner)).toBeVisible();
+
+  // Refresh never retries deletion; the user must explicitly confirm the new card
+  loser.once("dialog", (d) => d.dismiss());
+  await loser.getByRole("button", { name: "Delete Newer before deletion", exact: true }).click();
+  assert.deepEqual(await records(), beforeDelete);
+  await loser.evaluate(() => {
+    const original = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (...args) {
+      const tx = original.apply(this, args);
+      if (this.name === "arc-freeze-floor-v1" && tx.mode === "readwrite") {
+        IDBDatabase.prototype.transaction = original;
+        queueMicrotask(() => tx.abort());
+      }
+      return tx;
+    };
+  });
+  loser.once("dialog", (d) => d.accept());
+  await loser.getByRole("button", { name: "Delete Newer before deletion", exact: true }).click();
+  await expect(conflict(loser)).toContainText("Deletion did not finish");
+  assert.deepEqual(await records(), beforeDelete, "an aborted deletion preserves the project for retry");
+
+  // Keep another stale card to check missing-record handling after the confirmed retry
   await choose(winner);
+  await expect(winner.locator(".ff-library")).toContainText("Newer before deletion");
+  loser.once("dialog", (d) => d.accept());
+  await loser.getByRole("button", { name: "Delete Newer before deletion", exact: true }).click();
+  await expect(loser.locator(".ff-library")).toHaveCount(0);
+  await expect(conflict(loser)).toHaveCount(0);
+  assert.deepEqual(await records(), []);
   winner.once("dialog", (d) => d.accept());
-  await winner.getByRole("button", { name: `Delete ${committed[0].project.name}`, exact: true }).click();
+  await winner.getByRole("button", { name: "Delete Newer before deletion", exact: true }).click();
+  await expect(conflict(winner)).toContainText("already deleted");
   await expect(winner.locator(".ff-library")).toHaveCount(0);
+  await expect(name(winner)).toHaveValue("Newer before deletion");
+
+  // A stale tab cannot resurrect a project that was deleted in the other tab
   await saveButton(loser).click();
   await expect(conflict(loser)).toContainText("deleted");
   await expect(name(loser)).toHaveValue(loser === a ? "Concurrent A" : "Concurrent B");
@@ -245,5 +292,5 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
-  console.log("Freeze Floor conflicts passed: two tabs, same timestamps, stale saves/renames, preserved draft/PNG, reopen/retry, in-flight edits, legacy upgrade, simultaneous commits, deletion, mobile/light layout, no errors or uploads");
+  console.log("Freeze Floor conflicts passed: two tabs, same timestamps, stale saves/renames/deletions, preserved draft/PNG, reopen/retry, in-flight edits, legacy upgrade, simultaneous commits, cancelled/aborted/reconfirmed deletions, missing records, mobile/light layout, no errors or uploads");
 } finally { await browser.close(); }
