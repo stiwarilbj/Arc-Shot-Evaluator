@@ -204,6 +204,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         score: number;
         foot: { x: number; y: number };
       }[] = [];
+      let rejectedAnkleProposals = 0;
       for (let i = 0; i < raw.n; i++) {
         const score = raw.values[4 * raw.n + i];
         if (score < 0.4) continue;
@@ -229,6 +230,23 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
             : [];
         });
         if (!ankles.length || box[2] <= box[0] || box[3] <= box[1]) continue;
+        const boxWidth = box[2] - box[0],
+          boxHeight = box[3] - box[1],
+          // Allow a small 5% of box size for keypoint/box edge disagreement.
+          marginX = boxWidth * 0.05,
+          marginY = boxHeight * 0.05;
+        if (
+          ankles.some(
+            (p) =>
+              p.x < box[0] - marginX ||
+              p.x > box[2] + marginX ||
+              p.y < box[1] - marginY ||
+              p.y > box[3] + marginY,
+          )
+        ) {
+          rejectedAnkleProposals++;
+          continue;
+        }
         candidates.push({
           box,
           score,
@@ -270,6 +288,11 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           status: "uncertain",
           box: c.box,
         });
+      }
+      if (rejectedAnkleProposals > 0) {
+        warnings.push(
+          `${rejectedAnkleProposals} ankle proposal${rejectedAnkleProposals === 1 ? " was" : "s were"} rejected because at least one predicted ankle fell outside the accompanying person box (5% size margin) · Review contacts manually`,
+        );
       }
     } catch (e) {
       warnings.push(
