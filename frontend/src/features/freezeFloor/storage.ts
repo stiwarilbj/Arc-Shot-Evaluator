@@ -6,6 +6,7 @@ import {
   type StoredProject,
 } from "./types.ts";
 const DB = "arc-freeze-floor-v1";
+const OPEN_TIMEOUT_MS = 10_000;
 export type UnavailableProject = { key: IDBValidKey; name?: string };
 export type ProjectListing = {
   projects: StoredProject[];
@@ -20,25 +21,43 @@ export function projectRevision(value: StoredProject): string {
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const r = indexedDB.open(DB, 1);
-    let abandoned = false;
+    let abandoned = false,
+      settled = false;
+    const timeout = setTimeout(() => {
+      abandoned = true;
+      settled = true;
+      reject(
+        Error(
+          "Private storage is not responding · Retry · Your current image remains available for PNG download",
+        ),
+      );
+    }, OPEN_TIMEOUT_MS);
+    const fail = (error: Error) => {
+      if (settled) return;
+      abandoned = true;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    };
     r.onupgradeneeded = () => {
       r.result.createObjectStore("projects", { keyPath: "project.id" });
     };
     r.onerror = () =>
-      reject(
+      fail(
         Error(
           "Private storage could not open · Your current image is still available",
         ),
       );
     r.onblocked = () => {
-      abandoned = true;
-      reject(Error("Close another ARCade Hoops tab to open private storage"));
+      fail(Error("Close another ARCade Hoops tab to open private storage"));
     };
     r.onsuccess = () => {
-      if (abandoned) {
+      if (abandoned || settled) {
         r.result.close();
         return;
       }
+      settled = true;
+      clearTimeout(timeout);
       r.result.onversionchange = () => r.result.close();
       resolve(r.result);
     };
