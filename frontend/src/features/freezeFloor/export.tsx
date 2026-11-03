@@ -28,46 +28,52 @@ export async function exportPng(
     r.readAsDataURL(blob);
   });
   const textCanvas = document.createElement("canvas"),
-    textContext = textCanvas.getContext("2d");
-  if (!textContext) throw Error("PNG text layout unavailable");
-  const textWidth = 1740,
-    graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-  const wrap = (text: string, fontSize: number): string[] => {
-    textContext.font = `${fontSize}px Arial,sans-serif`;
-    const lines: string[] = [];
-    for (const paragraph of text.split(/\r\n?|\n/u)) {
-      let line = "";
-      for (const word of paragraph.trim().split(/\s+/u)) {
-        if (!word) continue;
-        const joined = line ? `${line} ${word}` : word;
-        if (textContext.measureText(joined).width <= textWidth) {
-          line = joined;
-          continue;
-        }
-        if (textContext.measureText(word).width <= textWidth) {
-          if (line) lines.push(line);
-          line = word;
-          continue;
-        }
-        // Break long URLs and unspaced names without splitting Unicode glyphs
-        if (line) line += " ";
-        for (const { segment } of graphemes.segment(word)) {
-          if (line && textContext.measureText(line + segment).width > textWidth) {
-            lines.push(line.trimEnd());
-            line = "";
-          }
-          line += segment;
-        }
-      }
-      lines.push(line);
-    }
-    return lines;
-  };
-  const titleLines = wrap(`Freeze Floor · ${p.name}`, 28),
     attribution = p.attribution
       ? `${p.attribution.title} · ${p.attribution.creator} · ${p.attribution.license} · ${p.attribution.url}`
-      : "Your private photograph",
+      : "Your private photograph";
+  let titleLines: string[], attributionLines: string[];
+  try {
+    const textContext = textCanvas.getContext("2d");
+    if (!textContext) throw Error("PNG text layout unavailable");
+    const textWidth = 1740,
+      graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    const wrap = (text: string, fontSize: number): string[] => {
+      textContext.font = `${fontSize}px Arial,sans-serif`;
+      const lines: string[] = [];
+      for (const paragraph of text.split(/\r\n?|\n/u)) {
+        let line = "";
+        for (const word of paragraph.trim().split(/\s+/u)) {
+          if (!word) continue;
+          const joined = line ? `${line} ${word}` : word;
+          if (textContext.measureText(joined).width <= textWidth) {
+            line = joined;
+            continue;
+          }
+          if (textContext.measureText(word).width <= textWidth) {
+            if (line) lines.push(line);
+            line = word;
+            continue;
+          }
+          // Break long URLs and unspaced names without splitting Unicode glyphs
+          if (line) line += " ";
+          for (const { segment } of graphemes.segment(word)) {
+            if (line && textContext.measureText(line + segment).width > textWidth) {
+              lines.push(line.trimEnd());
+              line = "";
+            }
+            line += segment;
+          }
+        }
+        lines.push(line);
+      }
+      return lines;
+    };
+    titleLines = wrap(`Freeze Floor · ${p.name}`, 28);
     attributionLines = wrap(attribution, 11);
+  } finally {
+    textCanvas.width = 0;
+    textCanvas.height = 0;
+  }
   const alignment = align(p.anchors, p.reviewed),
     width = 1800,
     left = 1050,
@@ -123,29 +129,35 @@ export async function exportPng(
     <text id="ff-export-attribution" font-size="11" fill="#b3bdbe">${textLines(attributionLines, attributionY, 16)}</text>
   </svg>`;
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  let img: HTMLImageElement | undefined, canvas: HTMLCanvasElement | undefined;
   try {
-    const img = new Image();
+    img = new Image();
     img.src = url;
     await img.decode();
-    const canvas = document.createElement("canvas");
+    canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw Error("PNG canvas unavailable");
     ctx.drawImage(img, 0, 0);
     const result = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
+      ctx.canvas.toBlob(
         (b) => (b ? resolve(b) : reject(Error("PNG encoding failed"))),
         "image/png",
       ),
     );
-    const output = URL.createObjectURL(result),
-      a = document.createElement("a");
+    const output = URL.createObjectURL(result);
+    setTimeout(() => URL.revokeObjectURL(output), 30000);
+    const a = document.createElement("a");
     a.href = output;
     a.download = `freeze-floor-${p.name.replace(/[^a-z0-9-]/gi, "-").slice(0, 50)}.png`;
     a.click();
-    setTimeout(() => URL.revokeObjectURL(output), 30000);
   } finally {
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    img?.removeAttribute("src");
     URL.revokeObjectURL(url);
   }
 }

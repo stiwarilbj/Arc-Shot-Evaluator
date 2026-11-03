@@ -202,6 +202,108 @@ async function checkExportText() {
   await page.reload();
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
 }
+async function checkExportCleanup() {
+  const originalPhoto = await photo.locator("image").getAttribute("href");
+  await page.evaluate(() => {
+    const probe = window.exportCleanup = { active: false, mode: "", canvases: [], images: [], urls: [], revoked: [], timers: [] };
+    const create = Document.prototype.createElement,
+      decode = HTMLImageElement.prototype.decode,
+      context = HTMLCanvasElement.prototype.getContext,
+      encode = HTMLCanvasElement.prototype.toBlob,
+      createUrl = URL.createObjectURL, revokeUrl = URL.revokeObjectURL,
+      timeout = window.setTimeout;
+    Document.prototype.createElement = function (tag, ...args) {
+      const element = create.call(this, tag, ...args);
+      if (probe.active && tag === "canvas") probe.canvases.push(element);
+      return element;
+    };
+    HTMLImageElement.prototype.decode = function (...args) {
+      if (probe.active) {
+        probe.images.push(this);
+        if (probe.mode === "decode") return Promise.reject(Error("Injected export decode failure"));
+      }
+      return decode.apply(this, args);
+    };
+    HTMLCanvasElement.prototype.getContext = function (type, ...args) {
+      const index = probe.canvases.indexOf(this);
+      if (probe.active && type === "2d" &&
+          ((probe.mode === "text-context" && index === 0) || (probe.mode === "context" && index === 1))) return null;
+      return context.call(this, type, ...args);
+    };
+    HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+      if (probe.active && probe.canvases.includes(this)) {
+        if (probe.mode === "encode-null") { queueMicrotask(() => callback(null)); return; }
+        if (probe.mode === "encode-throw") throw Error("Injected export encoding failure");
+      }
+      return encode.call(this, callback, ...args);
+    };
+    URL.createObjectURL = function (blob) {
+      const url = createUrl.call(this, blob);
+      if (probe.active) probe.urls.push({ url, type: blob.type });
+      return url;
+    };
+    URL.revokeObjectURL = function (url) {
+      if (probe.urls.some((entry) => entry.url === url)) probe.revoked.push(url);
+      return revokeUrl.call(this, url);
+    };
+    window.setTimeout = function (handler, delay, ...args) {
+      const id = timeout.call(this, handler, delay, ...args);
+      if (probe.active && delay === 30000 && typeof handler === "function")
+        probe.timers.push({ id, run: () => handler(...args) });
+      return id;
+    };
+    probe.restore = () => {
+      Document.prototype.createElement = create;
+      HTMLImageElement.prototype.decode = decode;
+      HTMLCanvasElement.prototype.getContext = context;
+      HTMLCanvasElement.prototype.toBlob = encode;
+      URL.createObjectURL = createUrl;
+      URL.revokeObjectURL = revokeUrl;
+      window.setTimeout = timeout;
+      for (const timer of probe.timers) { clearTimeout(timer.id); timer.run(); }
+      delete window.exportCleanup;
+    };
+  });
+  try {
+    for (const mode of ["success", "success", "text-context", "decode", "context", "encode-null", "encode-throw", "success"]) {
+      await page.evaluate((mode) => {
+        Object.assign(window.exportCleanup, { active: true, mode, canvases: [], images: [], urls: [], revoked: [] });
+      }, mode);
+      const download = mode === "success" ? page.waitForEvent("download") : null;
+      await page.getByRole("button", { name: "Download PNG", exact: true }).click();
+      if (download) assert.equal(await (await download).failure(), null);
+      else await expect(page.getByRole("alert")).toContainText({
+        "text-context": "PNG text layout unavailable", decode: "Injected export decode failure",
+        context: "PNG canvas unavailable", "encode-null": "PNG encoding failed", "encode-throw": "Injected export encoding failure",
+      }[mode]);
+      await expect(page.getByRole("button", { name: "Download PNG", exact: true })).toBeEnabled();
+      const resources = await page.evaluate(() => {
+        const p = window.exportCleanup;
+        p.active = false;
+        return {
+          canvases: p.canvases.map((c) => [c.width, c.height]),
+          images: p.images.map((image) => image.getAttribute("src")),
+          urls: p.urls, revoked: p.revoked,
+        };
+      });
+      assert.deepEqual(resources.canvases, Array(mode === "text-context" || mode === "decode" ? 1 : 2).fill([0, 0]), mode);
+      assert.deepEqual(resources.images, mode === "text-context" ? [] : [null], mode);
+      assert.equal(resources.urls.length, mode === "text-context" ? 0 : mode === "success" ? 2 : 1, mode);
+      for (const asset of resources.urls) {
+        assert.equal(resources.revoked.includes(asset.url), asset.type === "image/svg+xml", "SVGs release immediately while PNGs keep their download grace period");
+      }
+      const revoked = await page.evaluate(() => {
+        for (const timer of window.exportCleanup.timers.splice(0)) { clearTimeout(timer.id); timer.run(); }
+        return window.exportCleanup.revoked;
+      });
+      assert.ok(resources.urls.every((asset) => revoked.includes(asset.url)), "all export URLs release after the download grace period");
+      assert.equal(await photo.locator("image").getAttribute("href"), originalPhoto, "export cleanup never clears the editing photograph");
+      await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+    }
+  } finally {
+    await page.evaluate(() => window.exportCleanup.restore());
+  }
+}
 async function checkLandmarkMismatches() {
   await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
   const floorInspector = page.locator(".ff-inspector-grid > section").first();
@@ -368,6 +470,7 @@ try {
   ).toBeVisible();
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
   await checkExportText();
+  await checkExportCleanup();
   await checkLandmarkMismatches();
   await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
   await page.getByRole("button", { name: /^L1 ·/ }).click();
@@ -706,7 +809,7 @@ try {
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
   console.log(
-    "Freeze Floor browser regressions passed: measured PNG text wrapping, untruncated long credits and URLs, Unicode and XML escaping, decoded footer visibility, private-photo labels, viewport-independent exports, pixel-fit mismatch labels, largest-anchor keyboard selection without edits, correction/undo, excluded and unavailable diagnostics, accessible coordinate range errors, retained invalid drafts, Enter/blur/Escape, boundary/fractional edits, exact undo, selection isolation, undo/redo during contact and landmark drags, perspective-safe selection and measurements, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, both themes, no runtime errors or uploads",
+    "Freeze Floor browser regressions passed: export canvas/image/URL cleanup after repeated success and injected text-context, decode, drawing-context and encoding failures, successful retry, measured PNG text wrapping, untruncated long credits and URLs, Unicode and XML escaping, decoded footer visibility, private-photo labels, viewport-independent exports, pixel-fit mismatch labels, largest-anchor keyboard selection without edits, correction/undo, excluded and unavailable diagnostics, accessible coordinate range errors, retained invalid drafts, Enter/blur/Escape, boundary/fractional edits, exact undo, selection isolation, undo/redo during contact and landmark drags, perspective-safe selection and measurements, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, both themes, no runtime errors or uploads",
   );
 } finally {
   await browser.close();
