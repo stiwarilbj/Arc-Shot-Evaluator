@@ -4,6 +4,7 @@ const require = createRequire(
   new URL("../frontend/package.json", import.meta.url),
 );
 const { chromium, expect } = require("@playwright/test");
+// Browser plugin not available · Exercise the real editor with installed Chrome
 const browser = await chromium.launch({
   executablePath:
     process.env.CHROME_PATH ||
@@ -12,8 +13,12 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const errors = [],
-  uploads = [];
+  uploads = [],
+  consoleIssues = [];
 page.on("pageerror", (e) => errors.push(e.message));
+page.on("console", (entry) => {
+  if (["warning", "error"].includes(entry.type())) consoleIssues.push(entry.text());
+});
 page.on("request", (r) => {
   if (r.method() !== "GET") uploads.push(r.url());
 });
@@ -44,6 +49,36 @@ async function circlePoint(locator) {
   }));
 }
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
+async function checkNumeric(label, marker, axis) {
+  const input = page.getByLabel(label, { exact: true });
+  const original = await input.inputValue(), before = await circlePoint(marker);
+  const max = Number(await input.getAttribute("max"));
+  for (const invalid of [String(max + 1), "-1", ""]) {
+    await input.fill(invalid);
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+    await expect(input).toHaveAccessibleDescription(`Enter a value from 0 to ${max} px`);
+    await input.press(invalid === "-1" ? "Enter" : "Tab");
+    await expect(input).toHaveValue(invalid);
+    assert.deepEqual(await circlePoint(marker), before);
+    await expect(page.getByRole("button", { name: "Undo floor edit" })).toBeDisabled();
+    await input.press("Escape");
+    await expect(input).toHaveValue(original);
+    await expect(input).not.toHaveAttribute("aria-invalid", "true");
+    await expect(input).toHaveAccessibleDescription("");
+  }
+  // Boundary values and a fractional correction commit once and undo exactly
+  for (const valid of [0, max, Math.round((Number(original) + 0.1) * 10) / 10]) {
+    await input.fill(String(valid));
+    await input.press("Enter");
+    await expect(input).not.toHaveAttribute("aria-invalid", "true");
+    near((await circlePoint(marker))[axis], valid);
+    near((await circlePoint(marker))[axis === "x" ? "y" : "x"], before[axis === "x" ? "y" : "x"]);
+    await page.getByRole("button", { name: "Undo floor edit" }).click();
+    assert.deepEqual(await circlePoint(marker), before);
+    await expect(input).toHaveValue(original);
+    await expect(page.getByRole("button", { name: "Undo floor edit" })).toBeDisabled();
+  }
+}
 async function choose() {
   if (!(await page.locator(".ff-chooser").isVisible()))
     await page
@@ -93,6 +128,42 @@ try {
   await expect(
     page.getByRole("heading", { name: "Freeze Floor", exact: true }),
   ).toBeVisible();
+  await expect(page.locator(".ff-status")).toContainText("Alignment ready");
+  await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
+  await page.getByRole("button", { name: /^L1 ·/ }).click();
+  const firstAnchor = photo.locator("[data-anchor]").first().locator("circle");
+  await checkNumeric("Landmark X (px)", firstAnchor, "x");
+  await checkNumeric("Landmark Y (px)", firstAnchor, "y");
+  const landmarkX = page.getByLabel("Landmark X (px)", { exact: true });
+  await landmarkX.fill(String(Number(await landmarkX.getAttribute("max")) + 1));
+  await page.locator(".ff-coordinate-fields").screenshot({ path: "/tmp/freeze-floor-coordinate-error-desktop.png" });
+  await landmarkX.press("Escape");
+  await page.getByRole("button", { name: "Player 1", exact: true }).click();
+  const firstContact = photo.locator("[data-contact]").first().locator("circle");
+  await checkNumeric("Contact X (px)", firstContact, "x");
+  await checkNumeric("Contact Y (px)", firstContact, "y");
+  // An invalid draft belongs to one selection, even when another has the same X
+  const contactX = page.getByLabel("Contact X (px)", { exact: true });
+  const sharedX = await contactX.inputValue();
+  await page.getByRole("button", { name: "Player 2", exact: true }).click();
+  await contactX.fill(sharedX);
+  await contactX.press("Enter");
+  await page.getByRole("button", { name: "Player 1", exact: true }).click();
+  await contactX.fill("-1");
+  await page.getByRole("button", { name: "Player 2", exact: true }).click();
+  await expect(contactX).toHaveValue(sharedX);
+  await expect(contactX).not.toHaveAttribute("aria-invalid", "true");
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.getByRole("button", { name: "Light", exact: true }).click();
+  const contactY = page.getByLabel("Contact Y (px)", { exact: true });
+  await contactY.fill("-1");
+  await contactY.press("Tab");
+  await page.locator(".ff-coordinate-fields").screenshot({ path: "/tmp/freeze-floor-coordinate-error-mobile.png" });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await contactY.press("Escape");
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.reload();
   await expect(page.locator(".ff-status")).toContainText("Alignment ready");
   // An unfinished drag must not override restored history in either view.
   for (const view of ["court", "photo"]) {
@@ -392,9 +463,10 @@ try {
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
   await page.screenshot({ path: "/tmp/freeze-floor-interactions-mobile.png" });
   assert.deepEqual(errors, []);
+  assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
   console.log(
-    "Freeze Floor browser regressions passed: undo/redo during contact and landmark drags, perspective-safe selection and measurements, PNG export, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, no runtime errors or uploads",
+    "Freeze Floor browser regressions passed: accessible coordinate range errors, retained invalid drafts, Enter/blur/Escape, boundary/fractional edits, exact undo, selection isolation, undo/redo during contact and landmark drags, perspective-safe selection and measurements, PNG export, contact-safe keyboard measurements, view-aware nudging/placement, reload, delayed rename/save/delete, mobile overflow, both themes, no runtime errors or uploads",
   );
 } finally {
   await browser.close();

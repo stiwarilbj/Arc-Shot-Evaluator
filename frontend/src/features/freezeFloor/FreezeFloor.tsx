@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -87,11 +88,17 @@ function Numeric({
 }) {
   const [draft, setDraft] = useState(String(value)),
     cancelled = useRef(false);
+  const errorId = useId(),
+    n = Number(draft),
+    invalid = !draft.trim() || !Number.isFinite(n) || n < min || n > max;
   useEffect(() => setDraft(String(value)), [value]);
   return (
     <label>
       {label}
       <input
+        aria-label={label}
+        aria-invalid={invalid}
+        aria-describedby={invalid ? errorId : undefined}
         type="number"
         min={min}
         max={max}
@@ -104,20 +111,26 @@ function Numeric({
             setDraft(String(value));
             return;
           }
-          const n = Number(draft);
-          if (draft.trim() && Number.isFinite(n) && n >= min && n <= max) {
-            if (n !== value) onCommit(n);
-          } else setDraft(String(value));
+          if (!invalid && n !== value) onCommit(n);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
           if (e.key === "Escape") {
+            e.preventDefault();
             cancelled.current = true;
             setDraft(String(value));
             e.currentTarget.blur();
           }
         }}
       />
+      {invalid ? (
+        <span id={errorId} className="ff-coordinate-error" aria-live="polite">
+          Enter a value from {min} to {max} px
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -1641,7 +1654,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                     <div className="ff-coordinate-fields">
                       {(["x", "y"] as const).map((key) => (
                         <Numeric
-                          key={key}
+                          key={`${selectedAnchor.id}-${key}`}
                           label={`Landmark ${key.toUpperCase()} (px)`}
                           value={
                             Math.round(
@@ -1762,7 +1775,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                   <div className="ff-coordinate-fields">
                     {(["x", "y"] as const).map((key) => (
                       <Numeric
-                        key={key}
+                        key={`${selectedContact.id}-${key}`}
                         label={`Contact ${key.toUpperCase()} (px)`}
                         value={
                           Math.round(

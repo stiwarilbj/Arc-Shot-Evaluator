@@ -24,6 +24,8 @@ Three licensed real photographs are supplied · Two wide images have manually in
 8. Toggle Paint, Corner areas, or Restricted area independently · Select feet or meters
 9. Save explicitly, or download the combined photograph/overhead PNG · No photo is uploaded
 
+Landmark and contact coordinate fields show the allowed pixel range for blank or out-of-range entries · The input is marked invalid and keeps your entry after Enter or moving focus away, while the last valid position stays unchanged · Correct the value and press Enter or leave the field to apply it · Escape restores the last valid value without adding an undo step · Selecting another landmark or player starts with that selection’s own coordinates
+
 Before replacing an edited photograph with a sample, uploaded image, saved project, or captured video frame, choose **Save**, **Discard**, or **Cancel** · Save finishes successfully before the replacement opens · Storage failures and revision conflicts keep your photograph, corrections, and replacement choice available for retry · Cancel or Escape keeps editing the current photograph · Untouched samples switch immediately, and undoing back to the loaded or last saved state removes the prompt · Browsing videos alone does not replace your photograph
 
 The save label uses that same comparison · Untouched samples show **Sample unchanged**, edited projects show **Unsaved project**, and unchanged saved projects show **Saved on this device** · Undo, redo, or manually restoring the saved contents restores the saved label without another write · Undoing past the last save creates unsaved changes again · New uploads and video stills remain unsaved until explicitly saved

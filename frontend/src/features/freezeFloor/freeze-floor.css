@@ -464,6 +464,14 @@
   min-width: 0;
   flex: 1;
 }
+.ff-inspector input[aria-invalid="true"] {
+  border-color: var(--orange);
+}
+.ff-coordinate-error {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .ff-items {
   max-height: 240px;
   overflow: auto;
