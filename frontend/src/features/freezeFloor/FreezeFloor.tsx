@@ -43,6 +43,7 @@ import {
 import { normalizeImage, readImageHeader } from "./images.ts";
 import {
   deleteProject,
+  getProject,
   listProjects,
   ProjectConflictError,
   projectRevision,
@@ -441,9 +442,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
     setBusy("Checking saved image");
     try {
       // Save-before-open may have just replaced this library card's revision
-      const s = (await listProjects()).projects.find(
-        (s) => s.project.id === selected.project.id,
-      );
+      const s = await getProject(selected.project.id);
       if (!isCurrent()) return;
       if (!s)
         throw Error("Saved project is unavailable · Your current photograph remains open");

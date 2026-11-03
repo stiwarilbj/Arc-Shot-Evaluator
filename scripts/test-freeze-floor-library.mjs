@@ -31,6 +31,22 @@ async function refresh() {
   await page.getByRole("button", { name: "Close photo chooser" }).click();
   await chooser.click();
 }
+async function traceProjectReads() {
+  await page.evaluate(() => {
+    window.projectReads = [];
+    if (window.projectReadTracking) return;
+    window.projectReadTracking = true;
+    for (const method of ["get", "getAll", "openCursor", "getAllKeys", "openKeyCursor"]) {
+      const original = IDBObjectStore.prototype[method];
+      IDBObjectStore.prototype[method] = function (...args) {
+        if (this.transaction.db.name === "arc-freeze-floor-v1" &&
+          this.transaction.mode === "readonly")
+          window.projectReads.push({ method, key: args[0] ?? null });
+        return original.apply(this, args);
+      };
+    }
+  });
+}
 // Hold delivery after a real readonly transaction finishes, releasing its locks
 // so subsequent saves/deletions can complete before the older promise settles
 async function holdNextListing(fail = false) {
@@ -87,6 +103,7 @@ async function records() {
       return await Promise.all(rows.map(async ({ key, value }) => ({
         key,
         project: value.project,
+        revision: value.revision,
         image: value.image instanceof Blob ? {
           type: value.image.type,
           size: value.image.size,
@@ -118,6 +135,29 @@ async function deleteKeys(keys) {
       db.close();
     }
   }, keys);
+}
+async function replaceLookupRecord(mode) {
+  await page.evaluate(async (mode) => {
+    const db = await new Promise((resolve, reject) => {
+      const r = indexedDB.open("arc-freeze-floor-v1", 1);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("projects", "readwrite"), store = tx.objectStore("projects");
+        const original = window.lookupRecord;
+        if (mode === "missing") store.delete(original.project.id);
+        else store.put(mode === "revision" ? { ...original, revision: null }
+          : mode === "metadata" ? { ...original, project: { ...original.project, width: 0 } }
+          : mode === "newer" ? { ...original, revision: crypto.randomUUID(),
+            project: { ...original.project, name: "Latest single lookup" } }
+          : original);
+        tx.oncomplete = resolve;
+        tx.onabort = () => reject(tx.error);
+      });
+    } finally { db.close(); }
+  }, mode);
 }
 
 try {
@@ -219,8 +259,12 @@ try {
   assert.deepEqual(await records(), original, "listing must not rewrite or delete any record");
 
   // Healthy projects still open, and source changes cannot erase the library warning
+  await traceProjectReads();
   await library.getByRole("button", { name: "Healthy older project", exact: true }).click();
   await expect(page.getByLabel("Project name")).toHaveValue("Healthy older project");
+  assert.deepEqual(await page.evaluate(() => window.projectReads),
+    [{ method: "get", key: "healthy-older" }],
+    "opening a saved photograph must read only its keyed record, not other image blobs");
   await choose();
   await expect(warning).toContainText("4 saved projects unavailable");
   await page.getByLabel("Project name").fill("Healthy updated project");
@@ -286,6 +330,7 @@ try {
         const r = tx.objectStore("projects").get("healthy-older");
         tx.oncomplete = () => {
           const original = r.result;
+          window.lookupRecord = original;
           window.identityCollisionRecord = { ...original, project: {
             ...original.project, id: "damaged-identities", name: "Shared landmark/player ID",
             contacts: [{ ...original.project.contacts[0], id: original.project.anchors[0].id }],
@@ -296,6 +341,52 @@ try {
       });
     } finally { db.close(); }
   });
+
+  // Stale cards must still validate only their requested record and preserve
+  // the open photograph when that record was damaged or deleted elsewhere
+  const openName = await page.getByLabel("Project name").inputValue();
+  const openImage = await page.locator(".ff-photo>svg image").getAttribute("href");
+  for (const mode of ["metadata", "revision", "missing"]) {
+    await replaceLookupRecord(mode);
+    const before = await records();
+    await traceProjectReads();
+    await library.getByRole("button", { name: "Healthy updated project", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("Saved project is unavailable");
+    await expect(page.getByLabel("Project name")).toHaveValue(openName);
+    assert.equal(await page.locator(".ff-photo>svg image").getAttribute("href"), openImage);
+    assert.deepEqual(await page.evaluate(() => window.projectReads),
+      [{ method: "get", key: "healthy-older" }]);
+    assert.deepEqual(await records(), before, "failed opens must not rewrite stored recovery data");
+    await page.getByRole("button", { name: "Dismiss error", exact: true }).click();
+  }
+  await replaceLookupRecord("newer");
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (...args) {
+      const request = original.apply(this, args);
+      if (this.transaction.db.name === "arc-freeze-floor-v1" &&
+        this.transaction.mode === "readonly") {
+        IDBObjectStore.prototype.get = original;
+        this.transaction.abort();
+      }
+      return request;
+    };
+  });
+  await library.getByRole("button", { name: "Healthy updated project", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Saved project loading was interrupted");
+  await expect(page.getByLabel("Project name")).toHaveValue(openName);
+  assert.equal(await page.locator(".ff-photo>svg image").getAttribute("href"), openImage);
+  await page.getByRole("button", { name: "Dismiss error", exact: true }).click();
+  // The next attempt uses the latest stored revision, not the stale card's token
+  await library.getByRole("button", { name: "Healthy updated project", exact: true }).click();
+  await expect(page.getByLabel("Project name")).toHaveValue("Latest single lookup");
+  if (!(await page.getByLabel("Project name").isVisible()))
+    await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
+  await page.getByLabel("Project name").fill("Saved after single lookup");
+  await page.getByRole("button", { name: "Save project", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await choose();
   await deleteKeys((await records()).filter((r) => !String(r.key).startsWith("damaged-")).map((r) => r.key));
   await refresh();
   await expect(library).toHaveCount(0);
@@ -343,7 +434,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleIssues, []);
   assert.deepEqual(uploads, []);
-  console.log("Freeze Floor library passed: out-of-order saves/deletions/warnings/errors, healthy/partial/damaged/empty listings, stored identities, chronological order, unchanged recovery records, open/save/reload, interrupted reads, mobile/light layout, no runtime errors or uploads");
+  console.log("Freeze Floor library passed: single-record loading, stale-card revision refresh, missing/damaged records, interrupted lookups and retries, out-of-order saves/deletions/warnings/errors, healthy/partial/damaged/empty listings, stored identities, chronological order, unchanged recovery records, open/save/reload, mobile/light layout, no runtime errors or uploads");
 } finally {
   await browser.close();
 }

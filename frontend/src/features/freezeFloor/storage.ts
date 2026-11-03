@@ -103,6 +103,29 @@ export async function listProjects(): Promise<ProjectListing> {
     db.close();
   }
 }
+export async function getProject(id: string): Promise<StoredProject | null> {
+  const db = await open();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("projects", "readonly"),
+        request = tx.objectStore("projects").get(id);
+      tx.oncomplete = () => {
+        const value: unknown = request.result;
+        if (value === undefined) resolve(null);
+        else if (valid(value) && value.project.id === id) resolve(value);
+        else
+          reject(
+            Error("Saved project is unavailable · Your current photograph remains open"),
+          );
+      };
+      tx.onabort = () =>
+        reject(tx.error || Error("Saved project loading was interrupted"));
+      tx.onerror = () => {};
+    });
+  } finally {
+    db.close();
+  }
+}
 export async function saveProject(
   value: StoredProject,
   expectedRevision: string | null,
