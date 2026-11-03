@@ -986,13 +986,14 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   }
   async function download() {
     if (!p || !image) return;
+    const imageId = p.imageId;
     setExporting(true);
     setError("");
     try {
       const { exportPng } = await import("./export.tsx");
       await exportPng(p, image, check, coverage);
     } catch (e) {
-      setError(message(e));
+      if (current.current?.imageId === imageId) setError(message(e));
     } finally {
       setExporting(false);
     }
