@@ -311,10 +311,33 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           : "Automatic alignment interrupted · Manual landmarks remain available",
     });
   } finally {
-    if (values) Object.values(values).forEach((t) => t.dispose());
-    tensor?.dispose();
-    await current?.release();
-    r.image.close();
+    try {
+      if (values)
+        for (const t of Object.values(values)) {
+          try {
+            t.dispose();
+          } catch {
+            // Continue releasing the remaining resources
+          }
+        }
+    } catch {
+      // A damaged output map must not block the other cleanup steps
+    }
+    try {
+      tensor?.dispose();
+    } catch {
+      // Continue cleanup even if tensor disposal fails
+    }
+    try {
+      await current?.release();
+    } catch {
+      // Continue cleanup even if the inference session cannot release
+    }
+    try {
+      r.image.close();
+    } catch {
+      // Always reset the worker state, even if the bitmap is already closed
+    }
     busy = false;
   }
 };
