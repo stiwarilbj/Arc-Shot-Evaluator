@@ -75,6 +75,7 @@ function input(image: ImageBitmap) {
     for (let c = 0; c < 3; c++) rgb[c * 640 * 640 + i] = rgba[i * 4 + c] / 255;
   return {
     tensor: new ort.Tensor("float32", rgb, [1, 3, 640, 640]),
+    contentBounds: { left: x, top: y, right: x + w, bottom: y + h },
     map: (px: number, py: number) => ({ x: (px - x) / w, y: (py - y) / h }),
   };
 }
@@ -212,6 +213,14 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           y = raw.values[raw.n + i],
           w = raw.values[2 * raw.n + i],
           h = raw.values[3 * raw.n + i];
+        const content = feed.contentBounds;
+        if (
+          x < content.left ||
+          x > content.right ||
+          y < content.top ||
+          y > content.bottom
+        )
+          continue;
         const tl = feed.map(x - w / 2, y - h / 2),
           br = feed.map(x + w / 2, y + h / 2),
           box: [number, number, number, number] = [
