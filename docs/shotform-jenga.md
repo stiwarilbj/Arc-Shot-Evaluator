@@ -46,6 +46,8 @@ The neural model describes this animated game only · It does not analyze upload
 
 ## Progress and accessibility
 
+Desktop and split-screen windows at least 640 px wide and 600 px tall keep the court, three adjustment cards, and round controls in the available viewport without page scrolling · The court resizes with the window and shorter windows use tighter spacing · Completed rounds replace inactive test controls with the result and Next round · Smaller phone windows retain a stacked layout so controls remain readable
+
 Version-1 browser storage includes engine identity, challenge seed, random state, controls, pending change, preceding controls, tested count, recent seeds, and round totals · Motion and diagnostic values are reconstructed instead of trusting saved scores · Validation checks that undo history is reachable and best scores can be produced by the scoring formula, and checks the first round's saved best score against its actual result · Invalid records recover to a fresh game, and unavailable storage permits in-memory play
 
 A test is persisted before playback, so reloading an interrupted test displays the settled outcome without recounting it · Completion only says it was saved when the write succeeds; otherwise it explains that the result is available for the current visit · Next round moves keyboard focus to its announced round and level · Workspace changes and hidden tabs pause animation · Resuming a paused test keeps adjustments locked until playback finishes or motion is scrubbed to the end · Reduced-motion preference disables autoplay and exposes the same manual motion scrubber · All adjustments use standard keyboard-operable buttons with text-and-symbol feedback
