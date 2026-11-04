@@ -335,7 +335,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
       let overlapSuppressedCandidates = 0;
       const overlapReviewLabels = new Set<string>();
       for (const c of candidates) {
-        const overlappingContact = contacts.find((k) => {
+        const overlappingContacts = contacts.filter((k) => {
           const b = k.box!,
             a = c.box,
             inter =
@@ -349,9 +349,11 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
             0.45
           );
         });
-        if (overlappingContact) {
+        if (overlappingContacts.length > 0) {
           overlapSuppressedCandidates++;
-          overlapReviewLabels.add(overlappingContact.label);
+          overlappingContacts.forEach((contact) =>
+            overlapReviewLabels.add(contact.label),
+          );
           continue;
         }
         if (contacts.length === 40) {
@@ -377,7 +379,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           .map((label) => `Player ${label}`)
           .join(", ");
         warnings.push(
-          `Near-duplicate review · ${overlapSuppressedCandidates} person candidate${overlapSuppressedCandidates === 1 ? " was" : "s were"} skipped against ${players} · Check for a nearby player the detector may have missed`,
+          `Near-duplicate review · ${overlapSuppressedCandidates} person candidate${overlapSuppressedCandidates === 1 ? " was" : "s were"} skipped across overlapping accepted contacts ${players} · Check for a nearby player the detector may have missed`,
         );
       }
       if (rejectedAnkleProposals > 0) {
