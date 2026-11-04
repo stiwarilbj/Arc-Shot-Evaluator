@@ -588,6 +588,10 @@ not change or save the play
 Open **Others → Guess the Jumper** for **Guess**, **Create**, and **My Clips** ·
 Personal videos stay on your device; they are never automatically published
 
+Desktop fullscreen and split-screen windows fit without page scrolling · Guess
+resizes playback, Create scrolls its controls and preview separately, and My Clips
+keeps long libraries inside the active view · Phones retain a stacked layout
+
 ### Create a silhouette clip
 
 1. **Upload:** choose a decodable video up to **100 MB** and trim a segment to

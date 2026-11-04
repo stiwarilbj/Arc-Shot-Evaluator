@@ -3,6 +3,14 @@
 Open **Others → Guess the Jumper**. Guess, Create and My Clips preserve their
 state when switching workspaces. Dark mode remains the default.
 
+Desktop and split-screen windows at least 640 × 600 fit the workspace without
+page scrolling · The heading and Guess / Create / My Clips tabs stay visible
+while quiz playback resizes to the available space · Long answer panels, clip
+libraries, and saved-copy editors scroll inside the active view · Create keeps
+the upload and correction controls beside the preview, with independent scroll
+areas so long controls do not push the preview off the page · Smaller windows
+retain normal page scrolling and phones keep the stacked layout
+
 ## Selection coordinates
 
 Mask points and boxes use normalized coordinates in the decoded, upright image.

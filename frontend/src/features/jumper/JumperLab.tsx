@@ -190,7 +190,7 @@ export default function JumperLab({
           </button>
         </div>
       ) : null}
-      <section hidden={tab !== "guess"}>
+      <section className="jumper-view jumper-view-guess" aria-label="Guess the shooter" tabIndex={0} hidden={tab !== "guess"}>
         <Guess
           active={active && tab === "guess"}
           personal={clips.filter((value) => value.quiz)}
@@ -201,9 +201,9 @@ export default function JumperLab({
         />
       </section>
       {opened || tab === "create" ? (
-        <section hidden={tab !== "create"}>
+        <section className="jumper-view jumper-view-create" aria-label="Create a clip" tabIndex={0} hidden={tab !== "create"}>
           <Suspense fallback={<p role="status">Opening editor…</p>}>
-            <div hidden={!!editingCopy}>
+            <div className="jumper-new-clip" hidden={!!editingCopy}>
               <Editor
                 active={active && tab === "create" && !editingCopy}
                 onSaved={() => {
@@ -223,7 +223,7 @@ export default function JumperLab({
           </Suspense>
         </section>
       ) : null}
-      <section hidden={tab !== "clips"}>
+      <section className="jumper-view jumper-view-clips" aria-label="My Clips library" tabIndex={0} hidden={tab !== "clips"}>
         <Library
           clips={clips}
           loading={loading}

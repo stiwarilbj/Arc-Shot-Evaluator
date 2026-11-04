@@ -518,7 +518,7 @@ export function ArcShotEvaluatorApp() {
   );
 
   return (
-    <div className={`app-shell ${workspace === "home" ? "home-app-shell" : workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : workspace === "shotform" ? "games-app-shell" : workspace === "freezefloor" ? "freeze-floor-app-shell" : session ? "analysis-session-shell" : ""}`}>
+    <div className={`app-shell ${workspace === "home" ? "home-app-shell" : workspace === "playbook" ? "playbook-app-shell" : workspace === "counterlab" ? "counter-lab-app-shell" : workspace === "shotform" ? "games-app-shell" : workspace === "freezefloor" ? "freeze-floor-app-shell" : workspace === "jumper" ? "jumper-app-shell" : session ? "analysis-session-shell" : ""}`}>
       <AppHeader filename={workspace === "analyzer" ? session?.session.filename : undefined} complete={Boolean(session && workspace === "analyzer")} onReset={showHomePage} onHome={() => { changeWorkspace("home"); window.scrollTo(0, 0); }} theme={theme} onThemeChange={setTheme} workspace={workspace} onWorkspaceChange={changeWorkspace} />
       {workspace === "home" ? <HomePage /> : null}
       {shotformHasOpened || workspace === "shotform" ? <div className={workspace === "shotform" ? "workspace-view workspace-view-active" : "workspace-view workspace-view-hidden"} aria-hidden={workspace !== "shotform"}><Suspense fallback={<p role="status">Opening Shotform Jenga…</p>}><ShotformJenga active={workspace === "shotform"} /></Suspense></div> : null}
