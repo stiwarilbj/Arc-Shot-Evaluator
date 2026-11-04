@@ -46,7 +46,7 @@ import {
   type Contact,
   validResponse,
 } from "./types.ts";
-import { normalizeImage, readImageHeader } from "./images.ts";
+import { normalizeImage } from "./images.ts";
 import {
   deleteProject,
   getProject,
@@ -520,30 +520,6 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       if (!isCurrent()) return;
       if (!s)
         throw Error("Saved project is unavailable · Your current photograph remains open");
-      const bytes = new Uint8Array(
-        await s.image.slice(0, 512 * 1024).arrayBuffer(),
-      );
-      if (!isCurrent()) return;
-      const header = readImageHeader(bytes);
-      if (
-        header.width !== s.project.width ||
-        header.height !== s.project.height
-      )
-        throw Error(
-          "Saved image does not match its project · Original record was preserved",
-        );
-      const bitmap = await createImageBitmap(s.image);
-      try {
-        if (!isCurrent()) return;
-        if (
-          bitmap.width !== s.project.width ||
-          bitmap.height !== s.project.height
-        )
-          throw Error("Saved image dimensions are inconsistent");
-      } finally {
-        bitmap.close();
-      }
-      if (!isCurrent()) return;
       controller.current = null;
       install(s.project, s.image, projectRevision(s));
       setNotice("Opened private saved project");

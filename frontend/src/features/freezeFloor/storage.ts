@@ -125,8 +125,9 @@ export async function listProjects(): Promise<ProjectListing> {
 }
 export async function getProject(id: string): Promise<StoredProject | null> {
   const db = await open();
+  let value: StoredProject | null = null;
   try {
-    return await new Promise((resolve, reject) => {
+    value = await new Promise<StoredProject | null>((resolve, reject) => {
       const tx = db.transaction("projects", "readonly"),
         request = tx.objectStore("projects").get(id);
       tx.oncomplete = () => {
@@ -145,6 +146,27 @@ export async function getProject(id: string): Promise<StoredProject | null> {
   } finally {
     db.close();
   }
+  if (!value) return null;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(value.image);
+  } catch {
+    throw Error(
+      "Saved image could not be decoded · The record was kept for recovery, but image and coordinates could not be checked",
+    );
+  }
+  try {
+    if (
+      bitmap.width !== value.project.width ||
+      bitmap.height !== value.project.height
+    )
+      throw Error(
+        "Saved image dimensions do not match the project · The record was kept for recovery because its image and coordinates may not match",
+      );
+  } finally {
+    bitmap.close();
+  }
+  return value;
 }
 export async function saveProject(
   value: StoredProject,
