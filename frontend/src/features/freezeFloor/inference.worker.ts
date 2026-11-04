@@ -214,6 +214,20 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           w = raw.values[2 * raw.n + i],
           h = raw.values[3 * raw.n + i];
         const content = feed.contentBounds;
+        if (w <= 0 || h <= 0) continue;
+        const left = x - w / 2,
+          top = y - h / 2,
+          right = x + w / 2,
+          bottom = y + h / 2,
+          overlapWidth = Math.min(right, content.right) - Math.max(left, content.left),
+          overlapHeight = Math.min(bottom, content.bottom) - Math.max(top, content.top);
+        // Require at least one model pixel on each axis and 5% of the box area.
+        if (
+          overlapWidth < 1 ||
+          overlapHeight < 1 ||
+          (overlapWidth * overlapHeight) / (w * h) < 0.05
+        )
+          continue;
         if (
           x < content.left ||
           x > content.right ||
@@ -221,8 +235,8 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           y > content.bottom
         )
           continue;
-        const tl = feed.map(x - w / 2, y - h / 2),
-          br = feed.map(x + w / 2, y + h / 2),
+        const tl = feed.map(left, top),
+          br = feed.map(right, bottom),
           box: [number, number, number, number] = [
             Math.max(0, tl.x),
             Math.max(0, tl.y),
