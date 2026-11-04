@@ -333,7 +333,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         (a, b) => b.score - a.score || a.modelIndex - b.modelIndex,
       );
       let overlapSuppressedCandidates = 0;
-      const overlapReviewLabels = new Set<string>();
+      const overlapReviewContacts = new Map<string, Contact>();
       for (const c of candidates) {
         const overlappingContacts = contacts.filter((k) => {
           const b = k.box!,
@@ -352,7 +352,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         if (overlappingContacts.length > 0) {
           overlapSuppressedCandidates++;
           overlappingContacts.forEach((contact) =>
-            overlapReviewLabels.add(contact.label),
+            overlapReviewContacts.set(contact.id, contact),
           );
           continue;
         }
@@ -375,8 +375,8 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         });
       }
       if (overlapSuppressedCandidates > 0) {
-        const players = [...overlapReviewLabels]
-          .map((label) => `Player ${label}`)
+        const players = [...overlapReviewContacts.values()]
+          .map((contact) => `Player ${contact.label}`)
           .join(", ");
         warnings.push(
           `Near-duplicate review · ${overlapSuppressedCandidates} person candidate${overlapSuppressedCandidates === 1 ? " was" : "s were"} skipped across overlapping accepted contacts ${players} · Check for a nearby player the detector may have missed`,
