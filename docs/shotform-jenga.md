@@ -57,8 +57,6 @@ Data stays on the device · There are no accounts, uploads, paid APIs, sound, ne
 ```sh
 cd frontend
 npm run test:shotform-jenga
-npm run test:box-score-error-hunt
-npm run test:swish-tuner
 npm run test:navigation
 npm run build
 VITE_DEPLOY_TARGET=github-pages npm run build

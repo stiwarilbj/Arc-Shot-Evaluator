@@ -177,7 +177,7 @@ try {
   await arm("download");
   await choose("Knicks at the Garden");
   await held("download");
-  await page.evaluate(() => { window.location.hash = "#games/box-score-error-hunt"; });
+  await page.evaluate(() => { window.location.hash = "#home"; });
   await expect.poll(() => page.evaluate(() => window.imageLoading.fetches.at(-1).aborted)).toBe(true);
   await release();
   await page.evaluate(() => { window.location.hash = "#freeze-floor"; });

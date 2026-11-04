@@ -17,10 +17,6 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 
 **[Others → Freeze Floor](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#freeze-floor)** · Choose photos or video stills, link one to an NBA half-court, correct landmarks with [pixel mismatch labels and coordinate range hints](docs/freeze-floor.md#use-the-editor), review player suggestions, show measurement coverage, measure approximate spacing with repeat-endpoint and duplicate-distance protection, save privately, and download [PNGs with wrapped titles and full photo credits](docs/freeze-floor.md#use-the-editor) · Save labels and **Save / Discard / Cancel** prompts follow actual edits, including undo/redo · [Private projects](docs/freeze-floor.md#private-projects) keep stable card ordering, open with a single-record lookup, and protect newer saves from stale edits or deletions · [Model downloads](docs/freeze-floor.md#models-and-privacy) offer retry after stalls · Automatic alignment remains experimental
 
-**[Games → Box-Score Error Hunt](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/box-score-error-hunt)** · Find the wrong total in fictional stat lines, build a streak, and unlock shooting percentages in endless practice
-
-**[Games → Swish Tuner](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/swish-tuner)** · Tune angle, power, and backspin with a bundled neural flight estimate, then make three shots to advance
-
 **[Games → Shotform Jenga](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#games/shotform-jenga)** · Stabilize an animated shot one adjustment at a time, compare three repetitions, and take on two-area then three-area challenges as you advance
 
 ## More details

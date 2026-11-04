@@ -23,8 +23,6 @@ const routes = [
   ["#playbook/flipbook", { workspace: "playbook", playbookView: "flipbook" }],
   ["#playbook/role/2", { workspace: "playbook", playbookView: "role", rolePlayerId: 2 }],
   ["#counter-lab", { workspace: "counterlab" }],
-  ["#games/box-score-error-hunt", { workspace: "boxscore" }],
-  ["#games/swish-tuner", { workspace: "swish" }],
   ["#jumper", { workspace: "jumper", jumperView: "guess" }],
   ["#jumper/create", { workspace: "jumper", jumperView: "create" }],
   ["#jumper/my-clips", { workspace: "jumper", jumperView: "clips" }],
@@ -38,16 +36,19 @@ for (const hash of [
   "",
   "#",
   "#unknown",
+  "#games/placeholder",
+  "#games/box-score-error-hunt",
+  "#games/swish-tuner",
   "#jumper/unknown",
   "#%E0%A4%A",
   "#playbook?bad=1",
   "#playbook/role/0",
   "#playbook/role/not-a-player",
-])
+]) {
   assert.deepEqual(readWorkspaceHash(hash), DEFAULT_LOCATION);
+  assert.equal(workspaceHash(readWorkspaceHash(hash)), "#home");
+}
 assert.equal(workspaceHash(readWorkspaceHash("#jumper/guess")), "#jumper");
-
-assert.equal(workspaceHash(readWorkspaceHash("#games/placeholder")), "#games/box-score-error-hunt");
 
 // Entering another workspace retains its siblings' selected views in memory.
 const remembered = readWorkspaceHash(

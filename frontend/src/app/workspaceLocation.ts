@@ -5,8 +5,6 @@ export type AppWorkspace =
   | "counterlab"
   | "freezefloor"
   | "jumper"
-  | "boxscore"
-  | "swish"
   | "shotform";
 export type AnalysisView = "overview" | "shot" | "tracking";
 export type JumperView = "guess" | "create" | "clips";
@@ -41,13 +39,8 @@ export function readWorkspaceHash(
       return { ...current, workspace: "playbook", playbookView: "practice", rolePlayerId: null };
     case "#playbook/flipbook":
       return { ...current, workspace: "playbook", playbookView: "flipbook", rolePlayerId: null };
-    case "#games/placeholder":
-    case "#games/box-score-error-hunt":
-      return { ...current, workspace: "boxscore" };
     case "#games/shotform-jenga":
       return { ...current, workspace: "shotform" };
-    case "#games/swish-tuner":
-      return { ...current, workspace: "swish" };
     case "#freeze-floor":
       return { ...current, workspace: "freezefloor" };
     case "#counter-lab":
@@ -77,8 +70,6 @@ export function readWorkspaceHash(
 export function workspaceHash(value: WorkspaceLocation): string {
   if (value.workspace === "freezefloor") return "#freeze-floor";
   if (value.workspace === "shotform") return "#games/shotform-jenga";
-  if (value.workspace === "swish") return "#games/swish-tuner";
-  if (value.workspace === "boxscore") return "#games/box-score-error-hunt";
   if (value.workspace === "home") return "#home";
   if (value.workspace === "playbook") return value.playbookView === "practice" ? "#playbook/practice" : value.playbookView === "flipbook" ? "#playbook/flipbook" : value.playbookView === "role" && value.rolePlayerId ? `#playbook/role/${value.rolePlayerId}` : "#playbook";
   if (value.workspace === "counterlab") return "#counter-lab";

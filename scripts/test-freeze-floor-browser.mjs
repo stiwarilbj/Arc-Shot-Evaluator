@@ -117,9 +117,9 @@ await page
   .click();
 await expect(page.locator(".ff-measurements")).toContainText("Approx 2.0 m");
 // Preserve the workspace while navigating away, including browser history.
-await page.evaluate(() => (location.hash = "#games/box-score-error-hunt"));
+await page.evaluate(() => (location.hash = "#home"));
 await expect(
-  page.getByRole("heading", { name: "Box-Score Error Hunt" }),
+  page.getByRole("heading", { name: "See your game from every angle" }),
 ).toBeVisible();
 await page.goBack();
 await expect(page.locator(".ff-measurements")).toContainText("Approx 2.0 m");

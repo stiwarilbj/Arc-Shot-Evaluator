@@ -262,7 +262,7 @@ try {
   await expect(dialog().getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
   await page.screenshot({ path: "/tmp/freeze-floor-unsaved-mobile.png" });
   // Browser navigation cancels the queued request while preserving the draft
-  await page.evaluate(() => { location.hash = "#games/box-score-error-hunt"; });
+  await page.evaluate(() => { location.hash = "#home"; });
   await expect(dialog()).toHaveCount(0);
   await page.evaluate(() => { location.hash = "#freeze-floor"; });
   await expect(name()).toHaveValue("Mobile protected draft");

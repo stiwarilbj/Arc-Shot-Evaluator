@@ -76,8 +76,6 @@ export function AppHeader({
             <FlaskConical size={15} /> Counter Lab
           </button>
           <WorkspaceMenu label="Games" id="games-workspace-menu" items={[
-            { label: "Box-Score Error Hunt", active: workspace === "boxscore", onSelect: () => onWorkspaceChange("boxscore") },
-            { label: "Swish Tuner", active: workspace === "swish", onSelect: () => onWorkspaceChange("swish") },
             { label: "Shotform Jenga", active: workspace === "shotform", onSelect: () => onWorkspaceChange("shotform") },
           ]} />
           <WorkspaceMenu label="Others" id="others-workspace-menu" items={[{ label: "Guess the Jumper", active: workspace === "jumper", onSelect: () => onWorkspaceChange("jumper") }, { label: "Freeze Floor", active: workspace === "freezefloor", onSelect: () => onWorkspaceChange("freezefloor") }]} />
