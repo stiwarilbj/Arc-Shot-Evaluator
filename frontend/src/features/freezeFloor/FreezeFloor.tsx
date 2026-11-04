@@ -1952,41 +1952,50 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                     ))}
                   </div>
                   {selectedContact ? (
-                    <div className="ff-coordinate-fields">
-                      {(["x", "y"] as const).map((key) => (
-                        <Numeric
-                          key={`${selectedContact.id}-${key}`}
-                          label={`Contact ${key.toUpperCase()} (px)`}
-                          value={
-                            Math.round(
-                              selectedContact.image[key] *
-                                (key === "x" ? p.width : p.height) *
-                                10,
-                            ) / 10
-                          }
-                          min={0}
-                          max={key === "x" ? p.width : p.height}
-                          step={0.1}
-                          onCommit={(n) =>
-                            update((p) => ({
-                              ...p,
-                              contacts: p.contacts.map((c) =>
-                                c.id === selectedContact.id
-                                  ? {
-                                      ...c,
-                                      image: {
-                                        ...c.image,
-                                        [key]:
-                                          n / (key === "x" ? p.width : p.height),
-                                      },
-                                    }
-                                  : c,
-                              ),
-                            }))
-                          }
-                        />
-                      ))}
-                    </div>
+                    <>
+                      {selectedContact.proposalAnkles?.length ? (
+                        <p className="ff-contact-evidence-note" role="note">
+                          {selectedContact.proposalAnkles.length === 2
+                            ? "Cyan rings show the detected ankles · The orange proposal averages their horizontal position and uses the lower point as its floor position"
+                            : "The cyan ring shows the detected ankle · The orange proposal uses that point"}
+                        </p>
+                      ) : null}
+                      <div className="ff-coordinate-fields">
+                        {(["x", "y"] as const).map((key) => (
+                          <Numeric
+                            key={`${selectedContact.id}-${key}`}
+                            label={`Contact ${key.toUpperCase()} (px)`}
+                            value={
+                              Math.round(
+                                selectedContact.image[key] *
+                                  (key === "x" ? p.width : p.height) *
+                                  10,
+                              ) / 10
+                            }
+                            min={0}
+                            max={key === "x" ? p.width : p.height}
+                            step={0.1}
+                            onCommit={(n) =>
+                              update((p) => ({
+                                ...p,
+                                contacts: p.contacts.map((c) =>
+                                  c.id === selectedContact.id
+                                    ? {
+                                        ...c,
+                                        image: {
+                                          ...c.image,
+                                          [key]:
+                                            n / (key === "x" ? p.width : p.height),
+                                        },
+                                      }
+                                    : c,
+                                ),
+                              }))
+                            }
+                          />
+                        ))}
+                      </div>
+                    </>
                   ) : null}
                   <label>
                     Project name

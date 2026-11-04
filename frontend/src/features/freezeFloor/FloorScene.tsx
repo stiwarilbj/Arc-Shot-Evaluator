@@ -34,6 +34,7 @@ const colors = {
   line: "#b3bdbe",
   muted: "#b8bec3",
   blue: "#8dcbeb",
+  ankle: "#57d7e8",
   ink: "#111719",
 };
 export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
@@ -266,7 +267,10 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
             const q = fromImage(c.image);
             if (!q) return null;
             const active = c.id === p.selected || c.id === p.hovered,
-              uncertain = c.status !== "grounded";
+              uncertain = c.status !== "grounded",
+              ankleEvidence = c.proposalAnkles
+                ?.map(fromImage)
+                .filter((point): point is Point => point !== null) ?? [];
             return (
               <g
                 key={c.id}
@@ -284,6 +288,52 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                     strokeWidth={unit}
                     strokeDasharray={`${4 * unit} ${3 * unit}`}
                   />
+                ) : null}
+                {c.id === p.selected && ankleEvidence.length ? (
+                  <g
+                    data-ankle-evidence={c.id}
+                    aria-label={`Original model ankle points for player ${c.label}`}
+                    pointerEvents="none"
+                  >
+                    {ankleEvidence.length === 2 ? (
+                      <line
+                        x1={ankleEvidence[0].x}
+                        y1={ankleEvidence[0].y}
+                        x2={ankleEvidence[1].x}
+                        y2={ankleEvidence[1].y}
+                        stroke={colors.ankle}
+                        strokeWidth={1.2 * unit}
+                        strokeDasharray={`${3 * unit} ${2 * unit}`}
+                        opacity={0.9}
+                      />
+                    ) : null}
+                    {ankleEvidence.map((ankle, index) => (
+                      <g key={index}>
+                        <circle
+                          cx={ankle.x}
+                          cy={ankle.y}
+                          r={2.8 * unit}
+                          fill={colors.ink}
+                          stroke={colors.ankle}
+                          strokeWidth={1.2 * unit}
+                        />
+                        <text
+                          x={ankle.x + 3.2 * unit}
+                          y={ankle.y - 2.4 * unit}
+                          fill={colors.ankle}
+                          stroke={colors.ink}
+                          strokeWidth={1.1 * unit}
+                          paintOrder="stroke"
+                          fontSize={5.5 * unit}
+                          fontWeight="700"
+                          fontFamily="Arial,sans-serif"
+                        >
+                          {index + 1}
+                        </text>
+                        <title>{`Original detected ankle point ${index + 1}`}</title>
+                      </g>
+                    ))}
+                  </g>
                 ) : null}
                 <circle
                   cx={q.x}

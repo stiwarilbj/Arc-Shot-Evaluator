@@ -9,6 +9,7 @@ import {
   type Contact,
   type InferenceRequest,
   type InferenceResponse,
+  type Point,
 } from "./types.ts";
 ort.env.wasm.numThreads = 1;
 // Vite serves the runtime from its pinned package, on the same origin.
@@ -223,6 +224,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         box: [number, number, number, number];
         score: number;
         foot: { x: number; y: number };
+        proposalAnkles: Point[];
         proposalAnkleKeypointCount: 1 | 2;
         boxTouchesImageEdge: boolean;
       }[] = [];
@@ -317,6 +319,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           modelIndex: i,
           box,
           score,
+          proposalAnkles: ankles,
           proposalAnkleKeypointCount: ankles.length === 1 ? 1 : 2,
           boxTouchesImageEdge,
           foot: {
@@ -362,6 +365,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           image: c.foot,
           status: "uncertain",
           box: c.box,
+          proposalAnkles: c.proposalAnkles,
           proposalAnkleKeypointCount: c.proposalAnkleKeypointCount,
           boxTouchesImageEdge: c.boxTouchesImageEdge,
         });

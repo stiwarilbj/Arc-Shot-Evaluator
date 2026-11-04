@@ -72,8 +72,20 @@ export function mergeContactProposals(
       !pairs[i].some((e, j) => j !== match && competes(pairs[i][match], e)) &&
       !pairs.some((row, k) => k !== i && competes(pairs[i][match], row[match]))
     ) {
-      // Keep the original identity, corrected foot location, and grounding status
-      resolved[i] = existing[match];
+      // Keep the original identity, corrected location, and grounding status
+      // while preserving the first source ankle evidence for the retained contact
+      const previous = existing[match];
+      if (proposal.proposalAnkles && !previous.proposalAnkles) {
+        const updated = {
+          ...previous,
+          proposalAnkles: proposal.proposalAnkles,
+          proposalAnkleKeypointCount:
+            proposal.proposalAnkleKeypointCount ??
+            (proposal.proposalAnkles.length as 1 | 2),
+        };
+        contacts[match] = updated;
+        resolved[i] = updated;
+      } else resolved[i] = previous;
       continue;
     }
     let addition: Contact | undefined;

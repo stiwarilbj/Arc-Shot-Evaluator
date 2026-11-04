@@ -515,6 +515,12 @@
   font-size: 10px;
   white-space: nowrap;
 }
+.ff-contact-evidence-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 0;
+}
 .ff-contact-edge {
   flex: 0 0 auto;
   color: var(--orange);
