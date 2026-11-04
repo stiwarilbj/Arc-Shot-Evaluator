@@ -1186,211 +1186,215 @@ export default function FreezeFloor({ active }: { active: boolean }) {
           </button>
         </div>
       </div>
-      {videoSource ? (
-        <VideoFramePicker
-          key={videoSource.key}
-          file={videoSource.file}
-          active={active && !videoChooser && !chooser && !replacement}
-          sample={videoSource.sample}
-          onCapture={(frame) => useVideoFrame(frame, videoSource.key)}
-          onClose={() => setVideoSource(null)}
-        />
-      ) : null}
-      {videoChooser ? (
-        <section
-          className="ff-chooser"
-          id="ff-video-chooser"
-          aria-label="Choose an example video"
-        >
-          <div className="ff-section-head">
-            <h2>Example videos</h2>
-            <button
-              aria-label="Close video examples"
-              onClick={() => {
-                stop();
-                setVideoChooser(false);
-                videoChooserButton.current?.focus();
-              }}
-            >
-              <X size={17} />
-            </button>
-          </div>
-          <p className="ff-help">
-            Choose a clip, then freeze a clear floor moment · Examples need
-            alignment review · No model runs until you use a frame
-          </p>
-          <div className="ff-samples ff-video-samples">
-            {VIDEO_SAMPLES.map((sample) => (
-              <button
-                key={sample.id}
-                onClick={() => void loadVideoSample(sample)}
-              >
-                <img
-                  src={`${import.meta.env.BASE_URL}freeze-floor/videos/${sample.poster}`}
-                  alt=""
-                  loading="lazy"
-                />
-                <strong>{sample.name}</strong>
-                <small>{sample.summary}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      {chooser ? (
-        <section
-          className="ff-chooser"
-          id="ff-chooser"
-          aria-label="Choose a photograph or saved project"
-        >
-          <div className="ff-section-head">
-            <h2>Choose photo</h2>
-            <button
-              aria-label="Close photo chooser"
-              onClick={() => {
-                setChooser(false);
-                chooserButton.current?.focus();
-              }}
-            >
-              <X size={17} />
-            </button>
-          </div>
-          <div className="ff-samples">
-            {SAMPLES.map((s) => (
-              <button key={s.id} onClick={() => requestReplacement(s.name, () => loadSample(s))}>
-                <img
-                  src={`${import.meta.env.BASE_URL}freeze-floor/${s.file}`}
-                  alt=""
-                />
-                <strong>{s.name}</strong>
-                <small>
-                  {s.id === "closeup"
-                    ? "Insufficient floor evidence"
-                    : "Reviewed manual alignment"}
-                </small>
-              </button>
-            ))}
-          </div>
-          <h3>
-            Saved on this browser origin ·{" "}
-            {library.length + unavailableProjects.length}/20
-          </h3>
-          <p className="ff-help">
-            Hosted and downloaded libraries are separate · No image is uploaded
-          </p>
-          {unavailableProjects.length ? (
-            <div
-              className="ff-library-warning"
-              role="status"
-              aria-label="Unavailable saved projects"
-            >
-              <strong>
-                {unavailableProjects.length} saved project
-                {unavailableProjects.length === 1 ? "" : "s"} unavailable
-              </strong>
-              <p>
-                These entries could not be validated · Their stored data is
-                preserved for recovery
-              </p>
-              <ul>
-                {unavailableProjects.map((entry, index) => (
-                  <li key={index}>
-                    {entry.name || "Unnamed project"} · Storage key{" "}
-                    <code>{String(entry.key)}</code>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {videoSource || videoChooser || chooser ? (
+        <div className="ff-media-panels">
+          {videoSource ? (
+            <VideoFramePicker
+              key={videoSource.key}
+              file={videoSource.file}
+              active={active && !videoChooser && !chooser && !replacement}
+              sample={videoSource.sample}
+              onCapture={(frame) => useVideoFrame(frame, videoSource.key)}
+              onClose={() => setVideoSource(null)}
+            />
           ) : null}
-          {library.length ? (
-            <div className="ff-library">
-              {library.map((s) => (
-                <div key={s.project.id}>
-                  <button onClick={() => requestReplacement(s.project.name, () => openSaved(s))}>
-                    {s.project.name}
-                  </button>
+          {videoChooser ? (
+            <section
+              className="ff-chooser"
+              id="ff-video-chooser"
+              aria-label="Choose an example video"
+            >
+              <div className="ff-section-head">
+                <h2>Example videos</h2>
+                <button
+                  aria-label="Close video examples"
+                  onClick={() => {
+                    stop();
+                    setVideoChooser(false);
+                    videoChooserButton.current?.focus();
+                  }}
+                >
+                  <X size={17} />
+                </button>
+              </div>
+              <p className="ff-help">
+                Choose a clip, then freeze a clear floor moment · Examples need
+                alignment review · No model runs until you use a frame
+              </p>
+              <div className="ff-samples ff-video-samples">
+                {VIDEO_SAMPLES.map((sample) => (
                   <button
-                    onClick={async () => {
-                      const name = window.prompt(
-                        "Rename saved project",
-                        s.project.name,
-                      );
-                      if (!name?.trim()) return;
-                      const rev = revision.current,
-                        baseline = storedVersion.current,
-                        expected = projectRevision(s);
-                      try {
-                        const nextRevision = await saveProject(
-                          {
-                            ...s,
-                            project: {
-                              ...s.project,
-                              name: name.trim().slice(0, 80),
-                              updatedAt: new Date().toISOString(),
-                            },
-                          },
-                          expected,
-                        );
-                        announceLibraryChange();
-                        if (
-                          current.current?.id === s.project.id &&
-                          storedVersion.current === baseline &&
-                          baseline.revision === expected
-                        ) {
-                          baseline.revision = nextRevision;
-                          baseline.project = { ...s.project, name: name.trim().slice(0, 80) };
-                          setBaselineKind("saved");
-                          if (revision.current === rev) {
-                            update((p) => ({
-                              ...p,
-                              name: name.trim().slice(0, 80),
-                            }));
-                          }
-                        }
-                        await refresh();
-                      } catch (e) {
-                        setError(message(e));
-                        if (e instanceof ProjectConflictError) await refresh();
-                      }
-                    }}
+                    key={sample.id}
+                    onClick={() => void loadVideoSample(sample)}
                   >
-                    Rename
+                    <img
+                      src={`${import.meta.env.BASE_URL}freeze-floor/videos/${sample.poster}`}
+                      alt=""
+                      loading="lazy"
+                    />
+                    <strong>{sample.name}</strong>
+                    <small>{sample.summary}</small>
                   </button>
-                  <button
-                    aria-label={`Delete ${s.project.name}`}
-                    onClick={async () => {
-                      if (
-                        !window.confirm(
-                          `Delete “${s.project.name}” from this device?`,
-                        )
-                      )
-                        return;
-                      setError("");
-                      try {
-                        await deleteProject(s.project.id, projectRevision(s));
-                        announceLibraryChange();
-                        if (current.current?.id === s.project.id)
-                          setBaselineKind("unsaved");
-                        await refresh();
-                      } catch (e) {
-                        setError(message(e));
-                        if (e instanceof ProjectConflictError) await refresh();
-                      }
-                    }}
-                  >
-                    <Trash2 size={15} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {chooser ? (
+            <section
+              className="ff-chooser"
+              id="ff-chooser"
+              aria-label="Choose a photograph or saved project"
+            >
+              <div className="ff-section-head">
+                <h2>Choose photo</h2>
+                <button
+                  aria-label="Close photo chooser"
+                  onClick={() => {
+                    setChooser(false);
+                    chooserButton.current?.focus();
+                  }}
+                >
+                  <X size={17} />
+                </button>
+              </div>
+              <div className="ff-samples">
+                {SAMPLES.map((s) => (
+                  <button key={s.id} onClick={() => requestReplacement(s.name, () => loadSample(s))}>
+                    <img
+                      src={`${import.meta.env.BASE_URL}freeze-floor/${s.file}`}
+                      alt=""
+                    />
+                    <strong>{s.name}</strong>
+                    <small>
+                      {s.id === "closeup"
+                        ? "Insufficient floor evidence"
+                        : "Reviewed manual alignment"}
+                    </small>
                   </button>
+                ))}
+              </div>
+              <h3>
+                Saved on this browser origin ·{" "}
+                {library.length + unavailableProjects.length}/20
+              </h3>
+              <p className="ff-help">
+                Hosted and downloaded libraries are separate · No image is uploaded
+              </p>
+              {unavailableProjects.length ? (
+                <div
+                  className="ff-library-warning"
+                  role="status"
+                  aria-label="Unavailable saved projects"
+                >
+                  <strong>
+                    {unavailableProjects.length} saved project
+                    {unavailableProjects.length === 1 ? "" : "s"} unavailable
+                  </strong>
+                  <p>
+                    These entries could not be validated · Their stored data is
+                    preserved for recovery
+                  </p>
+                  <ul>
+                    {unavailableProjects.map((entry, index) => (
+                      <li key={index}>
+                        {entry.name || "Unnamed project"} · Storage key{" "}
+                        <code>{String(entry.key)}</code>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="ff-help">
-              {unavailableProjects.length
-                ? "No saved projects are currently available · Unavailable entries remain stored"
-                : "Save your first project to keep its image, contacts, and measurements together"}
-            </p>
-          )}
-        </section>
+              ) : null}
+              {library.length ? (
+                <div className="ff-library">
+                  {library.map((s) => (
+                    <div key={s.project.id}>
+                      <button onClick={() => requestReplacement(s.project.name, () => openSaved(s))}>
+                        {s.project.name}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const name = window.prompt(
+                            "Rename saved project",
+                            s.project.name,
+                          );
+                          if (!name?.trim()) return;
+                          const rev = revision.current,
+                            baseline = storedVersion.current,
+                            expected = projectRevision(s);
+                          try {
+                            const nextRevision = await saveProject(
+                              {
+                                ...s,
+                                project: {
+                                  ...s.project,
+                                  name: name.trim().slice(0, 80),
+                                  updatedAt: new Date().toISOString(),
+                                },
+                              },
+                              expected,
+                            );
+                            announceLibraryChange();
+                            if (
+                              current.current?.id === s.project.id &&
+                              storedVersion.current === baseline &&
+                              baseline.revision === expected
+                            ) {
+                              baseline.revision = nextRevision;
+                              baseline.project = { ...s.project, name: name.trim().slice(0, 80) };
+                              setBaselineKind("saved");
+                              if (revision.current === rev) {
+                                update((p) => ({
+                                  ...p,
+                                  name: name.trim().slice(0, 80),
+                                }));
+                              }
+                            }
+                            await refresh();
+                          } catch (e) {
+                            setError(message(e));
+                            if (e instanceof ProjectConflictError) await refresh();
+                          }
+                        }}
+                      >
+                        Rename
+                      </button>
+                      <button
+                        aria-label={`Delete ${s.project.name}`}
+                        onClick={async () => {
+                          if (
+                            !window.confirm(
+                              `Delete “${s.project.name}” from this device?`,
+                            )
+                          )
+                            return;
+                          setError("");
+                          try {
+                            await deleteProject(s.project.id, projectRevision(s));
+                            announceLibraryChange();
+                            if (current.current?.id === s.project.id)
+                              setBaselineKind("unsaved");
+                            await refresh();
+                          } catch (e) {
+                            setError(message(e));
+                            if (e instanceof ProjectConflictError) await refresh();
+                          }
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="ff-help">
+                  {unavailableProjects.length
+                    ? "No saved projects are currently available · Unavailable entries remain stored"
+                    : "Save your first project to keep its image, contacts, and measurements together"}
+                </p>
+              )}
+            </section>
+          ) : null}
+        </div>
       ) : null}
       {replacement ? (
         <UnsavedPhotoDialog
@@ -1556,265 +1560,404 @@ export default function FreezeFloor({ active }: { active: boolean }) {
               </button>
             </div>
           </div>
-          {coverage ? (
-            <p className="ff-coverage-key" role="status">
-              {displayAlignment?.h &&
-              displayAlignment.inverse &&
-              displayAlignment.hull.length >= 3
-                ? "Dashed blue outline · Region supported by accepted landmarks"
-                : "Measurement coverage unavailable · Add well-spread floor landmarks"}
-            </p>
-          ) : null}
-          <div className="ff-caption">
-            <p>
-              {mode === "measure"
-                ? pending
-                  ? "Select the second grounded floor point · Escape cancels"
-                  : "Select two grounded floor points in either view"
-                : mode === "anchor"
-                  ? "Click the named landmark on the photograph · Escape cancels"
-                  : mode === "contact"
-                    ? "Click a visible floor-contact point · Confirm grounding in the inspector"
-                    : "Inspect a player or a floor point · Free-space cursors are floor projections"}
-              <br />
-              <span>
-                Hidden or airborne feet remain uncertain · Arrow keys move 1
-                photo pixel or 0.1 ft on the court · Shift moves 10× · Enter
-                places a point
-              </span>
-            </p>
-            <span role="status" aria-label="Project save status">{saveStatus}</span>
-          </div>
-          {mode === "measure" && pendingOutside ? (
-            <p className="ff-measurement-feedback" role="status">
-              Outside supported region · Escape cancels the first endpoint
-            </p>
-          ) : null}
-          {mode === "measure" &&
-          (measurementFeedback?.kind === "same" || existingDistance >= 0) ? (
-            <p className="ff-measurement-feedback" role="status">
-              {measurementFeedback?.kind === "same"
-                ? "Choose a different player or floor point for the second endpoint"
-                : `Distance ${existingDistance + 1} already exists · Highlighted in both views`}
-            </p>
-          ) : null}
-          {p.measurements.length ? (
-            <section className="ff-measurements" aria-label="Distances">
-              {p.measurements.map((m, i) => {
-                const r = measure(p, alignment, m.a, m.b);
-                const outside = [m.a, m.b].some((v) =>
-                  measurementPointSupported(p, alignment, v) === false,
-                );
-                return (
-                  <div
-                    key={m.id}
-                    data-highlighted={m.id === highlightedMeasurement}
-                  >
-                    <Ruler size={16} />
-                    <span>
-                      <strong>
-                        Distance {i + 1} ·{" "}
-                        {r.value !== undefined
-                          ? `Approx ${r.value.toFixed(1)} ${p.units}`
-                          : "Withheld"}
-                      </strong>
-                      <small>
-                        {r.value !== undefined
-                          ? `Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units} · Sensitivity estimate, not a confidence interval`
-                          : outside && r.reason !== "Outside supported region"
-                            ? `Outside supported region · ${r.reason}`
-                            : r.reason}
-                      </small>
-                    </span>
-                    <button
-                      aria-label={`Delete distance ${i + 1}`}
-                      onClick={() =>
-                        update((p) => ({
-                          ...p,
-                          measurements: p.measurements.filter(
-                            (x) => x.id !== m.id,
-                          ),
-                        }))
-                      }
+          <div
+            className="ff-details"
+            role="region"
+            aria-label="Project details and corrections"
+            tabIndex={0}
+          >
+            {coverage ? (
+              <p className="ff-coverage-key" role="status">
+                {displayAlignment?.h &&
+                displayAlignment.inverse &&
+                displayAlignment.hull.length >= 3
+                  ? "Dashed blue outline · Region supported by accepted landmarks"
+                  : "Measurement coverage unavailable · Add well-spread floor landmarks"}
+              </p>
+            ) : null}
+            <div className="ff-caption">
+              <p>
+                {mode === "measure"
+                  ? pending
+                    ? "Select the second grounded floor point · Escape cancels"
+                    : "Select two grounded floor points in either view"
+                  : mode === "anchor"
+                    ? "Click the named landmark on the photograph · Escape cancels"
+                    : mode === "contact"
+                      ? "Click a visible floor-contact point · Confirm grounding in the inspector"
+                      : "Inspect a player or a floor point · Free-space cursors are floor projections"}
+                <br />
+                <span>
+                  Hidden or airborne feet remain uncertain · Arrow keys move 1
+                  photo pixel or 0.1 ft on the court · Shift moves 10× · Enter
+                  places a point
+                </span>
+              </p>
+              <span role="status" aria-label="Project save status">{saveStatus}</span>
+            </div>
+            {mode === "measure" && pendingOutside ? (
+              <p className="ff-measurement-feedback" role="status">
+                Outside supported region · Escape cancels the first endpoint
+              </p>
+            ) : null}
+            {mode === "measure" &&
+            (measurementFeedback?.kind === "same" || existingDistance >= 0) ? (
+              <p className="ff-measurement-feedback" role="status">
+                {measurementFeedback?.kind === "same"
+                  ? "Choose a different player or floor point for the second endpoint"
+                  : `Distance ${existingDistance + 1} already exists · Highlighted in both views`}
+              </p>
+            ) : null}
+            {p.measurements.length ? (
+              <section className="ff-measurements" aria-label="Distances">
+                {p.measurements.map((m, i) => {
+                  const r = measure(p, alignment, m.a, m.b);
+                  const outside = [m.a, m.b].some((v) =>
+                    measurementPointSupported(p, alignment, v) === false,
+                  );
+                  return (
+                    <div
+                      key={m.id}
+                      data-highlighted={m.id === highlightedMeasurement}
                     >
-                      <X size={15} />
+                      <Ruler size={16} />
+                      <span>
+                        <strong>
+                          Distance {i + 1} ·{" "}
+                          {r.value !== undefined
+                            ? `Approx ${r.value.toFixed(1)} ${p.units}`
+                            : "Withheld"}
+                        </strong>
+                        <small>
+                          {r.value !== undefined
+                            ? `Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units} · Sensitivity estimate, not a confidence interval`
+                            : outside && r.reason !== "Outside supported region"
+                              ? `Outside supported region · ${r.reason}`
+                              : r.reason}
+                        </small>
+                      </span>
+                      <button
+                        aria-label={`Delete distance ${i + 1}`}
+                        onClick={() =>
+                          update((p) => ({
+                            ...p,
+                            measurements: p.measurements.filter(
+                              (x) => x.id !== m.id,
+                            ),
+                          }))
+                        }
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </section>
+            ) : null}
+            <details
+              className="ff-inspector"
+              open={inspector}
+              onToggle={(e) => setInspector(e.currentTarget.open)}
+            >
+              <summary>
+                Correct alignment & player contacts{" "}
+                <span>
+                  {p.anchors.length} landmarks · {p.contacts.length} contacts
+                </span>
+              </summary>
+              <div className="ff-inspector-grid">
+                <section>
+                  <h3>Floor landmarks</h3>
+                  <p className="ff-help">
+                    Use floor-line intersections, never the raised hoop or
+                    backboard · Spread anchors around the area you want to measure
+                  </p>
+                  <div className="ff-row">
+                    <button disabled={!!busy} onClick={() => void runInference()}>
+                      Retry automatic proposals
+                    </button>
+                    <span className="ff-help">
+                      Experimental · Review required
+                    </span>
+                  </div>
+                  <div className="ff-row">
+                    <select
+                      aria-label="Landmark to add"
+                      value={landmark}
+                      onChange={(e) => setLandmark(e.target.value)}
+                    >
+                      {LANDMARKS.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        setCheck(true);
+                        setMode("anchor");
+                      }}
+                    >
+                      <Plus size={15} />
+                      Add anchor
                     </button>
                   </div>
-                );
-              })}
-            </section>
-          ) : null}
-          <details
-            className="ff-inspector"
-            open={inspector}
-            onToggle={(e) => setInspector(e.currentTarget.open)}
-          >
-            <summary>
-              Correct alignment & player contacts{" "}
-              <span>
-                {p.anchors.length} landmarks · {p.contacts.length} contacts
-              </span>
-            </summary>
-            <div className="ff-inspector-grid">
-              <section>
-                <h3>Floor landmarks</h3>
-                <p className="ff-help">
-                  Use floor-line intersections, never the raised hoop or
-                  backboard · Spread anchors around the area you want to measure
-                </p>
-                <div className="ff-row">
-                  <button disabled={!!busy} onClick={() => void runInference()}>
-                    Retry automatic proposals
-                  </button>
-                  <span className="ff-help">
-                    Experimental · Review required
-                  </span>
-                </div>
-                <div className="ff-row">
-                  <select
-                    aria-label="Landmark to add"
-                    value={landmark}
-                    onChange={(e) => setLandmark(e.target.value)}
-                  >
-                    {LANDMARKS.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.label}
-                      </option>
-                    ))}
-                  </select>
                   <button
+                    className="ff-largest-mismatch"
+                    disabled={!largestMismatch}
                     onClick={() => {
+                      if (!largestMismatch) return;
+                      setSelected(largestMismatch.id);
                       setCheck(true);
-                      setMode("anchor");
+                      setMode("inspect");
+                      setPending(null);
+                      setMeasurementFeedback(null);
+                      setCursor(
+                        p.anchors.find((a) => a.id === largestMismatch.id)?.image ??
+                          null,
+                      );
                     }}
                   >
-                    <Plus size={15} />
-                    Add anchor
+                    Select largest mismatch
+                    {largestMismatch
+                      ? ` · L${p.anchors.findIndex((a) => a.id === largestMismatch.id) + 1} · ${Math.round(largestMismatch.pixels)} px`
+                      : " · Unavailable"}
                   </button>
-                </div>
-                <button
-                  className="ff-largest-mismatch"
-                  disabled={!largestMismatch}
-                  onClick={() => {
-                    if (!largestMismatch) return;
-                    setSelected(largestMismatch.id);
-                    setCheck(true);
-                    setMode("inspect");
-                    setPending(null);
-                    setMeasurementFeedback(null);
-                    setCursor(
-                      p.anchors.find((a) => a.id === largestMismatch.id)?.image ??
-                        null,
-                    );
-                  }}
-                >
-                  Select largest mismatch
-                  {largestMismatch
-                    ? ` · L${p.anchors.findIndex((a) => a.id === largestMismatch.id) + 1} · ${Math.round(largestMismatch.pixels)} px`
-                    : " · Unavailable"}
-                </button>
-                <p className="ff-help">
-                  Mismatch compares each landmark with this fit · It does not
-                  confirm correct court placement
-                </p>
-                <div className="ff-items">
-                  {p.anchors.map((a, i) => {
-                    const mismatch = displayAlignment?.mismatches.find(
-                      (m) => m.id === a.id,
-                    );
-                    return (
-                      <div
-                        key={a.id}
-                        className={selected === a.id ? "ff-item-selected" : ""}
-                      >
-                        <input
-                          type="checkbox"
-                          aria-label={`Include landmark ${i + 1}`}
-                          checked={a.enabled}
+                  <p className="ff-help">
+                    Mismatch compares each landmark with this fit · It does not
+                    confirm correct court placement
+                  </p>
+                  <div className="ff-items">
+                    {p.anchors.map((a, i) => {
+                      const mismatch = displayAlignment?.mismatches.find(
+                        (m) => m.id === a.id,
+                      );
+                      return (
+                        <div
+                          key={a.id}
+                          className={selected === a.id ? "ff-item-selected" : ""}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label={`Include landmark ${i + 1}`}
+                            checked={a.enabled}
+                            onChange={(e) =>
+                              update((p) => ({
+                                ...p,
+                                anchors: p.anchors.map((x) =>
+                                  x.id === a.id
+                                    ? { ...x, enabled: e.target.checked }
+                                    : x,
+                                ),
+                                reviewed: false,
+                              }))
+                            }
+                          />
+                          <button
+                            onClick={() => {
+                              setSelected(a.id);
+                              setCheck(true);
+                            }}
+                            title={
+                              LANDMARKS.find((l) => l.id === a.landmark)?.label
+                            }
+                          >
+                            <span className="ff-landmark-label">
+                              <span>
+                                L{i + 1} ·{" "}
+                                {LANDMARKS.find((l) => l.id === a.landmark)?.label}
+                              </span>
+                              <small>
+                                Fit mismatch:{" "}
+                                {mismatch
+                                  ? `${Math.round(mismatch.pixels)} px`
+                                  : "unavailable"}
+                              </small>
+                            </span>
+                          </button>
+                          <button
+                            aria-label={`Delete landmark ${i + 1}`}
+                            onClick={() =>
+                              update((p) => ({
+                                ...p,
+                                anchors: p.anchors.filter((x) => x.id !== a.id),
+                                reviewed: false,
+                              }))
+                            }
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {selectedAnchor ? (
+                    <>
+                      <label>
+                        Selected landmark
+                        <select
+                          aria-label="Reassign landmark"
+                          value={selectedAnchor.landmark}
                           onChange={(e) =>
                             update((p) => ({
                               ...p,
-                              anchors: p.anchors.map((x) =>
-                                x.id === a.id
-                                  ? { ...x, enabled: e.target.checked }
-                                  : x,
+                              anchors: p.anchors.map((a) =>
+                                a.id === selectedAnchor.id
+                                  ? { ...a, landmark: e.target.value }
+                                  : a,
                               ),
                               reviewed: false,
                             }))
                           }
-                        />
+                        >
+                          {LANDMARKS.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="ff-coordinate-fields">
+                        {(["x", "y"] as const).map((key) => (
+                          <Numeric
+                            key={`${selectedAnchor.id}-${key}`}
+                            label={`Landmark ${key.toUpperCase()} (px)`}
+                            value={
+                              Math.round(
+                                selectedAnchor.image[key] *
+                                  (key === "x" ? p.width : p.height) *
+                                  10,
+                              ) / 10
+                            }
+                            min={0}
+                            max={key === "x" ? p.width : p.height}
+                            step={0.1}
+                            onCommit={(n) =>
+                              update((p) => ({
+                                ...p,
+                                anchors: p.anchors.map((a) =>
+                                  a.id === selectedAnchor.id
+                                    ? {
+                                        ...a,
+                                        image: {
+                                          ...a.image,
+                                          [key]:
+                                            n /
+                                            (key === "x" ? p.width : p.height),
+                                        },
+                                      }
+                                    : a,
+                                ),
+                                reviewed: false,
+                              }))
+                            }
+                          />
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                  <button
+                    className="ff-review"
+                    disabled={
+                      !alignment.h || alignment.rejected.length > 0 || !check
+                    }
+                    onClick={() => {
+                      update((p) => ({ ...p, reviewed: true }));
+                      setNotice(
+                        "Overlay review recorded · Measurements are estimates within the anchored area",
+                      );
+                    }}
+                  >
+                    I checked the floor-line overlay
+                  </button>
+                </section>
+                <section>
+                  <h3>Player contacts</h3>
+                  <p className="ff-help">
+                    Ankles are proposals, not proof of grounding · Drag contacts
+                    to visible shoe-floor positions and remove spectators
+                  </p>
+                  <button onClick={() => setMode("contact")}>
+                    <Plus size={15} />
+                    Add player contact
+                  </button>
+                  <div className="ff-items">
+                    {p.contacts.map((c) => (
+                      <div
+                        key={c.id}
+                        className={selected === c.id ? "ff-item-selected" : ""}
+                      >
                         <button
                           onClick={() => {
-                            setSelected(a.id);
-                            setCheck(true);
+                            setSelected(c.id);
+                            setCursor(c.image);
                           }}
-                          title={
-                            LANDMARKS.find((l) => l.id === a.landmark)?.label
+                        >
+                          Player {c.label}
+                        </button>
+                        {c.status === "uncertain" &&
+                        c.proposalAnkleKeypointCount ? (
+                          <span className="ff-contact-evidence" role="note">
+                            Model · {c.proposalAnkleKeypointCount} ankle keypoint
+                            {c.proposalAnkleKeypointCount === 1 ? "" : "s"}
+                          </span>
+                        ) : null}
+                        {c.boxTouchesImageEdge ? (
+                          <span className="ff-contact-edge" role="note">
+                            Photo edge · review
+                          </span>
+                        ) : null}
+                        <select
+                          aria-label={`Player ${c.label} contact status`}
+                          value={c.status}
+                          onChange={(e) =>
+                            update((p) => ({
+                              ...p,
+                              contacts: p.contacts.map((x) =>
+                                x.id === c.id
+                                  ? {
+                                      ...x,
+                                      status: e.target.value as Contact["status"],
+                                    }
+                                  : x,
+                              ),
+                            }))
                           }
                         >
-                          <span className="ff-landmark-label">
-                            <span>
-                              L{i + 1} ·{" "}
-                              {LANDMARKS.find((l) => l.id === a.landmark)?.label}
-                            </span>
-                            <small>
-                              Fit mismatch:{" "}
-                              {mismatch
-                                ? `${Math.round(mismatch.pixels)} px`
-                                : "unavailable"}
-                            </small>
-                          </span>
-                        </button>
+                          {["uncertain", "grounded", "hidden", "airborne"].map(
+                            (s) => (
+                              <option key={s}>{s}</option>
+                            ),
+                          )}
+                        </select>
                         <button
-                          aria-label={`Delete landmark ${i + 1}`}
+                          aria-label={`Remove player ${c.label}`}
                           onClick={() =>
                             update((p) => ({
                               ...p,
-                              anchors: p.anchors.filter((x) => x.id !== a.id),
-                              reviewed: false,
+                              contacts: p.contacts.filter((x) => x.id !== c.id),
+                              measurements: p.measurements.filter(
+                                (m) =>
+                                  m.a.contactId !== c.id &&
+                                  m.b.contactId !== c.id,
+                              ),
                             }))
                           }
                         >
                           <X size={14} />
                         </button>
                       </div>
-                    );
-                  })}
-                </div>
-                {selectedAnchor ? (
-                  <>
-                    <label>
-                      Selected landmark
-                      <select
-                        aria-label="Reassign landmark"
-                        value={selectedAnchor.landmark}
-                        onChange={(e) =>
-                          update((p) => ({
-                            ...p,
-                            anchors: p.anchors.map((a) =>
-                              a.id === selectedAnchor.id
-                                ? { ...a, landmark: e.target.value }
-                                : a,
-                            ),
-                            reviewed: false,
-                          }))
-                        }
-                      >
-                        {LANDMARKS.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    ))}
+                  </div>
+                  {selectedContact ? (
                     <div className="ff-coordinate-fields">
                       {(["x", "y"] as const).map((key) => (
                         <Numeric
-                          key={`${selectedAnchor.id}-${key}`}
-                          label={`Landmark ${key.toUpperCase()} (px)`}
+                          key={`${selectedContact.id}-${key}`}
+                          label={`Contact ${key.toUpperCase()} (px)`}
                           value={
                             Math.round(
-                              selectedAnchor.image[key] *
+                              selectedContact.image[key] *
                                 (key === "x" ? p.width : p.height) *
                                 10,
                             ) / 10
@@ -1825,211 +1968,79 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                           onCommit={(n) =>
                             update((p) => ({
                               ...p,
-                              anchors: p.anchors.map((a) =>
-                                a.id === selectedAnchor.id
+                              contacts: p.contacts.map((c) =>
+                                c.id === selectedContact.id
                                   ? {
-                                      ...a,
+                                      ...c,
                                       image: {
-                                        ...a.image,
+                                        ...c.image,
                                         [key]:
-                                          n /
-                                          (key === "x" ? p.width : p.height),
+                                          n / (key === "x" ? p.width : p.height),
                                       },
                                     }
-                                  : a,
+                                  : c,
                               ),
-                              reviewed: false,
                             }))
                           }
                         />
                       ))}
                     </div>
-                  </>
-                ) : null}
-                <button
-                  className="ff-review"
-                  disabled={
-                    !alignment.h || alignment.rejected.length > 0 || !check
-                  }
-                  onClick={() => {
-                    update((p) => ({ ...p, reviewed: true }));
-                    setNotice(
-                      "Overlay review recorded · Measurements are estimates within the anchored area",
-                    );
-                  }}
-                >
-                  I checked the floor-line overlay
-                </button>
-              </section>
-              <section>
-                <h3>Player contacts</h3>
-                <p className="ff-help">
-                  Ankles are proposals, not proof of grounding · Drag contacts
-                  to visible shoe-floor positions and remove spectators
-                </p>
-                <button onClick={() => setMode("contact")}>
-                  <Plus size={15} />
-                  Add player contact
-                </button>
-                <div className="ff-items">
-                  {p.contacts.map((c) => (
-                    <div
-                      key={c.id}
-                      className={selected === c.id ? "ff-item-selected" : ""}
-                    >
-                      <button
-                        onClick={() => {
-                          setSelected(c.id);
-                          setCursor(c.image);
-                        }}
-                      >
-                        Player {c.label}
-                      </button>
-                      {c.status === "uncertain" &&
-                      c.proposalAnkleKeypointCount ? (
-                        <span className="ff-contact-evidence" role="note">
-                          Model · {c.proposalAnkleKeypointCount} ankle keypoint
-                          {c.proposalAnkleKeypointCount === 1 ? "" : "s"}
-                        </span>
-                      ) : null}
-                      {c.boxTouchesImageEdge ? (
-                        <span className="ff-contact-edge" role="note">
-                          Photo edge · review
-                        </span>
-                      ) : null}
-                      <select
-                        aria-label={`Player ${c.label} contact status`}
-                        value={c.status}
-                        onChange={(e) =>
-                          update((p) => ({
-                            ...p,
-                            contacts: p.contacts.map((x) =>
-                              x.id === c.id
-                                ? {
-                                    ...x,
-                                    status: e.target.value as Contact["status"],
-                                  }
-                                : x,
-                            ),
-                          }))
-                        }
-                      >
-                        {["uncertain", "grounded", "hidden", "airborne"].map(
-                          (s) => (
-                            <option key={s}>{s}</option>
-                          ),
-                        )}
-                      </select>
-                      <button
-                        aria-label={`Remove player ${c.label}`}
-                        onClick={() =>
-                          update((p) => ({
-                            ...p,
-                            contacts: p.contacts.filter((x) => x.id !== c.id),
-                            measurements: p.measurements.filter(
-                              (m) =>
-                                m.a.contactId !== c.id &&
-                                m.b.contactId !== c.id,
-                            ),
-                          }))
-                        }
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                {selectedContact ? (
-                  <div className="ff-coordinate-fields">
-                    {(["x", "y"] as const).map((key) => (
-                      <Numeric
-                        key={`${selectedContact.id}-${key}`}
-                        label={`Contact ${key.toUpperCase()} (px)`}
-                        value={
-                          Math.round(
-                            selectedContact.image[key] *
-                              (key === "x" ? p.width : p.height) *
-                              10,
-                          ) / 10
-                        }
-                        min={0}
-                        max={key === "x" ? p.width : p.height}
-                        step={0.1}
-                        onCommit={(n) =>
-                          update((p) => ({
-                            ...p,
-                            contacts: p.contacts.map((c) =>
-                              c.id === selectedContact.id
-                                ? {
-                                    ...c,
-                                    image: {
-                                      ...c.image,
-                                      [key]:
-                                        n / (key === "x" ? p.width : p.height),
-                                    },
-                                  }
-                                : c,
-                            ),
-                          }))
-                        }
-                      />
-                    ))}
-                  </div>
-                ) : null}
-                <label>
-                  Project name
-                  <input
-                    aria-label="Project name"
-                    value={p.name}
-                    maxLength={80}
-                    onChange={(e) => {
-                      if (e.target.value.trim())
-                        update((p) => ({ ...p, name: e.target.value }));
-                    }}
-                  />
-                </label>
-              </section>
-            </div>
-          </details>
-          {notice ? (
-            <p className="ff-notice" role="status">
-              {notice}
-            </p>
-          ) : null}
-          {p.attribution ? (
-            <p className="ff-attribution">
-              Photo:{" "}
-              <a href={p.attribution.url} target="_blank" rel="noreferrer">
-                {p.attribution.title}
-              </a>{" "}
-              · {p.attribution.creator} · {p.attribution.license}
-            </p>
-          ) : null}
-          <details className="ff-help-box">
-            <summary>How to read Freeze Floor</summary>
-            <p>
-              Choose an NBA half-court image, or upload a video and freeze a
-              clear moment · Review automatic landmarks or place at least four
-              floor anchors · Check the line overlay before measuring
-            </p>
-            <p>
-              Confirm visible feet in the contact inspector · Numeric distances
-              are limited to the area enclosed by your accepted anchors · The
-              range estimates sensitivity to image-point placement, not full
-              camera or lens error
-            </p>
-            <p>
-              Automatic alignment is experimental and has not passed the
-              required 60-photo accuracy benchmark · The supplied wide views use
-              manually reviewed alignments · Close-ups and hidden floor markings
-              may not support measurement
-            </p>
-            <p>
-              Images stay on your device · Save commits the normalized image and
-              corrections together in this browser origin · Download PNG remains
-              available when storage fails
-            </p>
-          </details>
+                  ) : null}
+                  <label>
+                    Project name
+                    <input
+                      aria-label="Project name"
+                      value={p.name}
+                      maxLength={80}
+                      onChange={(e) => {
+                        if (e.target.value.trim())
+                          update((p) => ({ ...p, name: e.target.value }));
+                      }}
+                    />
+                  </label>
+                </section>
+              </div>
+            </details>
+            {notice ? (
+              <p className="ff-notice" role="status">
+                {notice}
+              </p>
+            ) : null}
+            {p.attribution ? (
+              <p className="ff-attribution">
+                Photo:{" "}
+                <a href={p.attribution.url} target="_blank" rel="noreferrer">
+                  {p.attribution.title}
+                </a>{" "}
+                · {p.attribution.creator} · {p.attribution.license}
+              </p>
+            ) : null}
+            <details className="ff-help-box">
+              <summary>How to read Freeze Floor</summary>
+              <p>
+                Choose an NBA half-court image, or upload a video and freeze a
+                clear moment · Review automatic landmarks or place at least four
+                floor anchors · Check the line overlay before measuring
+              </p>
+              <p>
+                Confirm visible feet in the contact inspector · Numeric distances
+                are limited to the area enclosed by your accepted anchors · The
+                range estimates sensitivity to image-point placement, not full
+                camera or lens error
+              </p>
+              <p>
+                Automatic alignment is experimental and has not passed the
+                required 60-photo accuracy benchmark · The supplied wide views use
+                manually reviewed alignments · Close-ups and hidden floor markings
+                may not support measurement
+              </p>
+              <p>
+                Images stay on your device · Save commits the normalized image and
+                corrections together in this browser origin · Download PNG remains
+                available when storage fails
+              </p>
+            </details>
+          </div>
         </>
       ) : !busy ? (
         <button onClick={() => void loadSample(SAMPLES[0])}>

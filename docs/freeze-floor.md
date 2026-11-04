@@ -86,7 +86,7 @@ The selected source time is saved with the normalized image and shown after reop
 - Click or tap a contact or landmark, then drag to correct it · Each completed drag is one undo step · Escape cancels a pending placement, first measurement endpoint, or unfinished drag
 - Arrow keys aim on a focused view, or nudge its selected point by one image pixel · Shift changes that to ten pixels · Enter places an anchor, contact, or measurement endpoint in the chosen mode
 - Numeric pixel fields allow precise keyboard correction · Both views expose visible focus · Undo and redo retain the last 50 completed edits for the current photograph
-- The magnified aiming inset follows the image-space cursor · The split view stacks on narrow screens
+- The magnified aiming inset follows the image-space cursor · Desktop and split-screen windows at least 640 × 600 keep both views side by side and fit the window without page scrolling · Corrections, distances, credits, and help scroll inside the lower details area, which also supports keyboard focus · Photo libraries and video pickers open in bounded panels with their own scrolling · Smaller windows retain normal page scrolling, with stacked views on phones
 
 ## Geometry
 

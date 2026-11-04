@@ -8,6 +8,8 @@ This guide contains detailed workspace behavior, local setup, development checks
 
 Open **Others → Freeze Floor** at `#freeze-floor` · Inspect a real photograph or selected video still beside a linked NBA half-court
 
+Desktop and split-screen windows fit the linked views without page scrolling · Longer correction controls, libraries, and video pickers scroll within their own panels · Phones retain a stacked layout
+
 - Upload JPEG, PNG, or WebP up to 20 MiB and 24 megapixels · Orientation is respected and the working image is normalized to a maximum 2048-pixel edge
 - Choose from four **Example videos** with thumbnails and source credits, or upload a local MP4, WebM, or browser-supported MOV up to 100 MiB and 10 minutes · Scrub, step by 1/30 second, change speed, or loop · The Seconds field seeks only after an edit; focusing and leaving it preserves the selected instant · Use a frozen frame for alignment or download it as JPEG · New frames never reuse old calibration
 - Review proposed floor landmarks using **Check the alignment** · Add, reassign, exclude, drag, or nudge anchors · At least four well-spread correspondences and an explicit overlay review are required for measurement
