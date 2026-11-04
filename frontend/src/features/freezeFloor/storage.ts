@@ -123,6 +123,32 @@ export async function listProjects(): Promise<ProjectListing> {
     db.close();
   }
 }
+async function readProjectRevision(id: string): Promise<string | null> {
+  const db = await open();
+  try {
+    return await new Promise<string | null>((resolve, reject) => {
+      const tx = db.transaction("projects", "readonly"),
+        request = tx.objectStore("projects").get(id);
+      tx.oncomplete = () => {
+        const value: unknown = request.result;
+        if (value === undefined) resolve(null);
+        else if (valid(value) && value.project.id === id)
+          resolve(projectRevision(value));
+        else
+          reject(
+            Error(
+              "Saved project changed while its image was loading · Reopen the latest saved version",
+            ),
+          );
+      };
+      tx.onabort = () =>
+        reject(tx.error || Error("Saved project revision check was interrupted"));
+      tx.onerror = () => {};
+    });
+  } finally {
+    db.close();
+  }
+}
 export async function getProject(id: string): Promise<StoredProject | null> {
   const db = await open();
   let value: StoredProject | null = null;
@@ -166,6 +192,10 @@ export async function getProject(id: string): Promise<StoredProject | null> {
   } finally {
     bitmap.close();
   }
+  if ((await readProjectRevision(id)) !== projectRevision(value))
+    throw Error(
+      "Saved project changed or was deleted while its image was loading · Reopen the latest saved version",
+    );
   return value;
 }
 export async function saveProject(
