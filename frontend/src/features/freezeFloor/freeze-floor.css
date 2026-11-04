@@ -507,6 +507,12 @@
 .ff-items .ff-item-selected {
   border-color: var(--orange);
 }
+.ff-contact-evidence {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
 .ff-landmark-label {
   display: grid;
   gap: 3px;

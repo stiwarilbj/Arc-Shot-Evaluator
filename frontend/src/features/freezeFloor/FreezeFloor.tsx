@@ -1900,6 +1900,13 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                       >
                         Player {c.label}
                       </button>
+                      {c.status === "uncertain" &&
+                      c.proposalAnkleKeypointCount ? (
+                        <span className="ff-contact-evidence" role="note">
+                          Model · {c.proposalAnkleKeypointCount} ankle keypoint
+                          {c.proposalAnkleKeypointCount === 1 ? "" : "s"}
+                        </span>
+                      ) : null}
                       <select
                         aria-label={`Player ${c.label} contact status`}
                         value={c.status}

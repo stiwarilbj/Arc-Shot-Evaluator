@@ -13,6 +13,7 @@ export type Contact = {
   image: Point;
   status: "uncertain" | "grounded" | "hidden" | "airborne";
   box?: [number, number, number, number];
+  proposalAnkleKeypointCount?: 1 | 2;
 };
 export type MeasurePoint = { image: Point; contactId?: string };
 export type Measurement = { id: string; a: MeasurePoint; b: MeasurePoint };
@@ -132,6 +133,9 @@ export function validateProject(v: unknown): v is FloorProject {
         text(c.label, 40) &&
         imagePoint(c.image) &&
         ["uncertain", "grounded", "hidden", "airborne"].includes(c.status) &&
+        (c.proposalAnkleKeypointCount === undefined ||
+          c.proposalAnkleKeypointCount === 1 ||
+          c.proposalAnkleKeypointCount === 2) &&
         (!c.box ||
           (Array.isArray(c.box) &&
             c.box.length === 4 &&

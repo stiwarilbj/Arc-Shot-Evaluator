@@ -205,6 +205,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         box: [number, number, number, number];
         score: number;
         foot: { x: number; y: number };
+        proposalAnkleKeypointCount: 1 | 2;
       }[] = [];
       let rejectedAnkleProposals = 0,
         personBoxesWithoutAnkles = 0;
@@ -282,6 +283,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         candidates.push({
           box,
           score,
+          proposalAnkleKeypointCount: ankles.length === 1 ? 1 : 2,
           foot: {
             x: ankles.reduce((s, p) => s + p.x, 0) / ankles.length,
             y: Math.max(...ankles.map((p) => p.y)),
@@ -319,6 +321,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           image: c.foot,
           status: "uncertain",
           box: c.box,
+          proposalAnkleKeypointCount: c.proposalAnkleKeypointCount,
         });
       }
       if (rejectedAnkleProposals > 0) {
