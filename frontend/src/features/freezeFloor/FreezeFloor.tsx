@@ -44,6 +44,7 @@ import {
   type StoredProject,
   type Anchor,
   type Contact,
+  validResponse,
 } from "./types.ts";
 import { normalizeImage, readImageHeader } from "./images.ts";
 import {
@@ -690,6 +691,15 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         revision.current !== rev
       )
         return;
+      if (
+        !validResponse(result) ||
+        result.type !== "result" ||
+        result.imageId !== projectValue.imageId ||
+        result.revision !== rev
+      )
+        throw new Error(
+          "Image worker returned invalid predictions · No project changes were applied",
+        );
       const existing = new Set(projectValue.anchors.map((a) => a.landmark));
       const additions = result.anchors
         .filter((a) => !existing.has(a.landmark))
