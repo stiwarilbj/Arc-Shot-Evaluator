@@ -9,6 +9,7 @@ import {
   type Contact,
   type InferenceRequest,
   type InferenceResponse,
+  type PhotoEdge,
   type Point,
 } from "./types.ts";
 ort.env.wasm.numThreads = 1;
@@ -226,7 +227,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         foot: { x: number; y: number };
         proposalAnkles: Point[];
         proposalAnkleKeypointCount: 1 | 2;
-        boxTouchesImageEdge: boolean;
+        boxImageEdges: PhotoEdge[];
       }[] = [];
       let rejectedAnkleProposals = 0,
         personBoxesWithoutAnkles = 0;
@@ -263,11 +264,11 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           y > content.bottom
         )
           continue;
-        const boxTouchesImageEdge =
-          left <= content.left ||
-          top <= content.top ||
-          right >= content.right ||
-          bottom >= content.bottom;
+        const boxImageEdges: PhotoEdge[] = [];
+        if (top <= content.top) boxImageEdges.push("top");
+        if (bottom >= content.bottom) boxImageEdges.push("bottom");
+        if (left <= content.left) boxImageEdges.push("left");
+        if (right >= content.right) boxImageEdges.push("right");
         const tl = feed.map(left, top),
           br = feed.map(right, bottom),
           box: [number, number, number, number] = [
@@ -321,7 +322,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           score,
           proposalAnkles: ankles,
           proposalAnkleKeypointCount: ankles.length === 1 ? 1 : 2,
-          boxTouchesImageEdge,
+          boxImageEdges,
           foot: {
             x: ankles.reduce((s, p) => s + p.x, 0) / ankles.length,
             y: Math.max(...ankles.map((p) => p.y)),
@@ -367,7 +368,8 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           box: c.box,
           proposalAnkles: c.proposalAnkles,
           proposalAnkleKeypointCount: c.proposalAnkleKeypointCount,
-          boxTouchesImageEdge: c.boxTouchesImageEdge,
+          boxImageEdges: c.boxImageEdges,
+          boxTouchesImageEdge: c.boxImageEdges.length > 0,
         });
       }
       if (overlapSuppressedCandidates > 0) {
@@ -390,9 +392,11 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
       }
       const edgeContacts = contacts.filter((c) => c.boxTouchesImageEdge);
       if (edgeContacts.length > 0) {
-        const labels = edgeContacts.map((c) => c.label).join(", ");
+        const bottomEdges = edgeContacts.filter((c) =>
+          c.boxImageEdges?.includes("bottom"),
+        ).length;
         warnings.push(
-          `Photo-edge review · ${edgeContacts.length} proposed contact${edgeContacts.length === 1 ? " touches" : "s touch"} the photo boundary · Player${edgeContacts.length === 1 ? "" : "s"} ${labels} · Check whether their shoes are visible`,
+          `Photo-edge review · ${edgeContacts.length} contact box${edgeContacts.length === 1 ? " touches" : "es touch"} the photo boundary · ${bottomEdges} reach the bottom edge and may crop shoes · Exact sides appear in each contact row`,
         );
       }
     } catch (e) {

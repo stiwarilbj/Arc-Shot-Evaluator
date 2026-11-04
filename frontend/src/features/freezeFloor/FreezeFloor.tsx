@@ -1904,9 +1904,22 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                             {c.proposalAnkleKeypointCount === 1 ? "" : "s"}
                           </span>
                         ) : null}
-                        {c.boxTouchesImageEdge ? (
-                          <span className="ff-contact-edge" role="note">
-                            Photo edge · review
+                        {c.boxImageEdges?.length || c.boxTouchesImageEdge ? (
+                          <span
+                            className="ff-contact-edge"
+                            role="note"
+                            title={
+                              c.boxImageEdges?.includes("bottom")
+                                ? "The detected box reaches the bottom photo edge · Check whether the shoes are cropped"
+                                : "The detected box reaches a photo edge · Check whether the feet are visible"
+                            }
+                          >
+                            Photo edge{c.boxImageEdges?.length === 1 ? "" : "s"} · {c.boxImageEdges?.length
+                              ? c.boxImageEdges.join(", ")
+                              : "side unavailable"}
+                            {c.boxImageEdges?.includes("bottom")
+                              ? " · shoes may be cropped"
+                              : " · review feet"}
                           </span>
                         ) : null}
                         <select

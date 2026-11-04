@@ -75,13 +75,25 @@ export function mergeContactProposals(
       // Keep the original identity, corrected location, and grounding status
       // while preserving the first source ankle evidence for the retained contact
       const previous = existing[match];
-      if (proposal.proposalAnkles && !previous.proposalAnkles) {
+      const addAnkles = proposal.proposalAnkles && !previous.proposalAnkles;
+      const addEdges = proposal.boxImageEdges?.length && !previous.boxImageEdges;
+      if (addAnkles || addEdges) {
         const updated = {
           ...previous,
-          proposalAnkles: proposal.proposalAnkles,
-          proposalAnkleKeypointCount:
-            proposal.proposalAnkleKeypointCount ??
-            (proposal.proposalAnkles.length as 1 | 2),
+          ...(addAnkles
+            ? {
+                proposalAnkles: proposal.proposalAnkles,
+                proposalAnkleKeypointCount:
+                  proposal.proposalAnkleKeypointCount ??
+                  (proposal.proposalAnkles!.length as 1 | 2),
+              }
+            : {}),
+          ...(addEdges
+            ? {
+                boxImageEdges: proposal.boxImageEdges,
+                boxTouchesImageEdge: true,
+              }
+            : {}),
         };
         contacts[match] = updated;
         resolved[i] = updated;

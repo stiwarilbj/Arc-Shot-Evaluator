@@ -1,4 +1,5 @@
 export type Point = { x: number; y: number };
+export type PhotoEdge = "top" | "bottom" | "left" | "right";
 export type Anchor = {
   id: string;
   landmark: string;
@@ -15,6 +16,8 @@ export type Contact = {
   box?: [number, number, number, number];
   proposalAnkleKeypointCount?: 1 | 2;
   proposalAnkles?: Point[];
+  boxImageEdges?: PhotoEdge[];
+  // Kept for older saved projects that recorded only whether any edge was touched
   boxTouchesImageEdge?: boolean;
 };
 export type MeasurePoint = { image: Point; contactId?: string };
@@ -150,6 +153,15 @@ export function validateProject(v: unknown): v is FloorProject {
             c.proposalAnkles.every(imagePoint) &&
             (c.proposalAnkleKeypointCount === undefined ||
               c.proposalAnkleKeypointCount === c.proposalAnkles.length))) &&
+        (c.boxImageEdges === undefined ||
+          (Array.isArray(c.boxImageEdges) &&
+            c.boxImageEdges.length <= 4 &&
+            c.boxImageEdges.every((edge) =>
+              ["top", "bottom", "left", "right"].includes(edge),
+            ) &&
+            new Set(c.boxImageEdges).size === c.boxImageEdges.length &&
+            (c.boxTouchesImageEdge === undefined ||
+              c.boxTouchesImageEdge === (c.boxImageEdges.length > 0)))) &&
         (c.boxTouchesImageEdge === undefined ||
           typeof c.boxTouchesImageEdge === "boolean") &&
         (!c.box ||
