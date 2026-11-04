@@ -227,6 +227,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         foot: { x: number; y: number };
         proposalAnkles: Point[];
         proposalAnkleKeypointCount: 1 | 2;
+        proposalAnkleOutsideBoxWithinMargin: boolean;
         boxImageEdges: PhotoEdge[];
       }[] = [];
       let rejectedAnkleProposals = 0,
@@ -318,12 +319,20 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           rejectedAnkleProposals++;
           continue;
         }
+        const proposalAnkleOutsideBoxWithinMargin = ankles.some(
+          (p) =>
+            p.x < box[0] ||
+            p.x > box[2] ||
+            p.y < box[1] ||
+            p.y > box[3],
+        );
         candidates.push({
           modelIndex: i,
           box,
           score,
           proposalAnkles: ankles,
           proposalAnkleKeypointCount: ankles.length === 1 ? 1 : 2,
+          proposalAnkleOutsideBoxWithinMargin,
           boxImageEdges,
           foot: {
             x: ankles.reduce((s, p) => s + p.x, 0) / ankles.length,
@@ -372,6 +381,8 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           box: c.box,
           proposalAnkles: c.proposalAnkles,
           proposalAnkleKeypointCount: c.proposalAnkleKeypointCount,
+          proposalAnkleOutsideBoxWithinMargin:
+            c.proposalAnkleOutsideBoxWithinMargin,
           boxImageEdges: c.boxImageEdges,
           boxTouchesImageEdge: c.boxImageEdges.length > 0,
         });

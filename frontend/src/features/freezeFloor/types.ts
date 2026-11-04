@@ -16,6 +16,7 @@ export type Contact = {
   box?: [number, number, number, number];
   proposalAnkleKeypointCount?: 1 | 2;
   proposalAnkles?: Point[];
+  proposalAnkleOutsideBoxWithinMargin?: boolean;
   boxImageEdges?: PhotoEdge[];
   // Kept for older saved projects that recorded only whether any edge was touched
   boxTouchesImageEdge?: boolean;
@@ -146,6 +147,8 @@ export function validateProject(v: unknown): v is FloorProject {
         (c.proposalAnkleKeypointCount === undefined ||
           c.proposalAnkleKeypointCount === 1 ||
           c.proposalAnkleKeypointCount === 2) &&
+        (c.proposalAnkleOutsideBoxWithinMargin === undefined ||
+          typeof c.proposalAnkleOutsideBoxWithinMargin === "boolean") &&
         (c.proposalAnkles === undefined ||
           (Array.isArray(c.proposalAnkles) &&
             c.proposalAnkles.length >= 1 &&

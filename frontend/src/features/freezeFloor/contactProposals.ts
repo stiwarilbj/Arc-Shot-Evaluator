@@ -77,7 +77,10 @@ export function mergeContactProposals(
       const previous = existing[match];
       const addAnkles = proposal.proposalAnkles && !previous.proposalAnkles;
       const addEdges = proposal.boxImageEdges?.length && !previous.boxImageEdges;
-      if (addAnkles || addEdges) {
+      const addAnkleMarginReview =
+        proposal.proposalAnkleOutsideBoxWithinMargin === true &&
+        previous.proposalAnkleOutsideBoxWithinMargin !== true;
+      if (addAnkles || addEdges || addAnkleMarginReview) {
         const updated = {
           ...previous,
           ...(addAnkles
@@ -87,6 +90,9 @@ export function mergeContactProposals(
                   proposal.proposalAnkleKeypointCount ??
                   (proposal.proposalAnkles!.length as 1 | 2),
               }
+            : {}),
+          ...(addAnkleMarginReview
+            ? { proposalAnkleOutsideBoxWithinMargin: true }
             : {}),
           ...(addEdges
             ? {

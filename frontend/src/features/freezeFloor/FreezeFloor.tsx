@@ -1904,6 +1904,16 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                             {c.proposalAnkleKeypointCount === 1 ? "" : "s"}
                           </span>
                         ) : null}
+                        {c.status === "uncertain" &&
+                        c.proposalAnkleOutsideBoxWithinMargin ? (
+                          <span
+                            className="ff-contact-edge"
+                            role="note"
+                            title="At least one ankle point landed just outside the detected person box but within the 5% allowance · Check the contact position"
+                          >
+                            Ankle just outside box · review position
+                          </span>
+                        ) : null}
                         {c.boxImageEdges?.length || c.boxTouchesImageEdge ? (
                           <span
                             className="ff-contact-edge"
