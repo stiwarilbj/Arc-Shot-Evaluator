@@ -110,6 +110,7 @@ export type Alignment = {
   inliers: string[];
   rejected: string[];
   mismatches: { id: string; pixels: number }[];
+  leaveOneOutShifts: { id: string; pixels: number | null }[];
   rms: number;
   hull: Point[];
 };
@@ -221,6 +222,44 @@ export function fit(source: Point[], target: Point[]): Transform | null {
     return null;
   }
 }
+function insidePolygon(p: Point, polygon: Point[]) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i],
+      b = polygon[j];
+    if (
+      (a.y > p.y) !== (b.y > p.y) &&
+      p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x
+    )
+      inside = !inside;
+  }
+  return inside;
+}
+function courtShiftSamples(polygon: Point[]) {
+  const xs = polygon.map((p) => p.x),
+    ys = polygon.map((p) => p.y),
+    minX = Math.min(...xs),
+    maxX = Math.max(...xs),
+    minY = Math.min(...ys),
+    maxY = Math.max(...ys),
+    samples: Point[] = [...polygon];
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i],
+      b = polygon[(i + 1) % polygon.length];
+    samples.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  }
+  // Interior grid samples compare the projected court across the supported area
+  for (let xStep = 1; xStep < 6; xStep++) {
+    for (let yStep = 1; yStep < 6; yStep++) {
+      const point = {
+        x: minX + ((maxX - minX) * xStep) / 6,
+        y: minY + ((maxY - minY) * yStep) / 6,
+      };
+      if (insidePolygon(point, polygon)) samples.push(point);
+    }
+  }
+  return samples;
+}
 export function align(
   anchors: Anchor[],
   reviewed = false,
@@ -232,6 +271,7 @@ export function align(
     inliers: [],
     rejected: [],
     mismatches: [],
+    leaveOneOutShifts: [],
     rms: 0,
     hull: [],
   };
@@ -370,12 +410,52 @@ export function align(
           b.pixels - a.pixels || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
         )
       : [];
+  const leaveOneOutShifts =
+    image &&
+    Number.isFinite(image.width) && image.width > 0 &&
+    Number.isFinite(image.height) && image.height > 0 &&
+    finalIndices.length > 4
+      ? finalIndices.map((omitted) => {
+          const retained = finalIndices.filter((i) => i !== omitted),
+            withoutAnchor = fit(
+              retained.map((i) => src[i]),
+              retained.map((i) => dst[i]),
+            );
+          if (!withoutAnchor)
+            return { id: a[omitted].id, pixels: null };
+          const shifts = courtShiftSamples(finalHull).map((courtPoint) => {
+            const original = project(h, courtPoint),
+              refit = project(withoutAnchor, courtPoint);
+            return original && refit
+              ? Math.hypot(
+                  (original.x - refit.x) * image.width,
+                  (original.y - refit.y) * image.height,
+                )
+              : null;
+          });
+          const validShifts = shifts.filter(
+            (shift): shift is number =>
+              shift !== null && Number.isFinite(shift),
+          );
+          if (!shifts.length || validShifts.length !== shifts.length)
+            return { id: a[omitted].id, pixels: null };
+          const rmsShift = Math.sqrt(
+            validShifts.reduce((sum, shift) => sum + shift ** 2, 0) /
+              validShifts.length,
+          );
+          return {
+            id: a[omitted].id,
+            pixels: Number.isFinite(rmsShift) ? rmsShift : null,
+          };
+        })
+      : [];
   return {
     h,
     inverse,
     inliers: finalIndices.map((i) => a[i].id),
     rejected,
     mismatches,
+    leaveOneOutShifts,
     rms,
     hull: hasFinalSupport ? finalHull : [],
     status,

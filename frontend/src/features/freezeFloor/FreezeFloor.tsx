@@ -1729,11 +1729,23 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                     Mismatch compares each landmark with this fit · It does not
                     confirm correct court placement
                   </p>
+                  <p className="ff-help">
+                    Leave-one-out shift refits without each accepted anchor and
+                    reports the RMS pixel movement across the supported court
+                    area · A large shift means the fit depends heavily on that
+                    anchor, not that the anchor is necessarily wrong · With only
+                    four accepted anchors, each is essential and a one-anchor-out
+                    homography cannot be fit
+                  </p>
                   <div className="ff-items">
                     {p.anchors.map((a, i) => {
                       const mismatch = displayAlignment?.mismatches.find(
                         (m) => m.id === a.id,
-                      );
+                      ),
+                        accepted = displayAlignment?.inliers.includes(a.id) ?? false,
+                        leaveOneOutShift = displayAlignment?.leaveOneOutShifts.find(
+                          (entry) => entry.id === a.id,
+                        );
                       return (
                         <div
                           key={a.id}
@@ -1774,6 +1786,17 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                                 {mismatch
                                   ? `${Math.round(mismatch.pixels)} px`
                                   : "unavailable"}
+                              </small>
+                              <small>
+                                Leave-one-out court shift:{" "}
+                                {!accepted
+                                  ? "not used in fit"
+                                  : displayAlignment?.inliers.length === 4
+                                    ? "essential · only four accepted anchors"
+                                    : leaveOneOutShift?.pixels !== null &&
+                                        leaveOneOutShift?.pixels !== undefined
+                                      ? `${Math.round(leaveOneOutShift.pixels)} px RMS`
+                                      : "unavailable · refit is unstable"}
                               </small>
                             </span>
                           </button>
