@@ -1907,6 +1907,11 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                           {c.proposalAnkleKeypointCount === 1 ? "" : "s"}
                         </span>
                       ) : null}
+                      {c.boxTouchesImageEdge ? (
+                        <span className="ff-contact-edge" role="note">
+                          Photo edge · review
+                        </span>
+                      ) : null}
                       <select
                         aria-label={`Player ${c.label} contact status`}
                         value={c.status}

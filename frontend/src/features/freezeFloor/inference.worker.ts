@@ -206,6 +206,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         score: number;
         foot: { x: number; y: number };
         proposalAnkleKeypointCount: 1 | 2;
+        boxTouchesImageEdge: boolean;
       }[] = [];
       let rejectedAnkleProposals = 0,
         personBoxesWithoutAnkles = 0;
@@ -238,6 +239,11 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           y > content.bottom
         )
           continue;
+        const boxTouchesImageEdge =
+          left <= content.left ||
+          top <= content.top ||
+          right >= content.right ||
+          bottom >= content.bottom;
         const tl = feed.map(left, top),
           br = feed.map(right, bottom),
           box: [number, number, number, number] = [
@@ -284,6 +290,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           box,
           score,
           proposalAnkleKeypointCount: ankles.length === 1 ? 1 : 2,
+          boxTouchesImageEdge,
           foot: {
             x: ankles.reduce((s, p) => s + p.x, 0) / ankles.length,
             y: Math.max(...ankles.map((p) => p.y)),
@@ -322,6 +329,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           status: "uncertain",
           box: c.box,
           proposalAnkleKeypointCount: c.proposalAnkleKeypointCount,
+          boxTouchesImageEdge: c.boxTouchesImageEdge,
         });
       }
       if (rejectedAnkleProposals > 0) {
@@ -332,6 +340,13 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
       if (personBoxesWithoutAnkles > 0) {
         warnings.push(
           `${personBoxesWithoutAnkles} valid person box${personBoxesWithoutAnkles === 1 ? " had" : "es had"} no usable ankle keypoint at confidence ${ANKLE_KEYPOINT_CONFIDENCE} or higher · Review the photo and add any missing court players manually`,
+        );
+      }
+      const edgeContacts = contacts.filter((c) => c.boxTouchesImageEdge);
+      if (edgeContacts.length > 0) {
+        const labels = edgeContacts.map((c) => c.label).join(", ");
+        warnings.push(
+          `Photo-edge review · ${edgeContacts.length} proposed contact${edgeContacts.length === 1 ? " touches" : "s touch"} the photo boundary · Player${edgeContacts.length === 1 ? "" : "s"} ${labels} · Check whether their shoes are visible`,
         );
       }
     } catch (e) {
