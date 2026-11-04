@@ -48,14 +48,20 @@ const overlap = person("overlap", [0.47, 0.32, 0.55, 0.82], 0.52);
 async function sample() {
   await page.getByRole("button", { name: "Choose photo", exact: true }).click();
   await page.getByRole("button", { name: /Knicks at the Garden.*Reviewed manual alignment/ }).click();
+  const discard = page.getByRole("button", { name: "Discard", exact: true });
+  if (await discard.isVisible()) await discard.click();
   await expect(page.getByLabel("Project name")).toHaveValue("Knicks at the Garden · Wide view");
   await page.getByRole("button", { name: "Check the alignment", exact: true }).click();
 }
 async function propose(contacts) {
   await page.evaluate((contacts) => window.proposalFixtures.push(contacts), contacts);
-  await page.getByRole("button", { name: "Retry automatic proposals", exact: true }).click();
+  const retry = page.getByRole("button", { name: "Retry automatic proposals", exact: true });
+  // Long inspectors scroll within the desktop workspace
+  await retry.evaluate((button) => button.scrollIntoView({ block: "center", behavior: "instant" }));
+  await retry.click();
   await expect(page.locator(".ff-notice")).toContainText("CPU processing");
   await expect(page.locator(".ff-progress")).toHaveCount(0);
+  await expect(retry).toBeEnabled();
 }
 try {
   await page.goto(url);
@@ -69,6 +75,11 @@ try {
   await expect(statuses()).toHaveCount(2);
   await expect(page.getByLabel("Player 1 contact status")).toHaveValue("grounded");
   await expect(page.locator('.ff-photo [data-contact="left"]')).toHaveCount(1);
+  // An unchanged retry finishes without adding a history step
+  await page.getByRole("button", { name: "Undo floor edit" }).click();
+  await expect(page.getByLabel("Player 1 contact status")).toHaveValue("uncertain");
+  await page.getByRole("button", { name: "Redo floor edit" }).click();
+  await expect(page.getByLabel("Player 1 contact status")).toHaveValue("grounded");
   await propose([overlap]);
   await expect(statuses()).toHaveCount(3);
   await expect(page.locator(".ff-notice")).toContainText("Players 1, 2, 3 remain separate");

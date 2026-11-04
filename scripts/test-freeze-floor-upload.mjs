@@ -43,7 +43,8 @@ await page
     new URL("../frontend/public/freeze-floor/garden.jpg", import.meta.url)
       .pathname,
   );
-await expect(page.locator(".ff-progress")).toBeVisible();
+// Wait for this upload, rather than observing the initial sample's load progress
+await expect(page.getByLabel("Project name")).toHaveValue("garden");
 await expect(page.locator(".ff-progress")).toHaveCount(0, { timeout: 120000 });
 await expect(page.locator(".ff-error")).toHaveCount(0);
 await expect(page.locator(".ff-notice")).toContainText(

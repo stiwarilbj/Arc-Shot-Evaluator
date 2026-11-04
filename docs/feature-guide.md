@@ -17,6 +17,7 @@ Desktop and split-screen windows fit the linked views without page scrolling · 
 - Select two grounded floor points in either view · Overhead selection snaps only near court markers, independently of photograph perspective · Distances and sensitivity ranges are approximate and restricted to the floor region enclosed by the anchors · Independent paint, corner, and restricted-area toggles use NBA dimensions
 - Save explicitly to this origin’s private IndexedDB library, limited to 20 projects and 200 MiB · Choose photo opens saved projects, rename, and deletion · Healthy projects remain available when other entries fail validation, with a warning naming unavailable records preserved for recovery · Hosted and downloaded libraries are separate browser origins
 - Download a combined photograph/court PNG including visible overlays, distances, uncertainty, and sample attribution · No image upload, account, or paid service
+- Player-proposal retries compare foot distances in image pixels on both axes and preserve existing corrections · Out-of-range model confidences are skipped with counted review warnings
 - Automatic CNN proposals run in a dedicated browser worker with WebGPU and CPU fallback · The required independent 60-photo benchmark and confidence-classifier training are incomplete · Two supplied wide views have manually reviewed lane alignments; the third demonstrates insufficient court evidence
 
 See the [Freeze Floor use, geometry, model, and accuracy guide](freeze-floor.md) for supported images, limitations, and local verification commands

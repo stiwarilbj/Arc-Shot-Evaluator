@@ -57,7 +57,7 @@
     "test:simulation-adversarial": "node --experimental-strip-types ../scripts/test-simulation-adversarial.mjs",
     "audit:simulation": "node --experimental-strip-types ../scripts/audit-playbook-simulation.mjs",
     "test:shotform-jenga": "node --experimental-strip-types ../scripts/test-shotform-jenga.mjs",
-    "test:freeze-floor": "node --experimental-strip-types ../scripts/test-freeze-floor.mjs && node --experimental-strip-types ../scripts/test-freeze-floor-images.mjs && node --experimental-strip-types ../scripts/test-freeze-floor-media.mjs"
+    "test:freeze-floor": "node --experimental-strip-types ../scripts/test-freeze-floor-predictions.mjs && node --experimental-strip-types ../scripts/test-freeze-floor.mjs && node --experimental-strip-types ../scripts/test-freeze-floor-images.mjs && node --experimental-strip-types ../scripts/test-freeze-floor-media.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",

@@ -1,7 +1,14 @@
-import { nextContactLabel, type Contact } from "./types.ts";
+import { nextContactLabel, type Contact, type FloorProject } from "./types.ts";
 
-function evidence(a: Contact, b: Contact) {
-  const near = Math.hypot(a.image.x - b.image.x, a.image.y - b.image.y) < 0.035;
+type ImageSize = Pick<FloorProject, "width" | "height">;
+function evidence(a: Contact, b: Contact, image: ImageSize) {
+  // Use an isotropic pixel radius that scales with the shorter image edge
+  // Equal horizontal/vertical distances must agree on wide and portrait photos
+  const distance = Math.hypot(
+    (a.image.x - b.image.x) * image.width,
+    (a.image.y - b.image.y) * image.height,
+  );
+  const near = distance < 0.035 * Math.min(image.width, image.height);
   if (!a.box || !b.box)
     return { possible: near, strong: false, overlap: undefined };
   const x = a.box,
@@ -25,10 +32,21 @@ function evidence(a: Contact, b: Contact) {
   };
 }
 
-export function mergeContactProposals(existing: Contact[], proposals: Contact[]) {
+export function mergeContactProposals(
+  existing: Contact[],
+  proposals: Contact[],
+  image: ImageSize,
+) {
+  if (
+    !Number.isFinite(image.width) ||
+    !Number.isFinite(image.height) ||
+    image.width <= 0 ||
+    image.height <= 0
+  )
+    throw Error("Cannot match player proposals · Invalid image dimensions");
   // Compare against the original contacts, never against an earlier addition
   // from the same detection batch · Box agreement is a heuristic, not identity
-  const pairs = proposals.map((p) => existing.map((c) => evidence(p, c)));
+  const pairs = proposals.map((p) => existing.map((c) => evidence(p, c, image)));
   const candidates = pairs.map((row) =>
     row.flatMap((e, i) => (e.strong ? [i] : [])),
   );
@@ -80,7 +98,7 @@ export function mergeContactProposals(existing: Contact[], proposals: Contact[])
   // uncertain associations for review instead of arbitrarily choosing one
   for (let i = 0; i < proposals.length; i++) {
     for (let j = i + 1; j < proposals.length; j++) {
-      if (evidence(proposals[i], proposals[j]).possible) {
+      if (evidence(proposals[i], proposals[j], image).possible) {
         if (resolved[i]) review.add(resolved[i]!.id);
         if (resolved[j]) review.add(resolved[j]!.id);
       }

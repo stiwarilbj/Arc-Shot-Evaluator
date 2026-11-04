@@ -683,6 +683,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       const merged = mergeContactProposals(
         projectValue.contacts,
         result.contacts,
+        projectValue,
       );
       const next = {
         ...projectValue,
@@ -691,6 +692,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
         reviewed: additions.length ? false : projectValue.reviewed,
       };
       controller.current = null;
+      setBusy("");
       commit(next);
       setCheck(true);
       setInspector(true);

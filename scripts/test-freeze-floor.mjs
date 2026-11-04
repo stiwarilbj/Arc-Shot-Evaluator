@@ -57,6 +57,8 @@ for (const edited of [
   assert.equal(hasProjectChanges(clean, edited), true, "undoing a saved edit is a new unsaved change");
   assert.deepEqual({ clean, edited }, before, "comparison does not mutate the project or baseline");
 }
+const merge = (existing, proposals) =>
+  mergeContactProposals(existing, proposals, { width: 1600, height: 1200 });
 const person = (id, box, x = 0.5, y = 0.8) => ({
   id, label: id, image: { x, y }, status: "uncertain", ...(box ? { box } : {}),
 });
@@ -67,49 +69,49 @@ const repeat = person("repeat", [0.451, 0.301, 0.531, 0.821], 0.501);
 const corrected = { ...left, label: "7", status: "grounded" };
 const source = structuredClone({ corrected, right, overlap, repeat });
 // Nearby feet from the same batch never suppress a second returned person
-assert.equal(mergeContactProposals([], [left, right]).contacts.length, 2);
-let merged = mergeContactProposals([corrected], [right]);
+assert.equal(merge([], [left, right]).contacts.length, 2);
+let merged = merge([corrected], [right]);
 assert.equal(merged.contacts.length, 2, "distinct boxes defeat foot-point proximity");
-assert.deepEqual(merged.contacts.map((c) => c.label), ["7", "8"]);
-merged = mergeContactProposals([corrected], [repeat, right]);
+assert.deepEqual(merged.contacts.map((c) => c.label), ["7", "1"]);
+merged = merge([corrected], [repeat, right]);
 assert.equal(merged.contacts.length, 2);
 assert.strictEqual(merged.contacts[0], corrected, "duplicate proposals preserve corrected contacts");
 assert.equal(merged.contacts[1].id, "right");
 assert.equal(merged.contacts[1].status, "uncertain");
-assert.equal(mergeContactProposals(merged.contacts, [repeat, right]).contacts.length, 2,
+assert.equal(merge(merged.contacts, [repeat, right]).contacts.length, 2,
   "a clear retry cannot accumulate duplicates");
 for (const proposal of [overlap, person("no-box"), person("moved", left.box, 0.5, 0.35)]) {
-  merged = mergeContactProposals([corrected], [proposal]);
+  merged = merge([corrected], [proposal]);
   assert.equal(merged.contacts.length, 2);
-  assert.match(merged.warnings.join(" "), /Players 7, 8 remain separate/);
+  assert.match(merged.warnings.join(" "), /Players 7, 1 remain separate/);
   assert.equal(merged.contacts[1].status, "uncertain");
 }
-merged = mergeContactProposals([person("manual")], [left]);
+merged = merge([person("manual")], [left]);
 assert.equal(merged.contacts.length, 2, "a missing existing box cannot justify a merge");
 assert.match(merged.warnings.join(" "), /need review/);
-merged = mergeContactProposals([], [left, overlap]);
+merged = merge([], [left, overlap]);
 assert.equal(merged.contacts.length, 2);
 assert.match(merged.warnings.join(" "), /Players 1, 2 remain separate/);
-merged = mergeContactProposals([corrected, { ...left, id: "other", label: "9" }], [repeat]);
+merged = merge([corrected, { ...left, id: "other", label: "9" }], [repeat]);
 assert.equal(merged.contacts.length, 3, "a proposal cannot arbitrarily choose between two people");
 assert.match(merged.warnings.join(" "), /need review/);
-merged = mergeContactProposals([
+merged = merge([
   corrected,
   { ...person("similar", [0.4575, 0.3075, 0.5375, 0.8275]), label: "9" },
 ], [repeat]);
 assert.equal(merged.contacts.length, 3, "near-equal box matches straddling a threshold remain ambiguous");
 assert.match(merged.warnings.join(" "), /need review/);
-merged = mergeContactProposals([corrected], [repeat, { ...repeat, id: "second" }]);
+merged = merge([corrected], [repeat, { ...repeat, id: "second" }]);
 assert.equal(merged.contacts.length, 3, "two proposals cannot silently claim the same contact");
 assert.match(merged.warnings.join(" "), /need review/);
 for (const existing of [[corrected], []]) {
-  const forward = mergeContactProposals(existing, [repeat, right, overlap]);
-  const reverse = mergeContactProposals(existing, [overlap, right, repeat]);
+  const forward = merge(existing, [repeat, right, overlap]);
+  const reverse = merge(existing, [overlap, right, repeat]);
   assert.deepEqual(forward.contacts.map((c) => c.id).sort(), reverse.contacts.map((c) => c.id).sort(),
     "contact retention cannot depend on proposal order");
 }
 const full = Array.from({ length: 40 }, (_, i) => person(String(i + 1), undefined, 0, i / 100));
-merged = mergeContactProposals(full, [right]);
+merged = merge(full, [right]);
 assert.equal(merged.contacts.length, 40);
 assert.match(merged.warnings.join(" "), /1 player proposal could not be added/);
 // Count only additions blocked by capacity, not proposals matched to saved contacts
@@ -122,33 +124,68 @@ const capacityBefore = structuredClone(capacityContacts);
 const newSuggestions = [0.2, 0.5, 0.8].map((x, i) =>
   person(`new-${i}`, [x - 0.02, 0.85, x + 0.02, 0.95], x, 0.9));
 const matchedRetry = { ...capacityContacts[39], id: "retry-saved", status: "uncertain" };
-merged = mergeContactProposals(capacityContacts, [newSuggestions[0], matchedRetry, ...newSuggestions.slice(1)]);
+merged = merge(capacityContacts, [newSuggestions[0], matchedRetry, ...newSuggestions.slice(1)]);
 assert.equal(merged.contacts.length, 40);
 assert.deepEqual(merged.warnings, [
   "3 player proposals could not be added · 40-contact limit reached · Existing contacts and corrections kept · Remove spectators, then retry automatic proposals or add missing players manually",
 ]);
 capacityContacts.forEach((c, i) => assert.strictEqual(merged.contacts[i], c));
-assert.deepEqual(mergeContactProposals(capacityContacts, [matchedRetry]).warnings, [],
+assert.deepEqual(merge(capacityContacts, [matchedRetry]).warnings, [],
   "a matched retry consumes no capacity and is not omitted");
-assert.deepEqual(mergeContactProposals(capacityContacts, []).warnings, []);
-merged = mergeContactProposals(capacityContacts.slice(0, 38), newSuggestions);
+assert.deepEqual(merge(capacityContacts, []).warnings, []);
+merged = merge(capacityContacts.slice(0, 38), newSuggestions);
 assert.equal(merged.contacts.length, 40);
 assert.deepEqual(merged.contacts.slice(38).map((c) => c.id), ["new-0", "new-1"]);
 assert.match(merged.warnings.join(" "), /^1 player proposal could not be added/);
-assert.deepEqual(mergeContactProposals(capacityContacts.slice(0, 38), newSuggestions.slice(0, 2)).warnings, [],
+assert.deepEqual(merge(capacityContacts.slice(0, 38), newSuggestions.slice(0, 2)).warnings, [],
   "filling the final slots exactly must not report omitted suggestions");
-merged = mergeContactProposals(capacityContacts.slice(0, 39), [matchedRetry, newSuggestions[0]]);
+merged = merge(capacityContacts.slice(0, 39), [matchedRetry, newSuggestions[0]]);
 assert.equal(merged.contacts.length, 40);
 assert.equal(merged.contacts[39].id, "retry-saved");
 assert.match(merged.warnings.join(" "), /^1 player proposal could not be added/);
 // Remove one spectator and retry while retaining every other correction
-merged = mergeContactProposals(capacityContacts.slice(1), [matchedRetry, newSuggestions[0]]);
+merged = merge(capacityContacts.slice(1), [matchedRetry, newSuggestions[0]]);
 assert.equal(merged.contacts.length, 40);
 assert.deepEqual(merged.warnings, []);
 capacityContacts.slice(1).forEach((c, i) => assert.strictEqual(merged.contacts[i], c));
 assert.equal(merged.contacts[39].id, "new-0");
 assert.deepEqual(capacityContacts, capacityBefore);
 assert.deepEqual({ corrected, right, overlap, repeat }, source, "merging cannot mutate source evidence");
+// Proximity uses pixels on both axes, with a radius of 3.5% of the short edge
+const centerContact = { ...person("center", [0.1, 0.1, 0.9, 0.9], 0.5, 0.5), status: "grounded" };
+for (const dimensions of [
+  { width: 1600, height: 400 }, { width: 400, height: 1600 },
+  { width: 800, height: 800 }, { width: 2048, height: 256 },
+]) {
+  const radius = 0.035 * Math.min(dimensions.width, dimensions.height);
+  for (const [dx, dy, near] of [
+    [radius / 2, 0, true], [0, radius / 2, true],
+    [radius * 1.2, 0, false], [0, radius * 1.2, false],
+    [radius * 0.8, radius * 0.8, false],
+  ]) {
+    const proposed = { ...centerContact, id: "proposal", status: "uncertain", image: {
+      x: centerContact.image.x + dx / dimensions.width,
+      y: centerContact.image.y + dy / dimensions.height,
+    } };
+    const before = structuredClone({ centerContact, proposed });
+    const outcome = mergeContactProposals([centerContact], [proposed], dimensions);
+    assert.equal(outcome.contacts.length, near ? 1 : 2, `${JSON.stringify(dimensions)} offset ${dx}, ${dy}`);
+    assert.strictEqual(outcome.contacts[0], centerContact, "matching preserves corrected contacts");
+    assert.equal(outcome.contacts[0].status, "grounded");
+    assert.equal(outcome.warnings.length, near ? 0 : 1);
+    const resized = mergeContactProposals([centerContact], [proposed], {
+      width: dimensions.width / 2, height: dimensions.height / 2,
+    });
+    assert.deepEqual(resized, outcome, "proportional resizing cannot change association");
+    assert.deepEqual({ centerContact, proposed }, before);
+  }
+}
+for (const dimensions of [
+  { width: 0, height: 900 }, { width: 1600, height: -1 },
+  { width: NaN, height: 900 }, { width: 1600, height: Infinity },
+]) {
+  assert.throws(() => mergeContactProposals([centerContact], [], dimensions), /image dimensions/i);
+}
 const h = [0.015, 0.002, 0.08, -0.001, 0.012, 0.25, 0.001, 0.002, 1];
 const keys = [
   "baseline-left",

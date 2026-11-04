@@ -97,6 +97,8 @@ function output(t: ort.Tensor, channels: number) {
 }
 const valid = (p: { x: number; y: number }) =>
   p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
+const validConfidence = (value: number) =>
+  Number.isFinite(value) && value >= 0 && value <= 1;
 const ANKLE_KEYPOINT_CONFIDENCE = 0.5;
 type Payload<R = InferenceResponse> = R extends InferenceResponse
   ? Omit<R, "imageId" | "jobId" | "revision">
@@ -148,22 +150,36 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
       current = s;
     });
     const raw = output(values[court.session.outputNames[0]], 149);
+    let rejectedCourtPredictions = 0,
+      rejectedLandmarkConfidences = 0,
+      rejectedPersonPredictions = 0,
+      rejectedAnkleConfidences = 0;
     let best = -1,
       score = 0.2;
-    for (let i = 0; i < raw.n; i++)
-      if (raw.values[4 * raw.n + i] > score) {
-        score = raw.values[4 * raw.n + i];
+    for (let i = 0; i < raw.n; i++) {
+      const confidence = raw.values[4 * raw.n + i];
+      if (!validConfidence(confidence)) {
+        rejectedCourtPredictions++;
+        continue;
+      }
+      if (confidence > score) {
+        score = confidence;
         best = i;
       }
+    }
     const alternatives: Anchor[][] = [[], []];
     if (best >= 0)
       for (const landmark of LANDMARKS)
         for (const slot of landmark.slots) {
-          const c = raw.values[(7 + slot * 3) * raw.n + best],
-            p = feed.map(
-              raw.values[(5 + slot * 3) * raw.n + best],
-              raw.values[(6 + slot * 3) * raw.n + best],
-            );
+          const c = raw.values[(7 + slot * 3) * raw.n + best];
+          if (!validConfidence(c)) {
+            rejectedLandmarkConfidences++;
+            continue;
+          }
+          const p = feed.map(
+            raw.values[(5 + slot * 3) * raw.n + best],
+            raw.values[(6 + slot * 3) * raw.n + best],
+          );
           if (c >= 0.45 && valid(p))
             alternatives[slot < 24 ? 0 : 1].push({
               id: id(),
@@ -214,6 +230,10 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         personBoxesWithoutAnkles = 0;
       for (let i = 0; i < raw.n; i++) {
         const score = raw.values[4 * raw.n + i];
+        if (!validConfidence(score)) {
+          rejectedPersonPredictions++;
+          continue;
+        }
         if (score < 0.4) continue;
         const x = raw.values[i],
           y = raw.values[raw.n + i],
@@ -256,12 +276,17 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           ];
         if (box[2] <= box[0] || box[3] <= box[1]) continue;
         const ankles = [15, 16].flatMap((j) => {
+          const confidence = raw.values[(7 + j * 3) * raw.n + i];
+          if (!validConfidence(confidence)) {
+            rejectedAnkleConfidences++;
+            return [];
+          }
           const p = feed.map(
             raw.values[(5 + j * 3) * raw.n + i],
             raw.values[(6 + j * 3) * raw.n + i],
           );
           return (
-            raw.values[(7 + j * 3) * raw.n + i] >= ANKLE_KEYPOINT_CONFIDENCE &&
+            confidence >= ANKLE_KEYPOINT_CONFIDENCE &&
             valid(p)
           )
             ? [p]
@@ -373,6 +398,21 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           : "Player proposals unavailable · Add contacts manually",
       );
     }
+    const rejectedConfidences = [
+      [rejectedCourtPredictions, "court prediction"],
+      [rejectedLandmarkConfidences, "floor landmark confidence"],
+      [rejectedPersonPredictions, "person prediction"],
+      [rejectedAnkleConfidences, "ankle keypoint confidence"],
+    ] as const;
+    const skipped = rejectedConfidences
+      .filter(([count]) => count > 0)
+      .map(([count, label]) =>
+        `${count} ${label}${count === 1 ? "" : "s"}`,
+      );
+    if (skipped.length)
+      warnings.push(
+        `Model confidence review · Skipped ${skipped.join(", ")} outside 0–1 · Valid proposals kept · Review landmarks and contacts`,
+      );
     send({ type: "result", anchors, contacts, provider, warnings } as Payload);
   } catch (e) {
     send({
