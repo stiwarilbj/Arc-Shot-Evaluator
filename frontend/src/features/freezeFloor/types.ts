@@ -55,6 +55,11 @@ export const MAX_VIDEO_SECONDS = 600;
 export const MAX_PROJECTS = 20;
 export const MAX_LIBRARY_BYTES = 200 * 1024 * 1024;
 export const id = () => crypto.randomUUID();
+export function nextContactLabel(contacts: readonly Pick<Contact, "label">[]) {
+  const used = new Set(contacts.map((contact) => contact.label));
+  for (let label = 1; ; label++)
+    if (!used.has(String(label))) return String(label);
+}
 export const finite = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 export function point(v: unknown): v is Point {

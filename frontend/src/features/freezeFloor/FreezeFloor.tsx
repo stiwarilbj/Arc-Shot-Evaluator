@@ -37,6 +37,7 @@ import {
 } from "./geometry.ts";
 import {
   id,
+  nextContactLabel,
   newProject,
   type FloorProject,
   type Point,
@@ -778,9 +779,7 @@ export default function FreezeFloor({ active }: { active: boolean }) {
       }
       const c: Contact = {
         id: id(),
-        label: String(
-          Math.max(0, ...p.contacts.map((c) => Number(c.label) || 0)) + 1,
-        ),
+        label: nextContactLabel(p.contacts),
         image: v,
         status: "uncertain",
       };

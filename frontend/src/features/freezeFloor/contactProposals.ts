@@ -1,4 +1,4 @@
-import type { Contact } from "./types.ts";
+import { nextContactLabel, type Contact } from "./types.ts";
 
 function evidence(a: Contact, b: Contact) {
   const near = Math.hypot(a.image.x - b.image.x, a.image.y - b.image.y) < 0.035;
@@ -62,7 +62,7 @@ export function mergeContactProposals(existing: Contact[], proposals: Contact[])
     if (contacts.length < 40) {
       addition = {
         ...proposal,
-        label: String(Math.max(0, ...contacts.map((c) => Number(c.label) || 0)) + 1),
+        label: nextContactLabel(contacts),
         status: "uncertain",
       };
       contacts.push(addition);

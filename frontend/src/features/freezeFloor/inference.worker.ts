@@ -4,6 +4,7 @@ import { checkedAsset } from "./checkedAsset.ts";
 import { LANDMARKS, align } from "./geometry.ts";
 import {
   id,
+  nextContactLabel,
   type Anchor,
   type Contact,
   type InferenceRequest,
@@ -332,7 +333,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         }
         contacts.push({
           id: id(),
-          label: String(contacts.length + 1),
+          label: nextContactLabel(contacts),
           image: c.foot,
           status: "uncertain",
           box: c.box,
