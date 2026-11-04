@@ -298,24 +298,28 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         });
       }
       candidates.sort((a, b) => b.score - a.score);
+      let overlapSuppressedCandidates = 0;
+      const overlapReviewLabels = new Set<string>();
       for (const c of candidates) {
-        if (
-          contacts.some((k) => {
-            const b = k.box!,
-              a = c.box,
-              inter =
-                Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) *
-                Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
-            return (
-              inter /
-                ((a[2] - a[0]) * (a[3] - a[1]) +
-                  (b[2] - b[0]) * (b[3] - b[1]) -
-                  inter) >
-              0.45
-            );
-          })
-        )
+        const overlappingContact = contacts.find((k) => {
+          const b = k.box!,
+            a = c.box,
+            inter =
+              Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) *
+              Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+          return (
+            inter /
+              ((a[2] - a[0]) * (a[3] - a[1]) +
+                (b[2] - b[0]) * (b[3] - b[1]) -
+                inter) >
+            0.45
+          );
+        });
+        if (overlappingContact) {
+          overlapSuppressedCandidates++;
+          overlapReviewLabels.add(overlappingContact.label);
           continue;
+        }
         if (contacts.length === 40) {
           warnings.push(
             "More people were found than the 40-contact limit · Remove spectators and add missing court players manually",
@@ -331,6 +335,14 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           proposalAnkleKeypointCount: c.proposalAnkleKeypointCount,
           boxTouchesImageEdge: c.boxTouchesImageEdge,
         });
+      }
+      if (overlapSuppressedCandidates > 0) {
+        const players = [...overlapReviewLabels]
+          .map((label) => `Player ${label}`)
+          .join(", ");
+        warnings.push(
+          `Near-duplicate review · ${overlapSuppressedCandidates} person candidate${overlapSuppressedCandidates === 1 ? " was" : "s were"} skipped against ${players} · Check for a nearby player the detector may have missed`,
+        );
       }
       if (rejectedAnkleProposals > 0) {
         warnings.push(
