@@ -96,6 +96,7 @@ function output(t: ort.Tensor, channels: number) {
 }
 const valid = (p: { x: number; y: number }) =>
   p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
+const ANKLE_KEYPOINT_CONFIDENCE = 0.5;
 type Payload<R = InferenceResponse> = R extends InferenceResponse
   ? Omit<R, "imageId" | "jobId" | "revision">
   : never;
@@ -205,7 +206,8 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         score: number;
         foot: { x: number; y: number };
       }[] = [];
-      let rejectedAnkleProposals = 0;
+      let rejectedAnkleProposals = 0,
+        personBoxesWithoutAnkles = 0;
       for (let i = 0; i < raw.n; i++) {
         const score = raw.values[4 * raw.n + i];
         if (score < 0.4) continue;
@@ -243,16 +245,23 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
             Math.min(1, br.x),
             Math.min(1, br.y),
           ];
+        if (box[2] <= box[0] || box[3] <= box[1]) continue;
         const ankles = [15, 16].flatMap((j) => {
           const p = feed.map(
             raw.values[(5 + j * 3) * raw.n + i],
             raw.values[(6 + j * 3) * raw.n + i],
           );
-          return raw.values[(7 + j * 3) * raw.n + i] >= 0.5 && valid(p)
+          return (
+            raw.values[(7 + j * 3) * raw.n + i] >= ANKLE_KEYPOINT_CONFIDENCE &&
+            valid(p)
+          )
             ? [p]
             : [];
         });
-        if (!ankles.length || box[2] <= box[0] || box[3] <= box[1]) continue;
+        if (!ankles.length) {
+          personBoxesWithoutAnkles++;
+          continue;
+        }
         const boxWidth = box[2] - box[0],
           boxHeight = box[3] - box[1],
           // Allow a small 5% of box size for keypoint/box edge disagreement.
@@ -315,6 +324,11 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
       if (rejectedAnkleProposals > 0) {
         warnings.push(
           `${rejectedAnkleProposals} ankle proposal${rejectedAnkleProposals === 1 ? " was" : "s were"} rejected because at least one predicted ankle fell outside the accompanying person box (5% size margin) · Review contacts manually`,
+        );
+      }
+      if (personBoxesWithoutAnkles > 0) {
+        warnings.push(
+          `${personBoxesWithoutAnkles} valid person box${personBoxesWithoutAnkles === 1 ? " had" : "es had"} no usable ankle keypoint at confidence ${ANKLE_KEYPOINT_CONFIDENCE} or higher · Review the photo and add any missing court players manually`,
         );
       }
     } catch (e) {
