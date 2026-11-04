@@ -230,7 +230,8 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
         boxImageEdges: PhotoEdge[];
       }[] = [];
       let rejectedAnkleProposals = 0,
-        personBoxesWithoutAnkles = 0;
+        personBoxesWithoutAnkles = 0,
+        validPersonBoxes = 0;
       for (let i = 0; i < raw.n; i++) {
         const score = raw.values[4 * raw.n + i];
         if (!validConfidence(score)) {
@@ -278,6 +279,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
             Math.min(1, br.y),
           ];
         if (box[2] <= box[0] || box[3] <= box[1]) continue;
+        validPersonBoxes++;
         const ankles = [15, 16].flatMap((j) => {
           const confidence = raw.values[(7 + j * 3) * raw.n + i];
           if (!validConfidence(confidence)) {
@@ -390,6 +392,11 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
       if (personBoxesWithoutAnkles > 0) {
         warnings.push(
           `${personBoxesWithoutAnkles} valid person box${personBoxesWithoutAnkles === 1 ? " had" : "es had"} no usable ankle keypoint at confidence ${ANKLE_KEYPOINT_CONFIDENCE} or higher · Review the photo and add any missing court players manually`,
+        );
+      }
+      if (validPersonBoxes === 0) {
+        warnings.push(
+          "No usable person boxes detected · None passed confidence and photo-boundary checks · Add player contacts manually",
         );
       }
       const edgeContacts = contacts.filter((c) => c.boxTouchesImageEdge);
