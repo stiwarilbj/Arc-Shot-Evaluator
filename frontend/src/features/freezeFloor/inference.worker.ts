@@ -202,6 +202,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
       if (person.provider === "wasm") provider = "wasm";
       const raw = output(values[person.session.outputNames[0]], 56);
       const candidates: {
+        modelIndex: number;
         box: [number, number, number, number];
         score: number;
         foot: { x: number; y: number };
@@ -287,6 +288,7 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           continue;
         }
         candidates.push({
+          modelIndex: i,
           box,
           score,
           proposalAnkleKeypointCount: ankles.length === 1 ? 1 : 2,
@@ -297,7 +299,9 @@ self.onmessage = async (e: MessageEvent<InferenceRequest>) => {
           },
         });
       }
-      candidates.sort((a, b) => b.score - a.score);
+      candidates.sort(
+        (a, b) => b.score - a.score || a.modelIndex - b.modelIndex,
+      );
       let overlapSuppressedCandidates = 0;
       const overlapReviewLabels = new Set<string>();
       for (const c of candidates) {
