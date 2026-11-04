@@ -534,13 +534,18 @@ export function supported(p: Point, a: Alignment) {
     (q, i) => cross(q, a.hull[(i + 1) % a.hull.length], p) >= -0.001,
   );
 }
-export function uncertainty(
+type UncertaintyDetails = {
+  error: number | null;
+  perturbationsSupported: boolean;
+};
+function uncertaintyDetails(
   a: Alignment,
   p: Point,
   width: number,
   height: number,
-): number | null {
+): UncertaintyDetails | null {
   if (
+    !a.h ||
     !a.inverse ||
     !supported(p, a) ||
     !Number.isFinite(width) ||
@@ -560,24 +565,57 @@ export function uncertainty(
       { x: q.x, y: q.y - epsY },
     ];
   const errors = offsets.map((q) => project(a.inverse!, q));
-  if (errors.some((p) => !p)) return null;
-  const e = Math.max(...errors.map((v) => distance(v!, p))) + 0.25;
-  return Number.isFinite(e) && e < 3 ? e : null;
+  const perturbationsSupported = errors.every(
+    (point) => point !== null && supported(point, a),
+  );
+  if (errors.some((point) => !point))
+    return { error: null, perturbationsSupported: false };
+  const e = Math.max(...errors.map((point) => distance(point!, p))) + 0.25;
+  return {
+    error: Number.isFinite(e) && e < 3 ? e : null,
+    perturbationsSupported,
+  };
+}
+export function uncertainty(
+  a: Alignment,
+  p: Point,
+  width: number,
+  height: number,
+): number | null {
+  return uncertaintyDetails(a, p, width, height)?.error ?? null;
 }
 function measurementImage(p: FloorProject, v: MeasurePoint): Point | undefined {
   return v.contactId
     ? p.contacts.find((c) => c.id === v.contactId)?.image
     : v.image;
 }
+export type MeasurementPointSupport = "supported" | "limited" | "outside" | null;
+export function measurementPointSupport(
+  p: FloorProject,
+  alignment: Alignment,
+  endpoint: MeasurePoint,
+): MeasurementPointSupport {
+  if (!alignment.h || !alignment.inverse || alignment.hull.length < 3) return null;
+  const image = measurementImage(p, endpoint),
+    floor = image ? project(alignment.inverse, image) : null;
+  if (!floor) return null;
+  if (!supported(floor, alignment)) return "outside";
+  const details = uncertaintyDetails(
+    alignment,
+    floor,
+    p.width,
+    p.height,
+  );
+  if (!details) return null;
+  return details.perturbationsSupported ? "supported" : "limited";
+}
 export function measurementPointSupported(
   p: FloorProject,
   alignment: Alignment,
   endpoint: MeasurePoint,
 ): boolean | null {
-  if (!alignment.h || !alignment.inverse || alignment.hull.length < 3) return null;
-  const image = measurementImage(p, endpoint),
-    floor = image ? project(alignment.inverse, image) : null;
-  return floor ? supported(floor, alignment) : null;
+  const support = measurementPointSupport(p, alignment, endpoint);
+  return support === null ? null : support === "supported";
 }
 export function sameMeasurementLocation(
   p: FloorProject,
@@ -632,8 +670,15 @@ export function measure(
     return { reason: "Outside supported region" };
   const ea = uncertainty(a, x, p.width, p.height),
     eb = uncertainty(a, y, p.width, p.height);
+  const limitedSupportEndpoints = [
+    measurementPointSupport(p, a, first) === "limited" ? "first" : null,
+    measurementPointSupport(p, a, second) === "limited" ? "second" : null,
+  ].filter((point): point is "first" | "second" => point !== null);
   if (ea === null || eb === null)
-    return { reason: "Projection uncertainty is too large here" };
+    return {
+      reason: "Projection uncertainty is too large here",
+      limitedSupportEndpoints,
+    };
   const feet = distance(x, y),
     error = ea + eb,
     scale = p.units === "m" ? 0.3048 : 1;
@@ -642,8 +687,10 @@ export function measure(
     error: error * scale,
     low: Math.max(0, feet - error) * scale,
     high: (feet + error) * scale,
-    reason:
-      "Estimated sensitivity range · Not a calibrated confidence interval",
+    limitedSupportEndpoints,
+    reason: limitedSupportEndpoints.length
+      ? "Pixel perturbations extend beyond the accepted landmark area"
+      : "Estimated sensitivity range · Not a calibrated confidence interval",
   };
 }
 export function courtLines(): Point[][] {

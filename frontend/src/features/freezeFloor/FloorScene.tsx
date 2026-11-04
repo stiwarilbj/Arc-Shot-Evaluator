@@ -4,7 +4,7 @@ import {
   regionPolygons,
   project,
   measure,
-  measurementPointSupported,
+  measurementPointSupport,
   LANDMARKS,
   type Alignment,
 } from "./geometry.ts";
@@ -201,14 +201,17 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
               y = fromImage(b),
               result = measure(p.project, p.alignment, m.a, m.b);
             const endpointSupport = [m.a, m.b].map((v) =>
-              measurementPointSupported(p.project, p.alignment, v),
+              measurementPointSupport(p.project, p.alignment, v),
             );
-            const outside = endpointSupport.includes(false);
+            const outside = endpointSupport.includes("outside"),
+              limited = endpointSupport.includes("limited");
             if (!x || !y) return null;
             const label =
               outside
                 ? "Outside"
-                : result.value !== undefined
+                : limited
+                  ? "Limited"
+                  : result.value !== undefined
                   ? `≈ ${result.value.toFixed(1)} ${p.project.units}`
                   : "Uncertain";
             return (
@@ -218,7 +221,13 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                 data-highlighted={highlighted}
                 pointerEvents="none"
               >
-                <title>{outside ? "Outside supported region" : result.reason}</title>
+                <title>
+                  {outside
+                    ? "Outside supported region"
+                    : limited
+                      ? "Sensitivity perturbations extend beyond the accepted landmark area"
+                      : result.reason}
+                </title>
                 <line
                   x1={x.x}
                   y1={x.y}
@@ -236,9 +245,16 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                     cx={q.x}
                     cy={q.y}
                     r={r}
-                    data-outside={endpointSupport[i] === false}
+                    data-outside={endpointSupport[i] === "outside"}
+                    data-limited={endpointSupport[i] === "limited"}
                     fill={colors.ink}
-                    stroke={endpointSupport[i] === false ? "#ff8b8b" : colors.orange}
+                    stroke={
+                      endpointSupport[i] === "outside"
+                        ? "#ff8b8b"
+                        : endpointSupport[i] === "limited"
+                          ? "#f7cb67"
+                          : colors.orange
+                    }
                     strokeWidth={(highlighted ? 2.5 : 1.3) * unit}
                   />
                 ))}
@@ -429,13 +445,18 @@ export const FloorScene = forwardRef<SVGSVGElement, SceneProps>(
                     cy={q.y}
                     r={7 * unit}
                     fill="none"
-                    stroke={
-                      measurementPointSupported(p.project, p.alignment, {
-                        image: p.pending!,
-                      }) === false
+                    stroke={(() => {
+                      const support = measurementPointSupport(
+                        p.project,
+                        p.alignment,
+                        { image: p.pending! },
+                      );
+                      return support === "outside"
                         ? "#ff8b8b"
-                        : colors.orange
-                    }
+                        : support === "limited"
+                          ? "#f7cb67"
+                          : colors.orange;
+                    })()}
                     strokeWidth={unit}
                   />
                 ) : null;

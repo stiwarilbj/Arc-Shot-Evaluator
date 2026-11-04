@@ -33,7 +33,7 @@ import {
   findContactAt,
   sameMeasurementLocation,
   findExistingMeasurement,
-  measurementPointSupported,
+  measurementPointSupport,
 } from "./geometry.ts";
 import {
   id,
@@ -1038,9 +1038,12 @@ export default function FreezeFloor({ active }: { active: boolean }) {
   const pendingImage = pending?.contactId
     ? display?.contacts.find((c) => c.id === pending.contactId)?.image
     : pending?.image;
-  const pendingOutside =
-    display && displayAlignment && pending &&
-    measurementPointSupported(display, displayAlignment, pending) === false;
+  const pendingSupport =
+    display && displayAlignment && pending
+      ? measurementPointSupport(display, displayAlignment, pending)
+      : null;
+  const pendingOutside = pendingSupport === "outside",
+    pendingLimited = pendingSupport === "limited";
   const existingDistance =
     mode === "measure" && measurementFeedback?.kind === "existing"
       ? p?.measurements.findIndex((m) => m.id === measurementFeedback.id) ?? -1
@@ -1602,6 +1605,12 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                 Outside supported region · Escape cancels the first endpoint
               </p>
             ) : null}
+            {mode === "measure" && pendingLimited ? (
+              <p className="ff-measurement-feedback" role="status">
+                Limited support · Pixel perturbations around this endpoint leave
+                the accepted landmark area · Its central estimate is inside
+              </p>
+            ) : null}
             {mode === "measure" &&
             (measurementFeedback?.kind === "same" || existingDistance >= 0) ? (
               <p className="ff-measurement-feedback" role="status">
@@ -1614,9 +1623,21 @@ export default function FreezeFloor({ active }: { active: boolean }) {
               <section className="ff-measurements" aria-label="Distances">
                 {p.measurements.map((m, i) => {
                   const r = measure(p, alignment, m.a, m.b);
-                  const outside = [m.a, m.b].some((v) =>
-                    measurementPointSupported(p, alignment, v) === false,
-                  );
+                  const support = [m.a, m.b].map((v) =>
+                      measurementPointSupport(p, alignment, v),
+                    ),
+                    outside = support.includes("outside"),
+                    limitedNames = (
+                      r.limitedSupportEndpoints ??
+                      support.flatMap((state, index) =>
+                        state === "limited"
+                          ? [index === 0 ? "first endpoint" : "second endpoint"]
+                          : [],
+                      )
+                    ),
+                    limitedMessage = limitedNames.length
+                      ? `Limited support · sensitivity samples for ${limitedNames.join(" and ")} leave the accepted landmark area`
+                      : null;
                   return (
                     <div
                       key={m.id}
@@ -1632,8 +1653,10 @@ export default function FreezeFloor({ active }: { active: boolean }) {
                         </strong>
                         <small>
                           {r.value !== undefined
-                            ? `Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units} · Sensitivity estimate, not a confidence interval`
-                            : outside && r.reason !== "Outside supported region"
+                            ? `Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units} · ${limitedMessage ?? "Sensitivity estimate, not a confidence interval"}`
+                            : limitedMessage
+                              ? `${limitedMessage} · ${r.reason}`
+                              : outside && r.reason !== "Outside supported region"
                               ? `Outside supported region · ${r.reason}`
                               : r.reason}
                         </small>

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { FloorScene } from "./FloorScene";
-import { align, measure, measurementPointSupported } from "./geometry.ts";
+import { align, measure, measurementPointSupport } from "./geometry.ts";
 import type { FloorProject } from "./types.ts";
 import { videoTime } from "./video.ts";
 const escape = (s: string) =>
@@ -106,14 +106,28 @@ export async function exportPng(
   const notes = p.measurements
     .map((m, i) => {
       const r = measure(p, alignment, m.a, m.b);
-      const outside = [m.a, m.b].some(
-        (v) => measurementPointSupported(p, alignment, v) === false,
-      );
+      const support = [m.a, m.b].map((v) =>
+          measurementPointSupport(p, alignment, v),
+        ),
+        outside = support.includes("outside"),
+        limitedNames = (
+          r.limitedSupportEndpoints ??
+          support.flatMap((state, index) =>
+            state === "limited"
+              ? [index === 0 ? "first endpoint" : "second endpoint"]
+              : [],
+          )
+        ),
+        limitedMessage = limitedNames.length
+          ? `Limited support · sensitivity samples for ${limitedNames.join(" and ")} leave the accepted landmark area`
+          : null;
       const reason =
-        outside && r.reason !== "Outside supported region"
-          ? `Outside supported region · ${r.reason}`
-          : r.reason;
-      return `<text x="30" y="${notesY + i * 22}" fill="#d4dcdd" font-size="16">${escape(r.value === undefined ? `Measurement ${i + 1} withheld · ${reason}` : `Approx ${r.value.toFixed(1)} ${p.units} · Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units}`)}</text>`;
+        limitedMessage
+          ? `${limitedMessage} · ${r.reason}`
+          : outside && r.reason !== "Outside supported region"
+            ? `Outside supported region · ${r.reason}`
+            : r.reason;
+      return `<text x="30" y="${notesY + i * 22}" fill="#d4dcdd" font-size="16">${escape(r.value === undefined ? `Measurement ${i + 1} withheld · ${reason}` : `Approx ${r.value.toFixed(1)} ${p.units} · Estimated range ${r.low!.toFixed(1)}–${r.high!.toFixed(1)} ${p.units} · ${limitedMessage ?? "Sensitivity estimate, not a confidence interval"}`)}</text>`;
     })
     .join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" font-family="Arial,sans-serif">
