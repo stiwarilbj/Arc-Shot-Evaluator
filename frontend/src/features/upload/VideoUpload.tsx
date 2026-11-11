@@ -17,6 +17,14 @@ const VIDEO_TYPES = [
   ".mpeg", ".mpg", ".3gp", ".m2ts", ".mts", ".ts", ".ogv", ".asf",
 ];
 
+const OTHER_TOOLS = [
+  { label: "Playbook", href: "#playbook" },
+  { label: "Counter Lab", href: "#counter-lab" },
+  { label: "Shotform Jenga", href: "#games/shotform-jenga" },
+  { label: "Guess the Jumper", href: "#jumper" },
+  { label: "Freeze Floor", href: "#freeze-floor" },
+];
+
 export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange }: VideoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const depthOptionsRef = useRef<Array<HTMLButtonElement | null>>([]);
@@ -44,13 +52,21 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
   }
 
   return (
-    <main className="video-upload">
+    <div className="video-upload">
       <section className="upload-intro">
         <h1>See the shot; fix the form</h1>
         <p>
-          Upload a basketball clip to review movement, release timing, and shot attempts in ARCade Hoops; use Playbook to draw screens, cuts, handoffs, and adaptive reads across 24 editable starters
+          Upload a basketball clip to review movement, release timing, and shot attempts
         </p>
       </section>
+      <nav className="analyzer-tool-links" aria-labelledby="analyzer-tool-links-title">
+        <h2 id="analyzer-tool-links-title">Try other tools</h2>
+        <ul>
+          {OTHER_TOOLS.map(({ label, href }) => (
+            <li key={href}><a href={href}>{label}</a></li>
+          ))}
+        </ul>
+      </nav>
       <div className="analysis-depth-control">
         <span id="analysis-depth-label">Analysis depth</span>
         <div className="analysis-depth-options" role="radiogroup" aria-labelledby="analysis-depth-label">
@@ -121,6 +137,6 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
         <span><ScanLine aria-hidden="true" size={16} />Browser motion review</span>
         <span><Film aria-hidden="true" size={16} />Rotation and codec normalized automatically</span>
       </div>
-    </main>
+    </div>
   );
 }

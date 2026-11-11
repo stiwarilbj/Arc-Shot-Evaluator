@@ -46,7 +46,7 @@ for (const hash of [
   "#playbook/role/not-a-player",
 ]) {
   assert.deepEqual(readWorkspaceHash(hash), DEFAULT_LOCATION);
-  assert.equal(workspaceHash(readWorkspaceHash(hash)), "#home");
+  assert.equal(workspaceHash(readWorkspaceHash(hash)), "#shot-analyzer");
 }
 assert.equal(workspaceHash(readWorkspaceHash("#jumper/guess")), "#jumper");
 
@@ -71,7 +71,9 @@ assert.equal(
 const home = readWorkspaceHash("#home", remembered);
 assert.equal(home.analysisView, "tracking");
 assert.equal(home.jumperView, "create");
-assert.equal(DEFAULT_LOCATION.workspace, "home");
+assert.equal(DEFAULT_LOCATION.workspace, "analyzer");
+assert.equal(readWorkspaceHash("", remembered).analysisView, "shot");
+assert.equal(readWorkspaceHash("", remembered).jumperView, "create");
 console.log(
   "Workspace fragments: unique routes, nested views, canonical defaults, malformed fragments and remembered views passed",
 );

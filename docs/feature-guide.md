@@ -38,6 +38,8 @@ Open **Games → Shotform Jenga** at `#games/shotform-jenga` · Watch an animate
 
 ## Shot Analyzer
 
+ARCade Hoops opens here by default · **Try other tools** above the upload controls opens Playbook, Counter Lab, Shotform Jenga, Guess the Jumper, or Freeze Floor · Select the **ARC** logo for the overview and demos
+
 ### Upload and review
 
 - Select one or several videos, drag them onto the upload area, or use a supplied

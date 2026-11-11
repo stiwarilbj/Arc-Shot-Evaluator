@@ -378,6 +378,41 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .landing-main .video-upload { width: 100%; margin: 0; padding: 36px 0 28px; }
 .landing-main .upload-intro { margin-bottom: 28px; }
 .landing-main .upload-intro h1 { font-size: clamp(38px, 5.1vw, 68px); }
+.analyzer-tool-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  margin: 0 auto 24px;
+}
+.analyzer-tool-links h2 { margin: 0; color: var(--muted); font-size: 13px; font-weight: 650; }
+.analyzer-tool-links ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.analyzer-tool-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.analyzer-tool-links a:hover { border-color: var(--orange); background: var(--surface-2); }
+@media (pointer: coarse) {
+  .analyzer-tool-links a { min-height: 44px; }
+}
 .example-video-library { margin-top: 4px; padding-top: 28px; border-top: 1px solid var(--line); }
 .section-heading, .queue-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .section-heading > div, .queue-heading > div { min-width: 0; }

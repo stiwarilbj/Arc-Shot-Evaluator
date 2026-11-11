@@ -1,10 +1,12 @@
-# [ARCade Hoops](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
+# [ARCade Hoops](https://stiwarilbj.github.io/Arc-Shot-Evaluator/)
 
-> 🌐 **Live Website:** [Open ARCade Hoops →](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
+> 🌐 **Live Website:** [Open ARCade Hoops →](https://stiwarilbj.github.io/Arc-Shot-Evaluator/)
 
-[![ARCade Hoops: See your game from every angle · Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper](frontend/public/assets/arcade-hoops-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#home)
+[![ARCade Hoops: See your game from every angle · Shot Analyzer, Playbook, Counter Lab, and Guess the Jumper](frontend/public/assets/arcade-hoops-social-card.png)](https://stiwarilbj.github.io/Arc-Shot-Evaluator/)
 
 ARCade Hoops is a free basketball toolkit for reviewing shooting footage, designing plays, testing defenses, playing quick basketball games, and making private silhouette clips and quizzes · Use it in the browser or run the downloaded app for full local shot analysis and video processing
+
+The app opens in **Shot Analyzer** · Use **Try other tools** above the upload controls or select the **ARC** logo for demos
 
 ## Find your tool
 

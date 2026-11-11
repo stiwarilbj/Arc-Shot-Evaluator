@@ -18,7 +18,7 @@ export type WorkspaceLocation = {
 };
 
 export const DEFAULT_LOCATION: WorkspaceLocation = {
-  workspace: "home",
+  workspace: "analyzer",
   analysisView: "shot",
   jumperView: "guess",
   playbookView: "edit",
@@ -31,6 +31,8 @@ export function readWorkspaceHash(
   current: WorkspaceLocation = DEFAULT_LOCATION,
 ): WorkspaceLocation {
   switch (hash) {
+    case "#home":
+      return { ...current, workspace: "home" };
     case "#shot-analyzer":
       return { ...current, workspace: "analyzer", analysisView: "shot" };
     case "#playbook":
@@ -62,7 +64,11 @@ export function readWorkspaceHash(
         const rolePlayerId = Number(roleMatch[1]);
         if (Number.isSafeInteger(rolePlayerId) && rolePlayerId > 0) return { ...current, workspace: "playbook", playbookView: "role", rolePlayerId };
       }
-      return { ...current, workspace: "home" };
+      return {
+        ...current,
+        workspace: DEFAULT_LOCATION.workspace,
+        analysisView: DEFAULT_LOCATION.analysisView,
+      };
     }
   }
 }
