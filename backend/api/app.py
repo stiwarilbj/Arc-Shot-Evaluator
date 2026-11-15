@@ -403,18 +403,23 @@ def get_analysis_job(job_id: str) -> dict:
     if not job_id.replace("-", "").isalnum():
         raise HTTPException(400, "Invalid job id")
     with jobs_lock:
-        value = jobs.get(job_id)
-        if value is not None:
-            return dict(value)
-    status_path = ANALYSIS_SESSIONS_DIR / job_id / "job.json"
-    if not status_path.is_file():
-        raise HTTPException(404, "Job not found")
-    try:
-        value = json.loads(status_path.read_text())
-    except (OSError, ValueError, TypeError) as error:
-        raise HTTPException(500, "Saved job status is unreadable; the session was left untouched") from error
-    if not isinstance(value, dict) or value.get("id") != job_id:
-        raise HTTPException(500, "Saved job status is invalid; the session was left untouched")
+        saved_job = jobs.get(job_id)
+        value = dict(saved_job) if saved_job is not None else None
+    session_dir = ANALYSIS_SESSIONS_DIR / job_id
+    if value is None:
+        status_path = session_dir / "job.json"
+        if not status_path.is_file():
+            raise HTTPException(404, "Job not found")
+        try:
+            value = json.loads(status_path.read_text())
+        except (OSError, ValueError, TypeError) as error:
+            raise HTTPException(500, "Saved job status is unreadable; the session was left untouched") from error
+        if not isinstance(value, dict) or value.get("id") != job_id:
+            raise HTTPException(500, "Saved job status is invalid; the session was left untouched")
+    if value.get("status") == "done" and (session_dir / "corrections.json").is_file():
+        # Job results are snapshots from analysis completion. Reopen the
+        # original evidence and layer the current corrections over it.
+        value["result"] = get_session_by_id(job_id)
     return value
 
 
@@ -451,6 +456,14 @@ def cancel_analysis_job(job_id: str) -> dict:
         return dict(value)
 
 
+def _validate_release_frame(frame: object, payload: dict) -> None:
+    if type(frame) is not int or frame < 0:
+        raise HTTPException(400, "Release frame must be a non-negative integer")
+    frame_count = payload.get("session", {}).get("frame_count")
+    if type(frame_count) is int and frame >= frame_count:
+        raise HTTPException(400, f"Enter a whole release frame from 0 to {frame_count - 1}")
+
+
 @app.patch("/api/sessions/{session_id}/shots/{shot_id}")
 def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
     """Persist a user correction without overwriting model evidence."""
@@ -468,10 +481,6 @@ def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
         raise HTTPException(400, f"Unsupported correction fields: {sorted(unknown)}")
     if "outcome" in correction and correction["outcome"] not in {"make", "miss", "review"}:
         raise HTTPException(400, "Outcome must be make, miss, or review")
-    if "release_frame" in correction and (
-        not isinstance(correction["release_frame"], int) or correction["release_frame"] < 0
-    ):
-        raise HTTPException(400, "Release frame must be a non-negative integer")
     if "takeoff_frame" in correction and (
         not isinstance(correction["takeoff_frame"], int) or correction["takeoff_frame"] < 0
     ):
@@ -503,6 +512,8 @@ def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
         if field in correction and correction[field] is not None and not isinstance(correction[field], str):
             raise HTTPException(400, f"{field} must be text")
     payload = json.loads(analysis_path.read_text())
+    if "release_frame" in correction:
+        _validate_release_frame(correction["release_frame"], payload)
     correction_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
     stored: dict = {"version": 1, "shots": {}}
     if correction_path.is_file():
@@ -547,8 +558,6 @@ def add_manual_shot(session_id: str, attempt: dict) -> dict:
     release_frame = attempt.get("release_frame")
     if outcome not in {"make", "miss", "review"}:
         raise HTTPException(400, "Outcome must be make, miss, or review")
-    if not isinstance(release_frame, int) or release_frame < 0:
-        raise HTTPException(400, "Release frame must be a non-negative integer")
     allowed = {"outcome", "release_frame", "shooter_id", "comment"}
     unknown = set(attempt) - allowed
     if unknown:
@@ -557,6 +566,7 @@ def add_manual_shot(session_id: str, attempt: dict) -> dict:
         if field in attempt and attempt[field] is not None and not isinstance(attempt[field], str):
             raise HTTPException(400, f"{field} must be text")
     payload = json.loads(analysis_path.read_text())
+    _validate_release_frame(release_frame, payload)
     existing_ids = [int(shot.get("id", 0)) for shot in payload.get("shots", [])]
     correction_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
     stored: dict = {"version": 1, "shots": {}, "manual_shots": []}

@@ -1,4 +1,5 @@
 import type { AnalysisJobState, AnalysisSession, ExampleVideo, ProcessingMode, ShotAnalysis, ShotMode } from "../domain/analysisTypes";
+import { browserShotEndFrame, isReleaseFrame, refreshBrowserShotReview, releaseFrameError } from "../domain/shotReview";
 import { IS_GITHUB_PAGES } from "../runtime";
 
 const browserSessions = new Map<string, AnalysisSession>();
@@ -36,34 +37,6 @@ function updateBrowserAnalysisSession(sessionId: string, update: (session: Analy
   const next = update(browserSession(sessionId));
   browserSessions.set(sessionId, next);
   return next;
-}
-
-function browserSummary(shots: AnalysisSession["shots"]) {
-  const makes = shots.filter((shot) => shot.outcome === "make").length;
-  const misses = shots.filter((shot) => shot.outcome === "miss").length;
-  const review = shots.filter((shot) => shot.outcome === "review").length;
-  const attempts = shots.length;
-  let bestStreak = 0;
-  let currentStreak = 0;
-  for (const shot of shots) {
-    if (shot.outcome === "make") currentStreak += 1;
-    else currentStreak = 0;
-    bestStreak = Math.max(bestStreak, currentStreak);
-  }
-  return {
-    attempts,
-    makes,
-    misses,
-    review,
-    fg_pct: attempts ? (makes / attempts) * 100 : null,
-    observed_fg_pct: attempts ? (makes / attempts) * 100 : null,
-    observed_ft_pct: attempts ? (makes / attempts) * 100 : null,
-    predicted_ft_pct: null,
-    best_streak: bestStreak,
-    average_confidence: attempts
-      ? shots.reduce((total, shot) => total + (shot.observation_confidence ?? shot.confidence), 0) / attempts
-      : 0,
-  };
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -129,14 +102,22 @@ export async function correctSavedShot(
 ): Promise<AnalysisSession> {
   if (IS_GITHUB_PAGES) {
     return updateBrowserAnalysisSession(sessionId, (session) => {
+      const { fps, frame_count: frameCount } = session.session;
+      const releaseFrame = correction.release_frame;
+      if (releaseFrame !== undefined && !isReleaseFrame(releaseFrame, frameCount)) {
+        throw new Error(releaseFrameError(frameCount));
+      }
       const shots = session.shots.map((shot) => {
         if (shot.id !== shotId) return shot;
         const updated: ShotAnalysis = {
           ...shot,
           outcome: correction.outcome ?? shot.outcome,
           confidence_label: correction.outcome === "review" ? "review" : shot.confidence_label,
-          release_frame: correction.release_frame ?? shot.release_frame,
-          release_time: correction.release_frame == null ? shot.release_time : correction.release_frame / session.session.fps,
+          release_frame: releaseFrame ?? shot.release_frame,
+          release_time: releaseFrame === undefined ? shot.release_time : releaseFrame / fps,
+          end_frame: releaseFrame === undefined || releaseFrame === shot.release_frame
+            ? shot.end_frame
+            : browserShotEndFrame(releaseFrame, fps, frameCount),
           evidence: {
             ...shot.evidence,
             shooter_id: correction.shooter_id ?? shot.evidence.shooter_id,
@@ -152,7 +133,7 @@ export async function correctSavedShot(
         };
         return updated;
       });
-      return { ...session, shots, summary: browserSummary(shots) };
+      return refreshBrowserShotReview({ ...session, shots });
     });
   }
   return parseJsonResponse<AnalysisSession>(
@@ -171,7 +152,9 @@ export async function addManualShot(
   if (IS_GITHUB_PAGES) {
     return updateBrowserAnalysisSession(sessionId, (session) => {
       const nextId = Math.max(0, ...session.shots.map((shot) => shot.id)) + 1;
-      const releaseFrame = Math.max(0, Math.round(attempt.release_frame));
+      const releaseFrame = attempt.release_frame;
+      const { fps, frame_count: frameCount } = session.session;
+      if (!isReleaseFrame(releaseFrame, frameCount)) throw new Error(releaseFrameError(frameCount));
       const shot: AnalysisSession["shots"][number] = {
         id: nextId,
         outcome: attempt.outcome,
@@ -180,8 +163,8 @@ export async function addManualShot(
         confidence_label: attempt.outcome === "review" ? "review" : "high",
         shot_mode: session.shot_mode,
         release_frame: releaseFrame,
-        release_time: releaseFrame / session.session.fps,
-        end_frame: Math.min(session.session.frame_count - 1, releaseFrame + Math.round(session.session.fps * 0.8)),
+        release_time: releaseFrame / fps,
+        end_frame: browserShotEndFrame(releaseFrame, fps, frameCount),
         release_speed_ms: null,
         release_height_m: null,
         entry_angle_deg: null,
@@ -199,7 +182,7 @@ export async function addManualShot(
         },
       };
       const shots = [...session.shots, shot];
-      return { ...session, shots, summary: browserSummary(shots) };
+      return refreshBrowserShotReview({ ...session, shots });
     });
   }
   return parseJsonResponse<AnalysisSession>(

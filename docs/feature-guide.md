@@ -53,12 +53,13 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
   attempts, and available movement evidence · Shot thumbnails jump to the relevant
   attempt; video controls offer **Pose**, **Annotated**, and **Original** views
   when the corresponding data is available
-- Review makes, misses, and uncertain attempts · Correct outcomes and release
-  timing, add a missed attempt, and keep per-shot notes · Local corrections retain
-  the original model evidence rather than replacing it
-- Download shot data and available video artifacts · The full local pipeline
-  creates annotated video exports; the hosted motion pass uses the source video
-  and available overlays rather than generating a new annotated recording
+- Review makes, misses, and uncertain attempts · Use a whole release frame within
+  the clip to correct timing or add a missed attempt · If browser storage is
+  unavailable, per-shot notes last while the result stays open
+- Hosted shot data JSON includes the current corrections and manually added
+  attempts · Download the source video from the hosted review · The full local
+  pipeline provides annotated video and original model evidence in JSONL · Local
+  corrections are reapplied when a finished result reopens from the queue
 
 ### Hosted review versus full local analysis
 
@@ -80,7 +81,8 @@ measurements are reported only when the footage and calibration support them;
 weak evidence stays estimated, unavailable, or marked for review · Clear footage
 with the shooter and basket visible gives the pipeline more useful evidence
 
-Observed make rates describe reviewed footage · Future shooting probabilities
+Observed make rates use confirmed makes and misses · The rate stays blank until
+at least one outcome is confirmed · Future shooting probabilities
 remain unavailable until a prediction model passes held-out validation and
 calibration; they are not inferred from the observed percentage · See the
 [accuracy and evidence protocol](accuracy.md) for the underlying analysis

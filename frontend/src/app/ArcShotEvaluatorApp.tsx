@@ -14,6 +14,7 @@ import { HomePage } from "../features/home/HomePage";
 import { useWorkspaceNavigation } from "./useWorkspaceNavigation";
 import { IS_GITHUB_PAGES } from "../runtime";
 import { isProcessingMode } from "../domain/analysisModes";
+import { refreshBrowserShotReview } from "../domain/shotReview";
 import {
   cancelAnalysisJob,
   fetchAnalysisJob,
@@ -183,10 +184,16 @@ export function ArcShotEvaluatorApp() {
     }
     if (IS_GITHUB_PAGES) {
       const restored = saved.map((item) => {
-        const storedResult = "result" in item && item.result ? item.result : null;
-        if (storedResult) registerBrowserAnalysisSession(storedResult);
-        const entry = { ...item, file: undefined, result: storedResult };
-        if (storedResult) return entry;
+        const entry = { ...item, file: undefined, result: null };
+        if ("result" in item && item.result) {
+          try {
+            const result = refreshBrowserShotReview(item.result);
+            registerBrowserAnalysisSession(result);
+            return { ...entry, result };
+          } catch {
+            return { ...entry, status: "error" as const, stage: "Review could not be restored", error: "Analyze the clip again to rebuild the result" };
+          }
+        }
         const unfinished = item.status === "queued" || item.status === "processing";
         if (item.kind === "example" && unfinished) {
           return { ...entry, status: "queued" as const, stage: "Ready to resume browser analysis" };
@@ -443,16 +450,10 @@ export function ArcShotEvaluatorApp() {
   }
 
   function handleSessionChange(next: AnalysisSession) {
-    setSession(next);
-    if (IS_GITHUB_PAGES) {
-      // Keep hosted corrections in the same durable queue record as the
-      // original browser analysis so reopening the page preserves review work
-      // just like a local session reconnect.
-      setQueue((current) => current.map((item) => (
-        item.result?.session.id === next.session.id ? { ...item, result: next } : item
-      )));
-      registerBrowserAnalysisSession(next);
-    }
+    setSession((current) => current?.session.id === next.session.id ? next : current);
+    setQueue((current) => current.map((item) => (
+      item.result?.session.id === next.session.id ? { ...item, result: next } : item
+    )));
   }
 
   function showHomePage() {

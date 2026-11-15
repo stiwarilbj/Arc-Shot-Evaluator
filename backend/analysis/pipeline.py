@@ -2017,6 +2017,7 @@ def refresh_saved_analysis(payload: dict) -> dict:
             raw["outcome"] = correction["outcome"]
         if isinstance(correction.get("release_frame"), int) and correction["release_frame"] >= 0:
             raw["release_frame"] = correction["release_frame"]
+            raw["end_frame"] = max(raw["release_frame"], int(raw.get("end_frame", raw["release_frame"])))
             fps = float(payload.get("session", {}).get("fps") or 0.0)
             if fps > 0:
                 raw["release_time"] = round(correction["release_frame"] / fps, 3)

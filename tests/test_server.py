@@ -219,3 +219,38 @@ def test_manual_attempt_can_be_corrected_without_rewriting_analysis(tmp_path, mo
     assert corrected.json()["shots"][0]["outcome"] == "make"
     assert corrected.json()["shots"][0]["evidence"]["shooter_id"] == "player-1"
     assert (session_dir / "analysis.json").read_text() == original
+
+
+def test_shot_review_checks_clip_frame_bounds_before_saving(tmp_path, monkeypatch) -> None:
+    session_dir = tmp_path / "review-bounds"
+    session_dir.mkdir()
+    (session_dir / "analysis.json").write_text(json.dumps({
+        "session": {"id": session_dir.name, "fps": 30, "frame_count": 60},
+        "shots": [{"id": 1, "outcome": "review", "release_frame": 10, "end_frame": 45}],
+    }))
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    original_result = json.loads((session_dir / "analysis.json").read_text())
+    job = {"id": session_dir.name, "status": "done", "result": original_result}
+    (session_dir / "job.json").write_text(json.dumps(job))
+    monkeypatch.setitem(api_module.jobs, job["id"], job)
+    client = TestClient(app)
+    shots_url = f"/api/sessions/{session_dir.name}/shots"
+
+    for invalid in (-1, 0.5, True, 60, 999999):
+        assert client.patch(f"{shots_url}/1", json={"release_frame": invalid}).status_code == 400
+        assert client.post(shots_url, json={"release_frame": invalid}).status_code == 400
+    assert not (session_dir / "corrections.json").exists()
+
+    corrected = client.patch(f"{shots_url}/1", json={"release_frame": 59})
+    assert corrected.status_code == 200
+    shot = corrected.json()["shots"][0]
+    assert shot["release_frame"] == shot["end_frame"] == 59
+    added = client.post(shots_url, json={"outcome": "miss", "release_frame": 0})
+    assert added.status_code == 200
+    assert next(shot for shot in added.json()["shots"] if shot["id"] == 2)["release_frame"] == 0
+    job_url = f"/api/jobs/{session_dir.name}"
+    assert client.get(job_url).json()["result"]["shots"] == added.json()["shots"]
+    assert job["result"]["shots"] == original_result["shots"]
+    monkeypatch.delitem(api_module.jobs, job["id"])
+    assert client.get(job_url).json()["result"]["shots"] == added.json()["shots"]

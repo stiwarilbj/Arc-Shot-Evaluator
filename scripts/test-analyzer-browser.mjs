@@ -327,6 +327,103 @@ async function checkClearQueue(width) {
   }
 }
 
+async function checkShotReview(width) {
+  const mobile = width < 620;
+  const page = await openPage({ width, height: mobile ? 700 : 900 }, mobile);
+  try {
+    await page.evaluate(() => {
+      for (const method of ["getItem", "setItem"]) {
+        const original = Storage.prototype[method];
+        Storage.prototype[method] = function (key, ...args) {
+          if (key.startsWith("arc-note-v1:")) throw new DOMException("Notes denied", "SecurityError");
+          return original.call(this, key, ...args);
+        };
+      }
+    });
+    await page.locator(".example-card").first().click();
+    const outcomes = page.getByRole("group", { name: "Correct shot outcome" });
+    await expect(outcomes).toBeVisible({ timeout: 15000 });
+    const overview = page.getByRole("button", { name: "Overview", exact: true });
+    await overview.click();
+    const summary = (label) => page.locator(".overview-strip > div").filter({ hasText: label }).locator("strong");
+    const observed = summary("Observed FT%");
+    await expect(observed).toHaveText("—");
+    const dataLink = page.getByRole("link", { name: "Shot data JSON" });
+    async function readExport() {
+      const href = await dataLink.getAttribute("href");
+      return page.evaluate(async (url) => (await fetch(url)).json(), href);
+    }
+    const original = await readExport();
+    const confidence = original.reduce((sum, shot) => sum + (shot.observation_confidence ?? shot.confidence), 0);
+    const confidencePercent = Number((confidence / original.length * 100).toFixed(1));
+    await expect(summary("Observation confidence")).toHaveText(`${confidencePercent.toFixed(0)}%`);
+    await expect(dataLink).toHaveAttribute("download", "shot-data.json");
+    await expect(page.getByRole("link", { name: "Source video" })).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "Annotated MP4" })).toHaveCount(0);
+    const note = page.getByRole("textbox", { name: "Shot notes" });
+    await expect(page.getByText("Notes can only be kept while this result is open")).toBeVisible();
+    await note.fill("Keep the follow-through");
+    await outcomes.getByRole("button", { name: "MAKE", exact: true }).click();
+    await expect(observed).toHaveText("100%");
+    expect((await readExport())[0].outcome).toBe("make");
+    const downloadEvent = page.waitForEvent("download");
+    await dataLink.click();
+    const download = await downloadEvent;
+    expect(download.suggestedFilename()).toBe("shot-data.json");
+    expect(JSON.parse(await readFile(await download.path(), "utf8"))[0].outcome).toBe("make");
+
+    const frame = page.getByRole("spinbutton", { name: "Release frame" });
+    const saveTiming = page.getByRole("button", { name: "Save timing / shooter correction" });
+    const addMiss = page.getByRole("button", { name: "Add missed attempt at this frame" });
+    const lastFrame = Number(await frame.getAttribute("max"));
+    for (const invalid of ["", "-1", "1.5", String(lastFrame + 1)]) {
+      await frame.fill(invalid);
+      await saveTiming.click();
+      await expect(frame).toHaveAttribute("aria-invalid", "true");
+      await expect(frame).toHaveAccessibleDescription(`Enter a whole release frame from 0 to ${lastFrame}`);
+      await expect(frame).toHaveValue(invalid);
+    }
+    await addMiss.click();
+    expect(await readExport()).toHaveLength(original.length);
+    expect((await readExport())[0].release_frame).toBe(original[0].release_frame);
+    await frame.fill(String(lastFrame));
+    await saveTiming.click();
+    await expect(frame).toHaveAttribute("aria-invalid", "false");
+    expect((await readExport())[0]).toMatchObject({ outcome: "make", release_frame: lastFrame, end_frame: lastFrame });
+    await frame.fill("0");
+    await addMiss.click();
+    await expect(observed).toHaveText("50%");
+    expect((await readExport()).at(-1)).toMatchObject({ outcome: "miss", release_frame: 0 });
+    await page.getByRole("button", { name: "Next shot" }).click();
+    await expect(note).toHaveValue("");
+    await overview.click();
+    await outcomes.getByRole("button", { name: "REVIEW", exact: true }).click();
+    await expect(observed).toHaveText("100%");
+    await outcomes.getByRole("button", { name: "MISS", exact: true }).click();
+    await expect(observed).toHaveText("50%");
+    const edited = await readExport();
+    await page.getByRole("button", { name: "Previous shot" }).click();
+    await expect(note).toHaveValue("Keep the follow-through");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+
+    // Simulate a queue saved with the old derived values but with the user's edits intact.
+    await page.evaluate(() => {
+      const key = "arc-analysis-queue-pages-v1";
+      const queue = JSON.parse(localStorage.getItem(key));
+      queue[0].result.summary.observed_ft_pct = 0;
+      queue[0].result.artifacts.shots_jsonl = "data:application/json,%5B%5D";
+      localStorage.setItem(key, JSON.stringify(queue));
+    });
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+    await overview.click();
+    await expect(observed).toHaveText("50%");
+    expect(await readExport()).toEqual(edited);
+  } finally {
+    await page.close();
+  }
+}
+
 try {
   await checkNavigation();
   console.log("Navigation, keyboard and touch controls, and upload layout passed at five widths");
@@ -342,8 +439,11 @@ try {
   await checkQueueReload();
   await checkClearQueue(1440);
   await checkClearQueue(320);
-  expect(errors).toEqual([]);
   console.log("Upload recovery, resumable examples, and clear/stop behavior passed on desktop and mobile");
+  await checkShotReview(1440);
+  await checkShotReview(320);
+  expect(errors).toEqual([]);
+  console.log("Review math, current JSON downloads, frame limits, note storage failure, and reload passed on desktop and mobile");
 } finally {
   await browser.close();
 }

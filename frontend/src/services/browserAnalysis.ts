@@ -8,6 +8,7 @@ import type {
   ShotMode,
 } from "../domain/analysisTypes";
 import { browserSamplingPlan } from "../domain/analysisModes";
+import { browserShotEndFrame, browserShotReview } from "../domain/shotReview";
 
 export type BrowserAnalysisProgress = (progress: number, stage: string) => void;
 
@@ -201,7 +202,7 @@ function buildShot(
   shotMode: ShotMode,
   poseOverlay?: BrowserPoseOverlay,
 ): ShotAnalysis {
-  const releaseFrame = Math.round(time * fps);
+  const releaseFrame = Math.min(frameCount - 1, Math.round(time * fps));
   const pose = formMetricsAtFrame(poseOverlay, poseOverlay ? Math.round(time * poseOverlay.fps) : releaseFrame);
   const visibleQuality = formQuality(pose.form);
   // The hosted pass is intentionally conservative. Motion alone should not
@@ -225,7 +226,7 @@ function buildShot(
     shot_mode: shotMode,
     release_frame: releaseFrame,
     release_time: time,
-    end_frame: Math.min(frameCount - 1, releaseFrame + Math.round(fps * 0.8)),
+    end_frame: browserShotEndFrame(releaseFrame, fps, frameCount),
     release_speed_ms: null,
     release_height_m: null,
     entry_angle_deg: null,
@@ -252,38 +253,6 @@ function buildShot(
       },
     },
   };
-}
-
-function recomputeSummary(shots: ShotAnalysis[]) {
-  const makes = shots.filter((shot) => shot.outcome === "make").length;
-  const misses = shots.filter((shot) => shot.outcome === "miss").length;
-  const review = shots.filter((shot) => shot.outcome === "review").length;
-  const attempts = shots.length;
-  let bestStreak = 0;
-  let currentStreak = 0;
-  for (const shot of shots) {
-    if (shot.outcome === "make") currentStreak += 1;
-    else currentStreak = 0;
-    bestStreak = Math.max(bestStreak, currentStreak);
-  }
-  return {
-    attempts,
-    makes,
-    misses,
-    review,
-    fg_pct: attempts ? (makes / attempts) * 100 : null,
-    observed_fg_pct: attempts ? (makes / attempts) * 100 : null,
-    observed_ft_pct: attempts ? (makes / attempts) * 100 : null,
-    predicted_ft_pct: null,
-    best_streak: bestStreak,
-    average_confidence: attempts
-      ? shots.reduce((total, shot) => total + (shot.observation_confidence ?? shot.confidence), 0) / attempts
-      : 0,
-  };
-}
-
-function dataUrl(value: unknown) {
-  return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(value))}`;
 }
 
 export async function analyzeVideoInBrowser(
@@ -366,7 +335,7 @@ export async function analyzeVideoInBrowser(
     onProgress(84, "Building shot review");
     const shots = selected.map((item, index) => buildShot(index + 1, item.time, fps, item.score, frameCount, shotMode, poseOverlay));
     const sessionId = makeId();
-    const summary = recomputeSummary(shots);
+    const { summary, shotArtifacts } = browserShotReview(sessionId, shots);
     const session: AnalysisSession = {
       session: {
         id: sessionId,
@@ -408,8 +377,7 @@ export async function analyzeVideoInBrowser(
         source_original: sourceUrl,
         annotated: sourceUrl,
         pose: sourceUrl,
-        shots_jsonl: dataUrl(shots),
-        analysis_json: dataUrl({ session: sessionId, shots }),
+        ...shotArtifacts,
         thumbnails: selected.map((item) => item.thumbnail).filter(Boolean),
       },
     };

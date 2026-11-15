@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   Activity,
   Angle,
@@ -14,8 +14,10 @@ import {
   XCircle,
 } from "lucide-react";
 import type { AnalysisSession, ShotAnalysis, WorkspaceTab, CourtCalibration } from "../../domain/analysisTypes";
+import { isReleaseFrame, releaseFrameError } from "../../domain/shotReview";
 import { addManualShot, correctSavedShot, updateSessionContext } from "../../services/analysisApi";
 import { ArcSelect } from "../../components/ArcSelect";
+import { IS_GITHUB_PAGES } from "../../runtime";
 
 interface ShotDataPanelProps {
   session: AnalysisSession;
@@ -53,9 +55,13 @@ const OUTCOME = {
 
 export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame }: ShotDataPanelProps) {
   const storageKey = shot ? `arc-note-v1:${session.session.id}:${shot.id}` : "";
+  const temporaryNotes = useRef(new Map<string, string>());
   const [note, setNote] = useState("");
+  const [noteStorageUnavailable, setNoteStorageUnavailable] = useState(false);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
-  const [releaseFrameDraft, setReleaseFrameDraft] = useState(shot?.release_frame ?? 0);
+  const [releaseFrameDraft, setReleaseFrameDraft] = useState(String(shot?.release_frame ?? 0));
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const releaseErrorId = useId();
   const [shooterDraft, setShooterDraft] = useState("");
   const [takeoffFrameDraft, setTakeoffFrameDraft] = useState(shot?.evidence.motion_events?.takeoff_frame ?? 0);
   const [shootingHandDraft, setShootingHandDraft] = useState<"left" | "right" | "unknown">(shot?.evidence.shooting_hand ?? "unknown");
@@ -70,9 +76,25 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
   const [contextError, setContextError] = useState<string | null>(null);
 
   useEffect(() => {
-    setNote(storageKey ? window.localStorage.getItem(storageKey) ?? "" : "");
+    const temporaryNote = temporaryNotes.current.get(storageKey);
+    if (temporaryNote !== undefined) {
+      setNote(temporaryNote);
+      setNoteStorageUnavailable(true);
+      return;
+    }
+    try {
+      setNote(storageKey ? window.localStorage.getItem(storageKey) ?? "" : "");
+      setNoteStorageUnavailable(false);
+    } catch {
+      setNote("");
+      setNoteStorageUnavailable(true);
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
     setCorrectionError(null);
-    setReleaseFrameDraft(shot?.release_frame ?? 0);
+    setReleaseError(null);
+    setReleaseFrameDraft(String(shot?.release_frame ?? 0));
     setShooterDraft(shot?.evidence.shooter_id ?? "");
     setTakeoffFrameDraft(shot?.evidence.motion_events?.takeoff_frame ?? 0);
     setShootingHandDraft(shot?.evidence.shooting_hand ?? "unknown");
@@ -86,6 +108,46 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
     setBasketGroundDraft(JSON.stringify(session.context?.court_calibration?.basket_ground_image ?? [], null, 0));
     setContextError(null);
   }, [session.context?.court_calibration, shot?.evidence.defenders, shot?.evidence.motion_events?.takeoff_frame, shot?.evidence.player_height_m, shot?.evidence.shot_type, shot?.evidence.shooter_id, shot?.evidence.shooting_hand, shot?.evidence.team_assignments, shot?.release_frame, storageKey]);
+
+  const frameCount = session.session.frame_count;
+
+  function readReleaseFrame() {
+    const frame = releaseFrameDraft.trim() ? Number(releaseFrameDraft) : NaN;
+    if (isReleaseFrame(frame, frameCount)) return frame;
+    setReleaseError(releaseFrameError(frameCount));
+    return null;
+  }
+
+  function addMissedAttempt() {
+    setCorrectionError(null);
+    const frame = readReleaseFrame();
+    if (frame === null) return;
+    void addManualShot(session.session.id, { outcome: "miss", release_frame: frame })
+      .then((updated) => onSessionChange?.(updated))
+      .catch((caught: unknown) => setCorrectionError(caught instanceof Error ? caught.message : "Could not add attempt"));
+  }
+
+  const releaseFrameField = (
+    <>
+      <label className="correction-field">
+        <span>Release frame</span>
+        <input
+          type="number"
+          min={0}
+          max={frameCount - 1}
+          step={1}
+          value={releaseFrameDraft}
+          aria-invalid={releaseError !== null}
+          aria-describedby={releaseError ? releaseErrorId : undefined}
+          onChange={(event) => {
+            setReleaseFrameDraft(event.currentTarget.value);
+            setReleaseError(null);
+          }}
+        />
+      </label>
+      {releaseError ? <p id={releaseErrorId} className="error-message" role="alert">{releaseError}</p> : null}
+    </>
+  );
 
   if (!shot) {
     return (
@@ -104,26 +166,8 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
         <section className="rail-panel correction-panel empty-correction-panel">
           <h3>Add a missed attempt</h3>
           <p className="basis-note">Use the frame number where the ball leaves the hand · The detector evidence stays unchanged</p>
-          <label className="correction-field">
-            <span>Release frame</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={releaseFrameDraft}
-              onChange={(event) => setReleaseFrameDraft(parseFrame(event.currentTarget.value))}
-            />
-          </label>
-          <button
-            className="correction-save"
-            type="button"
-            onClick={() => {
-              setCorrectionError(null);
-              void addManualShot(session.session.id, { outcome: "miss", release_frame: releaseFrameDraft })
-                .then((updated) => onSessionChange?.(updated))
-                .catch((caught: unknown) => setCorrectionError(caught instanceof Error ? caught.message : "Could not add attempt"));
-            }}
-          >
+          {releaseFrameField}
+          <button className="correction-save" type="button" onClick={addMissedAttempt}>
             Add missed attempt
           </button>
           {correctionError ? <p className="error-message" role="alert">{correctionError}</p> : null}
@@ -310,16 +354,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
             </button>
           ))}
         </div>
-        <label className="correction-field">
-          <span>Release frame</span>
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={releaseFrameDraft}
-            onChange={(event) => setReleaseFrameDraft(parseFrame(event.currentTarget.value))}
-          />
-        </label>
+        {releaseFrameField}
         <label className="correction-field">
           <span>Shooter label (optional)</span>
           <input
@@ -375,6 +410,8 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
           type="button"
           onClick={() => {
             setCorrectionError(null);
+            const frame = readReleaseFrame();
+            if (frame === null) return;
             let teamAssignments: Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown"> | undefined;
             if (isJumpShot && teamAssignmentsDraft.trim()) {
               try {
@@ -389,7 +426,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
               }
             }
             void correctSavedShot(session.session.id, shot.id, {
-              release_frame: releaseFrameDraft,
+              release_frame: frame,
               ...(shooterDraft.trim() ? { shooter_id: shooterDraft.trim() } : {}),
               ...(isJumpShot ? {
                 takeoff_frame: takeoffFrameDraft,
@@ -406,16 +443,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
         >
           Save timing / shooter correction
         </button>
-        <button
-          className="correction-save"
-          type="button"
-          onClick={() => {
-            setCorrectionError(null);
-            void addManualShot(session.session.id, { outcome: "miss", release_frame: releaseFrameDraft })
-              .then((updated) => onSessionChange?.(updated))
-              .catch((caught: unknown) => setCorrectionError(caught instanceof Error ? caught.message : "Could not add attempt"));
-          }}
-        >
+        <button className="correction-save" type="button" onClick={addMissedAttempt}>
           Add missed attempt at this frame
         </button>
         {shot.evidence.correction ? <p className="basis-note">Correction saved · model evidence remains in the export</p> : null}
@@ -489,15 +517,31 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
           onChange={(event) => {
             const next = event.currentTarget.value;
             setNote(next);
-            window.localStorage.setItem(storageKey, next);
+            try {
+              window.localStorage.setItem(storageKey, next);
+              temporaryNotes.current.delete(storageKey);
+              setNoteStorageUnavailable(false);
+            } catch {
+              temporaryNotes.current.set(storageKey, next);
+              setNoteStorageUnavailable(true);
+            }
           }}
         />
+        {noteStorageUnavailable ? <p className="basis-note" role="status">Notes can only be kept while this result is open</p> : null}
       </section>
       <section className="rail-panel export-panel">
         <h3>Export</h3>
-        {session.artifacts.source_original ? <a href={session.artifacts.source_original} download><Download size={16} />Source original</a> : null}
-        <a href={session.artifacts.annotated} download><Download size={16} />Annotated MP4</a>
-        <a href={session.artifacts.shots_jsonl} download><Code2 size={16} />Shot data JSON</a>
+        {IS_GITHUB_PAGES ? (
+          <a href={session.artifacts.original} download={session.session.filename}><Download size={16} />Source video</a>
+        ) : (
+          <>
+            {session.artifacts.source_original ? <a href={session.artifacts.source_original} download><Download size={16} />Source original</a> : null}
+            <a href={session.artifacts.annotated} download><Download size={16} />Annotated MP4</a>
+          </>
+        )}
+        <a href={session.artifacts.shots_jsonl} download={IS_GITHUB_PAGES ? "shot-data.json" : true}>
+          <Code2 size={16} />{IS_GITHUB_PAGES ? "Shot data JSON" : "Shot data JSONL"}
+        </a>
       </section>
     </aside>
   );
