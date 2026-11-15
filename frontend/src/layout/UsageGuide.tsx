@@ -66,9 +66,9 @@ export function UsageGuide() {
             <h3>Review the footage</h3>
             <ul>
               <li>Use Overview for the session summary, Shot for selected-attempt details, and Tracking for player movement</li>
-              <li>Choose Pose, Annotated, or Original above the video; scrub or play to inspect the release</li>
-              <li>Select a shot thumbnail to jump to that attempt; correct its result or add notes in the detail panel</li>
-              <li>Download the annotated clip or shot data from the export controls</li>
+              <li>Choose Pose or Annotated when available · Full screen keeps the overlay and playback controls visible</li>
+              <li>Select a shot thumbnail to jump to an attempt · Correct its result or add notes in the detail panel</li>
+              <li>On desktop, scroll the detail panel to reach clip and shot-data downloads</li>
             </ul>
           </article>
           <article className="guide-card">

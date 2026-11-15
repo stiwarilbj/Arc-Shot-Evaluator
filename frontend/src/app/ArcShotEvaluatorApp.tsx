@@ -108,6 +108,7 @@ export function ArcShotEvaluatorApp() {
   const [examplesError, setExamplesError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedShot, setSelectedShot] = useState(0);
+  const [reviewOpening, setReviewOpening] = useState(0);
   const [reviewFrame, setReviewFrame] = useState<number | null>(null);
   const [mode, setMode] = useState<VideoMode>("pose");
   const { workspace, changeWorkspace, analysisView: tab, changeAnalysisView: setTab, jumperView, changeJumperView, playbookView, rolePlayerId, changePlaybookView } = useWorkspaceNavigation();
@@ -442,6 +443,7 @@ export function ArcShotEvaluatorApp() {
   function openCompletedAnalysis(item: AnalysisQueueItem) {
     if (!item.result) return;
     setSession(item.result);
+    setReviewOpening((opening) => opening + 1);
     setSelectedShot(0);
     setReviewFrame(null);
     setMode("pose");
@@ -473,7 +475,7 @@ export function ArcShotEvaluatorApp() {
   const shot = session?.shots[selectedShot] ?? null;
   const isJumpShot = session?.shot_mode === "jump_shot";
   const analyzerView = session ? (
-    <div className="analysis-session-shell">
+    <div className="analysis-review">
       <nav className="workspace-tabs" aria-label="Analysis views">
         <TabButton active={tab === "overview"} onClick={() => setTab("overview")} icon={<BarChart3 size={17} />} label="Overview" />
         <TabButton active={tab === "shot"} onClick={() => setTab("shot")} icon={<CircleDot size={17} />} label={shot ? `Shot ${String(shot.id).padStart(2, "0")}` : "Shot"} />
@@ -494,7 +496,7 @@ export function ArcShotEvaluatorApp() {
 
       <main className="analysis-grid">
         <div className="analysis-main">
-          <VideoWorkspace session={session} shot={shot} mode={mode} onMode={setMode} seekFrame={reviewFrame} active={workspace === "analyzer"} />
+          <VideoWorkspace key={`${session.session.id}:${reviewOpening}`} session={session} shot={shot} mode={mode} onMode={setMode} seekFrame={reviewFrame} active={workspace === "analyzer"} />
           <ShotSelector session={session} selected={selectedShot} onSelect={(index) => {
             setSelectedShot(index);
             setReviewFrame(null);

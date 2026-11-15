@@ -194,6 +194,8 @@ async function checkUploads() {
     await expect.poll(() => page.locator(".analysis-session-shell video").first().evaluate(
       (video) => video.currentSrc.startsWith("blob:") && video.readyState >= 1,
     )).toBe(true);
+    await expect(page.getByRole("group", { name: "Video view" })).toHaveCount(0);
+    await expect(page.locator(".pose-overlay-canvas")).toHaveCount(0);
     await page.locator(".header-actions button").last().click();
     await choose(uploadFixture);
     await expect(page.locator(".queue-done")).toHaveCount(2);
@@ -424,6 +426,99 @@ async function checkShotReview(width) {
   }
 }
 
+async function checkPlaybackReview(width, height) {
+  const page = await openPage({ width, height }, width < 620);
+  try {
+    if (width < 620) await page.getByRole("button", { name: "Light", exact: true }).tap();
+    await page.locator(".example-card").first().click();
+    const player = page.getByRole("region", { name: "Video analysis workspace" });
+    const video = player.locator("video");
+    const position = () => video.evaluate((element) => element.currentTime);
+    const paused = () => video.evaluate((element) => element.paused);
+    const pose = player.locator("canvas");
+    await expect.poll(position).toBeGreaterThan(0);
+    const initialPosition = await position();
+    const views = player.getByRole("group", { name: "Video view" });
+    await expect(views.getByRole("button")).toHaveText(["Pose", "Original"]);
+    await expect(pose).toBeVisible();
+    await views.getByRole("button", { name: "Original" }).click();
+    await expect(pose).toHaveCount(0);
+    expect(await position()).toBeCloseTo(initialPosition, 2);
+    await views.getByRole("button", { name: "Pose" }).click();
+    await expect(pose).toBeVisible();
+
+    const menu = page.getByRole("button", { name: "Others", exact: true });
+    const tools = await menu.boundingBox();
+    const guide = await page.locator(".guide-trigger").boundingBox();
+    expect(tools.x + tools.width <= guide.x || tools.y >= guide.y + guide.height).toBe(true);
+    await menu.click();
+    await expect(page.getByRole("menuitem", { name: "Freeze Floor" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Overview", exact: true }).click();
+    const summary = page.getByRole("region", { name: "Session summary" });
+    await expect(summary).toBeVisible();
+    expect(await summary.evaluate((strip) => [...strip.children].every((card) =>
+      card.scrollWidth <= card.clientWidth && card.getBoundingClientRect().right <= strip.getBoundingClientRect().right,
+    ))).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    if (width >= 1280) {
+      expect(await summary.evaluate((strip) => new Set([...strip.children].map((card) => card.getBoundingClientRect().top)).size)).toBe(1);
+      const rail = page.locator(".shot-data-panel");
+      await rail.hover();
+      await page.mouse.wheel(0, 1600);
+      await expect.poll(() => rail.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+      await expect(page.getByRole("link", { name: "Shot data JSON", exact: true })).toBeInViewport();
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    }
+
+    if (width < 1280) return;
+    await player.getByRole("button", { name: "Full screen", exact: true }).click();
+    const exit = player.getByRole("button", { name: "Exit full screen" });
+    await expect(exit).toBeInViewport();
+    expect(await page.evaluate(() => document.fullscreenElement?.classList.contains("video-workspace"))).toBe(true);
+    await expect.poll(() => pose.evaluate((canvas) => {
+      const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+      return pixels.some((value, index) => index % 4 === 3 && value > 0);
+    })).toBe(true);
+    await player.getByRole("combobox", { name: "Playback speed" }).click();
+    await player.getByRole("option", { name: "0.5×", exact: true }).click();
+    await expect.poll(() => video.evaluate((element) => element.playbackRate)).toBe(0.5);
+    await exit.click();
+    await expect(player.getByRole("button", { name: "Full screen", exact: true })).toBeVisible();
+    expect(await position()).toBeCloseTo(initialPosition, 2);
+
+    await video.evaluate((element) => { element.currentTime = element.duration * 0.85; });
+    await player.getByRole("button", { name: "Play", exact: true }).click();
+    await expect.poll(paused).toBe(false);
+    for (const hidden of [true, false]) {
+      await page.evaluate((value) => {
+        Object.defineProperty(document, "hidden", { configurable: true, value });
+        document.dispatchEvent(new Event("visibilitychange"));
+      }, hidden);
+      await expect.poll(paused).toBe(true);
+    }
+    await page.getByTitle("Open this analysis").click();
+    await expect.poll(position).toBeCloseTo(initialPosition, 2);
+    expect(await paused()).toBe(true);
+    // Exercise the time display at a boundary that the short sample never reaches.
+    await video.evaluate((element) => {
+      Object.defineProperty(element, "currentTime", { configurable: true, value: 59.999 });
+      element.dispatchEvent(new Event("timeupdate"));
+    });
+    await expect(player.locator(".timecode")).toHaveText(/^01:00\.00 \/ /);
+    await video.evaluate((element) => {
+      delete element.currentTime;
+      element.dispatchEvent(new Event("timeupdate"));
+    });
+    await page.evaluate(() => { HTMLElement.prototype.requestFullscreen = undefined; });
+    await player.getByRole("button", { name: "Full screen", exact: true }).click();
+    await expect(player.getByRole("alert")).toHaveText("Full screen is unavailable in this browser");
+  } finally {
+    await page.close();
+  }
+}
+
 try {
   await checkNavigation();
   console.log("Navigation, keyboard and touch controls, and upload layout passed at five widths");
@@ -442,8 +537,13 @@ try {
   console.log("Upload recovery, resumable examples, and clear/stop behavior passed on desktop and mobile");
   await checkShotReview(1440);
   await checkShotReview(320);
-  expect(errors).toEqual([]);
   console.log("Review math, current JSON downloads, frame limits, note storage failure, and reload passed on desktop and mobile");
+  await checkPlaybackReview(1440, 900);
+  await checkPlaybackReview(1280, 780);
+  await checkPlaybackReview(1050, 780);
+  await checkPlaybackReview(320, 640);
+  expect(errors).toEqual([]);
+  console.log("Review layout, video modes, fullscreen pose and controls, reopen, and hidden-tab pausing passed");
 } finally {
   await browser.close();
 }

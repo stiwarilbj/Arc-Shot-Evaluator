@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Maximize,
+  Minimize,
   Pause,
   Play,
   RotateCcw,
@@ -22,12 +23,14 @@ interface VideoWorkspaceProps {
 
 function formatTime(value: number) {
   if (!Number.isFinite(value)) return "00:00.00";
-  const minutes = Math.floor(value / 60);
-  const seconds = value - minutes * 60;
-  return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(2).padStart(5, "0")}`;
+  const hundredths = Math.round(Math.max(0, value) * 100);
+  const minutes = Math.floor(hundredths / 6000);
+  const seconds = Math.floor(hundredths / 100) % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(hundredths % 100).padStart(2, "0")}`;
 }
 
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+const FULLSCREEN_UNAVAILABLE = "Full screen is unavailable in this browser";
 
 const POSE_LINKS: Array<[number, number]> = [
   [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
@@ -62,9 +65,10 @@ function formatRate(rate: number) {
 }
 
 export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, active = true }: VideoWorkspaceProps) {
+  const workspaceRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const poseCanvasRef = useRef<HTMLCanvasElement>(null);
-  const resumeTimeRef = useRef(0);
+  const resumeTimeRef = useRef(Math.max(0, (shot?.release_time ?? 0) - 0.7));
   const resumePlaybackRef = useRef(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(session.session.duration);
@@ -72,9 +76,19 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
   const [playbackRate, setPlaybackRate] = useState(1);
   const [muted, setMuted] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const sources = session.artifacts;
-  const source = sources[mode];
-  const releasePercent = shot && duration ? (shot.release_time / duration) * 100 : 0;
+  const overlay = session.pose_overlay?.frames.length ? session.pose_overlay : undefined;
+  const modes: Array<{ id: VideoMode; label: string }> = [];
+  if (overlay || (sources.pose && sources.pose !== sources.original)) modes.push({ id: "pose", label: "Pose" });
+  if (sources.annotated && sources.annotated !== sources.original && sources.annotated !== sources.pose) {
+    modes.push({ id: "annotated", label: "Annotated" });
+  }
+  modes.push({ id: "original", label: "Original" });
+  const view = modes.some((item) => item.id === mode) ? mode : modes[0].id;
+  const source = sources[view];
+  const showPose = view === "pose" && Boolean(overlay);
+  const releasePercent = shot && duration ? Math.max(0, Math.min(100, (shot.release_time / duration) * 100)) : 0;
   const orientation = session.session.height > session.session.width * 1.08
     ? "portrait"
     : session.session.width > session.session.height * 1.08
@@ -110,32 +124,43 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
   }, [seekFrame, session.session.duration, session.session.fps]);
 
   useEffect(() => {
-    if (active) return;
-    const video = videoRef.current;
-    if (!video) return;
-    video.pause();
-    setPlaying(false);
+    function pauseWhenHidden() {
+      if (active && !document.hidden) return;
+      resumePlaybackRef.current = false;
+      videoRef.current?.pause();
+      setPlaying(false);
+    }
+    pauseWhenHidden();
+    document.addEventListener("visibilitychange", pauseWhenHidden);
+    return () => document.removeEventListener("visibilitychange", pauseWhenHidden);
   }, [active]);
+
+  useEffect(() => {
+    function updateFullscreen() {
+      setFullscreen(document.fullscreenElement === workspaceRef.current);
+    }
+    document.addEventListener("fullscreenchange", updateFullscreen);
+    return () => document.removeEventListener("fullscreenchange", updateFullscreen);
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
     const canvas = poseCanvasRef.current;
-    const overlay = session.pose_overlay;
-    if (!video || !canvas) return;
-    let animationFrame = 0;
+    if (!active || !showPose || !overlay || !video || !canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
     const render = () => {
-      const context = canvas.getContext("2d");
-      if (!context) return;
+      if (document.hidden) return;
       const displayWidth = video.clientWidth;
       const displayHeight = video.clientHeight;
+      if (!displayWidth || !displayHeight) return;
       const pixelRatio = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.round(displayWidth * pixelRatio));
-      canvas.height = Math.max(1, Math.round(displayHeight * pixelRatio));
+      const width = Math.max(1, Math.round(displayWidth * pixelRatio));
+      const height = Math.max(1, Math.round(displayHeight * pixelRatio));
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+      context.resetTransform();
       context.clearRect(0, 0, canvas.width, canvas.height);
-      if (!overlay || mode === "original" || !displayWidth || !displayHeight) {
-        animationFrame = window.requestAnimationFrame(render);
-        return;
-      }
       const scale = Math.min(displayWidth / overlay.width, displayHeight / overlay.height);
       const offsetX = (displayWidth - overlay.width * scale) / 2;
       const offsetY = (displayHeight - overlay.height * scale) / 2;
@@ -199,26 +224,39 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
         context.font = `${Math.max(10, overlay.width / 120)}px ui-monospace, monospace`;
         context.fillText("POSE + JOINT ANGLES", 21, 30);
       }
-      animationFrame = window.requestAnimationFrame(render);
     };
-    animationFrame = window.requestAnimationFrame(render);
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [mode, session.pose_overlay, source]);
-
-  const modes = useMemo(
-    () => [
-      { id: "pose" as const, label: "Pose" },
-      { id: "annotated" as const, label: "Annotated" },
-      { id: "original" as const, label: "Original" },
-    ],
-    [],
-  );
+    let frameCallback: number | undefined;
+    const scheduleRender = () => {
+      render();
+      frameCallback = video.requestVideoFrameCallback(scheduleRender);
+    };
+    const resize = new ResizeObserver(render);
+    resize.observe(video);
+    video.addEventListener("loadeddata", render);
+    video.addEventListener("seeked", render);
+    if (video.requestVideoFrameCallback) {
+      frameCallback = video.requestVideoFrameCallback(scheduleRender);
+    } else {
+      video.addEventListener("timeupdate", render);
+    }
+    document.addEventListener("visibilitychange", render);
+    render();
+    return () => {
+      if (frameCallback !== undefined) video.cancelVideoFrameCallback(frameCallback);
+      resize.disconnect();
+      video.removeEventListener("loadeddata", render);
+      video.removeEventListener("seeked", render);
+      video.removeEventListener("timeupdate", render);
+      document.removeEventListener("visibilitychange", render);
+    };
+  }, [active, overlay, showPose, source]);
 
   function switchMode(nextMode: VideoMode) {
     const video = videoRef.current;
-    if (video) {
+    if (video && source !== sources[nextMode]) {
       resumeTimeRef.current = video.currentTime;
       resumePlaybackRef.current = !video.paused;
+      setPlaying(false);
     }
     onMode(nextMode);
   }
@@ -234,13 +272,31 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
     try {
       if (video.paused) await video.play();
       else video.pause();
+    } catch (error) {
+      if (videoRef.current !== video || (error instanceof DOMException && error.name === "AbortError")) return;
+      setMediaError("This video could not be played in the browser");
+    }
+  }
+
+  async function toggleFullscreen() {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    try {
+      if (document.fullscreenElement === workspace) {
+        await document.exitFullscreen();
+      } else if (workspace.requestFullscreen) {
+        await workspace.requestFullscreen();
+        setMediaError((error) => error === FULLSCREEN_UNAVAILABLE ? null : error);
+      } else {
+        setMediaError(FULLSCREEN_UNAVAILABLE);
+      }
     } catch {
-      setMediaError("This video could not be played in the browser · Try the annotated MP4 export");
+      setMediaError(FULLSCREEN_UNAVAILABLE);
     }
   }
 
   return (
-    <section className="video-workspace" aria-label="Video analysis workspace">
+    <section ref={workspaceRef} className="video-workspace" aria-label="Video analysis workspace">
       <div className={`media-frame media-${orientation}`} style={mediaStyle}>
         <video
           ref={videoRef}
@@ -257,30 +313,40 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
             video.playbackRate = playbackRate;
             video.muted = muted;
             setDuration(video.duration || session.session.duration);
-            video.currentTime = Math.min(resumeTimeRef.current, Math.max(0, video.duration - 0.05));
-            if (resumePlaybackRef.current) {
-              void video.play().catch(() => setMediaError("Playback could not resume after switching views"));
+            const target = Math.min(resumeTimeRef.current, video.duration || session.session.duration);
+            video.currentTime = target;
+            setCurrentTime(target);
+            const shouldResume = resumePlaybackRef.current;
+            resumePlaybackRef.current = false;
+            if (shouldResume && active && !document.hidden) {
+              void video.play().catch((error: unknown) => {
+                if (videoRef.current === video && !(error instanceof DOMException && error.name === "AbortError")) {
+                  setMediaError("Playback could not resume after switching views");
+                }
+              });
             }
           }}
           onError={() => setMediaError("This video stream could not be decoded by the browser")}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
         />
-        <canvas ref={poseCanvasRef} className="pose-overlay-canvas" aria-hidden="true" />
+        {showPose ? <canvas ref={poseCanvasRef} className="pose-overlay-canvas" aria-hidden="true" /> : null}
         {mediaError ? <div className="media-error" role="alert">{mediaError}</div> : null}
-        <div className="mode-switch" aria-label="Video view">
-          {modes.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={mode === item.id ? "is-active" : ""}
-              aria-pressed={mode === item.id}
-              onClick={() => switchMode(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {modes.length > 1 ? (
+          <div className="mode-switch" role="group" aria-label="Video view">
+            {modes.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={view === item.id ? "is-active" : ""}
+                aria-pressed={view === item.id}
+                onClick={() => switchMode(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
       <div className="transport">
         <button className="icon-button play-button" type="button" onClick={() => void togglePlayback()} aria-label={playing ? "Pause" : "Play"}>
@@ -333,12 +399,10 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
         <button
           className="icon-button"
           type="button"
-          aria-label="Full screen"
-          onClick={() => {
-            void videoRef.current?.requestFullscreen().catch(() => setMediaError("Full screen is unavailable in this browser"));
-          }}
+          aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+          onClick={() => void toggleFullscreen()}
         >
-          <Maximize size={18} />
+          {fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
         </button>
       </div>
     </section>

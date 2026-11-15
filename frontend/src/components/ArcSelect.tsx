@@ -187,7 +187,7 @@ export function ArcSelect({ value, options, onValueChange, ariaLabel, placeholde
         </div>
       ))}
     </div>,
-    document.body,
+    document.fullscreenElement?.contains(triggerRef.current) ? document.fullscreenElement : document.body,
   ) : null;
 
   return (
