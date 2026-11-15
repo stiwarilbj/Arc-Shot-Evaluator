@@ -8,6 +8,8 @@ ARCade Hoops is a free basketball toolkit for reviewing shooting footage, design
 
 The app opens in **Shot Analyzer** · Use **Try other tools** above the upload controls or select the **ARC** logo for demos
 
+For hosted uploads, use a video your browser can decode, preferably H.264 MP4 · The downloaded app normalizes orientation and playback formats where supported
+
 ## Find your tool
 
 | **Workspace**                                                                        | **What you can do**                                                                                           |

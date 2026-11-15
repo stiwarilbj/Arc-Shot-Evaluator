@@ -141,8 +141,10 @@ export function ArcShotEvaluatorApp() {
   });
   const activeQueueItemsRef = useRef<Set<string>>(new Set());
   const cancelledQueueItemsRef = useRef<Set<string>>(new Set());
+  const browserControllersRef = useRef(new Map<string, AbortController>());
   const jobIdsRef = useRef<Map<string, string>>(new Map());
   const [queueHydrated, setQueueHydrated] = useState(false);
+  const [queueSlotRevision, setQueueSlotRevision] = useState(0);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -276,9 +278,19 @@ export function ArcShotEvaluatorApp() {
           // project asset without racing that request.
           ?? (item.kind === "example" ? new URL(`examples/${encodeURIComponent(item.filename)}`, document.baseURI).toString() : undefined);
         if (!source) throw new Error("This example is no longer available");
-        const browserResult = await analyzeVideoInBrowser(source, item.filename, analysisMode, analysisShotMode, (progress, stage) => {
-          updateAnalysisQueueItem(item.id, { status: "processing", stage, progress, error: null });
-        });
+        const controller = new AbortController();
+        browserControllersRef.current.set(item.id, controller);
+        const { signal } = controller;
+        const browserResult = await analyzeVideoInBrowser(
+          source, item.filename, analysisMode, analysisShotMode, signal,
+          (progress, stage) => {
+            if (!signal.aborted) updateAnalysisQueueItem(item.id, { status: "processing", stage, progress, error: null });
+          },
+        );
+        if (signal.aborted) {
+          if (typeof source !== "string") URL.revokeObjectURL(browserResult.artifacts.original);
+          return;
+        }
         registerBrowserAnalysisSession(browserResult);
         updateAnalysisQueueItem(item.id, { status: "done", stage: "Analysis complete", progress: 100, result: browserResult, error: null });
         setSession(browserResult);
@@ -350,7 +362,9 @@ export function ArcShotEvaluatorApp() {
     } finally {
       activeQueueItemsRef.current.delete(item.id);
       jobIdsRef.current.delete(item.id);
-      cancelledQueueItemsRef.current.delete(item.id);
+      browserControllersRef.current.delete(item.id);
+      // The stopped row may already be gone and no longer trigger scheduling.
+      if (cancelledQueueItemsRef.current.delete(item.id)) setQueueSlotRevision((revision) => revision + 1);
     }
   }
 
@@ -364,7 +378,7 @@ export function ArcShotEvaluatorApp() {
       activeQueueItemsRef.current.add(item.id);
       void processQueuedAnalysis(item);
     });
-  }, [queue]);
+  }, [queue, queueSlotRevision]);
 
   function enqueueUploadedVideos(files: File[]) {
     if (!files.length) return;
@@ -379,6 +393,7 @@ export function ArcShotEvaluatorApp() {
 
   function requestQueueCancellation(item: AnalysisQueueItem) {
     cancelledQueueItemsRef.current.add(item.id);
+    browserControllersRef.current.get(item.id)?.abort();
     const jobId = item.jobId ?? jobIdsRef.current.get(item.id);
     if (jobId) void cancelAnalysisJob(jobId).catch(() => undefined);
   }

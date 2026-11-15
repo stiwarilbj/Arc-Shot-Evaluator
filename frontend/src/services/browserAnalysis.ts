@@ -13,6 +13,8 @@ export type BrowserAnalysisProgress = (progress: number, stage: string) => void;
 
 type BrowserSource = File | string;
 
+const VIDEO_READ_ERROR = "This browser couldn’t read the video · Try an H.264 MP4 or use the downloaded app";
+
 function makeId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `browser-${crypto.randomUUID()}`;
   return `browser-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -22,46 +24,41 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function waitForVideoMetadata(video: HTMLVideoElement) {
+function waitForVideoEvent(
+  video: HTMLVideoElement,
+  event: "loadedmetadata" | "seeked",
+  signal: AbortSignal,
+  start: () => void,
+) {
   return new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => reject(new Error("This video could not be read in the browser")), 12_000);
-    const finish = () => {
+    const cleanup = () => {
       window.clearTimeout(timeout);
-      video.removeEventListener("loadedmetadata", finish);
+      video.removeEventListener(event, finish);
       video.removeEventListener("error", fail);
-      resolve();
+      signal.removeEventListener("abort", abort);
     };
-    const fail = () => {
-      window.clearTimeout(timeout);
-      video.removeEventListener("loadedmetadata", finish);
-      video.removeEventListener("error", fail);
-      reject(new Error("This video could not be read in the browser"));
-    };
-    video.addEventListener("loadedmetadata", finish, { once: true });
+    const finish = () => { cleanup(); resolve(); };
+    const fail = () => { cleanup(); reject(new Error(VIDEO_READ_ERROR)); };
+    const abort = () => { cleanup(); reject(signal.reason); };
+    const timeout = event === "loadedmetadata"
+      ? window.setTimeout(fail, 12_000)
+      : window.setTimeout(finish, 1_500);
+    video.addEventListener(event, finish, { once: true });
     video.addEventListener("error", fail, { once: true });
-    video.load();
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    try { start(); } catch (error) { cleanup(); reject(error); }
   });
 }
 
-function seekVideo(video: HTMLVideoElement, time: number) {
-  return new Promise<void>((resolve) => {
-    const target = clamp(time, 0, Math.max(0, (video.duration || time) - 0.03));
-    if (Math.abs(video.currentTime - target) < 0.02) {
-      resolve();
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      video.removeEventListener("seeked", finish);
-      resolve();
-    }, 1_500);
-    const finish = () => {
-      window.clearTimeout(timeout);
-      video.removeEventListener("seeked", finish);
-      resolve();
-    };
-    video.addEventListener("seeked", finish, { once: true });
-    video.currentTime = target;
-  });
+async function seekVideo(video: HTMLVideoElement, time: number, signal: AbortSignal) {
+  signal.throwIfAborted();
+  const target = clamp(time, 0, Math.max(0, (video.duration || time) - 0.03));
+  if (Math.abs(video.currentTime - target) < 0.02) return;
+  await waitForVideoEvent(video, "seeked", signal, () => { video.currentTime = target; });
 }
 
 function frameDifference(previous: Uint8ClampedArray | null, current: Uint8ClampedArray) {
@@ -76,12 +73,13 @@ function frameDifference(previous: Uint8ClampedArray | null, current: Uint8Clamp
   return total / ((current.length / stride) * 3 * 255);
 }
 
-async function loadPoseOverlay(filename: string): Promise<BrowserPoseOverlay | undefined> {
+async function loadPoseOverlay(filename: string, signal: AbortSignal): Promise<BrowserPoseOverlay | undefined> {
   try {
     const url = new URL(`examples/pose-data/${encodeURIComponent(filename)}.json`, document.baseURI);
-    const response = await fetch(url);
+    const response = await fetch(url, { signal });
     if (!response.ok) return undefined;
     const raw = (await response.json()) as Partial<BrowserPoseOverlay>;
+    signal.throwIfAborted();
     if (!Array.isArray(raw.frames) || !raw.frames.length) return undefined;
     const frames: BrowserPoseFrame[] = raw.frames
       .filter((item): item is BrowserPoseFrame => {
@@ -103,8 +101,8 @@ async function loadPoseOverlay(filename: string): Promise<BrowserPoseOverlay | u
       frames,
     };
   } catch {
-    // A user uploaded clip has no static track; the browser motion result
-    // remains usable and the local Python path still provides full tracking.
+    signal.throwIfAborted();
+    // Examples without a usable track still support motion review.
     return undefined;
   }
 }
@@ -269,119 +267,133 @@ export async function analyzeVideoInBrowser(
   filename: string,
   processingMode: ProcessingMode,
   shotMode: ShotMode,
+  signal: AbortSignal,
   onProgress: BrowserAnalysisProgress,
 ): Promise<AnalysisSession> {
+  signal.throwIfAborted();
   const sourceUrl = typeof source === "string" ? source : URL.createObjectURL(source);
   const video = document.createElement("video");
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = "metadata";
-  video.src = sourceUrl;
-  onProgress(4, "Loading video");
-  await waitForVideoMetadata(video);
-
-  const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
-  const width = video.videoWidth || 1280;
-  const height = video.videoHeight || 720;
-  const poseOverlay = typeof source === "string" ? await loadPoseOverlay(filename) : undefined;
-  const fps = poseOverlay?.fps ?? 30;
-  const poseFrameCount = poseOverlay?.frames.reduce((maximum, frame) => Math.max(maximum, frame.frame + 1), 0) ?? 0;
-  const frameCount = Math.max(1, Math.round(duration * fps), poseFrameCount);
-  const { sampleCount, candidateLimit } = browserSamplingPlan(processingMode, duration);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.min(320, width);
-  canvas.height = Math.max(1, Math.round(canvas.width * (height / width)));
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  const motion: Array<{ time: number; score: number; thumbnail: string }> = [];
-  let previous: Uint8ClampedArray | null = null;
+  let completed = false;
+  try {
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    onProgress(4, "Loading video");
+    await waitForVideoEvent(video, "loadedmetadata", signal, () => { video.src = sourceUrl; });
+    signal.throwIfAborted();
 
-  for (let index = 0; index < sampleCount; index += 1) {
-    const time = duration * (index / Math.max(1, sampleCount - 1));
-    await seekVideo(video, time);
-    let score = 0;
-    let thumbnail = "";
-    if (context) {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const image = context.getImageData(0, 0, canvas.width, canvas.height);
-      score = frameDifference(previous, image.data);
-      previous = image.data;
-      thumbnail = canvas.toDataURL("image/jpeg", 0.72);
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    const poseOverlay = typeof source === "string" ? await loadPoseOverlay(filename, signal) : undefined;
+    const fps = poseOverlay?.fps ?? 30;
+    const poseFrameCount = poseOverlay?.frames.reduce((maximum, frame) => Math.max(maximum, frame.frame + 1), 0) ?? 0;
+    const frameCount = Math.max(1, Math.round(duration * fps), poseFrameCount);
+    const { sampleCount, candidateLimit } = browserSamplingPlan(processingMode, duration);
+    canvas.width = Math.min(320, width);
+    canvas.height = Math.max(1, Math.round(canvas.width * (height / width)));
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const motion: Array<{ time: number; score: number; thumbnail: string }> = [];
+    let previous: Uint8ClampedArray | null = null;
+
+    for (let index = 0; index < sampleCount; index += 1) {
+      const time = duration * (index / Math.max(1, sampleCount - 1));
+      await seekVideo(video, time, signal);
+      signal.throwIfAborted();
+      let score = 0;
+      let thumbnail = "";
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const image = context.getImageData(0, 0, canvas.width, canvas.height);
+        score = frameDifference(previous, image.data);
+        previous = image.data;
+        thumbnail = canvas.toDataURL("image/jpeg", 0.72);
+      }
+      motion.push({ time, score, thumbnail });
+      onProgress(10 + Math.round(((index + 1) / sampleCount) * 66), `Reading frame ${index + 1} of ${sampleCount}`);
     }
-    motion.push({ time, score, thumbnail });
-    onProgress(10 + Math.round(((index + 1) / sampleCount) * 66), `Reading frame ${index + 1} of ${sampleCount}`);
-  }
 
-  const scores = motion.map((item) => item.score);
-  const mean = scores.reduce((total, score) => total + score, 0) / Math.max(1, scores.length);
-  const variance = scores.reduce((total, score) => total + (score - mean) ** 2, 0) / Math.max(1, scores.length);
-  const threshold = mean + Math.max(0.012, Math.sqrt(variance) * 0.55);
-  const candidates = motion
-    .filter((item, index) => {
-      const before = motion[index - 1]?.score ?? -1;
-      const after = motion[index + 1]?.score ?? -1;
-      return item.time > 0.35 && item.time < duration - 0.25 && item.score >= threshold && item.score >= before && item.score >= after;
-    })
-    .sort((left, right) => right.score - left.score);
-  const selected: typeof candidates = [];
-  for (const candidate of candidates) {
-    if (selected.every((item) => Math.abs(item.time - candidate.time) > 0.9)) selected.push(candidate);
-    if (selected.length === candidateLimit) break;
+    const scores = motion.map((item) => item.score);
+    const mean = scores.reduce((total, score) => total + score, 0) / Math.max(1, scores.length);
+    const variance = scores.reduce((total, score) => total + (score - mean) ** 2, 0) / Math.max(1, scores.length);
+    const threshold = mean + Math.max(0.012, Math.sqrt(variance) * 0.55);
+    const candidates = motion
+      .filter((item, index) => {
+        const before = motion[index - 1]?.score ?? -1;
+        const after = motion[index + 1]?.score ?? -1;
+        return item.time > 0.35 && item.time < duration - 0.25 && item.score >= threshold && item.score >= before && item.score >= after;
+      })
+      .sort((left, right) => right.score - left.score);
+    const selected: typeof candidates = [];
+    for (const candidate of candidates) {
+      if (selected.every((item) => Math.abs(item.time - candidate.time) > 0.9)) selected.push(candidate);
+      if (selected.length === candidateLimit) break;
+    }
+    if (!selected.length) {
+      const fallback = motion[Math.floor(motion.length / 2)] ?? { time: duration / 2, score: 0, thumbnail: "" };
+      selected.push(fallback);
+    }
+    selected.sort((left, right) => left.time - right.time);
+    onProgress(84, "Building shot review");
+    const shots = selected.map((item, index) => buildShot(index + 1, item.time, fps, item.score, frameCount, shotMode, poseOverlay));
+    const sessionId = makeId();
+    const summary = recomputeSummary(shots);
+    const session: AnalysisSession = {
+      session: {
+        id: sessionId,
+        filename,
+        created_at: new Date().toISOString(),
+        width,
+        height,
+        fps,
+        frame_count: frameCount,
+        duration,
+        local_only: false,
+        source_fps: fps,
+        source_frame_count: frameCount,
+        timing_preserved: true,
+      },
+      summary,
+      analysis_version: "browser-motion-2",
+      models: { motion: "ARCade Hoops browser motion pass", pose: poseOverlay ? "ARCade Hoops pose overlay track" : "Unavailable for uploads" },
+      processing_mode: processingMode,
+      shot_mode: shotMode,
+      context: { shot_mode: shotMode },
+      quality: {
+        tier: "limited",
+        score: 0.62,
+        orientation: height > width * 1.08 ? "portrait" : width > height * 1.08 ? "landscape" : "square",
+        normalized: false,
+        rim_coverage: 0,
+        pose_coverage: poseOverlay ? clamp(poseOverlay.frames.length / Math.max(1, frameCount), 0, 1) : 0,
+        model_ball_coverage: 0,
+        ball_candidate_coverage: 0,
+        camera_motion: clamp(mean * 8, 0, 1),
+        messages: [],
+      },
+      shots,
+      warnings: [],
+      pose_overlay: poseOverlay,
+      artifacts: {
+        original: sourceUrl,
+        source_original: sourceUrl,
+        annotated: sourceUrl,
+        pose: sourceUrl,
+        shots_jsonl: dataUrl(shots),
+        analysis_json: dataUrl({ session: sessionId, shots }),
+        thumbnails: selected.map((item) => item.thumbnail).filter(Boolean),
+      },
+    };
+    onProgress(100, "Analysis complete");
+    signal.throwIfAborted();
+    completed = true;
+    return session;
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+    canvas.width = 0;
+    canvas.height = 0;
+    if (!completed && typeof source !== "string") URL.revokeObjectURL(sourceUrl);
   }
-  if (!selected.length) {
-    const fallback = motion[Math.floor(motion.length / 2)] ?? { time: duration / 2, score: 0, thumbnail: "" };
-    selected.push(fallback);
-  }
-  selected.sort((left, right) => left.time - right.time);
-  onProgress(84, "Building shot review");
-  const shots = selected.map((item, index) => buildShot(index + 1, item.time, fps, item.score, frameCount, shotMode, poseOverlay));
-  const sessionId = makeId();
-  const summary = recomputeSummary(shots);
-  const session: AnalysisSession = {
-    session: {
-      id: sessionId,
-      filename,
-      created_at: new Date().toISOString(),
-      width,
-      height,
-      fps,
-      frame_count: frameCount,
-      duration,
-      local_only: false,
-      source_fps: fps,
-      source_frame_count: frameCount,
-      timing_preserved: true,
-    },
-    summary,
-    analysis_version: "browser-motion-2",
-    models: { motion: "ARCade Hoops browser motion pass", pose: poseOverlay ? "ARCade Hoops pose overlay track" : "Unavailable for uploads" },
-    processing_mode: processingMode,
-    shot_mode: shotMode,
-    context: { shot_mode: shotMode },
-    quality: {
-      tier: "limited",
-      score: 0.62,
-      orientation: height > width * 1.08 ? "portrait" : width > height * 1.08 ? "landscape" : "square",
-      normalized: false,
-      rim_coverage: 0,
-      pose_coverage: poseOverlay ? clamp(poseOverlay.frames.length / Math.max(1, frameCount), 0, 1) : 0,
-      model_ball_coverage: 0,
-      ball_candidate_coverage: 0,
-      camera_motion: clamp(mean * 8, 0, 1),
-      messages: [],
-    },
-    shots,
-    warnings: [],
-    pose_overlay: poseOverlay,
-    artifacts: {
-      original: sourceUrl,
-      source_original: sourceUrl,
-      annotated: sourceUrl,
-      pose: sourceUrl,
-      shots_jsonl: dataUrl(shots),
-      analysis_json: dataUrl({ session: sessionId, shots }),
-      thumbnails: selected.map((item) => item.thumbnail).filter(Boolean),
-    },
-  };
-  onProgress(100, "Analysis complete");
-  return session;
 }

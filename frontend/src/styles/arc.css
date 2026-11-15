@@ -355,7 +355,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .upload-drop { width: 100%; min-height: 290px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 30px; border: 1px dashed var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--text); cursor: pointer; transition: border-color 160ms ease; }
 .upload-drop:hover, .upload-drop.is-dragging { border-color: var(--orange); }
 .upload-drop:disabled { cursor: progress; }
-.upload-drop input { display: none; }
 .upload-icon { width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 4px; border: 1px solid var(--line-strong); border-radius: 50%; color: var(--orange); }
 .upload-drop strong { font-size: 16px; }
 .upload-drop > span:not(.upload-icon) { color: var(--muted); font-size: 12px; }
@@ -554,6 +553,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .coach-notes { grid-row: 1; }
 }
 
+@media (min-width: 621px) and (max-height: 799px) {
+  .landing-layout.landing-empty { padding-top: 18px; }
+  .landing-empty .landing-main .video-upload { padding-top: 20px; }
+  .landing-empty .upload-drop { min-height: 210px; }
+}
+
 @media (max-width: 620px) {
   .app-header { min-height: 60px; }
   .header-actions { gap: 8px; }
@@ -579,12 +584,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .overview-strip { grid-template-columns: repeat(2, 1fr); margin: 10px 8px 0; }
   .overview-strip > div { padding: 10px; }
   .video-upload { width: calc(100% - 24px); padding: 50px 0; }
-  .upload-drop { min-height: 245px; }
   .landing-layout { width: calc(100% - 16px); padding-bottom: 28px; }
   .landing-layout.landing-empty { width: calc(100% - 16px); padding-top: 0; }
-  .landing-main .video-upload { width: 100%; padding: 34px 0 24px; }
-  .landing-main .upload-intro { margin-bottom: 22px; }
-  .landing-main .upload-intro h1 { font-size: clamp(36px, 12vw, 52px); }
+  .landing-main .video-upload,
+  .landing-empty .landing-main .video-upload { padding: 14px 0 24px; }
+  .landing-main .upload-intro { margin-bottom: 10px; }
+  .landing-main .upload-intro h1 { font-size: clamp(28px, 8.5vw, 44px); }
+  .landing-main .upload-intro p { margin-top: 9px; font-size: 13px; }
+  .analyzer-tool-links { display: grid; justify-items: center; gap: 6px; margin-bottom: 14px; }
+  .analyzer-tool-links a { padding-inline: 7px; }
+  .upload-drop { min-height: 110px; padding: 12px; gap: 5px; }
+  .upload-icon { width: 36px; height: 36px; }
   .analysis-depth-control { grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .analysis-depth-options { gap: 3px; padding: 3px; }
   .analysis-depth-options button { min-height: 46px; padding: 5px 6px; }
@@ -1769,7 +1779,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 .playbook-editor.is-simulating .marker-number { font-size: 26px; }
 
-.workspace-others{position:relative;display:flex;align-items:stretch}.workspace-others-menu{position:absolute;top:100%;right:0;min-width:230px;padding:8px;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);z-index:100}.workspace-nav .workspace-others-menu button{border:0;padding:14px 12px;width:100%;text-align:left;font-size:14px;white-space:nowrap}.workspace-others-menu[hidden]{display:none}
+.workspace-others { position: relative; display: flex; align-items: stretch; }
+.workspace-others-menu { position: absolute; top: 100%; right: 0; width: 230px; padding: 8px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: var(--shadow); z-index: 100; }
+.workspace-nav .workspace-others-menu button { border: 0; padding: 14px 12px; width: 100%; text-align: left; font-size: 14px; white-space: normal; }
+.workspace-others-menu[hidden] { display: none; }
+@media (max-width: 620px) {
+  .workspace-nav { position: relative; }
+  .workspace-others { position: static; }
+  .workspace-others-menu { width: min(230px, 100%); }
+}
 
 .playbook-flipbook { display: grid; gap: 14px; width: min(1500px, 100%); margin-inline: auto; padding: clamp(12px, 2vw, 24px); color: var(--text); }
 .flipbook-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }

@@ -45,9 +45,9 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
 - Select one or several videos, drag them onto the upload area, or use a supplied
   example · The current upload workflow is **Free throw**
 - Choose **Fast**, **Normal** (default), or **Deep** analysis · The queue shows
-  waiting, running, completed, failed, and stopped jobs; add videos, cancel work,
-  hide completed items, or reopen a result · The app starts one analysis at a time
-  by default
+  waiting, running, completed, and failed jobs · **Stop** removes the running
+  item and lets the next waiting clip start · You can also hide completed items
+  or reopen a result
 - Use **Overview**, **Shot**, and **Tracking** to inspect the session, individual
   attempts, and available movement evidence · Shot thumbnails jump to the relevant
   attempt; video controls offer **Pose**, **Annotated**, and **Original** views
@@ -65,6 +65,9 @@ The GitHub Pages version samples video motion to propose windows for **manual
 review** · Supplied examples can include prepared pose tracks and joint-angle
 overlays · Ordinary uploaded videos do not receive full pose, ball, or rim tracking
 in this hosted analysis path, and their outcomes start as **review**
+
+Hosted uploads use your browser’s video decoder · If a clip cannot be read, try
+converting it to H.264 MP4 or use the downloaded app
 
 The downloaded app runs the Python vision pipeline: basketball/rim detection,
 player pose, temporal tracking, shot measurements, and local Coach Notes · Source

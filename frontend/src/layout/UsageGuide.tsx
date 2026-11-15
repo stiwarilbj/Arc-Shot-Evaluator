@@ -56,9 +56,9 @@ export function UsageGuide() {
           <article className="guide-card">
             <h3>Analyze a video</h3>
             <ol>
-              <li>Choose a sample clip or select one or more basketball videos</li>
+              <li>Choose a sample clip or select one or more basketball videos · On GitHub Pages, use a format your browser can play, preferably H.264 MP4 · The downloaded app normalizes orientation and playback formats where supported</li>
               <li>Choose Fast for a quick scan, Normal for a standard shot review, or Deep for a more detailed mechanics review, then start the analysis</li>
-              <li>Follow progress in the queue; open a completed result when it is ready</li>
+              <li>Follow progress in the queue · Open a completed result or use Stop to cancel the running clip and continue with the next one</li>
             </ol>
           </article>
           <article className="guide-card">

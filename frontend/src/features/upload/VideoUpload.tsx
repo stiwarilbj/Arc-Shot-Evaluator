@@ -2,6 +2,7 @@ import { useRef, useState, type KeyboardEvent } from "react";
 import { Film, ScanLine, Upload } from "lucide-react";
 import { PROCESSING_MODE_OPTIONS } from "../../domain/analysisModes";
 import type { ProcessingMode, ShotMode } from "../../domain/analysisTypes";
+import { IS_GITHUB_PAGES } from "../../runtime";
 
 interface VideoUploadProps {
   error: string | null;
@@ -27,6 +28,7 @@ const OTHER_TOOLS = [
 
 export function VideoUpload({ error, onFiles, processingMode, onProcessingModeChange, shotMode, onShotModeChange }: VideoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
   const depthOptionsRef = useRef<Array<HTMLButtonElement | null>>([]);
   const [dragging, setDragging] = useState(false);
 
@@ -101,41 +103,53 @@ export function VideoUpload({ error, onFiles, processingMode, onProcessingModeCh
           </button>
         </div>
       </fieldset>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        hidden
+        accept={VIDEO_TYPES.join(",")}
+        onChange={(event) => {
+          accept(event.currentTarget.files ?? undefined);
+          event.currentTarget.value = "";
+        }}
+      />
       <button
         className={`upload-drop ${dragging ? "is-dragging" : ""}`}
         type="button"
         onClick={() => inputRef.current?.click()}
         onDragEnter={(event) => {
           event.preventDefault();
+          if (!event.dataTransfer.types.includes("Files")) return;
+          if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+          dragDepth.current += 1;
           setDragging(true);
         }}
         onDragOver={(event) => event.preventDefault()}
-        onDragLeave={() => setDragging(false)}
+        onDragLeave={(event) => {
+          if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (!dragDepth.current) setDragging(false);
+        }}
         onDrop={(event) => {
           event.preventDefault();
+          dragDepth.current = 0;
           setDragging(false);
           accept(event.dataTransfer.files);
         }}
       >
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          accept={VIDEO_TYPES.join(",")}
-          onChange={(event) => {
-            accept(event.target.files ?? undefined);
-            event.currentTarget.value = "";
-          }}
-          tabIndex={-1}
-        />
         <span className="upload-icon"><Upload aria-hidden="true" size={24} /></span>
         <strong>Choose basketball videos</strong>
-        <span>Drop one or several clips · MP4, MOV, M4V, AVI, MKV, WebM, MPEG, and more</span>
+        <span>{IS_GITHUB_PAGES
+          ? "Drop one or several clips · H.264 MP4 recommended"
+          : "Drop one or several clips · MP4, MOV, M4V, AVI, MKV, WebM, MPEG, and more"}</span>
       </button>
       {error ? <p className="error-message" role="alert">{error}</p> : null}
       <div className="privacy-row">
-        <span><ScanLine aria-hidden="true" size={16} />Browser motion review</span>
-        <span><Film aria-hidden="true" size={16} />Rotation and codec normalized automatically</span>
+        <span><ScanLine aria-hidden="true" size={16} />{IS_GITHUB_PAGES ? "Browser motion review" : "Local shot analysis"}</span>
+        <span><Film aria-hidden="true" size={16} />{IS_GITHUB_PAGES
+          ? "Uses your browser’s video decoder"
+          : "Rotation and playback formats normalized where supported"}</span>
       </div>
     </div>
   );

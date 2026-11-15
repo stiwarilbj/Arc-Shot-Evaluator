@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   CheckCircle2,
@@ -139,39 +139,69 @@ function WorkspaceMenu({ label, id, items }: {
   items: { label: string; active: boolean; onSelect: () => void }[];
 }) {
   const [open, setOpen] = useState(false);
-  const suppressFocus = useRef(false);
+  const container = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const openingFocus = useRef<"first" | "last" | null>(null);
+
+  function menuItems() {
+    return Array.from(menu.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? []);
+  }
+
+  useLayoutEffect(() => {
+    if (!open || !openingFocus.current) return;
+    const entries = menuItems();
+    entries.at(openingFocus.current === "first" ? 0 : -1)?.focus();
+    openingFocus.current = null;
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOutside(event: PointerEvent) {
+      if (event.target instanceof Node && !container.current?.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [open]);
+
+  function closeAndFocusTrigger() {
+    button.current?.focus();
+    setOpen(false);
+  }
+
   return (
     <div
+      ref={container}
       className="workspace-others"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={(event) => {
-        if (!event.currentTarget.contains(document.activeElement)) setOpen(false);
-      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        const { key } = event;
+        if (key === "Escape" && open) {
           event.preventDefault();
-          suppressFocus.current = true;
-          setOpen(false);
-          button.current?.focus();
-          suppressFocus.current = false;
+          closeAndFocusTrigger();
+          return;
         }
-        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-          event.preventDefault();
+        if (key === "Tab" && open) {
+          closeAndFocusTrigger();
+          return;
+        }
+        if (key !== "ArrowDown" && key !== "ArrowUp" && key !== "Home" && key !== "End") return;
+        event.preventDefault();
+        const backwards = key === "ArrowUp" || key === "End";
+        if (!open) {
+          openingFocus.current = backwards ? "last" : "first";
           setOpen(true);
-          const container = event.currentTarget;
-          const key = event.key;
-          setTimeout(() => {
-            if (container.querySelector<HTMLElement>("[role=menu]")?.hidden !== false) return;
-            const entries = Array.from(container.querySelectorAll<HTMLButtonElement>("[role=menuitem]"));
-            const current = entries.indexOf(document.activeElement as HTMLButtonElement);
-            const next = key === "Home" ? 0 : key === "End" ? entries.length - 1 : key === "ArrowUp" ? (current <= 0 ? entries.length - 1 : current - 1) : (current + 1) % entries.length;
-            entries[next]?.focus();
-          }, 0);
+          return;
         }
+        const entries = menuItems();
+        const current = entries.findIndex((entry) => entry === document.activeElement);
+        let next = backwards ? entries.length - 1 : 0;
+        if (current >= 0 && (key === "ArrowUp" || key === "ArrowDown")) {
+          next = (current + (backwards ? -1 : 1) + entries.length) % entries.length;
+        }
+        entries[next]?.focus();
       }}
     >
       <button
@@ -181,13 +211,15 @@ function WorkspaceMenu({ label, id, items }: {
         aria-expanded={open}
         aria-controls={id}
         className={items.some(item => item.active) ? "is-active" : ""}
-        onFocus={() => { if (!suppressFocus.current) setOpen(true); }}
-        onClick={() => setOpen(true)}
+        onClick={(event) => {
+          if (!open && event.detail === 0) openingFocus.current = "first";
+          setOpen(!open);
+        }}
       >
         {label} <ChevronDown size={14} />
       </button>
-      <div className="workspace-others-menu" id={id} role="menu" hidden={!open}>
-        {items.map(item => <button key={item.label} type="button" role="menuitem" aria-current={item.active ? "page" : undefined} onClick={() => { item.onSelect(); setOpen(false); }}>
+      <div ref={menu} className="workspace-others-menu" id={id} role="menu" aria-label={label} hidden={!open}>
+        {items.map(item => <button key={item.label} type="button" role="menuitem" tabIndex={-1} aria-current={item.active ? "page" : undefined} onClick={() => { closeAndFocusTrigger(); item.onSelect(); }}>
           {item.label}
         </button>)}
       </div>
