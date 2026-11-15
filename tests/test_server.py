@@ -1,4 +1,8 @@
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from threading import Barrier
 
 from fastapi.testclient import TestClient
 
@@ -231,11 +235,18 @@ def test_shot_review_checks_clip_frame_bounds_before_saving(tmp_path, monkeypatc
     monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
     monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
     original_result = json.loads((session_dir / "analysis.json").read_text())
+    original_export = json.dumps(original_result["shots"][0]) + "\n"
+    export_path = session_dir / "shots.jsonl"
+    export_path.write_text(original_export)
     job = {"id": session_dir.name, "status": "done", "result": original_result}
     (session_dir / "job.json").write_text(json.dumps(job))
     monkeypatch.setitem(api_module.jobs, job["id"], job)
     client = TestClient(app)
     shots_url = f"/api/sessions/{session_dir.name}/shots"
+    export_url = f"/media/{session_dir.name}/shots.jsonl"
+    uncorrected = client.get(export_url)
+    assert uncorrected.text == original_export
+    assert uncorrected.headers["cache-control"] == "no-store"
 
     for invalid in (-1, 0.5, True, 60, 999999):
         assert client.patch(f"{shots_url}/1", json={"release_frame": invalid}).status_code == 400
@@ -249,8 +260,101 @@ def test_shot_review_checks_clip_frame_bounds_before_saving(tmp_path, monkeypatc
     added = client.post(shots_url, json={"outcome": "miss", "release_frame": 0})
     assert added.status_code == 200
     assert next(shot for shot in added.json()["shots"] if shot["id"] == 2)["release_frame"] == 0
+    exported = client.get(export_url)
+    assert exported.status_code == 200
+    assert [json.loads(line) for line in exported.text.splitlines()] == added.json()["shots"]
+    assert exported.headers["cache-control"] == "no-store"
+    assert export_path.read_text() == original_export
     job_url = f"/api/jobs/{session_dir.name}"
     assert client.get(job_url).json()["result"]["shots"] == added.json()["shots"]
     assert job["result"]["shots"] == original_result["shots"]
     monkeypatch.delitem(api_module.jobs, job["id"])
     assert client.get(job_url).json()["result"]["shots"] == added.json()["shots"]
+
+
+def test_simultaneous_review_mutations_preserve_every_change(tmp_path, monkeypatch) -> None:
+    session_id = "concurrent-review"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    (session_dir / "analysis.json").write_text(json.dumps({
+        "session": {"id": session_id, "fps": 30, "frame_count": 120},
+        "shots": [{"id": 1, "outcome": "review", "release_frame": 10}],
+    }))
+    corrections = session_dir / "corrections.json"
+    corrections.write_text('{"version": 1, "shots": {}}')
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    read_text = Path.read_text
+
+    def slow_corrections_read(path, *args, **kwargs):
+        content = read_text(path, *args, **kwargs)
+        if path == corrections:
+            time.sleep(0.02)
+        return content
+
+    monkeypatch.setattr(Path, "read_text", slow_corrections_read)
+    calls = [
+        (api_module.correct_saved_shot, (session_id, 1, {"outcome": "make"})),
+        (api_module.correct_saved_shot, (session_id, 1, {"release_frame": 17})),
+        (api_module.update_session_context, (session_id, {"player_heights": {"player-1": 1.9}})),
+        *((api_module.add_manual_shot, (session_id, {"release_frame": frame})) for frame in (30, 60, 90)),
+    ]
+    start = Barrier(len(calls))
+
+    def run(call):
+        handler, args = call
+        start.wait(timeout=5)
+        return handler(*args)
+
+    with ThreadPoolExecutor(max_workers=len(calls)) as pool:
+        list(pool.map(run, calls))
+
+    result = api_module.get_session_by_id(session_id)
+    shots = {shot["id"]: shot for shot in result["shots"]}
+    assert shots[1]["outcome"] == "make"
+    assert shots[1]["release_frame"] == 17
+    assert set(shots) == {1, 2, 3, 4}
+    assert {shot["release_frame"] for shot in shots.values()} == {17, 30, 60, 90}
+    assert result["context"]["player_heights"] == {"player-1": 1.9}
+
+
+def test_manual_miss_breaks_a_streak_at_its_release_frame(tmp_path, monkeypatch) -> None:
+    session_id = "review-streak"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    (session_dir / "analysis.json").write_text(json.dumps({
+        "session": {"id": session_id, "fps": 30, "frame_count": 120},
+        "shots": [
+            {"id": 1, "outcome": "make", "release_frame": 10},
+            {"id": 2, "outcome": "make", "release_frame": 80},
+        ],
+    }))
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    client = TestClient(app)
+
+    assert client.get(f"/api/sessions/{session_id}").json()["summary"]["best_streak"] == 2
+    added = client.post(f"/api/sessions/{session_id}/shots", json={"outcome": "miss", "release_frame": 45})
+    assert added.status_code == 200
+    result = added.json()
+    assert [shot["id"] for shot in result["shots"]] == [1, 2, 3]
+    assert result["summary"]["best_streak"] == 1
+
+
+def test_damaged_review_file_is_preserved_when_saving(tmp_path, monkeypatch) -> None:
+    session_id = "damaged-review"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    (session_dir / "analysis.json").write_text(json.dumps({
+        "session": {"id": session_id, "fps": 30, "frame_count": 120},
+        "shots": [{"id": 1, "outcome": "review", "release_frame": 10}],
+    }))
+    damaged = session_dir / "corrections.json"
+    damaged.write_text('{"version": 2, "shots":')
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+
+    result = TestClient(app).patch(f"/api/sessions/{session_id}/shots/1", json={"outcome": "make"})
+    assert result.status_code == 409
+    assert "preserved" in result.json()["detail"]
+    assert damaged.read_text() == '{"version": 2, "shots":'

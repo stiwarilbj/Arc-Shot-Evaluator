@@ -1986,24 +1986,22 @@ def refresh_saved_analysis(payload: dict) -> dict:
     corrections_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
     corrections: dict[str, dict] = {}
     session_context: dict[str, Any] = {}
-    if session_id and corrections_path.is_file():
-        try:
-            stored = json.loads(corrections_path.read_text())
-            corrections = stored.get("shots", {}) if isinstance(stored, dict) else {}
-            session_context = stored.get("session_context", {}) if isinstance(stored, dict) else {}
-            if not isinstance(session_context, dict):
-                session_context = {}
-        except (OSError, ValueError, TypeError):
-            corrections = {}
     manual_shots: list[dict] = []
     if session_id and corrections_path.is_file():
         try:
             stored = json.loads(corrections_path.read_text())
-            raw_manual = stored.get("manual_shots", []) if isinstance(stored, dict) else []
+        except (OSError, ValueError, TypeError):
+            stored = {}
+        if isinstance(stored, dict):
+            raw_corrections = stored.get("shots")
+            raw_context = stored.get("session_context")
+            raw_manual = stored.get("manual_shots")
+            if isinstance(raw_corrections, dict):
+                corrections = raw_corrections
+            if isinstance(raw_context, dict):
+                session_context = raw_context
             if isinstance(raw_manual, list):
                 manual_shots = [dict(item) for item in raw_manual if isinstance(item, dict)]
-        except (OSError, ValueError, TypeError):
-            manual_shots = []
     if session_context.get("shot_mode") in {"free_throw", "jump_shot"}:
         shot_mode = session_context["shot_mode"]
     for manual in manual_shots:
@@ -2235,7 +2233,7 @@ def summarize_session(shots: list[ShotAnalysis], shot_mode: str = "free_throw") 
     decided = [shot for shot in stats_shots if shot.outcome in {"make", "miss"}]
     makes = sum(shot.outcome == "make" for shot in decided)
     streak = best = 0
-    for shot in stats_shots:
+    for shot in sorted(stats_shots, key=lambda item: (item.release_frame, item.id)):
         if shot.outcome == "make":
             streak += 1
             best = max(best, streak)

@@ -3,6 +3,7 @@ import { browserShotEndFrame, isReleaseFrame, refreshBrowserShotReview, releaseF
 import { IS_GITHUB_PAGES } from "../runtime";
 
 const browserSessions = new Map<string, AnalysisSession>();
+const localReviewRequests = new Map<string, Promise<AnalysisSession>>();
 
 // GitHub Pages cannot run the FastAPI vision worker, but it can serve the same
 // project-local clips that power the local landing page. Keep the hosted
@@ -47,6 +48,25 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
     throw new Error(body.detail ?? `Request failed (${response.status})`);
   }
   return (await response.json()) as T;
+}
+
+function saveLocalReview(sessionId: string, path: string, method: "PATCH" | "POST", value: object) {
+  // Each response contains the whole review. Finish earlier requests before
+  // sending later ones so the UI cannot apply an older snapshot last.
+  const previous = localReviewRequests.get(sessionId);
+  const request = (previous ?? Promise.resolve()).catch(() => undefined).then(async () =>
+    parseJsonResponse<AnalysisSession>(await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    })),
+  );
+  localReviewRequests.set(sessionId, request);
+  const release = () => {
+    if (localReviewRequests.get(sessionId) === request) localReviewRequests.delete(sessionId);
+  };
+  void request.then(release, release);
+  return request;
 }
 
 export async function fetchExampleVideos(signal?: AbortSignal): Promise<ExampleVideo[]> {
@@ -136,13 +156,7 @@ export async function correctSavedShot(
       return refreshBrowserShotReview({ ...session, shots });
     });
   }
-  return parseJsonResponse<AnalysisSession>(
-    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/shots/${shotId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(correction),
-    }),
-  );
+  return saveLocalReview(sessionId, `shots/${shotId}`, "PATCH", correction);
 }
 
 export async function addManualShot(
@@ -185,13 +199,7 @@ export async function addManualShot(
       return refreshBrowserShotReview({ ...session, shots });
     });
   }
-  return parseJsonResponse<AnalysisSession>(
-    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/shots`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(attempt),
-    }),
-  );
+  return saveLocalReview(sessionId, "shots", "POST", attempt);
 }
 
 export async function updateSessionContext(
@@ -204,13 +212,7 @@ export async function updateSessionContext(
       context: { ...session.context, ...context, shot_mode: context.shot_mode ?? session.context?.shot_mode },
     }));
   }
-  return parseJsonResponse<AnalysisSession>(
-    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/context`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(context),
-    }),
-  );
+  return saveLocalReview(sessionId, "context", "PATCH", context);
 }
 
 export async function reanalyzeSession(

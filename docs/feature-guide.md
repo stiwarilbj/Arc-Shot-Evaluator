@@ -58,10 +58,11 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
 - Review makes, misses, and uncertain attempts · Use a whole release frame within
   the clip to correct timing or add a missed attempt · If browser storage is
   unavailable, per-shot notes last while the result stays open
-- Hosted shot data JSON includes the current corrections and manually added
-  attempts · Download the source video from the hosted review · The full local
-  pipeline provides annotated video and original model evidence in JSONL · Local
-  corrections are reapplied when a finished result reopens from the queue
+- Hosted JSON and downloaded-app JSONL include saved corrections and manually
+  added attempts · The best streak uses release order · Local corrections are
+  reapplied when a finished result reopens from the queue
+- Download the source video in hosted review or the rendered annotated video in
+  the downloaded app · The local app keeps original model evidence on disk
 
 ### Hosted review versus full local analysis
 

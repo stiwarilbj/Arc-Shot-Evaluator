@@ -7,7 +7,9 @@ import shutil
 import threading
 import time
 import uuid
+from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 # Import before FastAPI, NumPy, OpenCV, or PyTorch so native libraries inherit
@@ -15,7 +17,7 @@ from pathlib import Path
 from backend.runtime import ANALYSIS_WORKERS
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.analysis.diagnostics import AnalysisTimingTrace
@@ -61,6 +63,7 @@ app.include_router(pocket_actions_router)
 app.include_router(jumper_api.router)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
+review_write_lock = threading.Lock()
 job_cancel_events: dict[str, threading.Event] = {}
 job_futures: dict[str, Future] = {}
 job_session_dirs: dict[str, Path] = {}
@@ -464,6 +467,39 @@ def _validate_release_frame(frame: object, payload: dict) -> None:
         raise HTTPException(400, f"Enter a whole release frame from 0 to {frame_count - 1}")
 
 
+@contextmanager
+def _edit_saved_review(session_id: str, *, version: int = 1) -> Iterator[dict]:
+    path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
+    with review_write_lock:
+        try:
+            stored = json.loads(path.read_text())
+        except FileNotFoundError:
+            stored = {"version": version, "shots": {}}
+        except ValueError as error:
+            raise HTTPException(409, "Saved corrections are unreadable · The existing file was preserved") from error
+        except OSError as error:
+            raise HTTPException(503, "Saved corrections could not be read · Try again") from error
+        if (
+            not isinstance(stored, dict)
+            or not isinstance(stored.get("shots", {}), dict)
+            or not isinstance(stored.get("manual_shots", []), list)
+            or not isinstance(stored.get("session_context", {}), dict)
+        ):
+            raise HTTPException(409, "Saved corrections are invalid · The existing file was preserved")
+        yield stored
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(json.dumps(stored, indent=2))
+            os.replace(temporary, path)
+        except OSError as error:
+            raise HTTPException(503, "Could not save the review · Try again") from error
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Could not clean up a temporary review file", exc_info=True)
+
+
 @app.patch("/api/sessions/{session_id}/shots/{shot_id}")
 def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
     """Persist a user correction without overwriting model evidence."""
@@ -514,35 +550,22 @@ def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
     payload = json.loads(analysis_path.read_text())
     if "release_frame" in correction:
         _validate_release_frame(correction["release_frame"], payload)
-    correction_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
-    stored: dict = {"version": 1, "shots": {}}
-    if correction_path.is_file():
-        try:
-            loaded = json.loads(correction_path.read_text())
-            if isinstance(loaded, dict):
-                stored.update(loaded)
-        except (OSError, ValueError, TypeError):
-            pass
-    original_ids = {int(shot.get("id", -1)) for shot in payload.get("shots", [])}
-    raw_manual = stored.get("manual_shots", [])
-    manual_ids = {
-        int(shot.get("id", -1))
-        for shot in (raw_manual if isinstance(raw_manual, list) else [])
-        if isinstance(shot, dict)
-    }
-    if shot_id not in original_ids and shot_id not in manual_ids:
-        raise HTTPException(404, "Shot not found")
-    shots = stored.setdefault("shots", {})
-    if not isinstance(shots, dict):
-        shots = {}
-        stored["shots"] = shots
-    existing = shots.get(str(shot_id), {})
-    if not isinstance(existing, dict):
-        existing = {}
-    existing.update(correction)
-    existing["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    shots[str(shot_id)] = existing
-    correction_path.write_text(json.dumps(stored, indent=2))
+    with _edit_saved_review(session_id) as stored:
+        original_ids = {int(shot.get("id", -1)) for shot in payload.get("shots", [])}
+        manual_ids = {
+            int(shot.get("id", -1))
+            for shot in stored.get("manual_shots", [])
+            if isinstance(shot, dict)
+        }
+        if shot_id not in original_ids and shot_id not in manual_ids:
+            raise HTTPException(404, "Shot not found")
+        shots = stored.setdefault("shots", {})
+        existing = shots.get(str(shot_id), {})
+        if not isinstance(existing, dict):
+            raise HTTPException(409, "Saved shot correction is invalid · The existing file was preserved")
+        existing.update(correction)
+        existing["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        shots[str(shot_id)] = existing
     return refresh_saved_analysis(payload)
 
 
@@ -568,55 +591,43 @@ def add_manual_shot(session_id: str, attempt: dict) -> dict:
     payload = json.loads(analysis_path.read_text())
     _validate_release_frame(release_frame, payload)
     existing_ids = [int(shot.get("id", 0)) for shot in payload.get("shots", [])]
-    correction_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
-    stored: dict = {"version": 1, "shots": {}, "manual_shots": []}
-    if correction_path.is_file():
-        try:
-            loaded = json.loads(correction_path.read_text())
-            if isinstance(loaded, dict):
-                stored.update(loaded)
-        except (OSError, ValueError, TypeError):
-            pass
-    manual_shots = stored.setdefault("manual_shots", [])
-    if not isinstance(manual_shots, list):
-        manual_shots = []
-        stored["manual_shots"] = manual_shots
-    for manual in manual_shots:
-        if isinstance(manual, dict):
-            existing_ids.append(int(manual.get("id", 0)))
-    shot_id = max(existing_ids, default=0) + 1
-    fps = float(payload.get("session", {}).get("fps") or 0.0)
-    manual_shots.append({
-        "id": shot_id,
-        "outcome": outcome,
-        "confidence": 1.0,
-        "observation_confidence": 1.0,
-        "release_frame": release_frame,
-        "release_time": round(release_frame / fps, 3) if fps > 0 else 0.0,
-        "end_frame": release_frame,
-        "release_speed_ms": None,
-        "release_height_m": None,
-        "entry_angle_deg": None,
-        "arc_peak_m": None,
-        "form": {"elbow": None, "knee": None, "shoulder": None, "hip": None},
-        "flags": ["manually added attempt; no model trace is available"],
-        "evidence": {
-            "manual": True,
-            "outcome_basis": "user-added attempt",
-            **({"shooter_id": attempt["shooter_id"]} if attempt.get("shooter_id") else {}),
-            "prediction_status": "unavailable_unvalidated",
-            "metric_availability": {},
-            "metric_uncertainty": {},
-        },
-        "correction": {
-            "source": "local_user",
-            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "fields": ["manual_attempt"],
-            **({"comment": attempt["comment"]} if attempt.get("comment") else {}),
-        },
-        "shot_mode": payload.get("shot_mode", "free_throw"),
-    })
-    correction_path.write_text(json.dumps(stored, indent=2))
+    with _edit_saved_review(session_id) as stored:
+        manual_shots = stored.setdefault("manual_shots", [])
+        for manual in manual_shots:
+            if isinstance(manual, dict):
+                existing_ids.append(int(manual.get("id", 0)))
+        shot_id = max(existing_ids, default=0) + 1
+        fps = float(payload.get("session", {}).get("fps") or 0.0)
+        manual_shots.append({
+            "id": shot_id,
+            "outcome": outcome,
+            "confidence": 1.0,
+            "observation_confidence": 1.0,
+            "release_frame": release_frame,
+            "release_time": round(release_frame / fps, 3) if fps > 0 else 0.0,
+            "end_frame": release_frame,
+            "release_speed_ms": None,
+            "release_height_m": None,
+            "entry_angle_deg": None,
+            "arc_peak_m": None,
+            "form": {"elbow": None, "knee": None, "shoulder": None, "hip": None},
+            "flags": ["manually added attempt; no model trace is available"],
+            "evidence": {
+                "manual": True,
+                "outcome_basis": "user-added attempt",
+                **({"shooter_id": attempt["shooter_id"]} if attempt.get("shooter_id") else {}),
+                "prediction_status": "unavailable_unvalidated",
+                "metric_availability": {},
+                "metric_uncertainty": {},
+            },
+            "correction": {
+                "source": "local_user",
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "fields": ["manual_attempt"],
+                **({"comment": attempt["comment"]} if attempt.get("comment") else {}),
+            },
+            "shot_mode": payload.get("shot_mode", "free_throw"),
+        })
     return refresh_saved_analysis(payload)
 
 
@@ -669,24 +680,12 @@ def update_session_context(session_id: str, context: dict) -> dict:
         for key, value in heights.items()
     ):
         raise HTTPException(400, "player_heights values must be between 0.5 and 2.8 metres")
-    correction_path = ANALYSIS_SESSIONS_DIR / session_id / "corrections.json"
-    stored: dict = {"version": 2, "shots": {}, "manual_shots": [], "session_context": {}}
-    if correction_path.is_file():
-        try:
-            loaded = json.loads(correction_path.read_text())
-            if isinstance(loaded, dict):
-                stored.update(loaded)
-        except (OSError, ValueError, TypeError):
-            pass
-    session_context = stored.setdefault("session_context", {})
-    if not isinstance(session_context, dict):
-        session_context = {}
-        stored["session_context"] = session_context
-    for field in allowed:
-        if field in context:
-            session_context[field] = context[field]
-    session_context["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    correction_path.write_text(json.dumps(stored, indent=2))
+    with _edit_saved_review(session_id, version=2) as stored:
+        session_context = stored.setdefault("session_context", {})
+        for field in allowed:
+            if field in context:
+                session_context[field] = context[field]
+        session_context["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     return refresh_saved_analysis(json.loads(analysis_path.read_text()))
 
 
@@ -723,12 +722,22 @@ def reanalyze_saved_session(session_id: str, mode: str = "normal", shot_mode: st
 
 
 @app.get("/media/{session_id}/{filename}")
-def serve_session_artifact(session_id: str, filename: str) -> FileResponse:
+def serve_session_artifact(session_id: str, filename: str) -> Response:
     if not session_id.replace("-", "").isalnum() or Path(filename).name != filename:
         raise HTTPException(400, "Invalid media path")
     path = ANALYSIS_SESSIONS_DIR / session_id / filename
     if not path.is_file():
         raise HTTPException(404, "Media not found")
+    headers = None
+    if filename == "shots.jsonl":
+        headers = {"Cache-Control": "no-store"}
+        if path.with_name("corrections.json").is_file():
+            shots = get_session_by_id(session_id)["shots"]
+            return Response(
+                "".join(json.dumps(shot) + "\n" for shot in shots),
+                media_type="application/jsonl",
+                headers=headers,
+            )
     suffix = path.suffix.lower()
     media_type = (
         "video/mp4"
@@ -743,7 +752,7 @@ def serve_session_artifact(session_id: str, filename: str) -> FileResponse:
         if suffix == ".jsonl"
         else "application/json"
     )
-    return FileResponse(path, media_type=media_type, filename=None)
+    return FileResponse(path, media_type=media_type, filename=None, headers=headers)
 
 
 frontend_assets_dir = FRONTEND_DIST_DIR / "assets"

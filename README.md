@@ -16,7 +16,7 @@ On GitHub Pages, add personal videos again after a reload · **Clear queue** kee
 
 | **Workspace**                                                                        | **What you can do**                                                                                           |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| [Shot Analyzer](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#shot-analyzer)      | Upload footage, review attempts with pose overlays when available, correct outcomes and release frames, and export shot data |
+| [Shot Analyzer](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#shot-analyzer)      | Upload footage, review attempts with pose overlays when available, correct outcomes and release frames, and export the reviewed shot data |
 | [Playbook](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#playbook)                | Draw and simulate plays, choreograph timing, rehearse roles, teach reads, check spacing, connect bait to payoff, build walkthroughs, and exchange player responsibilities across endings |
 | [Counter Lab](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#counter-lab)          | Test defenses, follow recorded openings through a possession, compare repairs, and replay a defender’s dilemma |
 | [Others → Guess the Jumper](https://stiwarilbj.github.io/Arc-Shot-Evaluator/#jumper) | Mask and edit jumpshots, keep a private library, and guess the shooter · Desktop and split-screen layouts fit without page scrolling |
