@@ -44,25 +44,36 @@ const MAX_CONCURRENT_ANALYSES = 1;
 const QUEUE_STORAGE_KEY = "arc-analysis-queue-v2";
 const HOSTED_QUEUE_STORAGE_KEY = "arc-analysis-queue-pages-v1";
 const HOSTED_UPLOAD_INTERRUPTED = "This upload was interrupted by a page reload · Add the video again";
-function delay(milliseconds: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+const MISSING_REVIEW_RESULT = "No review result was saved · Analyze the video again";
+function delay(milliseconds: number, signal: AbortSignal) {
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }, milliseconds);
+    function cancel() {
+      window.clearTimeout(timer);
+      reject(signal.reason);
+    }
+    signal.addEventListener("abort", cancel, { once: true });
+  });
 }
 
-async function fetchAnalysisJobWithRetries(jobId: string) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+async function fetchAnalysisJobWithRetries(jobId: string, signal: AbortSignal) {
+  for (let retry = 0; ; retry += 1) {
     try {
-      return await fetchAnalysisJob(jobId);
+      const state = await fetchAnalysisJob(jobId, signal);
+      if (state.status === "done" && !state.result) throw new Error(MISSING_REVIEW_RESULT);
+      return state;
     } catch (caught) {
-      lastError = caught;
       // A busy local worker can briefly interrupt a fetch while the browser
       // is still connected. Retry those transport errors before surfacing a
       // real analysis/API error in the queue.
-      if (!(caught instanceof TypeError) || attempt === 3) throw caught;
-      await delay(350 * 2 ** attempt);
+      if (!(caught instanceof TypeError) || retry === 3 || signal.aborted) throw caught;
+      await delay(350 * 2 ** retry, signal);
     }
   }
-  throw lastError instanceof Error ? lastError : new Error("Could not read analysis status");
 }
 
 function createQueueItemId(prefix: string) {
@@ -101,6 +112,7 @@ export function ArcShotEvaluatorApp() {
   // disk for export, but opening the page never surprises the user by loading
   // an old video or replaying a stale analysis.
   const [session, setSession] = useState<AnalysisSession | null>(null);
+  const reviewOpen = useRef(false);
   const [queue, setQueue] = useState<AnalysisQueueItem[]>([]);
   const [hiddenQueueIds, setHiddenQueueIds] = useState<Set<string>>(new Set());
   const [examples, setExamples] = useState<ExampleVideo[]>([]);
@@ -144,7 +156,7 @@ export function ArcShotEvaluatorApp() {
   });
   const activeQueueItemsRef = useRef<Set<string>>(new Set());
   const cancelledQueueItemsRef = useRef<Set<string>>(new Set());
-  const browserControllersRef = useRef(new Map<string, AbortController>());
+  const queueControllersRef = useRef(new Map<string, AbortController>());
   const jobIdsRef = useRef<Map<string, string>>(new Map());
   const [queueHydrated, setQueueHydrated] = useState(false);
   const [queueSlotRevision, setQueueSlotRevision] = useState(0);
@@ -171,7 +183,8 @@ export function ArcShotEvaluatorApp() {
   }
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     let saved: Array<PersistedQueueItem | HostedPersistedQueueItem> = [];
     const storageKey = IS_GITHUB_PAGES ? HOSTED_QUEUE_STORAGE_KEY : QUEUE_STORAGE_KEY;
     try {
@@ -209,29 +222,31 @@ export function ArcShotEvaluatorApp() {
       });
       setQueue(restored);
       setQueueHydrated(true);
-      return () => {
-        cancelled = true;
-      };
+      return;
     }
-    const restored = saved.map((item) => ({
-      ...item,
-      file: undefined,
-      result: null,
-      status: item.jobId && (item.status === "queued" || item.status === "processing")
-        ? "queued" as const
-        : item.status,
-      stage: item.jobId && (item.status === "queued" || item.status === "processing")
-        ? "Reconnecting to local analysis"
-        : item.stage,
-      error: item.jobId ? item.error : item.status === "queued" ? "This upload was not started before the page closed" : item.error,
-    }));
+    const restored = saved.map((item): AnalysisQueueItem => {
+      const entry = { ...item, file: undefined, result: null };
+      if (item.status !== "queued" && item.status !== "processing") return entry;
+      if (item.jobId) return { ...entry, status: "queued", stage: "Reconnecting to local analysis", error: null };
+      if (item.kind === "example" && item.status === "queued") return entry;
+      return {
+        ...entry,
+        status: "error",
+        progress: 0,
+        stage: "Analysis interrupted",
+        error: item.kind === "upload"
+          ? "This upload could not be resumed after reload · Add the video again"
+          : "This example could not be resumed after reload · Choose it again",
+      };
+    });
     setQueue(restored);
     setQueueHydrated(true);
     restored.forEach((item) => {
-      if (!item.jobId) return;
-      fetchAnalysisJobWithRetries(item.jobId)
+      // The queue runner owns active jobs and is already polling their status.
+      if (!item.jobId || item.status === "queued") return;
+      fetchAnalysisJobWithRetries(item.jobId, signal)
         .then((state) => {
-          if (cancelled) return;
+          if (signal.aborted) return;
           if (state.status === "done" && state.result) {
             updateAnalysisQueueItem(item.id, { status: "done", stage: "Analysis complete", progress: 100, result: state.result, error: null });
           } else if (state.status === "error" || state.status === "cancelled") {
@@ -241,13 +256,11 @@ export function ArcShotEvaluatorApp() {
           }
         })
         .catch((caught: unknown) => {
-          if (cancelled) return;
+          if (signal.aborted) return;
           updateAnalysisQueueItem(item.id, { status: "error", stage: "Could not reconnect to analysis", error: caught instanceof Error ? caught.message : "Job status is unavailable" });
         });
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -266,11 +279,16 @@ export function ArcShotEvaluatorApp() {
   }, [queue, queueHydrated]);
 
   async function processQueuedAnalysis(item: AnalysisQueueItem) {
+    const controller = new AbortController();
+    const { signal } = controller;
+    queueControllersRef.current.set(item.id, controller);
     try {
       const analysisMode: ProcessingMode = isProcessingMode(item.processingMode) ? item.processingMode : "normal";
       const analysisShotMode: ShotMode = "free_throw";
       if (cancelledQueueItemsRef.current.has(item.id)) return;
-      updateAnalysisQueueItem(item.id, { status: "processing", stage: IS_GITHUB_PAGES ? "Starting browser analysis" : "Starting analysis", progress: 3, error: null });
+      const stage = IS_GITHUB_PAGES ? "Starting browser analysis"
+        : item.jobId ? "Reconnecting to local analysis" : "Starting analysis";
+      updateAnalysisQueueItem(item.id, { status: "processing", stage, progress: 3, error: null });
       if (IS_GITHUB_PAGES) {
         const example = item.kind === "example" ? examples.find((candidate) => candidate.id === item.exampleId) : undefined;
         const source = item.file
@@ -280,9 +298,6 @@ export function ArcShotEvaluatorApp() {
           // project asset without racing that request.
           ?? (item.kind === "example" ? new URL(`examples/${encodeURIComponent(item.filename)}`, document.baseURI).toString() : undefined);
         if (!source) throw new Error(item.kind === "upload" ? HOSTED_UPLOAD_INTERRUPTED : "This example is no longer available");
-        const controller = new AbortController();
-        browserControllersRef.current.set(item.id, controller);
-        const { signal } = controller;
         const browserResult = await analyzeVideoInBrowser(
           source, item.filename, analysisMode, analysisShotMode, signal,
           (progress, stage) => {
@@ -295,11 +310,7 @@ export function ArcShotEvaluatorApp() {
         }
         registerBrowserAnalysisSession(browserResult);
         updateAnalysisQueueItem(item.id, { status: "done", stage: "Analysis complete", progress: 100, result: browserResult, error: null });
-        setSession(browserResult);
-        setSelectedShot(0);
-        setReviewFrame(null);
-        setMode("pose");
-        setTab(browserResult.shots.length ? "shot" : "overview");
+        if (!reviewOpen.current) openAnalysis(browserResult);
         return;
       }
       const jobId = item.jobId ?? (item.kind === "example"
@@ -315,7 +326,7 @@ export function ArcShotEvaluatorApp() {
       updateAnalysisQueueItem(item.id, { jobId });
 
       while (true) {
-        const next = await fetchAnalysisJobWithRetries(jobId);
+        const next = await fetchAnalysisJobWithRetries(jobId, signal);
         if (cancelledQueueItemsRef.current.has(item.id)) return;
         const rawProgress = next.frames_total
           ? Math.round((next.frames_done / next.frames_total) * 100)
@@ -345,16 +356,12 @@ export function ArcShotEvaluatorApp() {
         });
         if (next.status === "done" && next.result) {
           updateAnalysisQueueItem(item.id, { status: "done", stage: "Analysis complete", progress: 100, result: next.result, error: null });
-          setSession(next.result);
-          setSelectedShot(0);
-          setReviewFrame(null);
-          setMode("pose");
-          setTab(next.result.shots.length ? "shot" : "overview");
+          if (!reviewOpen.current) openAnalysis(next.result);
           return;
         }
         if (next.status === "cancelled") return;
         if (next.status === "error") throw new Error(next.error ?? "Analysis failed");
-        await delay(WAIT_MS);
+        await delay(WAIT_MS, signal);
       }
     } catch (caught) {
       if (cancelledQueueItemsRef.current.has(item.id)) return;
@@ -364,7 +371,7 @@ export function ArcShotEvaluatorApp() {
     } finally {
       activeQueueItemsRef.current.delete(item.id);
       jobIdsRef.current.delete(item.id);
-      browserControllersRef.current.delete(item.id);
+      queueControllersRef.current.delete(item.id);
       // The stopped row may already be gone and no longer trigger scheduling.
       if (cancelledQueueItemsRef.current.delete(item.id)) setQueueSlotRevision((revision) => revision + 1);
     }
@@ -395,7 +402,7 @@ export function ArcShotEvaluatorApp() {
 
   function requestQueueCancellation(item: AnalysisQueueItem) {
     cancelledQueueItemsRef.current.add(item.id);
-    browserControllersRef.current.get(item.id)?.abort();
+    queueControllersRef.current.get(item.id)?.abort();
     const jobId = item.jobId ?? jobIdsRef.current.get(item.id);
     if (jobId) void cancelAnalysisJob(jobId).catch(() => undefined);
   }
@@ -441,13 +448,17 @@ export function ArcShotEvaluatorApp() {
   };
 
   function openCompletedAnalysis(item: AnalysisQueueItem) {
-    if (!item.result) return;
-    setSession(item.result);
+    if (item.result) openAnalysis(item.result);
+  }
+
+  function openAnalysis(result: AnalysisSession) {
+    reviewOpen.current = true;
+    setSession(result);
     setReviewOpening((opening) => opening + 1);
     setSelectedShot(0);
     setReviewFrame(null);
     setMode("pose");
-    setTab(item.result.shots.length ? "shot" : "overview");
+    setTab(result.shots.length ? "shot" : "overview");
     setError(null);
   }
 
@@ -459,6 +470,7 @@ export function ArcShotEvaluatorApp() {
   }
 
   function showHomePage() {
+    reviewOpen.current = false;
     setTab("shot");
     changeWorkspace("analyzer");
     setSession(null);
@@ -505,7 +517,7 @@ export function ArcShotEvaluatorApp() {
           {session.warnings.length ? <div className="warning-row" role="status">{session.warnings.map((warning) => warning.replace(/[.!]+$/, "")).join(" · ")}</div> : null}
         </div>
         <aside className="analysis-side-workspace">
-          <AnalysisQueue items={queue} compact {...queueActions} />
+          <AnalysisQueue items={queue} compact activeSessionId={session.session.id} {...queueActions} />
           <div className={`analysis-detail-columns ${shot?.coaching ? "" : "analysis-detail-legacy"}`}>
             {shot?.coaching ? <CoachNotes shot={shot} /> : null}
             <ShotDataPanel session={session} shot={shot} tab={tab} onSessionChange={handleSessionChange} onSeekFrame={setReviewFrame} />

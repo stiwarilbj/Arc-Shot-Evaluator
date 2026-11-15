@@ -47,8 +47,10 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
 - Choose **Fast**, **Normal** (default), or **Deep** analysis · The queue shows
   waiting, running, completed, and failed jobs · **Stop** removes the running
   item and lets the next waiting clip start · **Clear queue** removes the other
-  entries and leaves the current analysis running · You can also hide completed
-  items or reopen a result
+  entries and leaves the current analysis running · The first result opens
+  automatically when no review is open · Later results appear in the queue
+  without interrupting the clip you’re reviewing · Select a completed item to
+  open it
 - Use **Overview**, **Shot**, and **Tracking** to inspect the session, individual
   attempts, and available movement evidence · On desktop, scroll the review panel
   to reach notes and exports
@@ -76,6 +78,9 @@ converting it to H.264 MP4 or use the downloaded app
 
 After a page reload, waiting and running examples resume from the start · Add
 personal uploads again to analyze them in the new page
+
+In the downloaded app, reload reconnects to analyses already sent to the local
+worker · Add uploads again if they were still waiting to be sent
 
 The downloaded app runs the Python vision pipeline: basketball/rim detection,
 player pose, temporal tracking, shot measurements, and local Coach Notes · Source

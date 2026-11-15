@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(new URL("../frontend/package.json", import.meta.url));
 const { chromium, expect } = require("@playwright/test");
-const base = process.env.ARC_ANALYZER_URL || "http://127.0.0.1:5190/Arc-Shot-Evaluator/";
+const nativeBase = process.env.ARC_ANALYZER_NATIVE_URL;
+const base = nativeBase || process.env.ARC_ANALYZER_URL || "http://127.0.0.1:5190/Arc-Shot-Evaluator/";
 const browser = await chromium.launch({
   channel: process.env.ARC_CHROMIUM_CHANNEL || "chrome",
 });
@@ -297,6 +298,108 @@ async function checkQueueReload() {
   }
 }
 
+async function checkNativeReconnect() {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.setDefaultTimeout(8000);
+  page.on("pageerror", (error) => errors.push(error.message));
+  const pendingPoll = Promise.withResolvers();
+  const cancelled = Promise.withResolvers();
+  const releasePoll = Promise.withResolvers();
+  let polls = 0;
+  const status = (id, value, result = null) => ({
+    id, status: value, result, filename: id + ".mp4", stage: value,
+    frames_done: 0, frames_total: 0, error: null,
+  });
+  await page.addInitScript(() => {
+    const entry = (id, status, options = {}) => ({
+      id, status, filename: id + ".mp4", kind: "upload", stage: "Test",
+      progress: 0, error: null, processingMode: "normal", shotMode: "free_throw", ...options,
+    });
+    localStorage.setItem("arc-analysis-queue-v2", JSON.stringify([
+      entry("active", "processing", { jobId: "active" }),
+      entry("waiting", "queued"),
+      entry("interrupted", "processing"),
+      entry("broken", "done", { jobId: "broken" }),
+      entry("next", "queued", { kind: "example", exampleId: "example-1" }),
+    ]));
+  });
+  await page.route("**/api/examples", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/jobs/active", async (route) => {
+    if (route.request().method() === "DELETE") {
+      cancelled.resolve();
+      return route.fulfill({ json: status("active", "cancelled") });
+    }
+    polls += 1;
+    pendingPoll.resolve();
+    await releasePoll.promise;
+    await route.fulfill({ json: status("active", "processing") }).catch(() => {});
+  });
+  await page.route("**/api/jobs/broken", (route) => route.fulfill({ json: status("broken", "done") }));
+  await page.route("**/api/examples/example-1/jobs?**", (route) => route.fulfill({ json: { job_id: "next" } }));
+  await page.route("**/api/jobs/next", (route) => route.fulfill({ json: status("next", "done") }));
+  try {
+    await page.goto(base);
+    await waitForRequest({ requested: pendingPoll.promise });
+    const stop = page.getByRole("button", { name: "Stop active.mp4", exact: true });
+    await expect(stop).toBeVisible();
+    await expect(page.locator(".queue-queued")).toHaveCount(1);
+    await expect(page.locator(".queue-error").filter({ hasText: "waiting.mp4" })).toContainText("Add the video again");
+    await expect(page.locator(".queue-error").filter({ hasText: "interrupted.mp4" })).toContainText("Add the video again");
+    await expect(page.locator(".queue-error").filter({ hasText: "broken.mp4" })).toContainText("No review result was saved");
+    expect(polls).toBe(1);
+    await stop.click();
+    await waitForRequest({ requested: cancelled.promise });
+    await expect(page.locator(".queue-error").filter({ hasText: "next.mp4" })).toContainText("No review result was saved");
+    releasePoll.resolve();
+    await expect(page.locator(".queue-row").filter({ hasText: "active.mp4" })).toHaveCount(0);
+    await expect(page.locator(".queue-processing, .queue-queued")).toHaveCount(0);
+  } finally {
+    releasePoll.resolve();
+    await page.close();
+  }
+}
+
+async function checkBackgroundCompletion(width) {
+  const page = await openPage({ width, height: 800 }, width < 620);
+  const cards = page.locator(".example-card");
+  const [first, second] = await Promise.all([0, 1].map((index) => sampleInfo(cards.nth(index))));
+  const firstDelay = await delayResponse(page, first.pose);
+  const secondDelay = await delayResponse(page, second.pose);
+  try {
+    await cards.nth(0).click();
+    await waitForRequest(firstDelay);
+    await cards.nth(1).click();
+    firstDelay.release();
+    await waitForRequest(secondDelay);
+    await expect(page.locator(".header-filename")).toHaveText(first.filename);
+    await page.getByRole("button", { name: "Tracking", exact: true }).click();
+    const reviewUrl = page.url();
+    secondDelay.release();
+    await expect(page.locator(".queue-done")).toHaveCount(2);
+    await expect(page.locator(".header-filename")).toHaveText(first.filename, { timeout: 1500 });
+    await expect(page).toHaveURL(reviewUrl);
+    const viewing = page.locator('.queue-item[aria-current="true"]');
+    await expect(viewing).toContainText(first.filename);
+    await expect(viewing).toContainText("Viewing");
+    const queue = page.getByRole("complementary", { name: "Analysis Queue" });
+    const headingRight = await queue.getByRole("heading", { name: "Analysis Queue" }).evaluate((heading) => {
+      const text = document.createRange();
+      text.selectNodeContents(heading);
+      return text.getBoundingClientRect().right;
+    });
+    const count = await queue.getByText("2 saved", { exact: true }).boundingBox();
+    expect(headingRight).toBeLessThanOrEqual(count.x);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await page.getByTitle("Open this analysis").filter({ hasText: second.filename }).click();
+    await expect(page.locator(".header-filename")).toHaveText(second.filename);
+    await expect(viewing).toContainText(second.filename);
+  } finally {
+    firstDelay.release();
+    secondDelay.release();
+    await page.close();
+  }
+}
+
 async function checkClearQueue(width) {
   const page = await openPage({ width, height: width === 320 ? 640 : 900 }, width === 320);
   const cards = page.locator(".example-card");
@@ -519,7 +622,10 @@ async function checkPlaybackReview(width, height) {
   }
 }
 
-try {
+async function checkHostedAnalyzer() {
+  await checkBackgroundCompletion(1440);
+  await checkBackgroundCompletion(320);
+  console.log("Background completion kept the current tracking review open on desktop and mobile");
   await checkNavigation();
   console.log("Navigation, keyboard and touch controls, and upload layout passed at five widths");
   await checkCancellation("metadata");
@@ -544,6 +650,16 @@ try {
   await checkPlaybackReview(320, 640);
   expect(errors).toEqual([]);
   console.log("Review layout, video modes, fullscreen pose and controls, reopen, and hidden-tab pausing passed");
+}
+
+try {
+  if (nativeBase) {
+    await checkNativeReconnect();
+    expect(errors).toEqual([]);
+    console.log("Local queue restored one status poll per job, recovered missing results, and resumed the next example after stopping a stalled poll");
+  } else {
+    await checkHostedAnalyzer();
+  }
 } finally {
   await browser.close();
 }

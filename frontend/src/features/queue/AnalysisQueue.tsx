@@ -17,6 +17,7 @@ import type { AnalysisQueueItem } from "../../domain/analysisTypes";
 interface AnalysisQueueProps {
   items: AnalysisQueueItem[];
   compact?: boolean;
+  activeSessionId?: string;
   hiddenIds: Set<string>;
   onFiles: (files: File[]) => void;
   onSelectResult: (item: AnalysisQueueItem) => void;
@@ -46,6 +47,7 @@ function StatusIcon({ status }: { status: AnalysisQueueItem["status"] }) {
 export function AnalysisQueue({
   items,
   compact = false,
+  activeSessionId,
   hiddenIds,
   onFiles,
   onSelectResult,
@@ -113,44 +115,55 @@ export function AnalysisQueue({
       />
       {visibleItems.length ? (
         <div className="queue-list">
-          {visibleItems.map((item, index) => (
-            <div className={`queue-row queue-${item.status}`} key={item.id}>
-              <button
-                className="queue-item"
-                type="button"
-                disabled={!item.result}
-                onClick={() => onSelectResult(item)}
-                title={item.result ? "Open this analysis" : item.error ?? STATUS_LABEL[item.status]}
-                aria-busy={item.status === "processing"}
-              >
-                <span className="queue-index">{String(index + 1).padStart(2, "0")}</span>
-                <span className="queue-item-copy">
-                  <strong title={item.filename}>{item.filename}</strong>
-                  <span><StatusIcon status={item.status} />{item.shotMode === "jump_shot" ? "Jump shot · " : "Free throw · "}{processingModeLabel(item.processingMode)} · {item.status === "processing" && item.progress ? `${item.progress}% · ` : ""}{item.error ?? item.stage ?? STATUS_LABEL[item.status]}</span>
-                  {item.status === "processing" ? (
-                    <span className="queue-progress" aria-label={`${item.progress}% complete`}>
-                      <i style={{ width: `${Math.max(3, Math.min(98, item.progress))}%` }} />
+          {visibleItems.map((item, index) => {
+            const current = activeSessionId !== undefined && item.result?.session.id === activeSessionId;
+            return (
+              <div className={`queue-row queue-${item.status}`} key={item.id}>
+                <button
+                  className="queue-item"
+                  type="button"
+                  disabled={!item.result}
+                  onClick={() => onSelectResult(item)}
+                  title={item.result ? "Open this analysis" : item.error ?? STATUS_LABEL[item.status]}
+                  aria-busy={item.status === "processing"}
+                  aria-current={current || undefined}
+                >
+                  <span className="queue-index">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="queue-item-copy">
+                    <strong title={item.filename}>{item.filename}</strong>
+                    <span>
+                      <StatusIcon status={item.status} />
+                      {current ? "Viewing · " : ""}
+                      {item.shotMode === "jump_shot" ? "Jump shot · " : "Free throw · "}
+                      {processingModeLabel(item.processingMode)}
+                      {item.status === "processing" && item.progress ? ` · ${item.progress}%` : ""}
+                      {current ? null : ` · ${item.error ?? item.stage ?? STATUS_LABEL[item.status]}`}
                     </span>
-                  ) : null}
-                </span>
-                <span className="queue-status" aria-label={STATUS_LABEL[item.status]}><StatusIcon status={item.status} /></span>
-              </button>
-              <div className="queue-item-actions">
-                {item.status === "processing" ? (
-                  <button className="queue-action queue-stop" type="button" onClick={() => onCancel(item)} title="Stop this analysis" aria-label={`Stop ${item.filename}`}>
-                    <CircleStop size={14} />
-                  </button>
-                ) : (
-                  <button className="queue-action" type="button" onClick={() => onHide(item)} title="Hide this video" aria-label={`Hide ${item.filename}`}>
-                    <EyeOff size={14} />
-                  </button>
-                )}
-                <button className="queue-action queue-delete" type="button" onClick={() => onDelete(item)} title="Remove this video" aria-label={`Remove ${item.filename}`}>
-                  <Trash2 size={14} />
+                    {item.status === "processing" ? (
+                      <span className="queue-progress" aria-label={`${item.progress}% complete`}>
+                        <i style={{ width: `${Math.max(3, Math.min(98, item.progress))}%` }} />
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="queue-status" aria-label={STATUS_LABEL[item.status]}><StatusIcon status={item.status} /></span>
                 </button>
+                <div className="queue-item-actions">
+                  {item.status === "processing" ? (
+                    <button className="queue-action queue-stop" type="button" onClick={() => onCancel(item)} title="Stop this analysis" aria-label={`Stop ${item.filename}`}>
+                      <CircleStop size={14} />
+                    </button>
+                  ) : (
+                    <button className="queue-action" type="button" onClick={() => onHide(item)} title="Hide this video" aria-label={`Hide ${item.filename}`}>
+                      <EyeOff size={14} />
+                    </button>
+                  )}
+                  <button className="queue-action queue-delete" type="button" onClick={() => onDelete(item)} title="Remove this video" aria-label={`Remove ${item.filename}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : items.length ? (
         <div className="queue-hidden-empty">
