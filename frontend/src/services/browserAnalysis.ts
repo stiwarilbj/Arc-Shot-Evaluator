@@ -14,6 +14,7 @@ export type BrowserAnalysisProgress = (progress: number, stage: string) => void;
 type BrowserSource = File | string;
 
 const VIDEO_READ_ERROR = "This browser couldn’t read the video · Try an H.264 MP4 or use the downloaded app";
+const VIDEO_FRAME_ERROR = "This browser couldn’t load a video frame · Try again with an H.264 MP4 or use the downloaded app";
 
 function makeId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `browser-${crypto.randomUUID()}`;
@@ -26,9 +27,10 @@ function clamp(value: number, minimum: number, maximum: number) {
 
 function waitForVideoEvent(
   video: HTMLVideoElement,
-  event: "loadedmetadata" | "seeked",
+  event: "loadedmetadata" | "loadeddata" | "seeked",
   signal: AbortSignal,
-  start: () => void,
+  ready: () => boolean,
+  start?: () => void,
 ) {
   return new Promise<void>((resolve, reject) => {
     const cleanup = () => {
@@ -37,28 +39,50 @@ function waitForVideoEvent(
       video.removeEventListener("error", fail);
       signal.removeEventListener("abort", abort);
     };
-    const finish = () => { cleanup(); resolve(); };
-    const fail = () => { cleanup(); reject(new Error(VIDEO_READ_ERROR)); };
+    const finish = () => {
+      if (!ready()) return;
+      cleanup();
+      resolve();
+    };
+    const fail = () => {
+      cleanup();
+      reject(new Error(event === "loadedmetadata" ? VIDEO_READ_ERROR : VIDEO_FRAME_ERROR));
+    };
     const abort = () => { cleanup(); reject(signal.reason); };
-    const timeout = event === "loadedmetadata"
-      ? window.setTimeout(fail, 12_000)
-      : window.setTimeout(finish, 1_500);
-    video.addEventListener(event, finish, { once: true });
+    const timeout = window.setTimeout(fail, event === "seeked" ? 5_000 : 12_000);
+    video.addEventListener(event, finish);
     video.addEventListener("error", fail, { once: true });
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) {
       abort();
       return;
     }
-    try { start(); } catch (error) { cleanup(); reject(error); }
+    if (video.error) {
+      fail();
+      return;
+    }
+    try {
+      if (start) start();
+      else finish();
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
+}
+
+function hasDecodedFrame(video: HTMLVideoElement) {
+  return !video.error && !video.seeking && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
 }
 
 async function seekVideo(video: HTMLVideoElement, time: number, signal: AbortSignal) {
   signal.throwIfAborted();
-  const target = clamp(time, 0, Math.max(0, (video.duration || time) - 0.03));
-  if (Math.abs(video.currentTime - target) < 0.02) return;
-  await waitForVideoEvent(video, "seeked", signal, () => { video.currentTime = target; });
+  const target = clamp(time, 0, Math.max(0, video.duration - 0.03));
+  const atTarget = () => hasDecodedFrame(video) && Math.abs(video.currentTime - target) < 0.02;
+  if (!atTarget()) {
+    await waitForVideoEvent(video, "seeked", signal, atTarget, () => { video.currentTime = target; });
+  }
+  return video.currentTime;
 }
 
 function frameDifference(previous: Uint8ClampedArray | null, current: Uint8ClampedArray) {
@@ -278,14 +302,21 @@ export async function analyzeVideoInBrowser(
   try {
     video.muted = true;
     video.playsInline = true;
-    video.preload = "metadata";
+    video.preload = "auto";
     onProgress(4, "Loading video");
-    await waitForVideoEvent(video, "loadedmetadata", signal, () => { video.src = sourceUrl; });
+    await waitForVideoEvent(
+      video, "loadedmetadata", signal,
+      () => video.readyState >= HTMLMediaElement.HAVE_METADATA,
+      () => { video.src = sourceUrl; },
+    );
     signal.throwIfAborted();
 
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
-    const width = video.videoWidth || 1280;
-    const height = video.videoHeight || 720;
+    const { duration, videoWidth: width, videoHeight: height } = video;
+    if (!width || !height) throw new Error("This file doesn’t contain a readable video track · Choose a basketball video");
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error(VIDEO_READ_ERROR);
+    await waitForVideoEvent(video, "loadeddata", signal, () => hasDecodedFrame(video));
+    signal.throwIfAborted();
+
     const poseOverlay = typeof source === "string" ? await loadPoseOverlay(filename, signal) : undefined;
     const fps = poseOverlay?.fps ?? 30;
     const poseFrameCount = poseOverlay?.frames.reduce((maximum, frame) => Math.max(maximum, frame.frame + 1), 0) ?? 0;
@@ -294,22 +325,19 @@ export async function analyzeVideoInBrowser(
     canvas.width = Math.min(320, width);
     canvas.height = Math.max(1, Math.round(canvas.width * (height / width)));
     const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("Couldn’t start browser frame analysis · Reload or use the downloaded app");
     const motion: Array<{ time: number; score: number; thumbnail: string }> = [];
     let previous: Uint8ClampedArray | null = null;
 
     for (let index = 0; index < sampleCount; index += 1) {
-      const time = duration * (index / Math.max(1, sampleCount - 1));
-      await seekVideo(video, time, signal);
+      const target = duration * (index / Math.max(1, sampleCount - 1));
+      const time = await seekVideo(video, target, signal);
       signal.throwIfAborted();
-      let score = 0;
-      let thumbnail = "";
-      if (context) {
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const image = context.getImageData(0, 0, canvas.width, canvas.height);
-        score = frameDifference(previous, image.data);
-        previous = image.data;
-        thumbnail = canvas.toDataURL("image/jpeg", 0.72);
-      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const score = frameDifference(previous, image.data);
+      previous = image.data;
+      const thumbnail = canvas.toDataURL("image/jpeg", 0.72);
       motion.push({ time, score, thumbnail });
       onProgress(10 + Math.round(((index + 1) / sampleCount) * 66), `Reading frame ${index + 1} of ${sampleCount}`);
     }

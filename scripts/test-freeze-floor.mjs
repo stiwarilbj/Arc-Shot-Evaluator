@@ -8,7 +8,7 @@ import {
   measure,
   inCourt,
   supported,
-  measurementPointSupported,
+  measurementPointSupport,
   uncertainty,
   regionPolygons,
   COURT,
@@ -245,10 +245,13 @@ assert.equal(withOutlier.status, "review");
 // Pixel diagnostics are derived from the final refit without altering it
 const imageSize = { width: 1600, height: 900 };
 const diagnosed = align([...anchors, outlier], true, imageSize);
-const { mismatches, ...diagnosedFit } = diagnosed;
-const { mismatches: omitted, ...originalFit } = withOutlier;
+const { mismatches, leaveOneOutShifts, ...diagnosedFit } = diagnosed;
+const { mismatches: omitted, leaveOneOutShifts: omittedShifts, ...originalFit } = withOutlier;
 assert.deepEqual(diagnosedFit, originalFit);
 assert.deepEqual(omitted, []);
+assert.deepEqual(omittedShifts, []);
+assert.deepEqual(leaveOneOutShifts.map((entry) => entry.id), withOutlier.inliers);
+for (const entry of leaveOneOutShifts) close(entry.pixels, 0);
 assert.equal(mismatches[0].id, "outlier");
 const expectedOutlier = project(h, LANDMARKS.find((l) => l.id === outlier.landmark).court);
 close(mismatches[0].pixels, Math.hypot(
@@ -405,27 +408,31 @@ const coverageProject = { ...clean, reviewed: true };
 const coverageFit = align(coverageProject.anchors, true);
 const endpointAt = (x, y) => ({ image: project(coverageFit.h, { x, y }) });
 for (const [x, y, expected] of [
-  [25, 10, true], [17, 10, true], [33, 10, true],
-  [17, 0, true], [33, 19, true], [25, 19, true],
-  [16.99, 10, false], [33.01, 10, false], [25, 19.01, false],
-  [25, -0.01, false], [51, 10, false],
+  [25, 10, "supported"], [17, 10, "limited"], [33, 10, "limited"],
+  [17, 0, "limited"], [33, 19, "limited"], [25, 19, "limited"],
+  [16.99, 10, "outside"], [33.01, 10, "outside"], [25, 19.01, "outside"],
+  [25, -0.01, "outside"], [51, 10, "outside"],
 ]) {
   for (const units of ["ft", "m"]) {
-    assert.equal(measurementPointSupported({ ...coverageProject, units }, coverageFit, endpointAt(x, y)), expected);
+    assert.equal(measurementPointSupport({ ...coverageProject, units }, coverageFit, endpointAt(x, y)), expected);
   }
 }
+const boundaryDistance = measure(coverageProject, coverageFit, endpointAt(17, 10), endpointAt(25, 10));
+close(boundaryDistance.value, 8);
+assert.deepEqual(boundaryDistance.limitedSupportEndpoints, ["first"]);
+assert.ok(boundaryDistance.low < 8 && boundaryDistance.high > 8);
 const coverageReview = align(coverageProject.anchors, false);
-assert.equal(measurementPointSupported(coverageProject, coverageReview, endpointAt(25, 10)), true);
+assert.equal(measurementPointSupport(coverageProject, coverageReview, endpointAt(25, 10)), "supported");
 assert.equal(measure(coverageProject, coverageReview, endpointAt(25, 10), endpointAt(28, 10)).value, undefined);
 assert.equal(measure(coverageProject, coverageFit, endpointAt(25, 10), endpointAt(40, 10)).reason, "Outside supported region");
 for (const invalidFit of [align([]), align(coverageProject.anchors.slice(1)), { ...coverageFit, hull: [] }, { ...coverageFit, h: undefined }]) {
-  assert.equal(measurementPointSupported(coverageProject, invalidFit, endpointAt(25, 10)), null);
+  assert.equal(measurementPointSupport(coverageProject, invalidFit, endpointAt(25, 10)), null);
 }
-assert.equal(measurementPointSupported(coverageProject, coverageFit, { ...endpointAt(25, 10), contactId: "missing" }), null);
+assert.equal(measurementPointSupport(coverageProject, coverageFit, { ...endpointAt(25, 10), contactId: "missing" }), null);
 const linkedEndpoint = { ...endpointAt(25, 10), contactId: "moving" };
-for (const [x, expected] of [[25, true], [40, false]]) {
+for (const [x, expected] of [[25, "supported"], [40, "outside"]]) {
   const current = { ...coverageProject, contacts: [{ id: "moving", label: "1", status: "uncertain", image: endpointAt(x, 10).image }] };
-  assert.equal(measurementPointSupported(current, coverageFit, linkedEndpoint), expected, "bound endpoints use the current contact even when their stored image or grounding is stale");
+  assert.equal(measurementPointSupport(current, coverageFit, linkedEndpoint), expected, "bound endpoints use the current contact even when their stored image or grounding is stale");
 }
 const coverageDisabled = {
   ...coverageProject.anchors[0], id: "ignored", enabled: false,
@@ -441,12 +448,12 @@ const narrowConsensus = [
 const narrowFit = align(narrowConsensus, true);
 assert.ok(narrowFit.rejected.includes("ignored"));
 assert.deepEqual(narrowFit.hull, coverageFit.hull, "an outlying court landmark cannot enlarge the accepted hull");
-assert.equal(measurementPointSupported(coverageProject, narrowFit, endpointAt(10, 10)), false);
+assert.equal(measurementPointSupport(coverageProject, narrowFit, endpointAt(10, 10)), "outside");
 for (const floor of [{ x: -1e-6, y: 0 }, { x: 50.000001, y: 10 }, { x: 25, y: 47.000001 }, { x: NaN, y: 10 }]) {
   assert.equal(supported(floor, ready), false, "boundary round-off tolerance cannot admit genuinely out-of-court or invalid points");
 }
 const impossibleProjection = { ...coverageFit, inverse: [1, 0, 0, 0, 1, 0, 0, 0, 0] };
-assert.equal(measurementPointSupported(coverageProject, impossibleProjection, endpointAt(25, 10)), null);
+assert.equal(measurementPointSupport(coverageProject, impossibleProjection, endpointAt(25, 10)), null);
 assert.ok(!inCourt({ x: 0, y: -1 }));
 assert.ok(inCourt({ x: 50, y: 47 }));
 assert.equal(uncertainty(ready, { x: 200, y: 1 }, 1600, 1200), null);

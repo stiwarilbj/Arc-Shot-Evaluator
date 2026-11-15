@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { readFile } from "node:fs/promises";
 import { setTimeout as wait } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
@@ -9,6 +10,7 @@ const browser = await chromium.launch({
   channel: process.env.ARC_CHROMIUM_CHANNEL || "chrome",
 });
 const errors = [];
+const uploadFixture = fileURLToPath(new URL("../examples/20.0-26.0.mp4", import.meta.url));
 
 async function openPage(viewport, touch = false) {
   const page = await browser.newPage({ viewport, hasTouch: touch, isMobile: touch });
@@ -100,49 +102,57 @@ async function waitForRequest(delayed) {
   }
 }
 
+async function sampleInfo(card) {
+  const source = await card.locator("video").evaluate((video) => video.src);
+  const filename = decodeURIComponent(new URL(source).pathname.split("/").at(-1));
+  const pose = new URL(`pose-data/${encodeURIComponent(filename)}.json`, source).href;
+  return { source, filename, pose };
+}
+
+async function stallSamplerSeek(page, source, sendWrongPosition = false) {
+  await page.evaluate(({ source, sendWrongPosition }) => {
+    const position = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
+    Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+      ...position,
+      set(time) {
+        if (!this.isConnected && this.src === source) {
+          window.delayedAnalyzerSeek = true;
+          if (sendWrongPosition) this.dispatchEvent(new Event("seeked"));
+          return;
+        }
+        position.set.call(this, time);
+      },
+    });
+  }, { source, sendWrongPosition });
+}
+
 async function checkCancellation(stage) {
   const page = await openPage({ width: 1440, height: 900 });
   const cards = page.locator(".example-card");
   const first = cards.nth(0);
   const second = cards.nth(1);
-  const videos = await Promise.all([first, second].map((card) => card.locator("video").evaluate((video) => video.src)));
-  const names = videos.map((url) => decodeURIComponent(new URL(url).pathname.split("/").at(-1)));
-  const poseUrl = (video, filename) => new URL(`pose-data/${encodeURIComponent(filename)}.json`, video).href;
+  const [firstVideo, secondVideo] = await Promise.all([first, second].map(sampleInfo));
   const stopped = stage === "seek" ? null
-    : await delayResponse(page, stage === "metadata" ? videos[0] : poseUrl(videos[0], names[0]));
-  if (stage === "seek") {
-    await page.evaluate((source) => {
-      const position = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
-      Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
-        ...position,
-        set(time) {
-          if (!this.isConnected && this.src === source) {
-            window.delayedAnalyzerSeek = true;
-            return;
-          }
-          position.set.call(this, time);
-        },
-      });
-    }, videos[0]);
-  }
-  const waiting = await delayResponse(page, poseUrl(videos[1], names[1]));
+    : await delayResponse(page, stage === "metadata" ? firstVideo.source : firstVideo.pose);
+  if (stage === "seek") await stallSamplerSeek(page, firstVideo.source);
+  const waiting = await delayResponse(page, secondVideo.pose);
   try {
     await first.click();
     if (stopped) await waitForRequest(stopped);
     else await page.waitForFunction(() => window.delayedAnalyzerSeek === true);
-    const stop = page.getByRole("button", { name: `Stop ${names[0]}`, exact: true });
+    const stop = page.getByRole("button", { name: `Stop ${firstVideo.filename}`, exact: true });
     await expect(stop).toBeVisible();
     await second.click();
-    await expect(page.locator(".queue-queued")).toContainText(names[1]);
+    await expect(page.locator(".queue-queued")).toContainText(secondVideo.filename);
     await stop.click();
-    await expect(page.locator(".queue-processing")).toContainText(names[1]);
+    await expect(page.locator(".queue-processing")).toContainText(secondVideo.filename);
     await waitForRequest(waiting);
     stopped?.release();
     await expect(page.locator(".analysis-session-shell .workspace-tabs")).toHaveCount(0);
     waiting.release();
     await expect(page.locator(".queue-done")).toHaveCount(1);
-    await expect(page.locator(".queue-done")).toContainText(names[1]);
-    await expect(page.locator(".header-filename")).toHaveText(names[1]);
+    await expect(page.locator(".queue-done")).toContainText(secondVideo.filename);
+    await expect(page.locator(".header-filename")).toHaveText(secondVideo.filename);
     await expect(page.getByRole("alert")).toHaveCount(0);
   } finally {
     stopped?.release();
@@ -179,17 +189,140 @@ async function checkUploads() {
     await expect(button).not.toHaveClass(/is-dragging/);
     await expect(page.locator(".queue-error")).toContainText("Try an H.264 MP4 or use the downloaded app");
 
-    const file = fileURLToPath(new URL("../examples/20.0-26.0.mp4", import.meta.url));
-    await choose(file);
+    await choose(uploadFixture);
     await expect(page.locator(".queue-done")).toContainText("20.0-26.0.mp4");
     await expect.poll(() => page.locator(".analysis-session-shell video").first().evaluate(
       (video) => video.currentSrc.startsWith("blob:") && video.readyState >= 1,
     )).toBe(true);
     await page.locator(".header-actions button").last().click();
-    await choose(file);
+    await choose(uploadFixture);
     await expect(page.locator(".queue-done")).toHaveCount(2);
   } finally {
     await transfer.dispose();
+    await page.close();
+  }
+}
+
+async function checkSeekTimeout() {
+  const page = await openPage({ width: 1440, height: 900 });
+  try {
+    const cards = page.locator(".example-card");
+    const [first, second] = await Promise.all([cards.nth(0), cards.nth(1)].map(sampleInfo));
+    await stallSamplerSeek(page, first.source, true);
+    await cards.nth(0).click();
+    await page.waitForFunction(() => window.delayedAnalyzerSeek === true);
+    await cards.nth(1).click();
+    await expect(page.locator(".queue-queued")).toContainText(second.filename);
+    const failed = page.locator(".queue-error");
+    await expect(failed).toContainText("couldn’t load a video frame", { timeout: 8000 });
+    await expect(failed).toContainText(first.filename);
+    await expect(page.locator(".queue-done")).toHaveCount(1, { timeout: 12000 });
+    await expect(page.locator(".header-filename")).toHaveText(second.filename);
+  } finally {
+    await page.close();
+  }
+}
+
+async function checkAudioOnlyUpload() {
+  // One second of silence in a valid mono PCM WAV container.
+  const audio = Buffer.alloc(44 + 8000, 128);
+  audio.write("RIFF", 0);
+  audio.writeUInt32LE(audio.length - 8, 4);
+  audio.write("WAVEfmt ", 8);
+  audio.writeUInt32LE(16, 16);
+  audio.writeUInt16LE(1, 20);
+  audio.writeUInt16LE(1, 22);
+  audio.writeUInt32LE(8000, 24);
+  audio.writeUInt32LE(8000, 28);
+  audio.writeUInt16LE(1, 32);
+  audio.writeUInt16LE(8, 34);
+  audio.write("data", 36);
+  audio.writeUInt32LE(8000, 40);
+  const page = await openPage({ width: 390, height: 700 }, true);
+  try {
+    await page.locator(".video-upload input").setInputFiles([
+      { name: "audio-only.mp4", mimeType: "audio/wav", buffer: audio },
+      { name: "valid-basketball.mp4", mimeType: "video/mp4", buffer: await readFile(uploadFixture) },
+    ]);
+    const failed = page.locator(".queue-error");
+    await expect(failed).toContainText("audio-only.mp4");
+    await expect(failed).toContainText("doesn’t contain a readable video track");
+    await expect(page.locator(".queue-done")).toHaveCount(1);
+    await expect(page.locator(".header-filename")).toHaveText("valid-basketball.mp4");
+  } finally {
+    await page.close();
+  }
+}
+
+async function checkQueueReload() {
+  const page = await openPage({ width: 1440, height: 900 });
+  try {
+    const cards = page.locator(".example-card");
+    const [running, waiting, completed] = await Promise.all([0, 1, 2].map((index) => sampleInfo(cards.nth(index))));
+    await cards.nth(2).click();
+    await expect(page.locator(".queue-done")).toContainText(completed.filename);
+    const key = "arc-analysis-queue-pages-v1";
+    await page.waitForFunction((key) => JSON.parse(localStorage.getItem(key) ?? "[]")[0]?.result, key);
+    await page.evaluate(({ key, running, waiting }) => {
+      const entry = (filename, kind, status, exampleId) => ({
+        id: filename, filename, kind, status, exampleId, progress: 0, error: null,
+        processingMode: "normal", shotMode: "free_throw",
+      });
+      const saved = JSON.parse(localStorage.getItem(key));
+      localStorage.setItem(key, JSON.stringify([
+        ...saved,
+        entry("running-upload.mp4", "upload", "processing"),
+        entry("waiting-upload.mp4", "upload", "queued"),
+        entry("completed-upload.mp4", "upload", "done"),
+        entry(running, "example", "processing", "example-1"),
+        entry(waiting, "example", "queued", "example-2"),
+      ]));
+    }, { key, running: running.filename, waiting: waiting.filename });
+    await page.reload();
+    const failed = page.locator(".queue-error");
+    for (const filename of ["running-upload.mp4", "waiting-upload.mp4"]) {
+      await expect(failed.filter({ hasText: filename })).toContainText("Add the video again");
+    }
+    await expect(failed.filter({ hasText: "completed-upload.mp4" })).toContainText("cannot be restored after a page reload");
+    await expect(page.locator(".queue-done")).toHaveCount(3, { timeout: 15000 });
+    await expect(page.locator(".queue-processing, .queue-queued")).toHaveCount(0);
+    await page.reload();
+    const saved = page.getByTitle("Open this analysis").filter({ hasText: completed.filename });
+    await saved.click();
+    await expect(page.locator(".header-filename")).toHaveText(completed.filename);
+  } finally {
+    await page.close();
+  }
+}
+
+async function checkClearQueue(width) {
+  const page = await openPage({ width, height: width === 320 ? 640 : 900 }, width === 320);
+  const cards = page.locator(".example-card");
+  const first = await sampleInfo(cards.nth(0));
+  const delayed = await delayResponse(page, first.pose);
+  try {
+    await cards.nth(0).click();
+    await waitForRequest(delayed);
+    await cards.nth(1).click();
+    await expect(page.locator(".queue-queued")).toHaveCount(1);
+    const clear = page.getByRole("button", { name: "Clear queue" });
+    if (width === 320) await clear.tap();
+    else await clear.click();
+    await expect(page.locator(".queue-queued")).toHaveCount(0);
+    await expect(page.locator(".queue-processing")).toContainText(first.filename);
+    await expect(clear).toBeDisabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    if (width === 320) {
+      await page.getByRole("button", { name: `Stop ${first.filename}`, exact: true }).tap();
+      await expect(page.locator(".queue-row")).toHaveCount(0);
+      await expect(page.getByRole("navigation", { name: "Analysis views" })).toHaveCount(0);
+    } else {
+      delayed.release();
+      await expect(page.locator(".queue-done")).toHaveCount(1);
+      await expect(page.locator(".header-filename")).toHaveText(first.filename);
+    }
+  } finally {
+    delayed.release();
     await page.close();
   }
 }
@@ -202,8 +335,15 @@ try {
   await checkCancellation("seek");
   console.log("Stopping a clip during metadata, pose loading, and frame seeking preserved the next queue item");
   await checkUploads();
-  expect(errors).toEqual([]);
   console.log("File drops, decoder errors, keyboard upload, same-file selection, and successful playback passed");
+  await checkSeekTimeout();
+  await checkAudioOnlyUpload();
+  console.log("Stalled and incorrect-position seeks and audio-only uploads fail cleanly before the next clip runs");
+  await checkQueueReload();
+  await checkClearQueue(1440);
+  await checkClearQueue(320);
+  expect(errors).toEqual([]);
+  console.log("Upload recovery, resumable examples, and clear/stop behavior passed on desktop and mobile");
 } finally {
   await browser.close();
 }

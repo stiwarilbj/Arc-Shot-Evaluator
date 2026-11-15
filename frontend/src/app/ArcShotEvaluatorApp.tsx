@@ -42,6 +42,7 @@ const WAIT_MS = 750;
 const MAX_CONCURRENT_ANALYSES = 1;
 const QUEUE_STORAGE_KEY = "arc-analysis-queue-v2";
 const HOSTED_QUEUE_STORAGE_KEY = "arc-analysis-queue-pages-v1";
+const HOSTED_UPLOAD_INTERRUPTED = "This upload was interrupted by a page reload · Add the video again";
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
@@ -184,26 +185,19 @@ export function ArcShotEvaluatorApp() {
       const restored = saved.map((item) => {
         const storedResult = "result" in item && item.result ? item.result : null;
         if (storedResult) registerBrowserAnalysisSession(storedResult);
-        const canResume = item.kind === "example" && !storedResult;
-        const completedUpload = item.kind === "upload" && item.status === "done" && !storedResult;
-        return {
-          ...item,
-          file: undefined,
-          result: storedResult,
-          status: canResume && (item.status === "queued" || item.status === "processing")
-            ? "queued" as const
-            : completedUpload
-              ? "error" as const
-              : item.status,
-          stage: canResume && (item.status === "queued" || item.status === "processing")
-            ? "Ready to resume browser analysis"
-            : completedUpload
-              ? "Upload is available while this page is open"
-              : item.stage,
-          error: completedUpload
-            ? "This uploaded clip cannot be restored after a page reload"
-            : item.error,
-        };
+        const entry = { ...item, file: undefined, result: storedResult };
+        if (storedResult) return entry;
+        const unfinished = item.status === "queued" || item.status === "processing";
+        if (item.kind === "example" && unfinished) {
+          return { ...entry, status: "queued" as const, stage: "Ready to resume browser analysis" };
+        }
+        if (item.kind === "upload" && unfinished) {
+          return { ...entry, status: "error" as const, progress: 0, stage: "Upload interrupted", error: HOSTED_UPLOAD_INTERRUPTED };
+        }
+        if (item.kind === "upload" && item.status === "done") {
+          return { ...entry, status: "error" as const, stage: "Upload is available while this page is open", error: "This uploaded clip cannot be restored after a page reload" };
+        }
+        return entry;
       });
       setQueue(restored);
       setQueueHydrated(true);
@@ -277,7 +271,7 @@ export function ArcShotEvaluatorApp() {
           // request finishes; the filename is enough to resume the static
           // project asset without racing that request.
           ?? (item.kind === "example" ? new URL(`examples/${encodeURIComponent(item.filename)}`, document.baseURI).toString() : undefined);
-        if (!source) throw new Error("This example is no longer available");
+        if (!source) throw new Error(item.kind === "upload" ? HOSTED_UPLOAD_INTERRUPTED : "This example is no longer available");
         const controller = new AbortController();
         browserControllersRef.current.set(item.id, controller);
         const { signal } = controller;
@@ -410,10 +404,11 @@ export function ArcShotEvaluatorApp() {
   }
 
   function clearQueue() {
+    const activeIds = new Set(activeQueueItemsRef.current);
     queue.forEach((item) => {
-      if (item.status === "processing" || activeQueueItemsRef.current.has(item.id)) requestQueueCancellation(item);
+      if (item.status === "processing") activeIds.add(item.id);
     });
-    setQueue([]);
+    setQueue((current) => current.filter((item) => activeIds.has(item.id)));
     setHiddenQueueIds(new Set());
   }
 

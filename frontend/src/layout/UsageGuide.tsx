@@ -58,7 +58,8 @@ export function UsageGuide() {
             <ol>
               <li>Choose a sample clip or select one or more basketball videos · On GitHub Pages, use a format your browser can play, preferably H.264 MP4 · The downloaded app normalizes orientation and playback formats where supported</li>
               <li>Choose Fast for a quick scan, Normal for a standard shot review, or Deep for a more detailed mechanics review, then start the analysis</li>
-              <li>Follow progress in the queue · Open a completed result or use Stop to cancel the running clip and continue with the next one</li>
+              <li>Follow progress in the queue · Stop cancels the running clip and continues with the next one · Clear queue keeps the running clip</li>
+              <li>On GitHub Pages, add personal videos again after reloading · Waiting and running examples restart automatically</li>
             </ol>
           </article>
           <article className="guide-card">

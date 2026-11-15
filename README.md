@@ -10,6 +10,8 @@ The app opens in **Shot Analyzer** · Use **Try other tools** above the upload c
 
 For hosted uploads, use a video your browser can decode, preferably H.264 MP4 · The downloaded app normalizes orientation and playback formats where supported
 
+On GitHub Pages, add personal videos again after a reload · **Clear queue** keeps the running analysis
+
 ## Find your tool
 
 | **Workspace**                                                                        | **What you can do**                                                                                           |
