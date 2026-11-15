@@ -622,7 +622,101 @@ async function checkPlaybackReview(width, height) {
   }
 }
 
+async function checkReviewSeeks() {
+  const page = await openPage({ width: 320, height: 640 }, true);
+  const lateMode = await delayResponse(page, (url) => url.searchParams.get("view") === "annotated");
+  try {
+    await page.locator(".example-card").first().click();
+    const key = "arc-analysis-queue-pages-v1";
+    await page.waitForFunction((key) => JSON.parse(localStorage.getItem(key) ?? "[]")[0]?.result?.shots.length, key);
+    const { leadIn, release } = await page.evaluate((key) => {
+      const entries = JSON.parse(localStorage.getItem(key));
+      const { result } = entries[0];
+      const first = result.shots[0];
+      result.shot_mode = "jump_shot";
+      result.shots = [first, ...[1, 2, 3].map((offset) => ({ ...first, id: first.id + offset }))];
+      result.artifacts.thumbnails = [result.artifacts.thumbnails[0]];
+      const alternate = new URL(result.artifacts.original, location.href);
+      alternate.searchParams.set("view", "annotated");
+      result.artifacts.annotated = alternate.href;
+      localStorage.setItem(key, JSON.stringify(entries));
+      return {
+        leadIn: Math.max(0, first.release_time - 0.7),
+        release: first.release_frame / result.session.fps,
+      };
+    }, key);
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+    const player = page.getByRole("region", { name: "Video analysis workspace" });
+    const video = player.locator("video");
+    const position = () => video.evaluate((element) => element.currentTime);
+    const paused = () => video.evaluate((element) => element.paused);
+    const cards = page.locator(".shot-option");
+    await expect(cards).toHaveCount(4);
+    await expect.poll(position).toBeCloseTo(leadIn, 2);
+    const scrubToEnd = async () => {
+      await video.evaluate((element) => { element.currentTime = element.duration - 0.1; });
+      expect(await position()).toBeGreaterThan(release + 0.1);
+    };
+    await scrubToEnd();
+    await cards.first().tap();
+    await expect.poll(position).toBeCloseTo(leadIn, 2);
+
+    await page.getByRole("button", { name: "Tracking", exact: true }).tap();
+    const releaseButton = page.getByRole("button", { name: /^Release Frame / });
+    for (let click = 0; click < 2; click += 1) {
+      await scrubToEnd();
+      await releaseButton.tap();
+      await expect.poll(position).toBeCloseTo(release, 2);
+    }
+
+    const views = player.getByRole("group", { name: "Video view" });
+    await video.evaluate((element, time) => { element.currentTime = time; }, leadIn);
+    await player.getByRole("button", { name: "Play", exact: true }).tap();
+    await expect.poll(paused).toBe(false);
+    await views.getByRole("button", { name: "Annotated" }).tap();
+    await waitForRequest(lateMode);
+    expect(await video.evaluate((element) => element.readyState)).toBe(0);
+    await player.getByRole("button", { name: "Pause", exact: true }).tap();
+    await expect(player.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+    await player.getByRole("button", { name: "Play", exact: true }).tap();
+    await expect.poll(paused).toBe(false);
+    // Send an evidence seek to the incoming source, then leave it before metadata arrives.
+    await releaseButton.tap();
+    await views.getByRole("button", { name: "Original" }).tap();
+    await expect.poll(paused).toBe(false);
+    expect(await position()).toBeGreaterThanOrEqual(release - 0.02);
+    await player.getByRole("button", { name: "Pause", exact: true }).tap();
+
+    const next = page.getByRole("button", { name: "Next shot" });
+    const previous = page.getByRole("button", { name: "Previous shot" });
+    await expect(cards.first().locator("img")).toBeVisible();
+    const autoWidth = await cards.first().evaluate((card) => card.getBoundingClientRect().width);
+    const manualWidth = await cards.last().evaluate((card) => card.getBoundingClientRect().width);
+    expect(manualWidth).toBe(autoWidth);
+    for (let index = 1; index < 4; index += 1) await next.tap();
+    await expect(cards.last()).toHaveAttribute("aria-current", "true");
+    const visibleInStrip = (card) => card.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const strip = element.parentElement.getBoundingClientRect();
+      return bounds.left >= strip.left - 1 && bounds.right <= strip.right + 1;
+    });
+    await expect.poll(() => visibleInStrip(cards.last())).toBe(true);
+    await page.setViewportSize({ width: 1700, height: 900 });
+    await expect.poll(() => page.locator(".shot-selector-list").evaluate((strip) => strip.scrollLeft)).toBe(0);
+    await page.setViewportSize({ width: 320, height: 640 });
+    await expect.poll(() => visibleInStrip(cards.last())).toBe(true);
+    for (let index = 1; index < 4; index += 1) await previous.tap();
+    await expect.poll(() => visibleInStrip(cards.first())).toBe(true);
+  } finally {
+    lateMode.release();
+    await page.close();
+  }
+}
+
 async function checkHostedAnalyzer() {
+  await checkReviewSeeks();
+  console.log("Repeated shot and evidence seeks, slow-source handoff, and the mobile shot strip passed");
   await checkBackgroundCompletion(1440);
   await checkBackgroundCompletion(320);
   console.log("Background completion kept the current tracking review open on desktop and mobile");

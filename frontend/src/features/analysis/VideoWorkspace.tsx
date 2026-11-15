@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Maximize,
   Minimize,
@@ -17,8 +17,12 @@ interface VideoWorkspaceProps {
   shot: ShotAnalysis | null;
   mode: VideoMode;
   onMode: (mode: VideoMode) => void;
-  seekFrame?: number | null;
+  seekRequest?: { time: number } | null;
   active?: boolean;
+}
+
+export function shotPreviewStart(releaseTime: number) {
+  return Math.max(0, releaseTime - 0.7);
 }
 
 function formatTime(value: number) {
@@ -64,13 +68,15 @@ function formatRate(rate: number) {
   return `${rate % 1 === 0 ? rate.toFixed(1) : rate}×`;
 }
 
-export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, active = true }: VideoWorkspaceProps) {
+export function VideoWorkspace({ session, shot, mode, onMode, seekRequest = null, active = true }: VideoWorkspaceProps) {
   const workspaceRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const poseCanvasRef = useRef<HTMLCanvasElement>(null);
-  const resumeTimeRef = useRef(Math.max(0, (shot?.release_time ?? 0) - 0.7));
+  const releaseTime = shot?.release_time;
+  const previewStart = shotPreviewStart(releaseTime ?? 0);
+  const resumeTimeRef = useRef(previewStart);
   const resumePlaybackRef = useRef(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(previewStart);
   const [duration, setDuration] = useState(session.session.duration);
   const [playing, setPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -107,21 +113,22 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
     video.muted = muted;
   }, [muted, playbackRate, source]);
 
-  useEffect(() => {
+  const seekVideo = useCallback((time: number) => {
     const video = videoRef.current;
-    if (!video || !shot) return;
-    const target = Math.max(0, shot.release_time - 0.7);
+    const duration = video && Number.isFinite(video.duration) ? video.duration : session.session.duration;
+    const target = Math.max(0, Math.min(time, duration));
     resumeTimeRef.current = target;
-    if (video.readyState >= 1) video.currentTime = target;
-  }, [shot?.id, shot?.release_time]);
+    if (video && video.readyState >= HTMLMediaElement.HAVE_METADATA) video.currentTime = target;
+    setCurrentTime(target);
+  }, [session.session.duration]);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || seekFrame == null) return;
-    const target = Math.max(0, seekFrame / Math.max(1, session.session.fps));
-    video.currentTime = Math.min(target, video.duration || session.session.duration);
-    setCurrentTime(video.currentTime);
-  }, [seekFrame, session.session.duration, session.session.fps]);
+    if (releaseTime != null) seekVideo(shotPreviewStart(releaseTime));
+  }, [shot?.id, releaseTime, seekVideo]);
+
+  useEffect(() => {
+    if (seekRequest) seekVideo(seekRequest.time);
+  }, [seekRequest, seekVideo]);
 
   useEffect(() => {
     function pauseWhenHidden() {
@@ -254,26 +261,37 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
   function switchMode(nextMode: VideoMode) {
     const video = videoRef.current;
     if (video && source !== sources[nextMode]) {
-      resumeTimeRef.current = video.currentTime;
-      resumePlaybackRef.current = !video.paused;
-      setPlaying(false);
+      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        resumeTimeRef.current = video.currentTime;
+        resumePlaybackRef.current = !video.paused;
+      }
+      video.pause();
     }
     onMode(nextMode);
   }
 
   function seek(delta: number) {
     const video = videoRef.current;
-    if (video) video.currentTime = Math.max(0, Math.min(video.duration || duration, video.currentTime + delta));
+    const time = video && video.readyState >= HTMLMediaElement.HAVE_METADATA ? video.currentTime : resumeTimeRef.current;
+    seekVideo(time + delta);
   }
 
   async function togglePlayback() {
     const video = videoRef.current;
     if (!video) return;
+    const loading = video.readyState < HTMLMediaElement.HAVE_METADATA;
+    const shouldPlay = loading ? !resumePlaybackRef.current : video.paused;
+    if (loading) {
+      resumePlaybackRef.current = shouldPlay;
+      setPlaying(shouldPlay);
+    }
     try {
-      if (video.paused) await video.play();
+      if (shouldPlay) await video.play();
       else video.pause();
     } catch (error) {
       if (videoRef.current !== video || (error instanceof DOMException && error.name === "AbortError")) return;
+      resumePlaybackRef.current = false;
+      setPlaying(false);
       setMediaError("This video could not be played in the browser");
     }
   }
@@ -304,29 +322,33 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
           src={source}
           playsInline
           preload="metadata"
-          onTimeUpdate={(event) => {
-            resumeTimeRef.current = event.currentTarget.currentTime;
-            setCurrentTime(event.currentTarget.currentTime);
+          onTimeUpdate={({ currentTarget: video }) => {
+            if (videoRef.current !== video || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
+            resumeTimeRef.current = video.currentTime;
+            setCurrentTime(video.currentTime);
           }}
-          onLoadedMetadata={(event) => {
-            const video = event.currentTarget;
+          onLoadedMetadata={({ currentTarget: video }) => {
+            if (videoRef.current !== video) return;
             video.playbackRate = playbackRate;
             video.muted = muted;
-            setDuration(video.duration || session.session.duration);
-            const target = Math.min(resumeTimeRef.current, video.duration || session.session.duration);
-            video.currentTime = target;
-            setCurrentTime(target);
+            setDuration(Number.isFinite(video.duration) ? video.duration : session.session.duration);
+            seekVideo(resumeTimeRef.current);
             const shouldResume = resumePlaybackRef.current;
             resumePlaybackRef.current = false;
-            if (shouldResume && active && !document.hidden) {
+            if (shouldResume && video.paused && active && !document.hidden) {
               void video.play().catch((error: unknown) => {
                 if (videoRef.current === video && !(error instanceof DOMException && error.name === "AbortError")) {
+                  setPlaying(false);
                   setMediaError("Playback could not resume after switching views");
                 }
               });
             }
           }}
-          onError={() => setMediaError("This video stream could not be decoded by the browser")}
+          onError={() => {
+            resumePlaybackRef.current = false;
+            setPlaying(false);
+            setMediaError("This video stream could not be decoded by the browser");
+          }}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
         />
@@ -364,11 +386,7 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekFrame = null, 
             max={duration || 1}
             step={0.01}
             value={Math.min(currentTime, duration || 1)}
-            onChange={(event) => {
-              const next = Number(event.currentTarget.value);
-              if (videoRef.current) videoRef.current.currentTime = next;
-              setCurrentTime(next);
-            }}
+            onChange={(event) => seekVideo(Number(event.currentTarget.value))}
             style={{ "--progress": `${duration ? (currentTime / duration) * 100 : 0}%` } as React.CSSProperties}
           />
           {shot ? <span className="release-marker" style={{ left: `${releasePercent}%` }} title={`Release ${formatTime(shot.release_time)}`} /> : null}

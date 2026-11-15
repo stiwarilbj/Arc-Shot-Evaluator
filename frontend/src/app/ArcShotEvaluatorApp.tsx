@@ -3,7 +3,7 @@ import { BarChart3, CircleDot, Waypoints } from "lucide-react";
 import { CoachNotes } from "../features/analysis/CoachNotes";
 import { ShotDataPanel } from "../features/analysis/ShotDataPanel";
 import { ShotSelector } from "../features/analysis/ShotSelector";
-import { VideoWorkspace } from "../features/analysis/VideoWorkspace";
+import { shotPreviewStart, VideoWorkspace } from "../features/analysis/VideoWorkspace";
 import { AnalysisQueue } from "../features/queue/AnalysisQueue";
 import { ExampleVideoLibrary } from "../features/upload/ExampleVideoLibrary";
 import { VideoUpload } from "../features/upload/VideoUpload";
@@ -121,7 +121,7 @@ export function ArcShotEvaluatorApp() {
   const [error, setError] = useState<string | null>(null);
   const [selectedShot, setSelectedShot] = useState(0);
   const [reviewOpening, setReviewOpening] = useState(0);
-  const [reviewFrame, setReviewFrame] = useState<number | null>(null);
+  const [reviewSeek, setReviewSeek] = useState<{ time: number } | null>(null);
   const [mode, setMode] = useState<VideoMode>("pose");
   const { workspace, changeWorkspace, analysisView: tab, changeAnalysisView: setTab, jumperView, changeJumperView, playbookView, rolePlayerId, changePlaybookView } = useWorkspaceNavigation();
   const [processingMode, setProcessingMode] = useState<ProcessingMode>("normal");
@@ -456,7 +456,7 @@ export function ArcShotEvaluatorApp() {
     setSession(result);
     setReviewOpening((opening) => opening + 1);
     setSelectedShot(0);
-    setReviewFrame(null);
+    setReviewSeek(null);
     setMode("pose");
     setTab(result.shots.length ? "shot" : "overview");
     setError(null);
@@ -474,7 +474,7 @@ export function ArcShotEvaluatorApp() {
     setTab("shot");
     changeWorkspace("analyzer");
     setSession(null);
-    setReviewFrame(null);
+    setReviewSeek(null);
     setError(null);
     setSelectedShot(0);
     setMode("pose");
@@ -486,6 +486,7 @@ export function ArcShotEvaluatorApp() {
 
   const shot = session?.shots[selectedShot] ?? null;
   const isJumpShot = session?.shot_mode === "jump_shot";
+  const reviewKey = `${session?.session.id}:${reviewOpening}`;
   const analyzerView = session ? (
     <div className="analysis-review">
       <nav className="workspace-tabs" aria-label="Analysis views">
@@ -508,10 +509,10 @@ export function ArcShotEvaluatorApp() {
 
       <main className="analysis-grid">
         <div className="analysis-main">
-          <VideoWorkspace key={`${session.session.id}:${reviewOpening}`} session={session} shot={shot} mode={mode} onMode={setMode} seekFrame={reviewFrame} active={workspace === "analyzer"} />
-          <ShotSelector session={session} selected={selectedShot} onSelect={(index) => {
+          <VideoWorkspace key={reviewKey} session={session} shot={shot} mode={mode} onMode={setMode} seekRequest={reviewSeek} active={workspace === "analyzer"} />
+          <ShotSelector key={`shots:${reviewKey}`} session={session} selected={selectedShot} onSelect={(index) => {
             setSelectedShot(index);
-            setReviewFrame(null);
+            setReviewSeek({ time: shotPreviewStart(session.shots[index].release_time) });
             setTab("shot");
           }} />
           {session.warnings.length ? <div className="warning-row" role="status">{session.warnings.map((warning) => warning.replace(/[.!]+$/, "")).join(" · ")}</div> : null}
@@ -520,7 +521,7 @@ export function ArcShotEvaluatorApp() {
           <AnalysisQueue items={queue} compact activeSessionId={session.session.id} {...queueActions} />
           <div className={`analysis-detail-columns ${shot?.coaching ? "" : "analysis-detail-legacy"}`}>
             {shot?.coaching ? <CoachNotes shot={shot} /> : null}
-            <ShotDataPanel session={session} shot={shot} tab={tab} onSessionChange={handleSessionChange} onSeekFrame={setReviewFrame} />
+            <ShotDataPanel session={session} shot={shot} tab={tab} onSessionChange={handleSessionChange} onSeekFrame={(frame) => setReviewSeek({ time: frame / Math.max(1, session.session.fps) })} />
           </div>
         </aside>
       </main>

@@ -54,9 +54,12 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
 - Use **Overview**, **Shot**, and **Tracking** to inspect the session, individual
   attempts, and available movement evidence · On desktop, scroll the review panel
   to reach notes and exports
-- Shot thumbnails jump to the relevant attempt · Reopening a result starts its
-  preview paused · The player shows **Pose** and **Annotated** when those views
-  are available, and full screen keeps the overlay and playback controls visible
+- Select a shot thumbnail to jump to its lead-in or select an available
+  **Evidence frames** button in **Tracking** to revisit that frame · **Previous
+  shot** and **Next shot** keep the selected thumbnail visible
+- Reopening a result starts its preview paused · Switching between available
+  **Pose**, **Annotated**, and **Original** views preserves the playhead and
+  playback state · Full screen keeps the overlay and transport visible
 - Review makes, misses, and uncertain attempts · Use a whole release frame within
   the clip to correct timing or add a missed attempt · If browser storage is
   unavailable, per-shot notes last while the result stays open
