@@ -1,5 +1,5 @@
 import type { AnalysisJobState, AnalysisSession, ExampleVideo, ProcessingMode, ShotAnalysis, ShotMode } from "../domain/analysisTypes";
-import { browserShotEndFrame, isReleaseFrame, refreshBrowserShotReview, releaseFrameError } from "../domain/shotReview";
+import { browserShotEndFrame, isReleaseFrame, refreshBrowserShotReview, releaseFrameError, reviewShotMotion } from "../domain/shotReview";
 import { IS_GITHUB_PAGES } from "../runtime";
 
 const browserSessions = new Map<string, AnalysisSession>();
@@ -110,10 +110,10 @@ export async function correctSavedShot(
   correction: {
     outcome?: "make" | "miss" | "review";
     release_frame?: number;
-    shooter_id?: string;
+    shooter_id?: string | null;
     shooting_hand?: "left" | "right" | "unknown";
     shot_type?: string;
-    takeoff_frame?: number;
+    takeoff_frame?: number | null;
     defender_ids?: string[];
     team_assignments?: Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown">;
     player_height_m?: number;
@@ -129,6 +129,10 @@ export async function correctSavedShot(
       }
       const shots = session.shots.map((shot) => {
         if (shot.id !== shotId) return shot;
+        const takeoff = correction.takeoff_frame;
+        if (takeoff != null && (!isReleaseFrame(takeoff, frameCount) || takeoff > (releaseFrame ?? shot.release_frame))) {
+          throw new Error("Takeoff must be a whole frame at or before release");
+        }
         const updated: ShotAnalysis = {
           ...shot,
           outcome: correction.outcome ?? shot.outcome,
@@ -140,7 +144,7 @@ export async function correctSavedShot(
             : browserShotEndFrame(releaseFrame, fps, frameCount),
           evidence: {
             ...shot.evidence,
-            shooter_id: correction.shooter_id ?? shot.evidence.shooter_id,
+            shooter_id: correction.shooter_id === undefined ? shot.evidence.shooter_id : correction.shooter_id,
             shooting_hand: correction.shooting_hand ?? shot.evidence.shooting_hand,
             shot_type: correction.shot_type ?? shot.evidence.shot_type,
             defenders: correction.defender_ids
@@ -151,7 +155,7 @@ export async function correctSavedShot(
             correction: { source: "local_user", updated_at: new Date().toISOString(), fields: Object.keys(correction), comment: correction.comment },
           },
         };
-        return updated;
+        return reviewShotMotion(updated, fps, takeoff);
       });
       return refreshBrowserShotReview({ ...session, shots });
     });

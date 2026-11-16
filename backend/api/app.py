@@ -517,10 +517,9 @@ def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
         raise HTTPException(400, f"Unsupported correction fields: {sorted(unknown)}")
     if "outcome" in correction and correction["outcome"] not in {"make", "miss", "review"}:
         raise HTTPException(400, "Outcome must be make, miss, or review")
-    if "takeoff_frame" in correction and (
-        not isinstance(correction["takeoff_frame"], int) or correction["takeoff_frame"] < 0
-    ):
-        raise HTTPException(400, "Takeoff frame must be a non-negative integer")
+    takeoff = correction.get("takeoff_frame")
+    if takeoff is not None and (type(takeoff) is not int or takeoff < 0):
+        raise HTTPException(400, "Takeoff frame must be a non-negative integer or null")
     if "shooting_hand" in correction and correction["shooting_hand"] not in {"left", "right", "unknown"}:
         raise HTTPException(400, "Shooting hand must be left, right, or unknown")
     if "shot_type" in correction and correction["shot_type"] not in {
@@ -551,18 +550,28 @@ def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
     if "release_frame" in correction:
         _validate_release_frame(correction["release_frame"], payload)
     with _edit_saved_review(session_id) as stored:
-        original_ids = {int(shot.get("id", -1)) for shot in payload.get("shots", [])}
-        manual_ids = {
-            int(shot.get("id", -1))
-            for shot in stored.get("manual_shots", [])
-            if isinstance(shot, dict)
-        }
-        if shot_id not in original_ids and shot_id not in manual_ids:
+        source = next(
+            (
+                shot
+                for collection in (payload.get("shots", []), stored.get("manual_shots", []))
+                for shot in collection
+                if isinstance(shot, dict) and int(shot.get("id", -1)) == shot_id
+            ),
+            None,
+        )
+        if source is None:
             raise HTTPException(404, "Shot not found")
         shots = stored.setdefault("shots", {})
         existing = shots.get(str(shot_id), {})
         if not isinstance(existing, dict):
             raise HTTPException(409, "Saved shot correction is invalid · The existing file was preserved")
+        if takeoff is not None:
+            release = correction.get("release_frame", existing.get("release_frame", source.get("release_frame", 0)))
+            frame_count = payload.get("session", {}).get("frame_count")
+            if type(release) is not int:
+                raise HTTPException(409, "Saved release frame is invalid · Correct it before saving takeoff")
+            if takeoff > release or (type(frame_count) is int and takeoff >= frame_count):
+                raise HTTPException(400, "Takeoff must be an in-clip frame at or before release")
         existing.update(correction)
         existing["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         shots[str(shot_id)] = existing

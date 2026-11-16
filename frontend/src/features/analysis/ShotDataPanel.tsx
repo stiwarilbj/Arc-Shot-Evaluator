@@ -42,11 +42,6 @@ function releaseTime(seconds: number) {
   return `${String(minutes).padStart(2, "0")}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
 }
 
-function parseFrame(value: string) {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-}
-
 const OUTCOME = {
   make: { label: "MAKE", Icon: CheckCircle2 },
   miss: { label: "MISS", Icon: XCircle },
@@ -63,7 +58,10 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
   const [releaseError, setReleaseError] = useState<string | null>(null);
   const releaseErrorId = useId();
   const [shooterDraft, setShooterDraft] = useState("");
-  const [takeoffFrameDraft, setTakeoffFrameDraft] = useState(shot?.evidence.motion_events?.takeoff_frame ?? 0);
+  const savedTakeoff = shot?.evidence.motion_events?.takeoff_frame ?? null;
+  const [takeoffFrameDraft, setTakeoffFrameDraft] = useState(savedTakeoff == null ? "" : String(savedTakeoff));
+  const [takeoffError, setTakeoffError] = useState<string | null>(null);
+  const takeoffErrorId = useId();
   const [shootingHandDraft, setShootingHandDraft] = useState<"left" | "right" | "unknown">(shot?.evidence.shooting_hand ?? "unknown");
   const [shotTypeDraft, setShotTypeDraft] = useState(shot?.evidence.shot_type ?? "unknown");
   const [defenderIdsDraft, setDefenderIdsDraft] = useState("");
@@ -96,7 +94,8 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
     setReleaseError(null);
     setReleaseFrameDraft(String(shot?.release_frame ?? 0));
     setShooterDraft(shot?.evidence.shooter_id ?? "");
-    setTakeoffFrameDraft(shot?.evidence.motion_events?.takeoff_frame ?? 0);
+    setTakeoffFrameDraft(savedTakeoff == null ? "" : String(savedTakeoff));
+    setTakeoffError(null);
     setShootingHandDraft(shot?.evidence.shooting_hand ?? "unknown");
     setShotTypeDraft(shot?.evidence.shot_type ?? "unknown");
     setDefenderIdsDraft((shot?.evidence.defenders ?? []).map((defender) => defender.id).join(", "));
@@ -107,7 +106,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
     setWorldPointsDraft(JSON.stringify(session.context?.court_calibration?.world_points ?? [], null, 0));
     setBasketGroundDraft(JSON.stringify(session.context?.court_calibration?.basket_ground_image ?? [], null, 0));
     setContextError(null);
-  }, [session.context?.court_calibration, shot?.evidence.defenders, shot?.evidence.motion_events?.takeoff_frame, shot?.evidence.player_height_m, shot?.evidence.shot_type, shot?.evidence.shooter_id, shot?.evidence.shooting_hand, shot?.evidence.team_assignments, shot?.release_frame, storageKey]);
+  }, [session.context?.court_calibration, shot?.evidence.defenders, savedTakeoff, shot?.evidence.player_height_m, shot?.evidence.shot_type, shot?.evidence.shooter_id, shot?.evidence.shooting_hand, shot?.evidence.team_assignments, shot?.release_frame, storageKey]);
 
   const frameCount = session.session.frame_count;
 
@@ -217,7 +216,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
                 {[
                   ["Preparation", shot.evidence.motion_events?.gather_frame],
                   ["Takeoff", shot.evidence.motion_events?.takeoff_frame],
-                  ["Release", shot.evidence.motion_events?.release_frame ?? shot.release_frame],
+                  ["Release", shot.release_frame],
                   ["Contest", shot.evidence.defenders?.[0]?.evidence_frames?.[0]],
                   ["Rim interaction", shot.evidence.crossing_frame ?? undefined],
                   ["Landing", shot.evidence.motion_events?.landing_frame],
@@ -381,8 +380,14 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
             </div>
             <label className="correction-field">
               <span>Takeoff frame</span>
-              <input type="number" min={0} step={1} value={takeoffFrameDraft} onChange={(event) => setTakeoffFrameDraft(parseFrame(event.currentTarget.value))} />
+              <input type="number" min={0} max={frameCount - 1} step={1} value={takeoffFrameDraft}
+                aria-invalid={takeoffError !== null} aria-describedby={takeoffError ? takeoffErrorId : undefined}
+                onChange={(event) => {
+                  setTakeoffFrameDraft(event.currentTarget.value);
+                  setTakeoffError(null);
+                }} />
             </label>
+            {takeoffError ? <p id={takeoffErrorId} className="error-message" role="alert">{takeoffError}</p> : null}
             <div className="correction-field">
               <span>Shooting hand</span>
               <ArcSelect ariaLabel="Shooting hand" className="arc-select--full" value={shootingHandDraft} options={[
@@ -412,6 +417,13 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
             setCorrectionError(null);
             const frame = readReleaseFrame();
             if (frame === null) return;
+            const shooter = shooterDraft.trim() || null;
+            const takeoffFrame = takeoffFrameDraft.trim() ? Number(takeoffFrameDraft) : null;
+            if (isJumpShot && takeoffFrame !== null && (!isReleaseFrame(takeoffFrame, frameCount) || takeoffFrame > frame)) {
+              setTakeoffError(`Enter a whole takeoff frame from 0 to ${frame}, or leave it blank`);
+              return;
+            }
+            setTakeoffError(null);
             let teamAssignments: Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown"> | undefined;
             if (isJumpShot && teamAssignmentsDraft.trim()) {
               try {
@@ -427,9 +439,9 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
             }
             void correctSavedShot(session.session.id, shot.id, {
               release_frame: frame,
-              ...(shooterDraft.trim() ? { shooter_id: shooterDraft.trim() } : {}),
+              ...(shooter !== (shot.evidence.shooter_id ?? null) ? { shooter_id: shooter } : {}),
               ...(isJumpShot ? {
-                takeoff_frame: takeoffFrameDraft,
+                ...(takeoffFrame !== savedTakeoff ? { takeoff_frame: takeoffFrame } : {}),
                 shot_type: shotTypeDraft,
                 shooting_hand: shootingHandDraft,
                 defender_ids: defenderIdsDraft.split(",").map((item) => item.trim()).filter(Boolean),

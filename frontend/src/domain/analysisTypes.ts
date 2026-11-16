@@ -98,7 +98,7 @@ export interface ShotAnalysis {
     tracked_frames: number;
     rim_track_confidence: number;
     pose_confidence: number;
-    shooter_id?: string;
+    shooter_id?: string | null;
     shooting_hand?: "left" | "right" | "unknown";
     handedness_confidence?: number;
     temporal_mechanics?: {

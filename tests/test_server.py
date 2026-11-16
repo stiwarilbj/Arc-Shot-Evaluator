@@ -272,6 +272,61 @@ def test_shot_review_checks_clip_frame_bounds_before_saving(tmp_path, monkeypatc
     assert client.get(job_url).json()["result"]["shots"] == added.json()["shots"]
 
 
+def test_jump_shot_review_clears_labels_and_syncs_timing(tmp_path, monkeypatch) -> None:
+    session_dir = tmp_path / "review-jump"
+    session_dir.mkdir()
+    original = {
+        "session": {"id": session_dir.name, "fps": 25, "frame_count": 60},
+        "shot_mode": "jump_shot",
+        "shots": [{
+            "id": 1, "outcome": "review", "release_frame": 30, "end_frame": 48,
+            "evidence": {
+                "shooter_id": "detected-shooter",
+                "motion_events": {
+                    "timing_available": True, "release_frame": 30, "takeoff_frame": 25,
+                    "release_after_takeoff_ms": 200, "follow_through_end_frame": 45,
+                    "follow_through_duration_ms": 600, "landing_frame": 43,
+                },
+                "mechanics_assessment": {"components": {"release_after_takeoff_ms": 200, "motion_type": "pull_up"}},
+            },
+        }],
+    }
+    source = json.dumps(original)
+    (session_dir / "analysis.json").write_text(source)
+    (session_dir / "shots.jsonl").write_text(json.dumps(original["shots"][0]) + "\n")
+    (session_dir / "job.json").write_text(json.dumps({"id": session_dir.name, "status": "done", "result": original}))
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    client = TestClient(app)
+    url = f"/api/sessions/{session_dir.name}/shots/1"
+
+    for frame in (True, -1, 26.5, 31, 60):
+        assert client.patch(url, json={"takeoff_frame": frame}).status_code == 400
+    assert not (session_dir / "corrections.json").exists()
+
+    saved = client.patch(url, json={"shooter_id": None, "release_frame": 28, "takeoff_frame": 23})
+    assert saved.status_code == 200
+    shot = saved.json()["shots"][0]
+    assert shot["release_frame"] == 28
+    assert shot["evidence"]["shooter_id"] is None
+    events = shot["evidence"]["motion_events"]
+    assert (events["release_frame"], events["takeoff_frame"], events["release_after_takeoff_ms"]) == (28, 23, 200)
+    assert events["follow_through_duration_ms"] == 680
+    assert events["landing_frame"] == 43
+    assert shot["evidence"]["mechanics_assessment"]["components"]["motion_type"] == "pull_up"
+    assert client.patch(url, json={"takeoff_frame": 29}).status_code == 400
+    assert client.get(f"/api/jobs/{session_dir.name}").json()["result"]["shots"][0] == shot
+    assert client.get(f"/media/{session_dir.name}/shots.jsonl").json() == shot
+
+    same_frame = client.patch(url, json={"takeoff_frame": 28}).json()["shots"][0]["evidence"]
+    assert same_frame["motion_events"]["release_after_takeoff_ms"] == 0
+    assert same_frame["mechanics_assessment"]["components"]["release_after_takeoff_ms"] == 0
+    cleared = client.patch(url, json={"takeoff_frame": None}).json()["shots"][0]["evidence"]
+    assert cleared["motion_events"]["takeoff_frame"] is None
+    assert cleared["motion_events"]["release_after_takeoff_ms"] is None
+    assert (session_dir / "analysis.json").read_text() == source
+
+
 def test_simultaneous_review_mutations_preserve_every_change(tmp_path, monkeypatch) -> None:
     session_id = "concurrent-review"
     session_dir = tmp_path / session_id

@@ -714,7 +714,90 @@ async function checkReviewSeeks() {
   }
 }
 
+async function checkCorrectionDetails() {
+  const page = await openPage({ width: 390, height: 780 }, true);
+  try {
+    await page.locator(".example-card").first().click();
+    const key = "arc-analysis-queue-pages-v1";
+    await page.waitForFunction((key) => JSON.parse(localStorage.getItem(key) ?? "[]")[0]?.result?.shots.length, key);
+    const { release, takeoff, fps } = await page.evaluate((key) => {
+      const queue = JSON.parse(localStorage.getItem(key));
+      const { result } = queue[0];
+      result.shot_mode = "jump_shot";
+      const shot = result.shots[0];
+      const fps = result.session.fps;
+      shot.evidence.shooter_id = "model-player";
+      shot.evidence.motion_events = {
+        release_frame: shot.release_frame,
+        takeoff_frame: shot.release_frame - 10,
+        release_after_takeoff_ms: 10 / fps * 1000,
+        timing_available: true,
+      };
+      localStorage.setItem(key, JSON.stringify(queue));
+      return { release: shot.release_frame - 3, takeoff: shot.release_frame - 12, fps };
+    }, key);
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+    const shooter = page.getByRole("textbox", { name: "Shooter label (optional)" });
+    const releaseInput = page.getByRole("spinbutton", { name: "Release frame" });
+    const takeoffInput = page.getByRole("spinbutton", { name: "Takeoff frame", exact: true });
+    const save = page.getByRole("button", { name: "Save timing / shooter correction" });
+    const tracking = page.getByRole("button", { name: "Tracking", exact: true });
+    const releaseButton = page.getByRole("button", { name: /^Release Frame / });
+    const readExport = async () => {
+      const href = await page.getByRole("link", { name: "Shot data JSON" }).getAttribute("href");
+      return page.evaluate(async (url) => (await (await fetch(url)).json())[0], href);
+    };
+    await expect(shooter).toHaveValue("model-player");
+    await shooter.fill("reviewed-player");
+    await save.tap();
+    expect((await readExport()).evidence.shooter_id).toBe("reviewed-player");
+    await shooter.fill("");
+    await releaseInput.fill(String(release));
+    await takeoffInput.fill(String(takeoff));
+    await save.tap();
+
+    const corrected = await readExport();
+    expect(corrected.release_frame).toBe(release);
+    expect(corrected.evidence.shooter_id).toBeNull();
+    expect(corrected.evidence.motion_events).toMatchObject({ release_frame: release, takeoff_frame: takeoff });
+    await tracking.tap();
+    await expect(releaseButton).toHaveText(`ReleaseFrame ${release}`);
+    await releaseButton.tap();
+    const video = page.locator(".video-workspace video");
+    await expect.poll(() => video.evaluate((element) => element.currentTime)).toBeCloseTo(release / fps, 2);
+    await expect(page.locator(".metric-row").filter({ hasText: "Release after takeoff" }).locator("strong"))
+      .toHaveText(`${((release - takeoff) / fps * 1000).toFixed(0)} ms`);
+
+    // Older hosted reviews could keep the detector's nested release and duration.
+    await page.evaluate((key) => {
+      const queue = JSON.parse(localStorage.getItem(key));
+      const events = queue[0].result.shots[0].evidence.motion_events;
+      events.release_frame += 3;
+      events.release_after_takeoff_ms = 1;
+      localStorage.setItem(key, JSON.stringify(queue));
+    }, key);
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+    await expect(shooter).toHaveValue("");
+    await expect(takeoffInput).toHaveValue(String(takeoff));
+    expect(await readExport()).toEqual(corrected);
+    await takeoffInput.fill(String(release + 1));
+    await save.tap();
+    await expect(takeoffInput).toHaveAttribute("aria-invalid", "true");
+    await expect(takeoffInput).toHaveAccessibleDescription(`Enter a whole takeoff frame from 0 to ${release}, or leave it blank`);
+    expect(await readExport()).toEqual(corrected);
+    await takeoffInput.fill("");
+    await save.tap();
+    expect((await readExport()).evidence.motion_events).toMatchObject({ takeoff_frame: null, release_after_takeoff_ms: null });
+  } finally {
+    await page.close();
+  }
+}
+
 async function checkHostedAnalyzer() {
+  await checkCorrectionDetails();
+  console.log("Shot labels, reviewed timing, evidence links and exports stayed in sync through reload");
   await checkReviewSeeks();
   console.log("Repeated shot and evidence seeks, slow-source handoff, and the mobile shot strip passed");
   await checkBackgroundCompletion(1440);

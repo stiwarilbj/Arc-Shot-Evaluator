@@ -58,7 +58,39 @@ export function browserShotReview(sessionId: string, shots: ShotAnalysis[]) {
   };
 }
 
+export function reviewShotMotion(shot: ShotAnalysis, fps: number, takeoffFrame?: number | null): ShotAnalysis {
+  const events = shot.evidence.motion_events;
+  if (takeoffFrame === undefined && (!events || events.release_frame == null || events.release_frame === shot.release_frame)) return shot;
+  const takeoff = takeoffFrame === undefined ? events?.takeoff_frame ?? null : takeoffFrame;
+  function interval(start: number | null, end: number | null | undefined) {
+    return start != null && end != null && end >= start && events?.timing_available !== false && fps > 0
+      ? Number(((end - start) / fps * 1000).toFixed(1))
+      : null;
+  }
+  const motion = {
+    ...events,
+    takeoff_frame: takeoff,
+    release_frame: shot.release_frame,
+    release_after_takeoff_ms: interval(takeoff, shot.release_frame),
+    follow_through_duration_ms: interval(shot.release_frame, events?.follow_through_end_frame ?? events?.landing_frame),
+  };
+  const mechanics = shot.evidence.mechanics_assessment;
+  return {
+    ...shot,
+    evidence: {
+      ...shot.evidence,
+      motion_events: motion,
+      ...(mechanics?.components ? { mechanics_assessment: { ...mechanics, components: {
+        ...mechanics.components,
+        release_after_takeoff_ms: motion.release_after_takeoff_ms,
+        follow_through_duration_ms: motion.follow_through_duration_ms,
+      } } } : {}),
+    },
+  };
+}
+
 export function refreshBrowserShotReview(session: AnalysisSession): AnalysisSession {
-  const { summary, shotArtifacts } = browserShotReview(session.session.id, session.shots);
-  return { ...session, summary, artifacts: { ...session.artifacts, ...shotArtifacts } };
+  const shots = session.shots.map((shot) => reviewShotMotion(shot, session.session.fps));
+  const { summary, shotArtifacts } = browserShotReview(session.session.id, shots);
+  return { ...session, shots, summary, artifacts: { ...session.artifacts, ...shotArtifacts } };
 }

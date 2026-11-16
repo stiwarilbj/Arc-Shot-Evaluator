@@ -1969,6 +1969,35 @@ def predict_ft_percentage(shots: list[ShotAnalysis]) -> float | None:
     return None
 
 
+def _reviewed_motion_evidence(evidence: dict, release: int, fps: float, correction: dict) -> dict:
+    events = dict(evidence.get("motion_events") or {})
+    if "takeoff_frame" not in correction and events.get("release_frame") in (None, release):
+        return evidence
+
+    takeoff = correction.get("takeoff_frame", events.get("takeoff_frame"))
+
+    def interval(start: int | None, end: int | None) -> float | None:
+        if type(start) is int and type(end) is int and end >= start and events.get("timing_available") is not False and fps > 0:
+            return round((end - start) / fps * 1000, 1)
+        return None
+
+    follow_through_end = events.get("follow_through_end_frame")
+    if follow_through_end is None:
+        follow_through_end = events.get("landing_frame")
+    durations = {
+        "release_after_takeoff_ms": interval(takeoff, release),
+        "follow_through_duration_ms": interval(release, follow_through_end),
+    }
+    reviewed = {
+        **evidence,
+        "motion_events": {**events, "release_frame": release, "takeoff_frame": takeoff, **durations},
+    }
+    mechanics = evidence.get("mechanics_assessment")
+    if isinstance(mechanics, dict) and isinstance(mechanics.get("components"), dict):
+        reviewed["mechanics_assessment"] = {**mechanics, "components": {**mechanics["components"], **durations}}
+    return reviewed
+
+
 def refresh_saved_analysis(payload: dict) -> dict:
     """Backfill new confidence, FT projection, and coaching fields for old sessions."""
     # Treat the caller's decoded JSON as immutable input. This keeps repeated
@@ -2007,6 +2036,7 @@ def refresh_saved_analysis(payload: dict) -> dict:
     for manual in manual_shots:
         manual.setdefault("correction", {"source": "local_user", "fields": ["manual_attempt"]})
     raw_shots.extend(manual_shots)
+    fps = float(payload.get("session", {}).get("fps") or 0.0)
     for raw in raw_shots:
         correction = corrections.get(str(raw.get("id")))
         if not isinstance(correction, dict):
@@ -2016,13 +2046,12 @@ def refresh_saved_analysis(payload: dict) -> dict:
         if isinstance(correction.get("release_frame"), int) and correction["release_frame"] >= 0:
             raw["release_frame"] = correction["release_frame"]
             raw["end_frame"] = max(raw["release_frame"], int(raw.get("end_frame", raw["release_frame"])))
-            fps = float(payload.get("session", {}).get("fps") or 0.0)
             if fps > 0:
                 raw["release_time"] = round(correction["release_frame"] / fps, 3)
-        if correction.get("shooter_id") is not None:
+        if "shooter_id" in correction:
             raw["evidence"] = {
                 **dict(raw.get("evidence") or {}),
-                "shooter_id": str(correction["shooter_id"]),
+                "shooter_id": str(correction["shooter_id"]) if correction["shooter_id"] is not None else None,
             }
         for field in ("shot_type", "shooting_hand", "takeoff_frame", "defender_ids", "team_assignments", "player_height_m"):
             if field in correction:
@@ -2032,12 +2061,10 @@ def refresh_saved_analysis(payload: dict) -> dict:
                 **dict(raw.get("evidence") or {}),
                 "statistics_eligibility": {"status": "excluded", "reason": "non-jump attempt excluded from jump-shot statistics"},
             }
-        if "takeoff_frame" in correction:
-            evidence = dict(raw.get("evidence") or {})
-            motion_events = dict(evidence.get("motion_events") or {})
-            motion_events["takeoff_frame"] = correction["takeoff_frame"]
-            evidence["motion_events"] = motion_events
-            raw["evidence"] = evidence
+        if "release_frame" in correction or "takeoff_frame" in correction:
+            raw["evidence"] = _reviewed_motion_evidence(
+                dict(raw.get("evidence") or {}), int(raw.get("release_frame", 0)), fps, correction
+            )
         if "defender_ids" in correction:
             evidence = dict(raw.get("evidence") or {})
             defenders = evidence.get("defenders")

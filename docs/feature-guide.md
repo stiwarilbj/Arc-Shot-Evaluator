@@ -61,7 +61,9 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
   **Pose**, **Annotated**, and **Original** views preserves the playhead and
   playback state · Full screen keeps the overlay and transport visible
 - Review makes, misses, and uncertain attempts · Use a whole release frame within
-  the clip to correct timing or add a missed attempt · If browser storage is
+  the clip to correct timing or add a missed attempt · Jump-shot evidence links
+  and exported timing follow saved release and takeoff corrections · Leave
+  the shooter label or takeoff frame blank to clear it · If browser storage is
   unavailable, per-shot notes last while the result stays open
 - Hosted JSON and downloaded-app JSONL include saved corrections and manually
   added attempts · The best streak uses release order · Local corrections are
