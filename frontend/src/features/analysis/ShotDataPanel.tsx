@@ -48,30 +48,92 @@ const OUTCOME = {
   review: { label: "REVIEW", Icon: TriangleAlert },
 };
 
+type FieldEdits<Fields> = Partial<{ [Field in keyof Fields]: { value: Fields[Field] } }>;
+
+interface ShotFields {
+  releaseFrame: string;
+  shooter: string;
+  takeoffFrame: string;
+  shootingHand: "left" | "right" | "unknown";
+  shotType: string;
+  defenderIds: string;
+  teamAssignments: string;
+  playerHeight: string;
+}
+
+interface CourtFields {
+  preset: CourtCalibration["preset"];
+  imagePoints: string;
+  worldPoints: string;
+  basketGround: string;
+}
+
+interface ShotDraft {
+  fields: FieldEdits<ShotFields>;
+  correctionError?: string | null;
+  releaseError?: string | null;
+  takeoffError?: string | null;
+}
+
+const EMPTY_SHOT_DRAFT: ShotDraft = { fields: {} };
+
+function clearSavedFields<Fields>(current: FieldEdits<Fields>, submitted: FieldEdits<Fields>) {
+  const remaining = { ...current };
+  for (const field of Object.keys(submitted) as (keyof Fields)[]) {
+    // A field edited again while saving has a different entry, even if its text matches.
+    if (current[field] === submitted[field]) delete remaining[field];
+  }
+  return remaining;
+}
+
 export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame }: ShotDataPanelProps) {
   const storageKey = shot ? `arc-note-v1:${session.session.id}:${shot.id}` : "";
   const temporaryNotes = useRef(new Map<string, string>());
   const [note, setNote] = useState("");
   const [noteStorageUnavailable, setNoteStorageUnavailable] = useState(false);
-  const [correctionError, setCorrectionError] = useState<string | null>(null);
-  const [releaseFrameDraft, setReleaseFrameDraft] = useState(String(shot?.release_frame ?? 0));
-  const [releaseError, setReleaseError] = useState<string | null>(null);
-  const releaseErrorId = useId();
-  const [shooterDraft, setShooterDraft] = useState("");
-  const savedTakeoff = shot?.evidence.motion_events?.takeoff_frame ?? null;
-  const [takeoffFrameDraft, setTakeoffFrameDraft] = useState(savedTakeoff == null ? "" : String(savedTakeoff));
-  const [takeoffError, setTakeoffError] = useState<string | null>(null);
-  const takeoffErrorId = useId();
-  const [shootingHandDraft, setShootingHandDraft] = useState<"left" | "right" | "unknown">(shot?.evidence.shooting_hand ?? "unknown");
-  const [shotTypeDraft, setShotTypeDraft] = useState(shot?.evidence.shot_type ?? "unknown");
-  const [defenderIdsDraft, setDefenderIdsDraft] = useState("");
-  const [teamAssignmentsDraft, setTeamAssignmentsDraft] = useState(() => JSON.stringify(shot?.evidence.team_assignments ?? {}, null, 0));
-  const [playerHeightDraft, setPlayerHeightDraft] = useState("");
-  const [courtPreset, setCourtPreset] = useState<CourtCalibration["preset"]>(session.context?.court_calibration?.preset ?? "unknown");
-  const [imagePointsDraft, setImagePointsDraft] = useState(() => JSON.stringify(session.context?.court_calibration?.image_points ?? [], null, 0));
-  const [worldPointsDraft, setWorldPointsDraft] = useState(() => JSON.stringify(session.context?.court_calibration?.world_points ?? [], null, 0));
-  const [basketGroundDraft, setBasketGroundDraft] = useState(() => JSON.stringify(session.context?.court_calibration?.basket_ground_image ?? [], null, 0));
+  const [shotDrafts, setShotDrafts] = useState<Record<number, ShotDraft>>({});
+  const [courtDraft, setCourtDraft] = useState<FieldEdits<CourtFields>>({});
   const [contextError, setContextError] = useState<string | null>(null);
+  const releaseErrorId = useId();
+  const takeoffErrorId = useId();
+
+  const shotId = shot?.id ?? 0;
+  const { fields, correctionError, releaseError, takeoffError } = shotDrafts[shotId] ?? EMPTY_SHOT_DRAFT;
+  const savedTakeoff = shot?.evidence.motion_events?.takeoff_frame ?? null;
+  const calibration = session.context?.court_calibration;
+  const releaseFrameDraft = fields.releaseFrame?.value ?? String(shot?.release_frame ?? 0);
+  const shooterDraft = fields.shooter?.value ?? shot?.evidence.shooter_id ?? "";
+  const takeoffFrameDraft = fields.takeoffFrame?.value ?? (savedTakeoff == null ? "" : String(savedTakeoff));
+  const shootingHandDraft = fields.shootingHand?.value ?? shot?.evidence.shooting_hand ?? "unknown";
+  const shotTypeDraft = fields.shotType?.value ?? shot?.evidence.shot_type ?? "unknown";
+  const defenderIdsDraft = fields.defenderIds?.value ?? (shot?.evidence.defenders ?? []).map(({ id }) => id).join(", ");
+  const teamAssignmentsDraft = fields.teamAssignments?.value ?? JSON.stringify(shot?.evidence.team_assignments ?? {});
+  const playerHeightDraft = fields.playerHeight?.value ?? String(shot?.evidence.player_height_m ?? "");
+  const courtPreset = courtDraft.preset?.value ?? calibration?.preset ?? "unknown";
+  const imagePointsDraft = courtDraft.imagePoints?.value ?? JSON.stringify(calibration?.image_points ?? []);
+  const worldPointsDraft = courtDraft.worldPoints?.value ?? JSON.stringify(calibration?.world_points ?? []);
+  const basketGroundDraft = courtDraft.basketGround?.value ?? JSON.stringify(calibration?.basket_ground_image ?? []);
+
+  function updateShotDraft(update: (draft: ShotDraft) => ShotDraft) {
+    setShotDrafts((drafts) => ({ ...drafts, [shotId]: update(drafts[shotId] ?? EMPTY_SHOT_DRAFT) }));
+  }
+
+  function editShotField<Field extends keyof ShotFields>(field: Field, value: ShotFields[Field]) {
+    updateShotDraft((draft) => ({
+      ...draft,
+      fields: { ...draft.fields, [field]: { value } },
+      ...(field === "releaseFrame" ? { releaseError: null } : {}),
+      ...(field === "releaseFrame" || field === "takeoffFrame" ? { takeoffError: null } : {}),
+    }));
+  }
+
+  function setCorrectionError(message: string | null) {
+    updateShotDraft((draft) => ({ ...draft, correctionError: message }));
+  }
+
+  function editCourtField<Field extends keyof CourtFields>(field: Field, value: CourtFields[Field]) {
+    setCourtDraft((draft) => ({ ...draft, [field]: { value } }));
+  }
 
   useEffect(() => {
     const temporaryNote = temporaryNotes.current.get(storageKey);
@@ -89,31 +151,12 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
     }
   }, [storageKey]);
 
-  useEffect(() => {
-    setCorrectionError(null);
-    setReleaseError(null);
-    setReleaseFrameDraft(String(shot?.release_frame ?? 0));
-    setShooterDraft(shot?.evidence.shooter_id ?? "");
-    setTakeoffFrameDraft(savedTakeoff == null ? "" : String(savedTakeoff));
-    setTakeoffError(null);
-    setShootingHandDraft(shot?.evidence.shooting_hand ?? "unknown");
-    setShotTypeDraft(shot?.evidence.shot_type ?? "unknown");
-    setDefenderIdsDraft((shot?.evidence.defenders ?? []).map((defender) => defender.id).join(", "));
-    setTeamAssignmentsDraft(JSON.stringify(shot?.evidence.team_assignments ?? {}, null, 0));
-    setPlayerHeightDraft(shot?.evidence.player_height_m == null ? "" : String(shot.evidence.player_height_m));
-    setCourtPreset(session.context?.court_calibration?.preset ?? "unknown");
-    setImagePointsDraft(JSON.stringify(session.context?.court_calibration?.image_points ?? [], null, 0));
-    setWorldPointsDraft(JSON.stringify(session.context?.court_calibration?.world_points ?? [], null, 0));
-    setBasketGroundDraft(JSON.stringify(session.context?.court_calibration?.basket_ground_image ?? [], null, 0));
-    setContextError(null);
-  }, [session.context?.court_calibration, shot?.evidence.defenders, savedTakeoff, shot?.evidence.player_height_m, shot?.evidence.shot_type, shot?.evidence.shooter_id, shot?.evidence.shooting_hand, shot?.evidence.team_assignments, shot?.release_frame, storageKey]);
-
   const frameCount = session.session.frame_count;
 
   function readReleaseFrame() {
     const frame = releaseFrameDraft.trim() ? Number(releaseFrameDraft) : NaN;
     if (isReleaseFrame(frame, frameCount)) return frame;
-    setReleaseError(releaseFrameError(frameCount));
+    updateShotDraft((draft) => ({ ...draft, releaseError: releaseFrameError(frameCount) }));
     return null;
   }
 
@@ -136,12 +179,9 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
           max={frameCount - 1}
           step={1}
           value={releaseFrameDraft}
-          aria-invalid={releaseError !== null}
+          aria-invalid={Boolean(releaseError)}
           aria-describedby={releaseError ? releaseErrorId : undefined}
-          onChange={(event) => {
-            setReleaseFrameDraft(event.currentTarget.value);
-            setReleaseError(null);
-          }}
+          onChange={(event) => editShotField("releaseFrame", event.currentTarget.value)}
         />
       </label>
       {releaseError ? <p id={releaseErrorId} className="error-message" role="alert">{releaseError}</p> : null}
@@ -360,7 +400,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
             type="text"
             placeholder="Example: player-1"
             value={shooterDraft}
-            onChange={(event) => setShooterDraft(event.currentTarget.value)}
+            onChange={(event) => editShotField("shooter", event.currentTarget.value)}
           />
         </label>
         {isJumpShot ? (
@@ -376,16 +416,13 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
                 { value: "dunk", label: "Dunk (exclude)" },
                 { value: "pass", label: "Pass (exclude)" },
                 { value: "pump_fake", label: "Pump fake (exclude)" },
-              ]} onValueChange={setShotTypeDraft} />
+              ]} onValueChange={(value) => editShotField("shotType", value)} />
             </div>
             <label className="correction-field">
               <span>Takeoff frame</span>
               <input type="number" min={0} max={frameCount - 1} step={1} value={takeoffFrameDraft}
-                aria-invalid={takeoffError !== null} aria-describedby={takeoffError ? takeoffErrorId : undefined}
-                onChange={(event) => {
-                  setTakeoffFrameDraft(event.currentTarget.value);
-                  setTakeoffError(null);
-                }} />
+                aria-invalid={Boolean(takeoffError)} aria-describedby={takeoffError ? takeoffErrorId : undefined}
+                onChange={(event) => editShotField("takeoffFrame", event.currentTarget.value)} />
             </label>
             {takeoffError ? <p id={takeoffErrorId} className="error-message" role="alert">{takeoffError}</p> : null}
             <div className="correction-field">
@@ -394,19 +431,19 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
                 { value: "unknown", label: "Unknown" },
                 { value: "left", label: "Left" },
                 { value: "right", label: "Right" },
-              ]} onValueChange={(value) => setShootingHandDraft(value as "left" | "right" | "unknown")} />
+              ]} onValueChange={(value) => editShotField("shootingHand", value as "left" | "right" | "unknown")} />
             </div>
             <label className="correction-field">
               <span>Defender track labels</span>
-              <input type="text" placeholder="player-2, player-3" value={defenderIdsDraft} onChange={(event) => setDefenderIdsDraft(event.currentTarget.value)} />
+              <input type="text" placeholder="player-2, player-3" value={defenderIdsDraft} onChange={(event) => editShotField("defenderIds", event.currentTarget.value)} />
             </label>
             <label className="correction-field">
               <span>Team / role assignments JSON</span>
-              <textarea value={teamAssignmentsDraft} onChange={(event) => setTeamAssignmentsDraft(event.currentTarget.value)} placeholder='{"player-2":"opponent","player-3":"official"}' />
+              <textarea value={teamAssignmentsDraft} onChange={(event) => editShotField("teamAssignments", event.currentTarget.value)} placeholder='{"player-2":"opponent","player-3":"official"}' />
             </label>
             <label className="correction-field">
               <span>Shooter height (m, optional)</span>
-              <input type="number" min={0.5} max={2.8} step={0.01} placeholder="Example: 1.98" value={playerHeightDraft} onChange={(event) => setPlayerHeightDraft(event.currentTarget.value)} />
+              <input type="number" min={0.5} max={2.8} step={0.01} placeholder="Example: 1.98" value={playerHeightDraft} onChange={(event) => editShotField("playerHeight", event.currentTarget.value)} />
             </label>
           </>
         ) : null}
@@ -420,10 +457,13 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
             const shooter = shooterDraft.trim() || null;
             const takeoffFrame = takeoffFrameDraft.trim() ? Number(takeoffFrameDraft) : null;
             if (isJumpShot && takeoffFrame !== null && (!isReleaseFrame(takeoffFrame, frameCount) || takeoffFrame > frame)) {
-              setTakeoffError(`Enter a whole takeoff frame from 0 to ${frame}, or leave it blank`);
+              updateShotDraft((draft) => ({
+                ...draft,
+                takeoffError: `Enter a whole takeoff frame from 0 to ${frame}, or leave it blank`,
+              }));
               return;
             }
-            setTakeoffError(null);
+            updateShotDraft((draft) => ({ ...draft, takeoffError: null }));
             let teamAssignments: Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown"> | undefined;
             if (isJumpShot && teamAssignmentsDraft.trim()) {
               try {
@@ -449,7 +489,10 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
                 ...(playerHeightDraft.trim() ? { player_height_m: Number(playerHeightDraft) } : {}),
               } : {}),
             })
-              .then((updated) => onSessionChange?.(updated))
+              .then((updated) => {
+                onSessionChange?.(updated);
+                updateShotDraft((draft) => ({ ...draft, fields: clearSavedFields(draft.fields, fields) }));
+              })
               .catch((caught: unknown) => setCorrectionError(caught instanceof Error ? caught.message : "Could not save correction"));
           }}
         >
@@ -475,19 +518,19 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
               { value: "fiba", label: "FIBA" },
               { value: "high_school", label: "High school" },
               { value: "custom", label: "Custom" },
-            ]} onValueChange={(value) => setCourtPreset(value as CourtCalibration["preset"])} />
+            ]} onValueChange={(value) => editCourtField("preset", value as CourtCalibration["preset"])} />
           </div>
           <label className="correction-field">
             <span>Image points JSON</span>
-            <textarea value={imagePointsDraft} onChange={(event) => setImagePointsDraft(event.currentTarget.value)} placeholder="[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]" />
+            <textarea value={imagePointsDraft} onChange={(event) => editCourtField("imagePoints", event.currentTarget.value)} placeholder="[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]" />
           </label>
           <label className="correction-field">
             <span>Court points JSON (metres)</span>
-            <textarea value={worldPointsDraft} onChange={(event) => setWorldPointsDraft(event.currentTarget.value)} placeholder="[[0,0],[10,0],[10,15],[0,15]]" />
+            <textarea value={worldPointsDraft} onChange={(event) => editCourtField("worldPoints", event.currentTarget.value)} placeholder="[[0,0],[10,0],[10,15],[0,15]]" />
           </label>
           <label className="correction-field">
             <span>Basket ground projection JSON</span>
-            <textarea value={basketGroundDraft} onChange={(event) => setBasketGroundDraft(event.currentTarget.value)} placeholder="[x, y] (optional; rim center is review-only)" />
+            <textarea value={basketGroundDraft} onChange={(event) => editCourtField("basketGround", event.currentTarget.value)} placeholder="[x, y] (optional; rim center is review-only)" />
           </label>
           <button
             className="correction-save"
@@ -508,7 +551,10 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
                     world_points: worldPoints as number[][],
                     ...(Array.isArray(basketGround) && basketGround.length === 2 ? { basket_ground_image: basketGround as number[] } : {}),
                   },
-                }).then((updated) => onSessionChange?.(updated)).catch((caught: unknown) => setContextError(caught instanceof Error ? caught.message : "Could not save court setup"));
+                }).then((updated) => {
+                  onSessionChange?.(updated);
+                  setCourtDraft((draft) => clearSavedFields(draft, courtDraft));
+                }).catch((caught: unknown) => setContextError(caught instanceof Error ? caught.message : "Could not save court setup"));
               } catch (caught) {
                 setContextError(caught instanceof Error ? caught.message : "Court points must be valid JSON");
               }

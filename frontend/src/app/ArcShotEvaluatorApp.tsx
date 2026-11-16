@@ -521,7 +521,7 @@ export function ArcShotEvaluatorApp() {
           <AnalysisQueue items={queue} compact activeSessionId={session.session.id} {...queueActions} />
           <div className={`analysis-detail-columns ${shot?.coaching ? "" : "analysis-detail-legacy"}`}>
             {shot?.coaching ? <CoachNotes shot={shot} /> : null}
-            <ShotDataPanel session={session} shot={shot} tab={tab} onSessionChange={handleSessionChange} onSeekFrame={(frame) => setReviewSeek({ time: frame / Math.max(1, session.session.fps) })} />
+            <ShotDataPanel key={session.session.id} session={session} shot={shot} tab={tab} onSessionChange={handleSessionChange} onSeekFrame={(frame) => setReviewSeek({ time: frame / Math.max(1, session.session.fps) })} />
           </div>
         </aside>
       </main>

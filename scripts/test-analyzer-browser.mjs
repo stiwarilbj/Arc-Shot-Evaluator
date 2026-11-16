@@ -726,6 +726,7 @@ async function checkCorrectionDetails() {
       result.shot_mode = "jump_shot";
       const shot = result.shots[0];
       const fps = result.session.fps;
+      result.shots = [shot, { ...shot, id: shot.id + 1, evidence: { ...shot.evidence } }];
       shot.evidence.shooter_id = "model-player";
       shot.evidence.motion_events = {
         release_frame: shot.release_frame,
@@ -749,9 +750,44 @@ async function checkCorrectionDetails() {
       return page.evaluate(async (url) => (await (await fetch(url)).json())[0], href);
     };
     await expect(shooter).toHaveValue("model-player");
+    const imagePoints = page.getByRole("textbox", { name: "Image points JSON", exact: true });
+    const courtPoints = page.getByRole("textbox", { name: "Court points JSON (metres)" });
+    const saveCourt = page.getByRole("button", { name: "Save court setup" });
+    const imageDraft = "[[4,0],[20,0],[20,30],[4,30]]";
+    const courtDraft = "[[0,0],[2,0],[2,3],[0,3]]";
+    await imagePoints.fill(imageDraft);
+    await courtPoints.fill(courtDraft);
     await shooter.fill("reviewed-player");
+    await releaseInput.fill(String(release));
+    await page.getByRole("group", { name: "Correct shot outcome" }).getByRole("button", { name: "MISS", exact: true }).tap();
+    const outcomeOnly = await readExport();
+    expect(outcomeOnly.outcome).toBe("miss");
+    expect(outcomeOnly.evidence.shooter_id).toBe("model-player");
+    await expect(shooter).toHaveValue("reviewed-player");
+    await expect(releaseInput).toHaveValue(String(release));
+
+    await page.getByRole("button", { name: "Next shot" }).tap();
+    await expect(shooter).toHaveValue("");
+    await shooter.fill("second-shot-draft");
+    await expect(imagePoints).toHaveValue(imageDraft);
+    await page.getByRole("button", { name: "Previous shot" }).tap();
+    await expect(shooter).toHaveValue("reviewed-player");
+    await expect(releaseInput).toHaveValue(String(release));
+    await expect(imagePoints).toHaveValue(imageDraft);
+    await saveCourt.tap();
+    await expect(shooter).toHaveValue("reviewed-player");
+    await expect(releaseInput).toHaveValue(String(release));
+    await expect(imagePoints).toHaveValue(imageDraft);
+
+    await page.getByRole("button", { name: "Next shot" }).tap();
+    await expect(shooter).toHaveValue("second-shot-draft");
+    await page.getByRole("button", { name: "Previous shot" }).tap();
+    const newerImageDraft = "[[8,0],[20,0],[20,30],[8,30]]";
+    await imagePoints.fill(newerImageDraft);
+    await releaseInput.fill(String(outcomeOnly.release_frame));
     await save.tap();
     expect((await readExport()).evidence.shooter_id).toBe("reviewed-player");
+    await expect(imagePoints).toHaveValue(newerImageDraft);
     await shooter.fill("");
     await releaseInput.fill(String(release));
     await takeoffInput.fill(String(takeoff));
@@ -781,6 +817,8 @@ async function checkCorrectionDetails() {
     await page.getByTitle("Open this analysis").click();
     await expect(shooter).toHaveValue("");
     await expect(takeoffInput).toHaveValue(String(takeoff));
+    await expect(imagePoints).toHaveValue(imageDraft);
+    await expect(courtPoints).toHaveValue(courtDraft);
     expect(await readExport()).toEqual(corrected);
     await takeoffInput.fill(String(release + 1));
     await save.tap();
@@ -797,7 +835,7 @@ async function checkCorrectionDetails() {
 
 async function checkHostedAnalyzer() {
   await checkCorrectionDetails();
-  console.log("Shot labels, reviewed timing, evidence links and exports stayed in sync through reload");
+  console.log("Shot and court drafts survived switching shots and separate saves, and saved corrections stayed in sync through reload");
   await checkReviewSeeks();
   console.log("Repeated shot and evidence seeks, slow-source handoff, and the mobile shot strip passed");
   await checkBackgroundCompletion(1440);

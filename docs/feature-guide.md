@@ -65,6 +65,9 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
   and exported timing follow saved release and takeoff corrections · Leave
   the shooter label or takeoff frame blank to clear it · If browser storage is
   unavailable, per-shot notes last while the result stays open
+- Shot corrections and court setup drafts stay in place while you switch shots
+  or save a different part of the review · Save each form to keep its edits
+  after reload
 - Hosted JSON and downloaded-app JSONL include saved corrections and manually
   added attempts · The best streak uses release order · Local corrections are
   reapplied when a finished result reopens from the queue
