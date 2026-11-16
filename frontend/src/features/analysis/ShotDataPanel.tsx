@@ -106,7 +106,8 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
   const takeoffFrameDraft = fields.takeoffFrame?.value ?? (savedTakeoff == null ? "" : String(savedTakeoff));
   const shootingHandDraft = fields.shootingHand?.value ?? shot?.evidence.shooting_hand ?? "unknown";
   const shotTypeDraft = fields.shotType?.value ?? shot?.evidence.shot_type ?? "unknown";
-  const defenderIdsDraft = fields.defenderIds?.value ?? (shot?.evidence.defenders ?? []).map(({ id }) => id).join(", ");
+  const defenderIdsDraft = fields.defenderIds?.value
+    ?? (shot?.evidence.defender_ids ?? shot?.evidence.defenders?.map(({ id }) => id) ?? []).join(", ");
   const teamAssignmentsDraft = fields.teamAssignments?.value ?? JSON.stringify(shot?.evidence.team_assignments ?? {});
   const playerHeightDraft = fields.playerHeight?.value ?? String(shot?.evidence.player_height_m ?? "");
   const courtPreset = courtDraft.preset?.value ?? calibration?.preset ?? "unknown";

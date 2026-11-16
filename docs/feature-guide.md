@@ -76,6 +76,11 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
   passes, and pump fakes from the summary · Excluded attempts remain in the
   review and export · Saved classifications take precedence over court estimates,
   and three-point percentage uses confirmed makes and misses
+- **Defender track labels** saves the reviewer’s list, including unmatched labels
+  and an intentionally empty list · The tracked count and **Contest** seek use
+  recorded defender evidence · Removing and later restoring a tracked label
+  restores its evidence · Older hosted reviews recover saved labels, with
+  overwritten measurements unavailable
 - Download the source video in hosted review or the rendered annotated video in
   the downloaded app · The local app keeps original model evidence on disk
 

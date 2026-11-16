@@ -335,6 +335,44 @@ def test_jump_shot_review_clears_labels_and_syncs_timing(tmp_path, monkeypatch) 
     assert (session_dir / "analysis.json").read_text() == source
 
 
+def test_jump_shot_defender_labels_reopen_separately_from_tracking_evidence(tmp_path, monkeypatch) -> None:
+    session_id = "defender-review"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    tracked = {"id": "guard-2", "role": "opponent", "evidence_frames": [28]}
+    original = {
+        "session": {"id": session_id, "fps": 30, "frame_count": 90},
+        "shot_mode": "jump_shot",
+        "shots": [{"id": 1, "outcome": "review", "release_frame": 30, "evidence": {"defenders": [tracked]}}],
+    }
+    source = json.dumps(original)
+    (session_dir / "analysis.json").write_text(source)
+    (session_dir / "shots.jsonl").write_text(json.dumps(original["shots"][0]) + "\n")
+    (session_dir / "job.json").write_text(json.dumps({"id": session_id, "status": "done", "result": original}))
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    client = TestClient(app)
+    url = f"/api/sessions/{session_id}/shots/1"
+
+    def check_review(changes, labels, defenders):
+        response = client.patch(url, json=changes)
+        assert response.status_code == 200
+        shot = response.json()["shots"][0]
+        assert shot["evidence"]["defender_ids"] == labels
+        assert shot["evidence"]["defenders"] == defenders
+        assert client.get(f"/api/jobs/{session_id}").json()["result"]["shots"][0] == shot
+        assert client.get(f"/media/{session_id}/shots.jsonl").json() == shot
+
+    labels = ["guard-2", "guard-manual"]
+    check_review({"defender_ids": labels}, labels, [tracked])
+    check_review({"defender_ids": []}, [], [])
+    check_review({"defender_ids": labels}, labels, [tracked])
+    for role in ("official", "teammate", "opponent"):
+        check_review({"team_assignments": {"guard-2": role}}, labels, [tracked] if role == "opponent" else [])
+    check_review({"outcome": "miss"}, labels, [tracked])
+    assert (session_dir / "analysis.json").read_text() == source
+
+
 def test_jump_shot_classification_survives_calibration_and_drives_summary(tmp_path, monkeypatch) -> None:
     session_id = "classification-review"
     session_dir = tmp_path / session_id

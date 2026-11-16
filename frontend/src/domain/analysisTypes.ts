@@ -70,6 +70,21 @@ export interface ShotCoaching {
   }>;
 }
 
+interface DefenderEvidence {
+  id: string;
+  role?: string;
+  separation?: { value: number | null; units: string; availability: boolean; method: string; uncertainty: number | null };
+  closing_speed?: { value: number | null; units: string; availability: boolean; method: string; uncertainty: number | null };
+  approach_direction_deg?: number | null;
+  body_orientation_deg?: number | null;
+  arm_extension?: number | null;
+  hand_elevation_relative?: number | null;
+  hand_position_relative?: string;
+  timing_available?: boolean;
+  evidence_frames?: number[];
+  uncertainty?: string;
+}
+
 export interface ShotAnalysis {
   id: number;
   outcome: ShotOutcome;
@@ -149,20 +164,9 @@ export interface ShotAnalysis {
       basket_projection_basis?: string;
       calibration_quality?: string;
     };
-    defenders?: Array<{
-      id: string;
-      role?: string;
-      separation?: { value: number | null; units: string; availability: boolean; method: string; uncertainty: number | null };
-      closing_speed?: { value: number | null; units: string; availability: boolean; method: string; uncertainty: number | null };
-      approach_direction_deg?: number | null;
-      body_orientation_deg?: number | null;
-      arm_extension?: number | null;
-      hand_elevation_relative?: number | null;
-      hand_position_relative?: string;
-      timing_available?: boolean;
-      evidence_frames?: number[];
-      uncertainty?: string;
-    }>;
+    defender_ids?: string[];
+    defenders?: DefenderEvidence[];
+    detected_defenders?: DefenderEvidence[];
     team_assignments?: Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown">;
     player_height_m?: number | null;
     mechanics_assessment?: {

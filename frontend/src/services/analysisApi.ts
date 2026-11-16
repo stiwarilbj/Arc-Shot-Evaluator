@@ -147,9 +147,7 @@ export async function correctSavedShot(
             shooter_id: correction.shooter_id === undefined ? shot.evidence.shooter_id : correction.shooter_id,
             shooting_hand: correction.shooting_hand ?? shot.evidence.shooting_hand,
             shot_type: correction.shot_type ?? shot.evidence.shot_type,
-            defenders: correction.defender_ids
-              ? correction.defender_ids.filter(Boolean).map((id) => ({ id }))
-              : shot.evidence.defenders,
+            defender_ids: correction.defender_ids ?? shot.evidence.defender_ids,
             team_assignments: correction.team_assignments ?? shot.evidence.team_assignments,
             player_height_m: correction.player_height_m === undefined ? shot.evidence.player_height_m : correction.player_height_m,
             correction: { source: "local_user", updated_at: new Date().toISOString(), fields: Object.keys(correction), comment: correction.comment },

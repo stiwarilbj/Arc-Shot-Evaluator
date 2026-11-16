@@ -369,7 +369,10 @@ async function checkNativeCorrectionOrder() {
     id: 1, outcome: "review", confidence: 0.6, confidence_label: "review", release_frame: 30, release_time: 1,
     end_frame: 50, release_speed_ms: null, release_height_m: null, entry_angle_deg: null, arc_peak_m: null,
     form: { elbow: null, knee: null, shoulder: null, hip: null }, flags: [],
-    evidence: { shooter_id: null, motion_events: { takeoff_frame: null, release_frame: 30 } },
+    evidence: {
+      shooter_id: null, motion_events: { takeoff_frame: null, release_frame: 30 },
+      defenders: [{ id: "guard-2", role: "opponent", evidence_frames: [28] }],
+    },
   };
   const result = {
     session: { id, filename: "Review.mp4", width: 1280, height: 720, fps: 30, frame_count: 60, duration: 2 },
@@ -390,6 +393,7 @@ async function checkNativeCorrectionOrder() {
       sent.push(changes);
       if ("shooter_id" in changes) shot.evidence.shooter_id = changes.shooter_id;
       if ("takeoff_frame" in changes) shot.evidence.motion_events.takeoff_frame = changes.takeoff_frame;
+      if ("defender_ids" in changes) shot.evidence.defender_ids = changes.defender_ids;
       if (sent.length === 1) {
         firstSave.resolve();
         await acknowledgeFirst.promise;
@@ -400,7 +404,9 @@ async function checkNativeCorrectionOrder() {
     await page.getByTitle("Open this analysis").click();
     const shooter = page.getByRole("textbox", { name: "Shooter label (optional)" });
     const takeoff = page.getByRole("spinbutton", { name: "Takeoff frame", exact: true });
+    const labels = page.getByRole("textbox", { name: "Defender track labels" });
     const save = page.getByRole("button", { name: "Save timing / shooter correction" });
+    await expect(labels).toHaveValue("guard-2");
     await shooter.fill("new-shooter");
     await takeoff.fill("20");
     await save.click();
@@ -417,6 +423,12 @@ async function checkNativeCorrectionOrder() {
     await page.getByTitle("Open this analysis").click();
     await expect(shooter).toHaveValue("");
     await expect(takeoff).toHaveValue("");
+    await labels.fill("guard-2, guard-manual");
+    await save.click();
+    await expect.poll(() => sent.at(-1)).toEqual({ defender_ids: ["guard-2", "guard-manual"] });
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+    await expect(labels).toHaveValue("guard-2, guard-manual");
   } finally {
     acknowledgeFirst.resolve();
     await page.close();
@@ -989,11 +1001,111 @@ async function checkJumpShotClassification() {
   }
 }
 
+async function checkDefenderReview() {
+  const page = await openPage({ width: 390, height: 780 }, true);
+  const key = "arc-analysis-queue-pages-v1";
+  try {
+    await page.locator(".example-card").first().tap();
+    await page.waitForFunction((key) => JSON.parse(localStorage.getItem(key) ?? "[]")[0]?.result?.shots.length, key);
+    const { frame, fps, tracked } = await page.evaluate((key) => {
+      const queue = JSON.parse(localStorage.getItem(key));
+      const result = queue[0].result;
+      const shot = result.shots[0];
+      const frame = Math.max(0, shot.release_frame - 3);
+      const tracked = {
+        id: "guard-2", role: "opponent", evidence_frames: [frame],
+        separation: { value: 42, units: "px", availability: true, method: "projected", uncertainty: null },
+      };
+      result.shot_mode = "jump_shot";
+      shot.evidence.defenders = [tracked];
+      localStorage.setItem(key, JSON.stringify(queue));
+      return { frame, fps: result.session.fps, tracked };
+    }, key);
+    const reopen = async () => {
+      await page.reload();
+      await page.getByTitle("Open this analysis").click();
+    };
+    await reopen();
+
+    const labels = page.getByRole("textbox", { name: "Defender track labels" });
+    const roles = page.getByRole("textbox", { name: "Team / role assignments JSON" });
+    const save = page.getByRole("button", { name: "Save timing / shooter correction" });
+    const tracking = page.getByRole("button", { name: "Tracking", exact: true });
+    const count = page.locator(".metric-row").filter({ hasText: "Defenders tracked" }).locator("strong");
+    const contest = page.getByRole("button", { name: /^Contest/ });
+    const readEvidence = async () => {
+      const href = await page.getByRole("link", { name: "Shot data JSON" }).getAttribute("href");
+      return page.evaluate(async (url) => (await (await fetch(url)).json())[0].evidence, href);
+    };
+    await expect(labels).toHaveValue("guard-2");
+    await labels.fill("guard-manual, guard-2");
+    await save.tap();
+    await tracking.tap();
+    await expect(count).toHaveText("1");
+    await expect(contest).toHaveText(`ContestFrame ${frame}`);
+    await contest.tap();
+    const video = page.locator(".video-workspace video");
+    await expect.poll(() => video.evaluate((element) => element.currentTime)).toBeCloseTo(frame / fps, 2);
+    expect(await readEvidence()).toMatchObject({
+      defender_ids: ["guard-manual", "guard-2"], defenders: [tracked], detected_defenders: [tracked],
+    });
+
+    for (const [text, ids] of [["guard-manual", ["guard-manual"]], ["", []]]) {
+      await labels.fill(text);
+      await save.tap();
+      await expect(count).toHaveText("0");
+      await expect(contest).toBeDisabled();
+      expect(await readEvidence()).toMatchObject({ defender_ids: ids, defenders: [], detected_defenders: [tracked] });
+    }
+    await reopen();
+    await expect(labels).toHaveValue("");
+    await labels.fill("guard-2, guard-manual");
+    await save.tap();
+    for (const role of ["official", "teammate", "opponent"]) {
+      await roles.fill(JSON.stringify({ "guard-2": role }));
+      await save.tap();
+      expect(await readEvidence()).toMatchObject({
+        defender_ids: ["guard-2", "guard-manual"],
+        defenders: role === "opponent" ? [tracked] : [],
+        detected_defenders: [tracked],
+      });
+      await expect(labels).toHaveValue("guard-2, guard-manual");
+    }
+    await page.getByRole("textbox", { name: "Shooter label (optional)" }).fill("reviewed-shooter");
+    await save.tap();
+    await reopen();
+    await expect(labels).toHaveValue("guard-2, guard-manual");
+    expect(await readEvidence()).toMatchObject({
+      shooter_id: "reviewed-shooter", defender_ids: ["guard-2", "guard-manual"], defenders: [tracked],
+    });
+
+    // Old browser saves replaced the detector records with bare labels.
+    await page.evaluate((key) => {
+      const queue = JSON.parse(localStorage.getItem(key));
+      const evidence = queue[0].result.shots[0].evidence;
+      evidence.defenders = [{ id: "old-manual-label" }];
+      delete evidence.defender_ids;
+      delete evidence.detected_defenders;
+      localStorage.setItem(key, JSON.stringify(queue));
+    }, key);
+    await reopen();
+    await expect(labels).toHaveValue("old-manual-label");
+    await tracking.tap();
+    await expect(count).toHaveText("0");
+    await expect(contest).toBeDisabled();
+    expect(await readEvidence()).toMatchObject({ defender_ids: ["old-manual-label"], defenders: [] });
+  } finally {
+    await page.close();
+  }
+}
+
 async function checkHostedAnalyzer() {
   await checkCorrectionDetails();
   console.log("Shot and court drafts survived switching shots and separate saves, and saved corrections stayed in sync through reload");
   await checkJumpShotClassification();
   console.log("Jump-shot exclusions, restored summaries, and confirmed three-point rates passed on mobile");
+  await checkDefenderReview();
+  console.log("Defender labels, tracked contest evidence, and recovery of legacy reviews passed");
   await checkReviewSeeks();
   console.log("Repeated shot and evidence seeks, slow-source handoff, and the mobile shot strip passed");
   await checkBackgroundCompletion(1440);

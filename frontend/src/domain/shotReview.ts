@@ -117,9 +117,33 @@ export function reviewShotMotion(shot: ShotAnalysis, fps: number, takeoffFrame?:
   };
 }
 
+function reviewBrowserDefenders(shot: ShotAnalysis): ShotAnalysis {
+  const { defender_ids: savedIds, defenders, detected_defenders: original, team_assignments: assignments } = shot.evidence;
+  // Older browser corrections stored the labels as ID-only defender records.
+  const legacyIds = savedIds === undefined && original === undefined
+    && defenders?.every((defender) => typeof defender?.id === "string" && Object.keys(defender).length === 1)
+    ? defenders.map(({ id }) => id) : undefined;
+  const reviewedIds = savedIds ?? legacyIds;
+  if (reviewedIds === undefined && assignments === undefined) return shot;
+
+  const detected = original ?? (legacyIds ? [] : defenders ?? []);
+  const allowedIds = reviewedIds === undefined ? undefined : new Set(reviewedIds);
+  const reviewed = detected.flatMap((defender) => {
+    if (allowedIds && !allowedIds.has(defender.id)) return [];
+    const role = assignments && Object.hasOwn(assignments, defender.id) ? assignments[defender.id] : undefined;
+    if (role === "teammate" || role === "official") return [];
+    return [role === undefined ? defender : { ...defender, role }];
+  });
+  return {
+    ...shot,
+    evidence: { ...shot.evidence, defender_ids: reviewedIds, detected_defenders: detected, defenders: reviewed },
+  };
+}
+
 export function refreshBrowserShotReview(session: AnalysisSession): AnalysisSession {
   const shots = session.shots.map((shot) => {
-    const updated = reviewShotMotion(shot, session.session.fps);
+    let updated = reviewShotMotion(shot, session.session.fps);
+    if ((session.shot_mode ?? shot.shot_mode) === "jump_shot") updated = reviewBrowserDefenders(updated);
     const type = updated.evidence.shot_type;
     // Older browser saves recorded the exclusion label without its eligibility.
     if (session.shot_mode === "jump_shot" && type && EXCLUDED_JUMP_SHOT_TYPES.has(type)
