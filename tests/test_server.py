@@ -335,6 +335,64 @@ def test_jump_shot_review_clears_labels_and_syncs_timing(tmp_path, monkeypatch) 
     assert (session_dir / "analysis.json").read_text() == source
 
 
+def test_jump_shot_classification_survives_calibration_and_drives_summary(tmp_path, monkeypatch) -> None:
+    session_id = "classification-review"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    original = {
+        "session": {"id": session_id, "fps": 30, "frame_count": 90},
+        "shot_mode": "jump_shot",
+        "shots": [
+            {"id": 1, "outcome": "make", "release_frame": 20,
+             "evidence": {"takeoff_image": [99, 50], "rim_image": [0, 0]}},
+            {"id": 2, "outcome": "review", "release_frame": 45, "evidence": {"shot_type": "three_pointer"}},
+        ],
+    }
+    source = json.dumps(original)
+    (session_dir / "analysis.json").write_text(source)
+    (session_dir / "shots.jsonl").write_text("".join(json.dumps(shot) + "\n" for shot in original["shots"]))
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    client = TestClient(app)
+    url = f"/api/sessions/{session_id}"
+    calibration = {
+        "preset": "nba", "image_points": [[0, 0], [100, 0], [100, 100], [0, 100]],
+        "world_points": [[0, 0], [10, 0], [10, 10], [0, 10]], "basket_ground_image": [0, 0],
+    }
+    calibrated = client.patch(f"{url}/context", json={"court_calibration": calibration}).json()
+    assert calibrated["shots"][0]["evidence"]["shot_type"] == "three_pointer"
+    assert calibrated["summary"]["observed_three_pct"] == 100.0
+
+    for excluded_type in ("layup", "dunk", "pass", "pump_fake"):
+        reviewed = client.patch(f"{url}/shots/1", json={"shot_type": excluded_type}).json()
+        assert reviewed["summary"]["attempts"] == 1
+        assert reviewed["summary"]["excluded_attempts"] == 1
+        assert reviewed["summary"]["best_streak"] == 0
+        assert reviewed["summary"]["observed_fg_pct"] is None
+        assert reviewed["summary"]["observed_three_pct"] is None
+        evidence = reviewed["shots"][0]["evidence"]
+        assert evidence["shot_type"] == excluded_type
+        assert evidence["statistics_eligibility"]["status"] == "excluded"
+        assert evidence["distance"]["shot_type"] == "three_pointer"
+
+    calibration["world_points"] = [[0, 0], [5, 0], [5, 5], [0, 5]]
+    recalibrated = client.patch(f"{url}/context", json={"court_calibration": calibration}).json()
+    assert recalibrated["shots"][0]["evidence"]["shot_type"] == "pump_fake"
+    assert recalibrated["shots"][0]["evidence"]["distance"]["shot_type"] == "mid_range"
+    reopened = client.get(url).json()
+    assert reopened["summary"] == recalibrated["summary"]
+    assert [json.loads(line) for line in client.get(f"/media/{session_id}/shots.jsonl").text.splitlines()] == reopened["shots"]
+
+    missed = client.patch(f"{url}/shots/2", json={"outcome": "miss"}).json()
+    assert missed["summary"]["observed_three_pct"] == 0.0
+    restored = client.patch(f"{url}/shots/1", json={"shot_type": "three_pointer"}).json()
+    assert restored["summary"]["excluded_attempts"] == 0
+    assert restored["summary"]["attempts"] == 2
+    assert restored["summary"]["observed_three_pct"] == 50.0
+    assert restored["shots"][0]["evidence"]["statistics_eligibility"]["status"] == "eligible_pending_validation"
+    assert (session_dir / "analysis.json").read_text() == source
+
+
 def test_simultaneous_review_mutations_preserve_every_change(tmp_path, monkeypatch) -> None:
     session_id = "concurrent-review"
     session_dir = tmp_path / session_id

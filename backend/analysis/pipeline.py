@@ -2056,10 +2056,17 @@ def refresh_saved_analysis(payload: dict) -> dict:
         for field in ("shot_type", "shooting_hand", "takeoff_frame", "defender_ids", "team_assignments", "player_height_m"):
             if field in correction:
                 raw["evidence"] = {**dict(raw.get("evidence") or {}), field: correction[field]}
-        if correction.get("shot_type") in {"layup", "dunk", "pass", "pump_fake"}:
+        reviewed_type = correction.get("shot_type")
+        if isinstance(reviewed_type, str) and raw.get("shot_mode", shot_mode) == "jump_shot":
+            if reviewed_type in {"layup", "dunk", "pass", "pump_fake"}:
+                eligibility = {"status": "excluded", "reason": "Non-jump attempt excluded from jump-shot statistics"}
+            elif reviewed_type in {"unknown", "near_three_point_line_review"}:
+                eligibility = {"status": "review", "reason": "Shot subtype remains subject to review"}
+            else:
+                eligibility = {"status": "eligible_pending_validation", "reason": "Shot type set during review"}
             raw["evidence"] = {
                 **dict(raw.get("evidence") or {}),
-                "statistics_eligibility": {"status": "excluded", "reason": "non-jump attempt excluded from jump-shot statistics"},
+                "statistics_eligibility": eligibility,
             }
         if "release_frame" in correction or "takeoff_frame" in correction:
             raw["evidence"] = _reviewed_motion_evidence(
@@ -2202,7 +2209,9 @@ def refresh_saved_analysis(payload: dict) -> dict:
                             (float(takeoff[0]), float(takeoff[1])),
                             (float(rim_image[0]), float(rim_image[1])),
                         )
-                        shot.evidence["shot_type"] = shot.evidence["distance"].get("shot_type", "unknown")
+                        correction = corrections.get(str(shot.id))
+                        if not isinstance(correction, dict) or not isinstance(correction.get("shot_type"), str):
+                            shot.evidence["shot_type"] = shot.evidence["distance"].get("shot_type", "unknown")
                 shot.evidence.setdefault("predictions", {
                     "release": {"status": "unavailable_unvalidated", "probability": None, "cutoff": "release", "cutoff_ms_after_release": 0, "cutoff_frame": shot.release_frame},
                     "release_plus_200ms": {"status": "unavailable_unvalidated", "probability": None, "cutoff": "release_plus_200ms", "cutoff_ms_after_release": 200, "cutoff_frame": shot.release_frame},
@@ -2283,16 +2292,14 @@ def summarize_session(shots: list[ShotAnalysis], shot_mode: str = "free_throw") 
         "average_confidence": round(float(np.mean([shot.confidence for shot in stats_shots])) * 100, 1) if stats_shots else 0.0,
     }
     if shot_mode == "jump_shot":
+        decided_threes = [shot for shot in decided if shot.evidence.get("shot_type") == "three_pointer"]
         summary.update({
             "detected_attempts": len(shots),
             "excluded_attempts": len(excluded),
             "observed_fg_pct": summary["fg_pct"],
             "observed_three_pct": round(
-                sum(shot.outcome == "make" for shot in stats_shots if shot.evidence.get("shot_type") == "three_pointer")
-                / max(1, sum(shot.outcome in {"make", "miss"} and shot.evidence.get("shot_type") == "three_pointer" for shot in stats_shots))
-                * 100,
-                1,
-            ) if any(shot.evidence.get("shot_type") == "three_pointer" for shot in stats_shots) else None,
+                sum(shot.outcome == "make" for shot in decided_threes) / len(decided_threes) * 100, 1,
+            ) if decided_threes else None,
             "prediction_status": "unavailable_unvalidated",
         })
     return summary

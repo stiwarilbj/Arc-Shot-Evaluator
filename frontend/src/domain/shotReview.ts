@@ -1,4 +1,6 @@
-import type { AnalysisSession, ShotAnalysis } from "./analysisTypes";
+import type { AnalysisSession, ShotAnalysis, ShotMode } from "./analysisTypes";
+
+const EXCLUDED_JUMP_SHOT_TYPES = new Set(["layup", "dunk", "pass", "pump_fake"]);
 
 export function isReleaseFrame(frame: number, frameCount: number) {
   return Number.isSafeInteger(frame) && frame >= 0 && frame < frameCount;
@@ -16,15 +18,36 @@ function jsonDownload(value: unknown) {
   return `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(value))}`;
 }
 
-export function browserShotReview(sessionId: string, shots: ShotAnalysis[]) {
-  const attempts = shots.length;
-  const chronological = [...shots].sort((left, right) => left.release_frame - right.release_frame || left.id - right.id);
+export function reviewJumpShotClassification(shot: ShotAnalysis, shotType: string): ShotAnalysis {
+  const statisticsEligibility = EXCLUDED_JUMP_SHOT_TYPES.has(shotType)
+    ? { status: "excluded", reason: "Non-jump attempt excluded from jump-shot statistics" }
+    : shotType === "unknown" || shotType === "near_three_point_line_review"
+      ? { status: "review", reason: "Shot subtype remains subject to review" }
+      : { status: "eligible_pending_validation", reason: "Shot type set during review" };
+  return {
+    ...shot,
+    evidence: { ...shot.evidence, shot_type: shotType, statistics_eligibility: statisticsEligibility },
+  };
+}
+
+export function browserShotReview(sessionId: string, shots: ShotAnalysis[], shotMode?: ShotMode) {
+  const isJumpShot = shotMode === "jump_shot";
+  const counted = isJumpShot ? shots.filter((shot) => shot.evidence.statistics_eligibility?.status !== "excluded") : shots;
+  const attempts = counted.length;
+  const chronological = [...counted].sort((left, right) => left.release_frame - right.release_frame || left.id - right.id);
   let makes = 0;
   let misses = 0;
+  let threePointMakes = 0;
+  let threePointAttempts = 0;
   let streak = 0;
   let bestStreak = 0;
   let confidence = 0;
   for (const shot of chronological) {
+    if (isJumpShot && shot.evidence.shot_type === "three_pointer"
+        && (shot.outcome === "make" || shot.outcome === "miss")) {
+      threePointAttempts += 1;
+      if (shot.outcome === "make") threePointMakes += 1;
+    }
     if (shot.outcome === "make") {
       makes += 1;
       streak += 1;
@@ -48,6 +71,11 @@ export function browserShotReview(sessionId: string, shots: ShotAnalysis[]) {
     predicted_ft_pct: null,
     best_streak: bestStreak,
     average_confidence: attempts ? Number((confidence / attempts * 100).toFixed(1)) : 0,
+    ...(isJumpShot ? {
+      detected_attempts: shots.length,
+      excluded_attempts: shots.length - attempts,
+      observed_three_pct: threePointAttempts ? Number((threePointMakes / threePointAttempts * 100).toFixed(1)) : null,
+    } : {}),
   };
   return {
     summary,
@@ -90,7 +118,16 @@ export function reviewShotMotion(shot: ShotAnalysis, fps: number, takeoffFrame?:
 }
 
 export function refreshBrowserShotReview(session: AnalysisSession): AnalysisSession {
-  const shots = session.shots.map((shot) => reviewShotMotion(shot, session.session.fps));
-  const { summary, shotArtifacts } = browserShotReview(session.session.id, shots);
+  const shots = session.shots.map((shot) => {
+    const updated = reviewShotMotion(shot, session.session.fps);
+    const type = updated.evidence.shot_type;
+    // Older browser saves recorded the exclusion label without its eligibility.
+    if (session.shot_mode === "jump_shot" && type && EXCLUDED_JUMP_SHOT_TYPES.has(type)
+        && updated.evidence.statistics_eligibility?.status !== "excluded") {
+      return reviewJumpShotClassification(updated, type);
+    }
+    return updated;
+  });
+  const { summary, shotArtifacts } = browserShotReview(session.session.id, shots, session.shot_mode);
   return { ...session, shots, summary, artifacts: { ...session.artifacts, ...shotArtifacts } };
 }

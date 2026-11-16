@@ -72,6 +72,10 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
 - Hosted JSON and downloaded-app JSONL include saved corrections and manually
   added attempts · The best streak uses release order · Local corrections are
   reapplied when a finished result reopens from the queue
+- In jump-shot reviews, use **Shot classification** to exclude layups, dunks,
+  passes, and pump fakes from the summary · Excluded attempts remain in the
+  review and export · Saved classifications take precedence over court estimates,
+  and three-point percentage uses confirmed makes and misses
 - Download the source video in hosted review or the rendered annotated video in
   the downloaded app · The local app keeps original model evidence on disk
 

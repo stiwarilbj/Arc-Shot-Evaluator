@@ -335,7 +335,7 @@ export async function analyzeVideoInBrowser(
     onProgress(84, "Building shot review");
     const shots = selected.map((item, index) => buildShot(index + 1, item.time, fps, item.score, frameCount, shotMode, poseOverlay));
     const sessionId = makeId();
-    const { summary, shotArtifacts } = browserShotReview(sessionId, shots);
+    const { summary, shotArtifacts } = browserShotReview(sessionId, shots, shotMode);
     const session: AnalysisSession = {
       session: {
         id: sessionId,

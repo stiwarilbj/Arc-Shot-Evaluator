@@ -1,5 +1,5 @@
 import type { AnalysisJobState, AnalysisSession, ExampleVideo, ProcessingMode, ShotAnalysis, ShotMode } from "../domain/analysisTypes";
-import { browserShotEndFrame, isReleaseFrame, refreshBrowserShotReview, releaseFrameError, reviewShotMotion } from "../domain/shotReview";
+import { browserShotEndFrame, isReleaseFrame, refreshBrowserShotReview, releaseFrameError, reviewJumpShotClassification, reviewShotMotion } from "../domain/shotReview";
 import { IS_GITHUB_PAGES } from "../runtime";
 
 const browserSessions = new Map<string, AnalysisSession>();
@@ -155,7 +155,10 @@ export async function correctSavedShot(
             correction: { source: "local_user", updated_at: new Date().toISOString(), fields: Object.keys(correction), comment: correction.comment },
           },
         };
-        return reviewShotMotion(updated, fps, takeoff);
+        const reviewed = reviewShotMotion(updated, fps, takeoff);
+        return (session.shot_mode ?? shot.shot_mode) === "jump_shot" && correction.shot_type !== undefined
+          ? reviewJumpShotClassification(reviewed, correction.shot_type)
+          : reviewed;
       });
       return refreshBrowserShotReview({ ...session, shots });
     });

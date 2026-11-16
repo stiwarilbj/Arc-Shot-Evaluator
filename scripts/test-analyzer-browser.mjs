@@ -906,9 +906,94 @@ async function checkCorrectionDetails() {
   }
 }
 
+async function checkJumpShotClassification() {
+  const page = await openPage({ width: 390, height: 780 }, true);
+  const key = "arc-analysis-queue-pages-v1";
+  try {
+    await page.locator(".example-card").first().tap();
+    await page.waitForFunction((key) => JSON.parse(localStorage.getItem(key) ?? "[]")[0]?.result?.shots.length, key);
+    await page.evaluate((key) => {
+      const queue = JSON.parse(localStorage.getItem(key));
+      const result = queue[0].result;
+      const shot = result.shots[0];
+      result.shot_mode = "jump_shot";
+      result.shots = [
+        { ...shot, outcome: "make", evidence: { ...shot.evidence, shot_type: "unknown" } },
+        { ...shot, id: shot.id + 1, outcome: "review", evidence: { ...shot.evidence, shot_type: "three_pointer" } },
+      ];
+      localStorage.setItem(key, JSON.stringify(queue));
+    }, key);
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+
+    const classification = page.getByRole("combobox", { name: "Shot classification" });
+    const save = page.getByRole("button", { name: "Save timing / shooter correction" });
+    const overview = page.getByRole("button", { name: "Overview", exact: true });
+    const summary = (label) => page.locator(".overview-strip > div").filter({ hasText: label }).locator("strong");
+    const warning = page.getByText("1 proposal(s) excluded from jump-shot statistics after review");
+    const readExport = async () => {
+      const href = await page.getByRole("link", { name: "Shot data JSON" }).getAttribute("href");
+      return page.evaluate(async (url) => (await fetch(url)).json(), href);
+    };
+    for (const [label, type] of [
+      ["Layup (exclude)", "layup"], ["Dunk (exclude)", "dunk"],
+      ["Pass (exclude)", "pass"], ["Pump fake (exclude)", "pump_fake"],
+    ]) {
+      if (type === "layup") {
+        await classification.press("l");
+        await classification.press("Enter");
+      } else {
+        await classification.tap();
+        await page.getByRole("option", { name: label, exact: true }).tap();
+      }
+      await expect(classification).toHaveText(label);
+      await save.tap();
+      await overview.tap();
+      await expect(summary("Attempts")).toHaveText("1");
+      await expect(summary("Three-point%")).toHaveText("—");
+      await expect(summary("Observed FG%")).toHaveText("—");
+      await expect(warning).toBeVisible();
+      const shots = await readExport();
+      expect(shots).toHaveLength(2);
+      expect(shots[0].evidence).toMatchObject({ shot_type: type, statistics_eligibility: { status: "excluded" } });
+    }
+
+    // Earlier hosted saves had the label but omitted its exclusion status.
+    await page.evaluate((key) => {
+      const queue = JSON.parse(localStorage.getItem(key));
+      delete queue[0].result.shots[0].evidence.statistics_eligibility;
+      localStorage.setItem(key, JSON.stringify(queue));
+    }, key);
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+    await expect(classification).toHaveText("Pump fake (exclude)");
+    await expect(warning).toBeVisible();
+    await page.getByRole("button", { name: "Next shot" }).tap();
+    await page.getByRole("group", { name: "Correct shot outcome" }).getByRole("button", { name: "MISS", exact: true }).tap();
+    await overview.tap();
+    await expect(summary("Observed FG%")).toHaveText("0%");
+    await expect(summary("Three-point%")).toHaveText("0%");
+
+    await page.getByRole("button", { name: "Previous shot" }).tap();
+    await classification.tap();
+    await page.getByRole("option", { name: "Three-pointer", exact: true }).tap();
+    await save.tap();
+    await overview.tap();
+    await expect(summary("Attempts")).toHaveText("2");
+    await expect(summary("Three-point%")).toHaveText("50%");
+    await expect(warning).toHaveCount(0);
+    expect((await readExport())[0].evidence).toMatchObject({ shot_type: "three_pointer", statistics_eligibility: { status: "eligible_pending_validation" } });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  } finally {
+    await page.close();
+  }
+}
+
 async function checkHostedAnalyzer() {
   await checkCorrectionDetails();
   console.log("Shot and court drafts survived switching shots and separate saves, and saved corrections stayed in sync through reload");
+  await checkJumpShotClassification();
+  console.log("Jump-shot exclusions, restored summaries, and confirmed three-point rates passed on mobile");
   await checkReviewSeeks();
   console.log("Repeated shot and evidence seeks, slow-source handoff, and the mobile shot strip passed");
   await checkBackgroundCompletion(1440);
