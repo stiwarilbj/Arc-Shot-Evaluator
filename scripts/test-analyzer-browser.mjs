@@ -359,6 +359,70 @@ async function checkNativeReconnect() {
   }
 }
 
+async function checkNativeCorrectionOrder() {
+  const page = await openPage({ width: 1440, height: 900 });
+  const firstSave = Promise.withResolvers();
+  const acknowledgeFirst = Promise.withResolvers();
+  const sent = [];
+  const id = "overlapping-review";
+  const shot = {
+    id: 1, outcome: "review", confidence: 0.6, confidence_label: "review", release_frame: 30, release_time: 1,
+    end_frame: 50, release_speed_ms: null, release_height_m: null, entry_angle_deg: null, arc_peak_m: null,
+    form: { elbow: null, knee: null, shoulder: null, hip: null }, flags: [],
+    evidence: { shooter_id: null, motion_events: { takeoff_frame: null, release_frame: 30 } },
+  };
+  const result = {
+    session: { id, filename: "Review.mp4", width: 1280, height: 720, fps: 30, frame_count: 60, duration: 2 },
+    summary: { attempts: 1, makes: 0, misses: 0, review: 1, fg_pct: null, best_streak: 0, average_confidence: 60 },
+    shot_mode: "jump_shot", shots: [shot], warnings: [],
+    artifacts: { original: "", annotated: "", pose: "", shots_jsonl: "", analysis_json: "", thumbnails: [] },
+  };
+  try {
+    await page.addInitScript((id) => {
+      localStorage.setItem("arc-analysis-queue-v2", JSON.stringify([{
+        id, jobId: id, filename: "Review.mp4", kind: "upload", status: "done", progress: 100,
+        processingMode: "normal", shotMode: "jump_shot", error: null,
+      }]));
+    }, id);
+    await page.route(`**/api/jobs/${id}`, (route) => route.fulfill({ json: { id, status: "done", result } }));
+    await page.route(`**/api/sessions/${id}/shots/1`, async (route) => {
+      const changes = route.request().postDataJSON();
+      sent.push(changes);
+      if ("shooter_id" in changes) shot.evidence.shooter_id = changes.shooter_id;
+      if ("takeoff_frame" in changes) shot.evidence.motion_events.takeoff_frame = changes.takeoff_frame;
+      if (sent.length === 1) {
+        firstSave.resolve();
+        await acknowledgeFirst.promise;
+      }
+      await route.fulfill({ json: result });
+    });
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+    const shooter = page.getByRole("textbox", { name: "Shooter label (optional)" });
+    const takeoff = page.getByRole("spinbutton", { name: "Takeoff frame", exact: true });
+    const save = page.getByRole("button", { name: "Save timing / shooter correction" });
+    await shooter.fill("new-shooter");
+    await takeoff.fill("20");
+    await save.click();
+    await waitForRequest({ requested: firstSave.promise });
+    await shooter.fill("");
+    await takeoff.fill("");
+    await save.click();
+    acknowledgeFirst.resolve();
+    await expect.poll(() => sent).toEqual([
+      { shooter_id: "new-shooter", takeoff_frame: 20 },
+      { shooter_id: null, takeoff_frame: null },
+    ]);
+    await page.reload();
+    await page.getByTitle("Open this analysis").click();
+    await expect(shooter).toHaveValue("");
+    await expect(takeoff).toHaveValue("");
+  } finally {
+    acknowledgeFirst.resolve();
+    await page.close();
+  }
+}
+
 async function checkBackgroundCompletion(width) {
   const page = await openPage({ width, height: 800 }, width < 620);
   const cards = page.locator(".example-card");
@@ -728,6 +792,8 @@ async function checkCorrectionDetails() {
       const fps = result.session.fps;
       result.shots = [shot, { ...shot, id: shot.id + 1, evidence: { ...shot.evidence } }];
       shot.evidence.shooter_id = "model-player";
+      shot.evidence.defenders = [{ id: "guard-2", role: "opponent", evidence_frames: [shot.release_frame] }];
+      shot.evidence.player_height_m = 1.95;
       shot.evidence.motion_events = {
         release_frame: shot.release_frame,
         takeoff_frame: shot.release_frame - 10,
@@ -786,16 +852,23 @@ async function checkCorrectionDetails() {
     await imagePoints.fill(newerImageDraft);
     await releaseInput.fill(String(outcomeOnly.release_frame));
     await save.tap();
-    expect((await readExport()).evidence.shooter_id).toBe("reviewed-player");
+    const labelCorrection = await readExport();
+    expect(labelCorrection.evidence.shooter_id).toBe("reviewed-player");
+    expect(labelCorrection.evidence.defenders).toEqual(outcomeOnly.evidence.defenders);
+    expect(labelCorrection.evidence.player_height_m).toBe(1.95);
+    expect(labelCorrection.evidence.correction.fields).toEqual(["release_frame", "shooter_id"]);
     await expect(imagePoints).toHaveValue(newerImageDraft);
     await shooter.fill("");
     await releaseInput.fill(String(release));
     await takeoffInput.fill(String(takeoff));
+    await page.getByRole("spinbutton", { name: "Shooter height (m, optional)" }).fill("");
     await save.tap();
 
     const corrected = await readExport();
     expect(corrected.release_frame).toBe(release);
     expect(corrected.evidence.shooter_id).toBeNull();
+    expect(corrected.evidence.player_height_m).toBeNull();
+    expect(corrected.evidence.defenders).toEqual(outcomeOnly.evidence.defenders);
     expect(corrected.evidence.motion_events).toMatchObject({ release_frame: release, takeoff_frame: takeoff });
     await tracking.tap();
     await expect(releaseButton).toHaveText(`ReleaseFrame ${release}`);
@@ -870,8 +943,10 @@ async function checkHostedAnalyzer() {
 try {
   if (nativeBase) {
     await checkNativeReconnect();
+    await checkNativeCorrectionOrder();
     expect(errors).toEqual([]);
     console.log("Local queue restored one status poll per job, recovered missing results, and resumed the next example after stopping a stalled poll");
+    console.log("Overlapping local corrections submitted explicit clears in order and restored them after reload");
   } else {
     await checkHostedAnalyzer();
   }

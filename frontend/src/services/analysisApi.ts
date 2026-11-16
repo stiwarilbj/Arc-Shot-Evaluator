@@ -116,7 +116,7 @@ export async function correctSavedShot(
     takeoff_frame?: number | null;
     defender_ids?: string[];
     team_assignments?: Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown">;
-    player_height_m?: number;
+    player_height_m?: number | null;
     comment?: string;
   },
 ): Promise<AnalysisSession> {
@@ -151,7 +151,7 @@ export async function correctSavedShot(
               ? correction.defender_ids.filter(Boolean).map((id) => ({ id }))
               : shot.evidence.defenders,
             team_assignments: correction.team_assignments ?? shot.evidence.team_assignments,
-            player_height_m: correction.player_height_m ?? shot.evidence.player_height_m,
+            player_height_m: correction.player_height_m === undefined ? shot.evidence.player_height_m : correction.player_height_m,
             correction: { source: "local_user", updated_at: new Date().toISOString(), fields: Object.keys(correction), comment: correction.comment },
           },
         };

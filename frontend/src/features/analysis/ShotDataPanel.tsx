@@ -452,11 +452,13 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
           type="button"
           onClick={() => {
             setCorrectionError(null);
+            if (!Object.keys(fields).length) return;
             const frame = readReleaseFrame();
             if (frame === null) return;
             const shooter = shooterDraft.trim() || null;
             const takeoffFrame = takeoffFrameDraft.trim() ? Number(takeoffFrameDraft) : null;
-            if (isJumpShot && takeoffFrame !== null && (!isReleaseFrame(takeoffFrame, frameCount) || takeoffFrame > frame)) {
+            if (isJumpShot && (fields.releaseFrame || fields.takeoffFrame) && takeoffFrame !== null
+                && (!isReleaseFrame(takeoffFrame, frameCount) || takeoffFrame > frame)) {
               updateShotDraft((draft) => ({
                 ...draft,
                 takeoffError: `Enter a whole takeoff frame from 0 to ${frame}, or leave it blank`,
@@ -465,10 +467,12 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
             }
             updateShotDraft((draft) => ({ ...draft, takeoffError: null }));
             let teamAssignments: Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown"> | undefined;
-            if (isJumpShot && teamAssignmentsDraft.trim()) {
+            if (isJumpShot && fields.teamAssignments) {
               try {
-                const parsed = JSON.parse(teamAssignmentsDraft) as unknown;
-                if (!parsed || Array.isArray(parsed) || typeof parsed !== "object" || Object.entries(parsed).some(([, role]) => !["shooter", "teammate", "opponent", "official", "unknown"].includes(String(role)))) {
+                const parsed = JSON.parse(teamAssignmentsDraft.trim() || "{}") as unknown;
+                if (!parsed || Array.isArray(parsed) || typeof parsed !== "object" || Object.values(parsed).some(
+                  (role) => typeof role !== "string" || !["shooter", "teammate", "opponent", "official", "unknown"].includes(role),
+                )) {
                   throw new Error("Assignments must map track labels to valid roles");
                 }
                 teamAssignments = parsed as Record<string, "shooter" | "teammate" | "opponent" | "official" | "unknown">;
@@ -477,16 +481,22 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
                 return;
               }
             }
+            const playerHeight = playerHeightDraft.trim() ? Number(playerHeightDraft) : null;
+            if (isJumpShot && fields.playerHeight && playerHeight !== null && !(playerHeight >= 0.5 && playerHeight <= 2.8)) {
+              setCorrectionError("Enter a shooter height from 0.5 to 2.8 m, or leave it blank");
+              return;
+            }
             void correctSavedShot(session.session.id, shot.id, {
-              release_frame: frame,
-              ...(shooter !== (shot.evidence.shooter_id ?? null) ? { shooter_id: shooter } : {}),
+              // An explicit clear may follow a queued save that has not reached the displayed snapshot.
+              ...(fields.releaseFrame ? { release_frame: frame } : {}),
+              ...(fields.shooter ? { shooter_id: shooter } : {}),
               ...(isJumpShot ? {
-                ...(takeoffFrame !== savedTakeoff ? { takeoff_frame: takeoffFrame } : {}),
-                shot_type: shotTypeDraft,
-                shooting_hand: shootingHandDraft,
-                defender_ids: defenderIdsDraft.split(",").map((item) => item.trim()).filter(Boolean),
+                ...(fields.takeoffFrame ? { takeoff_frame: takeoffFrame } : {}),
+                ...(fields.shotType ? { shot_type: shotTypeDraft } : {}),
+                ...(fields.shootingHand ? { shooting_hand: shootingHandDraft } : {}),
+                ...(fields.defenderIds ? { defender_ids: defenderIdsDraft.split(",").map((item) => item.trim()).filter(Boolean) } : {}),
                 ...(teamAssignments ? { team_assignments: teamAssignments } : {}),
-                ...(playerHeightDraft.trim() ? { player_height_m: Number(playerHeightDraft) } : {}),
+                ...(fields.playerHeight ? { player_height_m: playerHeight } : {}),
               } : {}),
             })
               .then((updated) => {

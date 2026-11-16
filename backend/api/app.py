@@ -534,15 +534,15 @@ def correct_saved_shot(session_id: str, shot_id: int, correction: dict) -> dict:
         not isinstance(correction["team_assignments"], dict)
         or any(
             not isinstance(track_id, str)
+            or not isinstance(role, str)
             or role not in {"shooter", "teammate", "opponent", "official", "unknown"}
             for track_id, role in correction["team_assignments"].items()
         )
     ):
         raise HTTPException(400, "team_assignments must map track labels to shooter, teammate, opponent, official, or unknown")
-    if "player_height_m" in correction and (
-        not isinstance(correction["player_height_m"], (int, float)) or not 0.5 <= float(correction["player_height_m"]) <= 2.8
-    ):
-        raise HTTPException(400, "player_height_m must be between 0.5 and 2.8")
+    height = correction.get("player_height_m")
+    if height is not None and (type(height) not in (int, float) or not 0.5 <= height <= 2.8):
+        raise HTTPException(400, "player_height_m must be between 0.5 and 2.8 or null")
     for field in ("shooter_id", "shooting_hand", "shot_type", "comment"):
         if field in correction and correction[field] is not None and not isinstance(correction[field], str):
             raise HTTPException(400, f"{field} must be text")

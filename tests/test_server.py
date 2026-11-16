@@ -302,6 +302,9 @@ def test_jump_shot_review_clears_labels_and_syncs_timing(tmp_path, monkeypatch) 
 
     for frame in (True, -1, 26.5, 31, 60):
         assert client.patch(url, json={"takeoff_frame": frame}).status_code == 400
+    for height in (True, 0.49, 2.81, "1.95"):
+        assert client.patch(url, json={"player_height_m": height}).status_code == 400
+    assert client.patch(url, json={"team_assignments": {"guard-1": ["opponent"]}}).status_code == 400
     assert not (session_dir / "corrections.json").exists()
 
     saved = client.patch(url, json={"shooter_id": None, "release_frame": 28, "takeoff_frame": 23})
@@ -324,6 +327,11 @@ def test_jump_shot_review_clears_labels_and_syncs_timing(tmp_path, monkeypatch) 
     cleared = client.patch(url, json={"takeoff_frame": None}).json()["shots"][0]["evidence"]
     assert cleared["motion_events"]["takeoff_frame"] is None
     assert cleared["motion_events"]["release_after_takeoff_ms"] is None
+    saved_height = client.patch(url, json={"player_height_m": 1.95}).json()["shots"][0]["evidence"]
+    assert saved_height["player_height_m"] == 1.95
+    cleared_height = client.patch(url, json={"player_height_m": None}).json()["shots"][0]["evidence"]
+    assert cleared_height["player_height_m"] is None
+    assert client.get(f"/api/jobs/{session_dir.name}").json()["result"]["shots"][0]["evidence"]["player_height_m"] is None
     assert (session_dir / "analysis.json").read_text() == source
 
 

@@ -63,11 +63,12 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
 - Review makes, misses, and uncertain attempts · Use a whole release frame within
   the clip to correct timing or add a missed attempt · Jump-shot evidence links
   and exported timing follow saved release and takeoff corrections · Leave
-  the shooter label or takeoff frame blank to clear it · If browser storage is
-  unavailable, per-shot notes last while the result stays open
+  the shooter label, takeoff frame, or optional height blank to clear it · If
+  browser storage is unavailable, per-shot notes last while the result stays open
 - Shot corrections and court setup drafts stay in place while you switch shots
   or save a different part of the review · Save each form to keep its edits
-  after reload
+  after reload · Each timing or shooter save applies only the fields you edited,
+  preserving other recorded measurements in the export
 - Hosted JSON and downloaded-app JSONL include saved corrections and manually
   added attempts · The best streak uses release order · Local corrections are
   reapplied when a finished result reopens from the queue
