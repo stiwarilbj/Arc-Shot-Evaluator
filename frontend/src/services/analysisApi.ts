@@ -170,10 +170,13 @@ export async function addManualShot(
 ): Promise<AnalysisSession> {
   if (IS_GITHUB_PAGES) {
     return updateBrowserAnalysisSession(sessionId, (session) => {
-      const nextId = Math.max(0, ...session.shots.map((shot) => shot.id)) + 1;
       const releaseFrame = attempt.release_frame;
       const { fps, frame_count: frameCount } = session.session;
       if (!isReleaseFrame(releaseFrame, frameCount)) throw new Error(releaseFrameError(frameCount));
+      if (session.shots.some((shot) => shot.release_frame === releaseFrame)) {
+        throw new Error("An attempt already uses this frame · Review that shot or choose another frame");
+      }
+      const nextId = Math.max(0, ...session.shots.map((shot) => shot.id)) + 1;
       const shot: AnalysisSession["shots"][number] = {
         id: nextId,
         outcome: attempt.outcome,

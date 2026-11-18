@@ -599,12 +599,29 @@ def add_manual_shot(session_id: str, attempt: dict) -> dict:
             raise HTTPException(400, f"{field} must be text")
     payload = json.loads(analysis_path.read_text())
     _validate_release_frame(release_frame, payload)
-    existing_ids = [int(shot.get("id", 0)) for shot in payload.get("shots", [])]
+    incoming_shooter = (attempt.get("shooter_id") or "").strip()
     with _edit_saved_review(session_id) as stored:
         manual_shots = stored.setdefault("manual_shots", [])
-        for manual in manual_shots:
-            if isinstance(manual, dict):
-                existing_ids.append(int(manual.get("id", 0)))
+        corrections = stored.get("shots", {})
+        existing_ids = []
+        for shot in (*payload.get("shots", []), *manual_shots):
+            if not isinstance(shot, dict):
+                continue
+            existing_ids.append(int(shot.get("id", 0)))
+            correction = corrections.get(str(shot.get("id")))
+            if not isinstance(correction, dict):
+                correction = {}
+            frame = correction.get("release_frame")
+            if not isinstance(frame, int) or frame < 0:
+                frame = int(shot.get("release_frame", 0))
+            if frame != release_frame:
+                continue
+            evidence = shot.get("evidence")
+            source_shooter = evidence.get("shooter_id") if isinstance(evidence, dict) else None
+            label = correction.get("shooter_id", source_shooter)
+            existing_shooter = label.strip() if isinstance(label, str) else ""
+            if not incoming_shooter or not existing_shooter or incoming_shooter == existing_shooter:
+                raise HTTPException(409, "An attempt already uses this frame · Review that shot or choose another frame")
         shot_id = max(existing_ids, default=0) + 1
         fps = float(payload.get("session", {}).get("fps") or 0.0)
         manual_shots.append({

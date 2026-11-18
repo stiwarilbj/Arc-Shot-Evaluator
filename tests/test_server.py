@@ -500,6 +500,80 @@ def test_manual_miss_breaks_a_streak_at_its_release_frame(tmp_path, monkeypatch)
     assert result["summary"]["best_streak"] == 1
 
 
+def test_manual_add_checks_corrected_release_frames_and_shooters(tmp_path, monkeypatch) -> None:
+    session_id = "occupied-frame"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    analysis_path = session_dir / "analysis.json"
+    analysis_path.write_text(json.dumps({
+        "session": {"id": session_id, "fps": 30, "frame_count": 120},
+        "shots": [{
+            "id": 1, "outcome": "make", "release_frame": 10,
+            "evidence": {"shooter_id": "original shooter"},
+        }],
+    }))
+    (session_dir / "shots.jsonl").touch()
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    client = TestClient(app)
+    session = f"/api/sessions/{session_id}"
+    media = f"/media/{session_id}/shots.jsonl"
+    corrections = session_dir / "corrections.json"
+
+    def add(frame, **fields):
+        return client.post(f"{session}/shots", json={"outcome": "miss", "release_frame": frame, **fields})
+
+    assert add(10).status_code == 409
+    assert not corrections.exists()
+    assert client.patch(f"{session}/shots/1", json={"release_frame": 11, "shooter_id": "player-1"}).status_code == 200
+    assert add(10).status_code == 200
+    assert client.patch(f"{session}/shots/2", json={"release_frame": 12}).status_code == 200
+    assert add(10).status_code == 200
+    assert add(11, shooter_id="player-2").status_code == 200
+    assert add(11, shooter_id="original shooter").status_code == 200
+    baseline = client.get(session).json()
+    baseline_export = client.get(media).text
+    baseline_corrections = corrections.read_bytes()
+    original_analysis = analysis_path.read_bytes()
+
+    for frame, label in [(11, None), (11, "   "), (11, " player-1 "), (11, "player-2"), (12, "player-3")]:
+        result = add(frame, shooter_id=label)
+        assert result.status_code == 409
+        assert result.json()["detail"] == "An attempt already uses this frame · Review that shot or choose another frame"
+    assert client.get(session).json() == baseline
+    assert client.get(media).text == baseline_export
+    assert corrections.read_bytes() == baseline_corrections
+    assert analysis_path.read_bytes() == original_analysis
+
+    assert client.patch(f"{session}/shots/1", json={"shooter_id": None}).status_code == 200
+    assert add(11, shooter_id="player-3").status_code == 409
+
+
+def test_concurrent_manual_adds_only_save_one_attempt_per_frame(tmp_path, monkeypatch) -> None:
+    session_id = "concurrent-manual-add"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    (session_dir / "analysis.json").write_text(json.dumps({
+        "session": {"id": session_id, "fps": 30, "frame_count": 120},
+        "shots": [],
+    }))
+    monkeypatch.setattr(api_module, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "ANALYSIS_SESSIONS_DIR", tmp_path)
+    client = TestClient(app)
+    start = Barrier(2)
+
+    def add():
+        start.wait(timeout=5)
+        return client.post(f"/api/sessions/{session_id}/shots", json={"release_frame": 45, "outcome": "miss"})
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = [pool.submit(add), pool.submit(add)]
+        assert sorted(response.result().status_code for response in responses) == [200, 409]
+    saved = client.get(f"/api/sessions/{session_id}").json()
+    assert [(shot["id"], shot["release_frame"]) for shot in saved["shots"]] == [(1, 45)]
+    assert saved["summary"]["attempts"] == 1
+
+
 def test_damaged_review_file_is_preserved_when_saving(tmp_path, monkeypatch) -> None:
     session_id = "damaged-review"
     session_dir = tmp_path / session_id

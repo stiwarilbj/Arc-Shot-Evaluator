@@ -92,6 +92,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
   const [note, setNote] = useState("");
   const [noteStorageUnavailable, setNoteStorageUnavailable] = useState(false);
   const [shotDrafts, setShotDrafts] = useState<Record<number, ShotDraft>>({});
+  const [addingAttempt, setAddingAttempt] = useState(false);
   const [courtDraft, setCourtDraft] = useState<FieldEdits<CourtFields>>({});
   const [contextError, setContextError] = useState<string | null>(null);
   const releaseErrorId = useId();
@@ -162,12 +163,15 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
   }
 
   function addMissedAttempt() {
+    if (addingAttempt) return;
     setCorrectionError(null);
     const frame = readReleaseFrame();
     if (frame === null) return;
+    setAddingAttempt(true);
     void addManualShot(session.session.id, { outcome: "miss", release_frame: frame })
       .then((updated) => onSessionChange?.(updated))
-      .catch((caught: unknown) => setCorrectionError(caught instanceof Error ? caught.message : "Could not add attempt"));
+      .catch((caught: unknown) => setCorrectionError(caught instanceof Error ? caught.message : "Could not add attempt"))
+      .finally(() => setAddingAttempt(false));
   }
 
   const releaseFrameField = (
@@ -207,7 +211,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
           <h3>Add a missed attempt</h3>
           <p className="basis-note">Use the frame number where the ball leaves the hand · The detector evidence stays unchanged</p>
           {releaseFrameField}
-          <button className="correction-save" type="button" onClick={addMissedAttempt}>
+          <button className="correction-save" type="button" disabled={addingAttempt} onClick={addMissedAttempt}>
             Add missed attempt
           </button>
           {correctionError ? <p className="error-message" role="alert">{correctionError}</p> : null}
@@ -509,7 +513,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
         >
           Save timing / shooter correction
         </button>
-        <button className="correction-save" type="button" onClick={addMissedAttempt}>
+        <button className="correction-save" type="button" disabled={addingAttempt} onClick={addMissedAttempt}>
           Add missed attempt at this frame
         </button>
         {shot.evidence.correction ? <p className="basis-note">Correction saved · model evidence remains in the export</p> : null}

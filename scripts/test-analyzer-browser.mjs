@@ -429,6 +429,31 @@ async function checkNativeCorrectionOrder() {
     await page.reload();
     await page.getByTitle("Open this analysis").click();
     await expect(labels).toHaveValue("guard-2, guard-manual");
+
+    const addMiss = page.getByRole("button", { name: "Add missed attempt at this frame" });
+    const addStarted = Promise.withResolvers();
+    const releaseAdd = Promise.withResolvers();
+    const occupied = "An attempt already uses this frame · Review that shot or choose another frame";
+    let addRequests = 0;
+    await page.route(`**/api/sessions/${id}/shots`, async (route) => {
+      addRequests += 1;
+      addStarted.resolve();
+      await releaseAdd.promise;
+      await route.fulfill({ status: 409, json: { detail: occupied } });
+    });
+    try {
+      await addMiss.click();
+      await waitForRequest({ requested: addStarted.promise });
+      await expect(addMiss).toBeDisabled();
+      await addMiss.evaluate((button) => button.click());
+      releaseAdd.resolve();
+      await expect(page.getByRole("alert").filter({ hasText: occupied })).toBeVisible();
+      await expect(addMiss).toBeEnabled();
+      await expect(page.getByRole("spinbutton", { name: "Release frame" })).toHaveValue("30");
+      expect(addRequests).toBe(1);
+    } finally {
+      releaseAdd.resolve();
+    }
   } finally {
     acknowledgeFirst.resolve();
     await page.close();
@@ -556,6 +581,14 @@ async function checkShotReview(width) {
     const frame = page.getByRole("spinbutton", { name: "Release frame" });
     const saveTiming = page.getByRole("button", { name: "Save timing / shooter correction" });
     const addMiss = page.getByRole("button", { name: "Add missed attempt at this frame" });
+    const occupied = page.getByRole("alert").filter({ hasText: "An attempt already uses this frame · Review that shot or choose another frame" });
+    await expect(frame).toHaveValue(String(original[0].release_frame));
+    const reviewed = await readExport();
+    await addMiss.click();
+    await expect(occupied).toBeVisible();
+    await expect(frame).toHaveValue(String(original[0].release_frame));
+    await expect(observed).toHaveText("100%");
+    expect(await readExport()).toEqual(reviewed);
     const lastFrame = Number(await frame.getAttribute("max"));
     for (const invalid of ["", "-1", "1.5", String(lastFrame + 1)]) {
       await frame.fill(invalid);
@@ -571,10 +604,19 @@ async function checkShotReview(width) {
     await saveTiming.click();
     await expect(frame).toHaveAttribute("aria-invalid", "false");
     expect((await readExport())[0]).toMatchObject({ outcome: "make", release_frame: lastFrame, end_frame: lastFrame });
+    await addMiss.click();
+    await expect(occupied).toBeVisible();
+    expect(await readExport()).toHaveLength(reviewed.length);
     await frame.fill("0");
     await addMiss.click();
     await expect(observed).toHaveText("50%");
     expect((await readExport()).at(-1)).toMatchObject({ outcome: "miss", release_frame: 0 });
+    const withManualAttempt = await readExport();
+    await addMiss.click();
+    await expect(occupied).toBeVisible();
+    await expect(frame).toHaveValue("0");
+    await expect(observed).toHaveText("50%");
+    expect(await readExport()).toEqual(withManualAttempt);
     await page.getByRole("button", { name: "Next shot" }).click();
     await expect(note).toHaveValue("");
     await overview.click();
@@ -1128,7 +1170,7 @@ async function checkHostedAnalyzer() {
   console.log("Upload recovery, resumable examples, and clear/stop behavior passed on desktop and mobile");
   await checkShotReview(1440);
   await checkShotReview(320);
-  console.log("Review math, current JSON downloads, frame limits, note storage failure, and reload passed on desktop and mobile");
+  console.log("Review math, current JSON downloads, frame limits, duplicate-attempt protection, note storage failure, and reload passed on desktop and mobile");
   await checkPlaybackReview(1440, 900);
   await checkPlaybackReview(1280, 780);
   await checkPlaybackReview(1050, 780);
@@ -1144,6 +1186,7 @@ try {
     expect(errors).toEqual([]);
     console.log("Local queue restored one status poll per job, recovered missing results, and resumed the next example after stopping a stalled poll");
     console.log("Overlapping local corrections submitted explicit clears in order and restored them after reload");
+    console.log("A pending local manual add blocked repeat clicks and an occupied frame restored the control");
   } else {
     await checkHostedAnalyzer();
   }
