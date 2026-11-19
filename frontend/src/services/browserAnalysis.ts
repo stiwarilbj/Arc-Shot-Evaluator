@@ -8,6 +8,7 @@ import type {
   ShotMode,
 } from "../domain/analysisTypes";
 import { browserSamplingPlan } from "../domain/analysisModes";
+import { browserReleasePose, BROWSER_MOTION_WINDOW_FLAG, VISIBLE_FORM_REVIEW_FLAG } from "../domain/browserPose";
 import { browserShotEndFrame, browserShotReview } from "../domain/shotReview";
 
 export type BrowserAnalysisProgress = (progress: number, stage: string) => void;
@@ -123,6 +124,7 @@ async function loadPoseOverlay(filename: string, signal: AbortSignal): Promise<B
       width: Number.isFinite(raw.width) ? Number(raw.width) : 1280,
       height: Number.isFinite(raw.height) ? Number(raw.height) : 720,
       fps: Number.isFinite(raw.fps) && Number(raw.fps) > 0 ? Number(raw.fps) : 30,
+      stride: raw.stride,
       frames,
     };
   } catch {
@@ -130,67 +132,6 @@ async function loadPoseOverlay(filename: string, signal: AbortSignal): Promise<B
     // Examples without a usable track still support motion review.
     return undefined;
   }
-}
-
-function nearestPose(overlay: BrowserPoseOverlay | undefined, frame: number) {
-  if (!overlay?.frames.length) return undefined;
-  let best = overlay.frames[0];
-  let distance = Math.abs(best.frame - frame);
-  for (const candidate of overlay.frames) {
-    const nextDistance = Math.abs(candidate.frame - frame);
-    if (nextDistance < distance) {
-      best = candidate;
-      distance = nextDistance;
-    }
-  }
-  return best;
-}
-
-function jointAngle(first: PoseKeypoint, middle: PoseKeypoint, last: PoseKeypoint) {
-  if (first[2] < 0.16 || middle[2] < 0.16 || last[2] < 0.16) return null;
-  const firstVector = [first[0] - middle[0], first[1] - middle[1]];
-  const lastVector = [last[0] - middle[0], last[1] - middle[1]];
-  const firstLength = Math.hypot(firstVector[0], firstVector[1]);
-  const lastLength = Math.hypot(lastVector[0], lastVector[1]);
-  if (!firstLength || !lastLength) return null;
-  const cosine = clamp((firstVector[0] * lastVector[0] + firstVector[1] * lastVector[1]) / (firstLength * lastLength), -1, 1);
-  return Math.round((Math.acos(cosine) * 180) / Math.PI * 10) / 10;
-}
-
-function formMetricsAtFrame(overlay: BrowserPoseOverlay | undefined, frame: number) {
-  const pose = nearestPose(overlay, frame);
-  if (!pose) return { form: { elbow: null, knee: null, shoulder: null, hip: null }, confidence: 0 };
-  const sides = [
-    [5, 7, 9, 11, 13, 15],
-    [6, 8, 10, 12, 14, 16],
-  ];
-  const candidates = sides.map(([shoulder, elbow, wrist, hip, knee, ankle]) => ({
-    elbow: jointAngle(pose.keypoints[shoulder], pose.keypoints[elbow], pose.keypoints[wrist]),
-    knee: jointAngle(pose.keypoints[hip], pose.keypoints[knee], pose.keypoints[ankle]),
-    shoulder: jointAngle(pose.keypoints[elbow], pose.keypoints[shoulder], pose.keypoints[hip]),
-    hip: jointAngle(pose.keypoints[shoulder], pose.keypoints[hip], pose.keypoints[knee]),
-  })).filter((candidate) => candidate.elbow != null);
-  const form = candidates.length
-    ? candidates.sort((left, right) => (right.elbow ?? 0) - (left.elbow ?? 0))[0]
-    : { elbow: null, knee: null, shoulder: null, hip: null };
-  return { form, confidence: pose.confidence };
-}
-
-function rangeQuality(value: number | null, minimum: number, maximum: number) {
-  if (value == null) return null;
-  if (value >= minimum && value <= maximum) return 1;
-  const distance = value < minimum ? minimum - value : value - maximum;
-  return clamp(1 - distance / 70, 0, 1);
-}
-
-function formQuality(form: { elbow: number | null; knee: number | null; shoulder: number | null; hip: number | null }) {
-  const values = [
-    rangeQuality(form.elbow, 65, 125),
-    rangeQuality(form.knee, 125, 195),
-    rangeQuality(form.shoulder, 20, 105),
-    rangeQuality(form.hip, 125, 205),
-  ].filter((value): value is number => value != null);
-  return values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0.62;
 }
 
 function buildShot(
@@ -203,20 +144,20 @@ function buildShot(
   poseOverlay?: BrowserPoseOverlay,
 ): ShotAnalysis {
   const releaseFrame = Math.min(frameCount - 1, Math.round(time * fps));
-  const pose = formMetricsAtFrame(poseOverlay, poseOverlay ? Math.round(time * poseOverlay.fps) : releaseFrame);
-  const visibleQuality = formQuality(pose.form);
+  const pose = browserReleasePose(poseOverlay, time);
+  const visibleQuality = pose.evidence.shot_quality ?? 0.62;
   // The hosted pass is intentionally conservative. Motion alone should not
   // make a difficult or poorly formed attempt look certain; static pose data
   // gives the Pages build the same quality signal the local review exposes.
   const confidence = clamp(
     (0.42 + score * 0.55)
-      * (0.7 + 0.3 * clamp(pose.confidence, 0, 1))
+      * (0.7 + 0.3 * clamp(pose.evidence.pose_confidence, 0, 1))
       * (0.62 + 0.38 * visibleQuality),
     0.22,
     0.86,
   );
-  const flags = ["Motion window ready for review"];
-  if (visibleQuality < 0.45) flags.push("Visible form needs review");
+  const flags = [BROWSER_MOTION_WINDOW_FLAG];
+  if (visibleQuality < 0.45) flags.push(VISIBLE_FORM_REVIEW_FLAG);
   return {
     id,
     outcome: "review",
@@ -238,19 +179,11 @@ function buildShot(
       observed_ball_frames: 0,
       tracked_frames: Math.max(1, Math.round(fps * 0.8)),
       rim_track_confidence: 0,
-      pose_confidence: pose.confidence,
-      shot_quality: visibleQuality,
-      mechanics_quality: visibleQuality,
+      ...pose.evidence,
       crossing_frame: null,
       outcome_basis: "Browser motion window; choose the visible outcome in Review this outcome",
       shot_type: shotMode === "jump_shot" ? "unknown" : "free_throw",
       statistics_eligibility: { status: "review", reason: "Confirm the attempt after watching the clip" },
-      metric_availability: {
-        elbow: pose.form.elbow != null,
-        knee: pose.form.knee != null,
-        shoulder: pose.form.shoulder != null,
-        hip: pose.form.hip != null,
-      },
     },
   };
 }

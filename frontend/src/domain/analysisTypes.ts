@@ -17,6 +17,7 @@ export interface BrowserPoseOverlay {
   width: number;
   height: number;
   fps: number;
+  stride?: number;
   frames: BrowserPoseFrame[];
 }
 
@@ -113,6 +114,7 @@ export interface ShotAnalysis {
     tracked_frames: number;
     rim_track_confidence: number;
     pose_confidence: number;
+    pose_sample_frame?: number | null;
     shooter_id?: string | null;
     shooting_hand?: "left" | "right" | "unknown";
     handedness_confidence?: number;

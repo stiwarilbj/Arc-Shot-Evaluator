@@ -288,7 +288,9 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
               result={`${Math.round(session.quality.blur_score * 100)}%`}
             />
           ) : null}
-          <Metric icon={<Activity size={15} />} label="Pose confidence" result={`${Math.round(shot.evidence.pose_confidence * 100)}%`} />
+          <Metric icon={<Activity size={15} />} label="Pose confidence" result={shot.evidence.pose_sample_frame === null
+            ? "Unavailable"
+            : `${Math.round(shot.evidence.pose_confidence * 100)}%`} />
           {session.session.timing_preserved === false ? (
             <Metric label="Source timing" result="Converted · speed unavailable" />
           ) : null}
@@ -363,6 +365,7 @@ export function ShotDataPanel({ session, shot, tab, onSessionChange, onSeekFrame
           </section>
           <section className="rail-panel form-panel">
             <h3>{isJumpShot ? "Pose at release" : "Form at release"}</h3>
+            {shot.evidence.pose_sample_frame === null ? <p className="basis-note">No recorded pose at this release</p> : null}
             {isJumpShot ? <p className="basis-note">Joint angles are descriptive observations; no jump-shot grade is reported before blinded coaching validation</p> : null}
             {shot.evidence.shot_quality != null ? (
               <Metric label="Visible shot quality" result={`${Math.round(shot.evidence.shot_quality * 100)}%`} />

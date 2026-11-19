@@ -89,8 +89,10 @@ ARCade Hoops opens here by default · **Try other tools** above the upload contr
 
 The GitHub Pages version samples video motion to propose windows for **manual
 review** · Supplied examples can include prepared pose tracks and joint-angle
-overlays · Ordinary uploaded videos do not receive full pose, ball, or rim tracking
-in this hosted analysis path, and their outcomes start as **review**
+overlays · **Pose unavailable here** marks gaps in the track · Joint angles at
+release and pose-based quality require a nearby recorded sample, including after a timing
+correction · Ordinary uploaded videos do not receive full pose, ball, or rim
+tracking in this hosted analysis path, and their outcomes start as **review**
 
 Hosted uploads use your browser’s video decoder · If a clip cannot be read, try
 converting it to H.264 MP4 or use the downloaded app

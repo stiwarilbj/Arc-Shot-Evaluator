@@ -9,7 +9,8 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import type { AnalysisSession, BrowserPoseFrame, BrowserPoseOverlay, ShotAnalysis, VideoMode } from "../../domain/analysisTypes";
+import type { AnalysisSession, ShotAnalysis, VideoMode } from "../../domain/analysisTypes";
+import { browserPoseAtTime } from "../../domain/browserPose";
 import { ArcSelect } from "../../components/ArcSelect";
 
 interface VideoWorkspaceProps {
@@ -51,19 +52,6 @@ function poseAngle(first: [number, number, number], middle: [number, number, num
   return Math.round((Math.acos(cosine) * 180) / Math.PI);
 }
 
-function nearestBrowserPose(overlay: BrowserPoseOverlay, frame: number): BrowserPoseFrame | undefined {
-  let best = overlay.frames[0];
-  let distance = Math.abs(best.frame - frame);
-  for (const candidate of overlay.frames) {
-    const nextDistance = Math.abs(candidate.frame - frame);
-    if (nextDistance < distance) {
-      best = candidate;
-      distance = nextDistance;
-    }
-  }
-  return best;
-}
-
 function formatRate(rate: number) {
   return `${rate % 1 === 0 ? rate.toFixed(1) : rate}×`;
 }
@@ -82,6 +70,7 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekRequest = null
   const [playbackRate, setPlaybackRate] = useState(1);
   const [muted, setMuted] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [poseUnavailable, setPoseUnavailable] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const sources = session.artifacts;
   const overlay = session.pose_overlay?.frames.length ? session.pose_overlay : undefined;
@@ -156,6 +145,7 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekRequest = null
     if (!active || !showPose || !overlay || !video || !canvas) return;
     const context = canvas.getContext("2d");
     if (!context) return;
+    let lastUnavailable: boolean | undefined;
     const render = () => {
       if (document.hidden) return;
       const displayWidth = video.clientWidth;
@@ -172,7 +162,12 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekRequest = null
       const offsetX = (displayWidth - overlay.width * scale) / 2;
       const offsetY = (displayHeight - overlay.height * scale) / 2;
       context.setTransform(pixelRatio * scale, 0, 0, pixelRatio * scale, pixelRatio * offsetX, pixelRatio * offsetY);
-      const frame = nearestBrowserPose(overlay, Math.round((video.currentTime || 0) * overlay.fps));
+      const frame = browserPoseAtTime(overlay, video.currentTime);
+      const unavailable = frame === undefined;
+      if (unavailable !== lastUnavailable) {
+        lastUnavailable = unavailable;
+        setPoseUnavailable(unavailable);
+      }
       if (frame) {
         const points = frame.keypoints;
         context.lineCap = "round";
@@ -353,6 +348,7 @@ export function VideoWorkspace({ session, shot, mode, onMode, seekRequest = null
           onPause={() => setPlaying(false)}
         />
         {showPose ? <canvas ref={poseCanvasRef} className="pose-overlay-canvas" aria-hidden="true" /> : null}
+        {showPose && poseUnavailable ? <span className="pose-coverage-note">Pose unavailable here</span> : null}
         {mediaError ? <div className="media-error" role="alert">{mediaError}</div> : null}
         {modes.length > 1 ? (
           <div className="mode-switch" role="group" aria-label="Video view">

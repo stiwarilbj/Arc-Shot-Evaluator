@@ -647,6 +647,113 @@ async function checkShotReview(width) {
   }
 }
 
+async function checkHostedPoseCoverage(width) {
+  const mobile = width < 620;
+  const page = await openPage({ width, height: mobile ? 700 : 900 }, mobile);
+  const activate = (control) => mobile ? control.tap() : control.click();
+  try {
+    await activate(page.locator(".example-card").filter({ hasText: "Example 12" }));
+    const player = page.getByRole("region", { name: "Video analysis workspace" });
+    await expect(player).toBeVisible({ timeout: 45000 });
+    const video = player.locator("video");
+    await expect.poll(() => video.evaluate((element) => element.readyState)).toBeGreaterThan(0);
+    await activate(player.getByRole("button", { name: "Pose", exact: true }));
+    const queueKey = "arc-analysis-queue-pages-v1";
+    const track = await page.evaluate((key) => JSON.parse(localStorage.getItem(key))[0].result.pose_overlay, queueKey);
+    const { frames, fps, stride } = track;
+    const gapIndex = frames.findIndex((sample, index) => index > 0 && sample.frame - frames[index - 1].frame > stride);
+    expect(gapIndex).toBeGreaterThan(0);
+    const gap = frames[gapIndex - 1].frame + stride;
+    const last = frames.at(-1).frame;
+    expect(await video.evaluate((element) => element.duration)).toBeGreaterThan(last / fps + 1);
+    const coverageNote = player.getByText("Pose unavailable here", { exact: true });
+    const canvas = player.locator("canvas");
+    async function checkPoseAt(time, available) {
+      await video.evaluate(async (element, time) => {
+        await new Promise((resolve) => {
+          element.addEventListener("seeked", resolve, { once: true });
+          element.currentTime = time;
+        });
+      }, time);
+      await expect.poll(() => canvas.evaluate((element) => {
+        const pixels = element.getContext("2d").getImageData(0, 0, element.width, element.height).data;
+        return pixels.some((value, index) => index % 4 === 3 && value > 0);
+      })).toBe(available);
+      if (available) await expect(coverageNote).toBeHidden();
+      else await expect(coverageNote).toBeVisible();
+    }
+    await checkPoseAt(frames[gapIndex - 1].frame / fps, true);
+    await checkPoseAt(gap / fps, false);
+    const hiddenSample = frames.find((sample) => sample.keypoints.every((point) => point[2] < 0.16));
+    expect(hiddenSample).toBeDefined();
+    await checkPoseAt(hiddenSample.frame / fps, false);
+    const firstVisibleAfterGap = frames.slice(gapIndex).find((sample) => sample.keypoints.some((point) => point[2] >= 0.16));
+    expect(firstVisibleAfterGap).toBeDefined();
+    await checkPoseAt(firstVisibleAfterGap.frame / fps, true);
+    await checkPoseAt(last / fps + 1, false);
+    await checkPoseAt(last / fps, true);
+    await activate(player.getByRole("button", { name: "Play", exact: true }));
+    await expect(coverageNote).toBeVisible();
+    await activate(player.getByRole("button", { name: "Pause", exact: true }));
+
+    const readExport = async () => {
+      const href = await page.getByRole("link", { name: "Shot data JSON" }).getAttribute("href");
+      return page.evaluate(async (url) => (await (await fetch(url)).json()), href);
+    };
+    const original = await readExport();
+    for (const shot of original.filter((shot) => shot.release_time * fps > last + stride / 2)) {
+      expect(shot.evidence.pose_sample_frame).toBeNull();
+      expect(Object.values(shot.form).every((angle) => angle === null)).toBe(true);
+    }
+    const supported = original.find((shot) => shot.evidence.pose_sample_frame != null && shot.form.elbow != null);
+    expect(supported).toBeTruthy();
+
+    const release = page.getByRole("spinbutton", { name: "Release frame" });
+    const save = page.getByRole("button", { name: "Save timing / shooter correction" });
+    const noReleasePose = page.getByText("No recorded pose at this release", { exact: true });
+    await activate(page.getByRole("group", { name: "Correct shot outcome" }).getByRole("button", { name: "MAKE", exact: true }));
+    await release.fill(String(gap));
+    await activate(save);
+    await expect(noReleasePose).toBeVisible();
+    const unsupported = (await readExport())[0];
+    expect(unsupported).toMatchObject({
+      outcome: "make", release_frame: gap, form: { elbow: null, knee: null, shoulder: null, hip: null },
+      evidence: { pose_sample_frame: null, pose_confidence: 0, shot_quality: null, mechanics_quality: null },
+    });
+    await expect(page.getByText("Visible shot quality", { exact: true })).toHaveCount(0);
+    await activate(page.getByRole("button", { name: "Tracking", exact: true }));
+    await expect(page.locator(".metric-row").filter({ hasText: "Pose confidence" }).locator("strong")).toHaveText("Unavailable");
+
+    // Reopening a pre-fix result must discard stale derived measures without rerunning analysis.
+    await page.evaluate(({ key, supported }) => {
+      const queue = JSON.parse(localStorage.getItem(key));
+      const { result } = queue[0];
+      const first = result.shots[0];
+      delete result.pose_overlay.stride;
+      delete first.evidence.pose_sample_frame;
+      first.form = supported.form;
+      first.evidence.shot_quality = supported.evidence.shot_quality;
+      first.evidence.pose_confidence = supported.evidence.pose_confidence;
+      localStorage.setItem(key, JSON.stringify(queue));
+    }, { key: queueKey, supported });
+    await page.reload();
+    await activate(page.getByTitle("Open this analysis"));
+    await activate(page.getByRole("button", { name: "Shot 01", exact: true }));
+    await expect(noReleasePose).toBeVisible();
+    await expect(release).toHaveValue(String(gap));
+    expect((await readExport())[0]).toEqual(unsupported);
+    await release.fill(String(supported.evidence.pose_sample_frame));
+    await activate(save);
+    await expect(noReleasePose).toBeHidden();
+    expect((await readExport())[0]).toMatchObject({
+      outcome: "make", form: supported.form, evidence: { pose_sample_frame: supported.evidence.pose_sample_frame },
+    });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  } finally {
+    await page.close();
+  }
+}
+
 async function checkPlaybackReview(width, height) {
   const page = await openPage({ width, height }, width < 620);
   try {
@@ -1171,6 +1278,9 @@ async function checkHostedAnalyzer() {
   await checkShotReview(1440);
   await checkShotReview(320);
   console.log("Review math, current JSON downloads, frame limits, duplicate-attempt protection, note storage failure, and reload passed on desktop and mobile");
+  await checkHostedPoseCoverage(1440);
+  await checkHostedPoseCoverage(320);
+  console.log("Example 12 pose gaps, unsupported release measurements, and saved corrections passed on desktop and mobile");
   await checkPlaybackReview(1440, 900);
   await checkPlaybackReview(1280, 780);
   await checkPlaybackReview(1050, 780);

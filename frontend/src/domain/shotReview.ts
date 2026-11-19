@@ -1,4 +1,5 @@
 import type { AnalysisSession, ShotAnalysis, ShotMode } from "./analysisTypes";
+import { browserReleasePose, BROWSER_MOTION_WINDOW_FLAG, VISIBLE_FORM_REVIEW_FLAG } from "./browserPose.ts";
 
 const EXCLUDED_JUMP_SHOT_TYPES = new Set(["layup", "dunk", "pass", "pump_fake"]);
 
@@ -143,6 +144,22 @@ function reviewBrowserDefenders(shot: ShotAnalysis): ShotAnalysis {
 export function refreshBrowserShotReview(session: AnalysisSession): AnalysisSession {
   const shots = session.shots.map((shot) => {
     let updated = reviewShotMotion(shot, session.session.fps);
+    // The persisted motion-window flag also identifies generated shots in older browser reviews.
+    if (session.pose_overlay && shot.flags.includes(BROWSER_MOTION_WINDOW_FLAG)) {
+      const pose = browserReleasePose(session.pose_overlay, shot.release_time);
+      const flags = updated.flags.filter((flag) => flag !== VISIBLE_FORM_REVIEW_FLAG);
+      if (pose.evidence.shot_quality != null && pose.evidence.shot_quality < 0.45) flags.push(VISIBLE_FORM_REVIEW_FLAG);
+      updated = {
+        ...updated,
+        form: pose.form,
+        flags,
+        evidence: {
+          ...updated.evidence,
+          ...pose.evidence,
+          metric_availability: { ...updated.evidence.metric_availability, ...pose.evidence.metric_availability },
+        },
+      };
+    }
     if ((session.shot_mode ?? shot.shot_mode) === "jump_shot") updated = reviewBrowserDefenders(updated);
     const type = updated.evidence.shot_type;
     // Older browser saves recorded the exclusion label without its eligibility.
